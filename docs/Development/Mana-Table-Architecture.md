@@ -534,9 +534,21 @@ rules emission. The optional `executions` frame joins current decisions, stack
 entries and committed activity by exact execution reference. The shared client
 cursor baselines reconnects and lost retention windows; filtered sparse sequence
 numbers do not imply missing events. Unmigrated changes retain no fabricated
-execution. This does not claim complete coverage of replacement/state-based or
-all indirect rules paths. Extend the common hooks with observed rules journeys,
+execution. Current source extends shared replacement processing and state-based
+checks with optional typed `RuleKind`/`RuleResult` metadata. A replacement's
+application result is separate from the calling spell's outcome; buffered
+aggregate follow-ups have distinct occurrences without inventing one individual
+application's result. This does not claim coverage of all indirect rules paths.
+Extend the common hooks with observed rules journeys,
 never joins based on names, prompt prose, nearby events or final totals.
+
+Source-less state-based checks remain lazy. `MatchExecutions` admits an exact
+occurrence after an audience-visible committed mutation, or privately when that
+session publishes its validated owned required input. Empty/private-only checks
+cannot reveal an execution to other audiences. Earlier filtered transitions stay
+filtered; no retrospective sequence, source, player or last-stack parent is
+invented. Hidden ancestry is redacted independently for each audience. Execution
+admission precedes the activity copy without reversing their lock order.
 
 A resumed input retains its rules owner. A mana-payment input belongs to the
 ability being paid for, even when a nested mana callback is publishing the input
@@ -565,6 +577,14 @@ execution. Viewer filtering happens before publication, including causal links,
 private decisions and historical source faces. Observation order and revision
 remain independent of animation time. Reconnection establishes a baseline;
 replaying retained history must not replay commands or fabricate unseen steps.
+
+An accepted stack response can settle through disclosed, explicitly linked rules
+descendants without asking for that same response again. The attention owner
+walks every parent link back to the exact passed occurrence, rather than matching
+only a budget root. Historical automatic cost processing alone is not a player
+choice; an active cost step, committed cost mutation, required choice, hidden or
+missing ancestry, new stack action, or lost history still requests attention.
+A new trigger is a new response even if the accepted action caused it.
 
 `Mana.Contracts` owns the immutable, provider-neutral projection. `Mana.Forge`
 translates actual engine execution into it. `Mana.Client` admits ordered
@@ -1781,7 +1801,8 @@ produce a draw cue. Repeated snapshots do not replay those event IDs, and absent
 legacy outcome data remains unspecified rather than inferred from message text.
 
 The optional `ActivityEntry.Impact` (`impact` in JSON) carries actual event-time
-damage or a signed life change. It is separate from `Decision.Effect` and
+damage, a signed life change or one reported battlefield movement. It is separate
+from `Decision.Effect` and
 `StackItem.Effect`: base damage can be three while the engine reports two dealt
 after prevention. Damage identifies its recipient explicitly; the legacy
 activity-level card ID is not a reliable recipient. Source references are
@@ -1789,6 +1810,15 @@ optional disclosed occurrence IDs, not a resolution/ability identity. No client
 joins an impact to a pending effect by its name, amount or neighbouring event.
 Damage, life loss and marked damage remain distinct; infect and loyalty loss do
 not authorize the renderer to subtract from life or current P/T.
+
+Physical source/LKI control (`SourceControllerId`) and the producing ability's
+controller (`Cause.ControllerId`) are separate copied facts. A movement's
+`RecipientControllerId` retains departing control, not destination ownership;
+its `FromZone`/`ToZone` can remain useful after concealment removes the card anchor.
+Neither AI history nor presentation resolves historical ownership or removed-card
+value through the current board. `PublicActivityFacts` validates disclosed seat
+IDs and typed zone transitions while permitting departed historical occurrences.
+Older/missing source, cause and rule metadata remains explicitly unknown.
 
 `ImpactFeedback` consumes the shared accepted activity batch and expires its
 short cues without extending them on polls. Baselines and history gaps come from

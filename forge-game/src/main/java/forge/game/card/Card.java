@@ -6229,6 +6229,10 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
             return 0;
         }
 
+        final Integer damageSourceControllerId = source.getController() == null ? null : source.getController().getId();
+        final Integer damageRecipientControllerId = getController() == null ? null : getController().getId();
+        final GameEventCause damageCause = GameEventCause.from(cause);
+
         getGame().getReplacementHandler().run(ReplacementType.DealtDamage, AbilityKey.mapFromAffected(this));
 
         Map<AbilityKey, Object> runParams = AbilityKey.newMap();
@@ -6244,9 +6248,11 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
         DamageType damageType = DamageType.Normal;
         if (isPlaneswalker()) { // 120.3c
             subtractCounter(CounterEnumType.LOYALTY, damageIn, null, true);
+            damageType = DamageType.LoyaltyLoss;
         }
         if (isBattle()) {
             subtractCounter(CounterEnumType.DEFENSE, damageIn, null, true);
+            damageType = DamageType.DefenseLoss;
         }
         if (isCreature()) {
             if (source.isWitherDamage()) { // 120.3d
@@ -6262,10 +6268,12 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
                 setHasBeenDealtDeathtouchDamage(true);
                 damageType = DamageType.Deathtouch;
             }
-
-            // Play the Damage sound
-            game.fireEvent(new GameEventCardDamaged(CardView.get(this), CardView.get(source), damageIn, damageType));
         }
+
+        // One committed damage event, including noncreature planeswalkers and
+        // battles. Animated cards still report the same single damage action.
+        game.fireEvent(new GameEventCardDamaged(CardView.get(this), CardView.get(source), damageIn, damageType,
+                damageSourceControllerId, damageRecipientControllerId, damageCause, isCombat));
 
         return damageIn;
     }

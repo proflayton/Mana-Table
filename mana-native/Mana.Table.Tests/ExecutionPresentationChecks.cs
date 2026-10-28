@@ -149,6 +149,54 @@ internal static class ExecutionPresentationChecks
             "A resolving snapshot's pinned old stack cannot promote completed casts ahead of their earlier reported resolutions");
 
         CheckDeferredMetadata(initial, source, check);
+        CheckRulesOutcomes(initial, source, check);
+    }
+
+    private static void CheckRulesOutcomes(GameSnapshot initial, Card source, Action<bool, string> check)
+    {
+        var spell = new ExecutionOccurrence("bolt", "bolt", ExecutionKind.Spell, ExecutionStep.Complete) {
+            SourceName = "Lightning Bolt", Outcome = ExecutionOutcome.Resolved };
+        ExecutionOccurrence Rule(string id, ExecutionRuleKind kind, ExecutionRuleResult? result = null) =>
+            new(id, kind == ExecutionRuleKind.Replacement ? spell.Id : id, ExecutionKind.Rules, ExecutionStep.Complete) {
+                ParentId = kind == ExecutionRuleKind.Replacement ? spell.Id : null, RuleKind = kind, RuleResult = result,
+                Outcome = result == ExecutionRuleResult.NotReplaced ? ExecutionOutcome.Declined : ExecutionOutcome.Resolved,
+                SourceName = kind == ExecutionRuleKind.Replacement ? "A visible replacement" : null };
+        var prevented = Rule("prevention", ExecutionRuleKind.Replacement, ExecutionRuleResult.Prevented);
+        var adjusted = Rule("counter-replacement", ExecutionRuleKind.Replacement, ExecutionRuleResult.Updated);
+        var stateCheck = Rule("state-check", ExecutionRuleKind.StateBased);
+        var declined = Rule("declined-replacement", ExecutionRuleKind.Replacement, ExecutionRuleResult.NotReplaced);
+        var empty = Rule("empty-state-check", ExecutionRuleKind.StateBased);
+        var occurrences = new[] { prevented, adjusted, spell, stateCheck, declined, empty };
+        var transitions = occurrences.Select((item, index) => new ExecutionTransition(index + 1, item.Id, ExecutionStep.Complete) {
+            Outcome = item.Outcome, RuleResult = item.RuleResult }).ToImmutableArray();
+        ActivityEntry Change(long id, ExecutionOccurrence owner, string kind, string message) =>
+            new(id, initial.Turn, initial.PhaseKey, kind, initial.ViewerId, message, source.VisualId, source.Name) {
+                ExecutionId = owner.Id, ExecutionStep = ExecutionStep.Resolution };
+        var changed = initial with { Executions = new(1, transitions.Length, occurrences.ToImmutableArray(), transitions), Activity = [
+            Change(1, adjusted, "counters", "Added two counters.") with { Change = new("counters", "+1/+1", 0, 2) },
+            Change(2, spell, "resolved", "Lightning Bolt resolved."),
+            Change(3, stateCheck, "moved", "A creature moved to the graveyard.") ] };
+        var cursor = new ExecutionCursor(); var activity = new PublicActivityCursor(); var feedback = new ActionFeedback();
+        var announcements = new StackArrivalPresentation();
+        cursor.Observe(initial); activity.Observe(null, initial);
+        var delta = cursor.Observe(changed);
+        var batch = activity.Observe(initial, changed, delta.Transitions);
+        feedback.Observe(batch, 90);
+        announcements.Observe(initial, changed, 90, batch.Entries, executions: batch.Executions);
+        check(feedback.Recent.Single(item => item.ExecutionId == spell.Id) is { Outcome: "resolved", Changes.Length: 0 }
+                && feedback.Recent.Single(item => item.ExecutionId == prevented.Id) is { Outcome: "rulesApplied", Changes.Length: 0 },
+            "Explicit prevention is readable without fabricating damage or changing a successfully resolved spell into a failed spell");
+        check(feedback.Recent.Single(item => item.ExecutionId == adjusted.Id).Changes.SequenceEqual(["Added two counters."])
+                && feedback.Last is { ExecutionId: "state-check", Heading: "JUST CHANGED" } last
+                && last.Changes.SequenceEqual(["A creature moved to the graveyard."])
+                && feedback.Recent.All(item => !item.Title.StartsWith("Ability", StringComparison.Ordinal)),
+            "Counter replacement and state-based departure show their own committed results without a source-less ability or predicted amount");
+        check(feedback.Recent.Count == 4 && announcements.PendingCount == 1,
+            "Declined replacements and empty state checks add no phantom result or stack announcement; rules changes stay separate from the real spell");
+        var repeated = cursor.Observe(changed);
+        feedback.Observe(activity.Observe(changed, changed, repeated.Transitions), 91);
+        check(feedback.Recent.Count == 4 && feedback.Last?.Started == 90,
+            "Repeated recorded observations cannot repeat replacement or state-based feedback");
     }
 
     private static void CheckDeferredMetadata(GameSnapshot initial, Card source, Action<bool, string> check)

@@ -88,6 +88,37 @@ internal static class ExecutionRegression
             check(rejected, "Execution enums require exact closed protocol names rather than numeric, combined or unknown variants");
         }
 
+        var replacement = new ExecutionOccurrence("replacement", "replacement", ExecutionKind.Rules, ExecutionStep.Complete) {
+            RuleKind = ExecutionRuleKind.Replacement, RuleResult = ExecutionRuleResult.Prevented, Outcome = ExecutionOutcome.Resolved };
+        var ruleState = state with { Executions = new(1, 2, [replacement], [new(2, replacement.Id, ExecutionStep.Complete) {
+            Outcome = ExecutionOutcome.Resolved, RuleResult = ExecutionRuleResult.Prevented }]) };
+        var rulesRoundtrip = JsonSerializer.Deserialize<GameSnapshot>(JsonSerializer.Serialize(ruleState))!;
+        ExecutionFrames.Validate(rulesRoundtrip);
+        check(rulesRoundtrip.Executions?.Occurrences[0] is { RuleKind: ExecutionRuleKind.Replacement, RuleResult: ExecutionRuleResult.Prevented },
+            "A replacement's actual prevented result survives immutable observation JSON without claiming its calling spell was prevented");
+        var stateBased = replacement with { Id = "state-based", BudgetRootId = "state-based", RuleKind = ExecutionRuleKind.StateBased, RuleResult = null };
+        ExecutionFrames.Validate(state with { Executions = new(1, 2, [stateBased], []) });
+        check(stateBased.SourceCardId == null && stateBased.ActorPlayerId == null,
+            "A public state-based result can have an exact rules owner without inventing a source card or culpable player");
+        ExecutionFrames.Validate(state with { Executions = new(1, 2, [replacement with { RuleResult = null }], []) });
+        check(true, "A buffered replacement follow-up with no individual application result retains explicit unknown result metadata");
+        Reject(ruleState with { Executions = ruleState.Executions! with { Occurrences = [replacement with { Kind = ExecutionKind.Spell }] } },
+            "Rule metadata cannot reclassify an ordinary spell as a replacement execution");
+        Reject(ruleState with { Executions = ruleState.Executions! with { Occurrences = [replacement with {
+            RuleKind = ExecutionRuleKind.StateBased }], Transitions = [] } },
+            "A state-based check cannot acquire a replacement application result");
+        Reject(ruleState with { Executions = ruleState.Executions! with { Occurrences = [replacement with {
+            Step = ExecutionStep.Resolution, Outcome = null }], Transitions = [] } },
+            "A replacement result cannot precede its actual terminal transition");
+        Reject(ruleState with { Executions = ruleState.Executions! with { Transitions = [new(2, replacement.Id, ExecutionStep.Complete) {
+            Outcome = ExecutionOutcome.Resolved, RuleResult = ExecutionRuleResult.Replaced }] } },
+            "A replacement occurrence and its latest transition cannot report contradictory results");
+        foreach (string wire in new[] { "1", "\"StateBased\"", "\"other\"" }) {
+            bool rejected = false;
+            try { _ = JsonSerializer.Deserialize<ExecutionRuleKind>(wire); } catch (JsonException) { rejected = true; }
+            check(rejected, "Rule kinds use exact closed wire names and cannot be guessed from unknown provider values");
+        }
+
         void Reject(GameSnapshot invalid, string message)
         {
             bool rejected = false;

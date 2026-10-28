@@ -34,7 +34,8 @@ public final class AiReleaseFixtureEngine {
             // Variant setup creatures begin sick. A real passive haste grant
             // makes both tap abilities legal before the first land play.
             case "AI gate tap-cost-funding" -> List.of("Selesnya Evangel", "Birds of Paradise", "Grizzly Bears", "Concordant Crossroads");
-            case "Execution journey Loch Mare" -> List.of("Loch Mare", "Island", "Island", "Island");
+            case "Execution journey Loch Mare" -> List.of("Loch Mare", "Pir, Imaginative Rascal", "Chasm Skulker",
+                    "Island", "Island", "Island");
             default -> null;
         };
         if (extras == null) return;

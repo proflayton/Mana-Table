@@ -3,11 +3,8 @@ using System.Diagnostics;
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Forge;
+using Mana.Scenarios;
 using Mana.Table.Presentation;
-using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Input;
-using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
-using Point = Microsoft.Xna.Framework.Point;
 
 namespace Mana.Table;
 
@@ -15,7 +12,30 @@ namespace Mana.Table;
 // pregame permanents; every payment, input and result uses the native adapter.
 internal static class ExecutionEngineJourney
 {
-    internal static async Task RunAsync(ForgeEngine engine, string profile, Action<bool, string> check)
+    // Fast local development route. It verifies the launcher/dependency pair,
+    // but cannot replace the release gate's exact-source package verification.
+    internal static async Task RunStandaloneAsync(ForgePaths paths, string productionJar)
+    {
+        Directory.CreateDirectory(paths.Profile);
+        var runtime = AiReleaseEvaluation.VerifyRuntime(paths, productionJar);
+        var checks = new List<string>(); string? failure = null;
+        try {
+            await using var engine = new ForgeEngine(paths);
+            await engine.InitializeAsync();
+            await RunAsync(engine, paths.Profile, (passed, description) => {
+                if (!passed) throw new InvalidOperationException(description);
+                checks.Add(description);
+            });
+        } catch (Exception error) { failure = error.ToString(); throw; }
+        finally {
+            File.WriteAllText(Path.Combine(paths.Profile, "execution-journey-result.json"), JsonSerializer.Serialize(new {
+                passed = failure == null, error = failure, runtime, checks,
+                scope = "Local development journey; unbound source/resources, not exact-source release evidence."
+            }));
+        }
+    }
+
+    internal static async Task RunAsync(ForgeEngine engine, string profile, Action<bool, string> check, string? sourceRevision = null)
     {
         string directory = Path.Combine(profile, "execution-loch-mare"); Directory.CreateDirectory(directory);
         var observations = new List<GameSnapshot>();
@@ -25,10 +45,10 @@ internal static class ExecutionEngineJourney
         await engine.EnableAutomatedSeatsAsync();
         var spectator = await engine.StartSimulationAsync([actorDeck, otherDeck, otherDeck, otherDeck]);
         string gameId = spectator.Id, activation = "", sourceId = "";
-        int beforeHand = -1;
+        int beforeHand = -1, beforeSkulkerCounters = -1;
         bool started = false, stacked = false;
         GameSnapshot? result = null;
-        GameSnapshot? acceptedStackPass = null;
+        var acceptedStackPasses = new List<GameSnapshot>();
         GameSnapshot? pending = null;
         var timer = Stopwatch.StartNew();
         var answered = new HashSet<(int Seat, long Revision, string Decision, long Offers)>();
@@ -44,9 +64,11 @@ internal static class ExecutionEngineJourney
                     if (!started) {
                         var mare = Mare(actor);
                         sourceId = CardViews.Identity(mare); beforeHand = actor.Viewer!.Zone("Hand").Count;
+                        beforeSkulkerCounters = Skulker(actor).Counters.Values.Sum();
                         check(actor.Players.Length == 4 && mare.Counters.Values.Sum() == 3
-                                && actor.Viewer.Zone("Battlefield").Cards.Count(card => card.Name == "Island" && !card.Tapped) == 3,
-                            "The packaged test wrapper supplies Loch Mare's real three ETB counters and three untapped Islands before its actual activation");
+                                && actor.Viewer.Zone("Battlefield").Cards.Count(card => card.Name == "Island" && !card.Tapped) == 3
+                                && actor.Viewer.Zone("Battlefield").Cards.Any(card => card.Name == "Pir, Imaginative Rascal"),
+                            "The packaged test wrapper supplies Loch Mare's real three ETB counters, three untapped Islands and Pir/Skulker before its actual activation");
                         started = true;
                     }
                     if (observations.Count == 0 || observations[^1].Revision != actor.Revision
@@ -68,6 +90,7 @@ internal static class ExecutionEngineJourney
                             "The actual committed three-to-two counter change names the activation's cost step rather than a later prompt or adjacent effect");
                     }
                     if (stacked && actor.Stack.IsEmpty && actor.Viewer!.Zone("Hand").Count == beforeHand + 1
+                        && Skulker(actor).Counters.Values.Sum() == beforeSkulkerCounters + 2
                         && ExecutionFrames.Find(actor, activation)?.Outcome == ExecutionOutcome.Resolved
                         && actor.Decision?.Payload is PriorityPayload { QuietYieldToken.Length: > 0 }) {
                         result = actor; break;
@@ -101,8 +124,8 @@ internal static class ExecutionEngineJourney
                     } else command = Answer(state);
                     if (!GameCommandPermissions.Allows(state, command)) throw new InvalidDataException("The focused driver proposed an answer outside its exact current capability.");
                     await engine.ExecuteAutomatedAsync(observation.SeatId, command);
-                    if (observation.SeatId == 0 && command is PassPriority && acceptedStackPass == null
-                        && state.Stack.FirstOrDefault()?.ExecutionId == activation) acceptedStackPass = state;
+                    if (observation.SeatId == 0 && started && activation.Length > 0 && command is PassPriority && !state.Stack.IsEmpty)
+                        acceptedStackPasses.Add(state);
                     commands.Add(new { observation.SeatId, state.Revision, decision.Id, decision.ExecutionId, command = command.GetType().Name });
                     submitted = true; break;
                 }
@@ -112,8 +135,16 @@ internal static class ExecutionEngineJourney
                     && result.Viewer!.Zone("Battlefield").Cards.Count(card => card.Name == "Island" && card.Tapped) == 2
                     && Mare(result).Counters.Values.Sum() == 2,
                 "Resolution draws exactly one actual card, keeps the paid counter removed and retains both tapped mana sources under the same execution");
-            Replay(observations, engine, directory, activation, sourceId, check);
-            CheckAcceptedResponse(observations, acceptedStackPass, result, check);
+            var replacement = result.Executions!.Occurrences.LastOrDefault(item => item.RuleKind == ExecutionRuleKind.Replacement
+                && item.SourceName == "Pir, Imaginative Rascal" && item.RuleResult is ExecutionRuleResult.Updated or ExecutionRuleResult.Replaced);
+            check(replacement != null && replacement.ParentId != activation
+                    && ExecutionFrames.Find(result, replacement.ParentId ?? "")?.Kind == ExecutionKind.Trigger
+                    && Skulker(result).Counters.Values.Sum() == beforeSkulkerCounters + 2
+                    && result.Activity.Any(item => item.Change is { Kind: "counters" } change
+                        && item.CardId == CardViews.Identity(Skulker(result)) && change.After - change.Before == 2),
+                "The real draw trigger owns Pir's replacement and commits exactly two Skulker counters rather than predicting a printed one-counter result");
+            Replay(observations, directory, activation, sourceId, check, sourceRevision);
+            CheckAcceptedResponse(observations, acceptedStackPasses, result, check);
         } catch (Exception error) {
             primaryFailure = error; throw;
         } finally {
@@ -139,9 +170,10 @@ internal static class ExecutionEngineJourney
         }
     }
 
-    private static void CheckAcceptedResponse(IReadOnlyList<GameSnapshot> trace, GameSnapshot? accepted,
+    private static void CheckAcceptedResponse(IReadOnlyList<GameSnapshot> trace, IReadOnlyList<GameSnapshot> acceptedPasses,
         GameSnapshot result, Action<bool, string> check)
     {
+        var accepted = acceptedPasses.FirstOrDefault();
         check(accepted?.Decision?.Payload is PriorityPayload && !accepted.Stack.IsEmpty,
             "The provider journey retained the real authorized nonempty-stack priority which its driver successfully passed");
         if (accepted == null) throw new InvalidDataException("No actual accepted stack response was recorded.");
@@ -149,14 +181,24 @@ internal static class ExecutionEngineJourney
             && trace[index].Decision?.Id == accepted.Decision?.Id && trace[index].Executions?.LastSequence == accepted.Executions?.LastSequence);
         var attention = new PriorityAttention(); attention.Observe(accepted);
         attention.Submitted(accepted, new PassPriority(accepted.Id, accepted.Decision!.Id));
-        foreach (var state in trace.Skip(start + 1)) attention.Observe(state);
-        check(result.StackInterruptionVersion == accepted.StackInterruptionVersion
+        bool interrupted = false, triggerAcknowledged = false;
+        foreach (var state in trace.Skip(start + 1)) {
+            attention.Observe(state);
+            if (state.StackInterruptionVersion != accepted.StackInterruptionVersion && attention.NeedsResponse) interrupted = true;
+            if (acceptedPasses.Skip(1).Any(pass => pass.Revision == state.Revision && pass.Decision?.Id == state.Decision?.Id
+                    && pass.Executions?.LastSequence == state.Executions?.LastSequence)) {
+                triggerAcknowledged |= state.Stack.Any(item => item.Kind == StackActionKind.TriggeredAbility);
+                attention.Submitted(state, new PassPriority(state.Id, state.Decision!.Id));
+            }
+        }
+        check(interrupted && triggerAcknowledged && result.StackInterruptionVersion > accepted.StackInterruptionVersion
                 && result.Decision?.Payload is PriorityPayload { QuietYieldToken.Length: > 0 }
                 && !attention.NeedsResponse,
-            "The actual Forge-adapter Loch Mare pass, correlated draw and completed resolution admit fresh quiet permission without an additional response acknowledgment");
+            "The actual new Skulker trigger interrupts the accepted Mare response, receives its own accepted pass and then regains quiet permission after correlated settlement");
     }
 
     private static Card Mare(GameSnapshot state) => state.Viewer!.Zone("Battlefield").Cards.Single(card => card.Name == "Loch Mare");
+    private static Card Skulker(GameSnapshot state) => state.Viewer!.Zone("Battlefield").Cards.Single(card => card.Name == "Chasm Skulker");
     private static DecisionCommand Answer(GameSnapshot state)
     {
         var decision = state.Decision!;
@@ -178,50 +220,36 @@ internal static class ExecutionEngineJourney
         return DecisionCommands.Confirm(state) ?? throw new InvalidDataException("Unhandled required execution-fixture input: " + decision.Payload.GetType().Name);
     }
 
-    private static void Replay(IReadOnlyList<GameSnapshot> trace, ForgeEngine catalog, string profile, string executionId, string sourceId, Action<bool, string> check)
+    private static void Replay(IReadOnlyList<GameSnapshot> trace, string profile, string executionId, string sourceId, Action<bool, string> check, string? sourceRevision)
     {
-        var connection = new ReadOnlyTrace(trace[0]);
-        new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false }.Save(profile);
-        using var app = new TableApplication(new(catalog, catalog, connection, () => Task.CompletedTask), profile, initialState: trace[0]);
-        app.Automated = true; app.Initialize();
-        var view = app.TestPort; view.SetTableStudy(true);
-        double seconds = 0;
-        var pointer = new Point(20, 60);
-        PresentationFrame Tick()
-        {
-            seconds += 1.0 / 60;
-            app.Update(new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60)),
-                new(pointer.X, pointer.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released), new(), new(1600, 900));
-            if (view.Error.Length > 0) throw new InvalidOperationException(view.Error);
-            return app.ReadPresentation();
-        }
-        var frame = Tick();
+        string path = Path.Combine(profile, "viewer-private-projection.json");
+        new ProjectionRecording(1, "forge", sourceRevision, trace.ToImmutableArray()).WriteNew(path);
+        var recording = ProjectionRecording.Read(path, "forge", sourceRevision);
+        using var run = new ProjectionReplaySession(recording, Path.Combine(profile, "playback"), new(1600, 900));
+        var view = run.View;
+        var frame = run.Frame;
         bool hovered = false, announced = false;
-        foreach (var state in trace.Skip(1)) {
-            connection.State = state; view.Accept(state); frame = Tick(); frame = Tick();
+        while (run.Advance()) {
+            var state = run.Playback.Current; frame = run.Frame;
             if (state.Stack.FirstOrDefault(item => item.ExecutionId == executionId) is not { } stacked) continue;
             announced |= view.AnnouncementId?.StartsWith("execution:" + executionId + ":", StringComparison.Ordinal) == true;
             var hit = frame.Hits.LastOrDefault(hit => hit.Id == "study-stack-effect:" + stacked.Id);
             if (hit == null || hovered) continue;
-            pointer = hit.Bounds.Center; frame = Tick(); frame = Tick();
-            check(view.ReferencePreviewCardId == sourceId && view.ReferencePreviewStackId == stacked.Id && connection.Commands == 0,
+            frame = run.Hover(hit.Bounds.Center);
+            check(view.ReferencePreviewCardId == sourceId && view.ReferencePreviewStackId == stacked.Id && run.Playback.RejectedCommands == 0,
                 "Hovering the actual adapter-produced Loch Mare stack occurrence opens its complete source ability through production presentation without answering or activating");
-            hovered = true; pointer = new(20, 60);
+            hovered = true; frame = run.Hover(new(20, 60));
         }
         var final = trace[^1];
         var displayed = frame.Cards.Single(card => card.Id == sourceId && card.Zone == "Battlefield");
+        var skulker = Skulker(final);
+        var displayedSkulker = frame.Cards.Single(card => card.Id == CardViews.Identity(skulker) && card.Zone == "Battlefield");
         check(hovered && announced && displayed.Card.Counters.Values.Sum() == 2 && displayed.Card.Power == Mare(final).Power
-                && frame.Stamp.GameId == final.Id && frame.Stamp.Revision == final.Revision && connection.Commands == 0,
-            "The same real execution is announced on the production stack and finishes with the authoritative counter count and stats, without replaying commands");
+                && displayedSkulker.Card.Counters.OrderBy(item => item.Key).SequenceEqual(skulker.Counters.OrderBy(item => item.Key))
+                && displayedSkulker.Card.Power == skulker.Power && displayedSkulker.Card.Toughness == skulker.Toughness
+                && frame.Stamp.GameId == final.Id && frame.Stamp.Revision == final.Revision && run.Playback.RejectedCommands == 0,
+            "The same real execution is announced on the production stack and finishes with authoritative Mare and Pir-modified Skulker counters and stats, without replaying commands");
         File.WriteAllText(Path.Combine(profile, "production-final-frame.json"), JsonSerializer.Serialize(frame.Observe()));
     }
 
-    private sealed class ReadOnlyTrace(GameSnapshot state) : IMatchConnection
-    {
-        internal GameSnapshot State { get; set; } = state;
-        internal int Commands { get; private set; }
-        public Task<GameSnapshot?> ObserveAsync() => Task.FromResult<GameSnapshot?>(State);
-        public Task ExecuteAsync(GameCommand command) { Commands++; throw new InvalidOperationException("A recorded rules trace cannot grant replay command authority."); }
-        public Task ConcedeAsync(string gameId) => throw new InvalidOperationException("A recorded rules trace cannot concede a live game.");
-    }
 }

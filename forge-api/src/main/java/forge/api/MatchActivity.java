@@ -47,7 +47,8 @@ public final class MatchActivity {
      * Card references are public opaque occurrences, never retained faces or actions. */
     public record PublicImpact(String kind, long amount, String cardId, String cardName, Integer playerId,
                                String sourceCardId, String sourceName, Integer before, Integer after,
-                               String damageType, Boolean combat, Boolean infect) { }
+                               String damageType, Boolean combat, Boolean infect,
+                               Integer sourceControllerId, Integer recipientControllerId, String fromZone, String toZone) { }
     public record Frame(long revision, int turn, String phaseKey, String phase, Integer activePlayerId, List<Entry> entries) { }
     private final PlayerView viewer;
     private final MatchIdentities identities;
@@ -71,9 +72,9 @@ public final class MatchActivity {
     private int entriesAfterLatestCounterCause;
     private int ownTurns, cardsDrawn, landsPlayed, spellsCast, mulligans, commanderCasts;
     private ExecutionTracker.Reference eventExecution;
-    private java.util.function.Function<ExecutionTracker.Reference, ExecutionTracker.Reference> executionFilter = ignored -> null;
+    private java.util.function.BiFunction<ExecutionTracker.Reference, GameEvent, ExecutionTracker.Reference> executionFilter = (ignored, event) -> null;
 
-    void executionFilter(java.util.function.Function<ExecutionTracker.Reference, ExecutionTracker.Reference> filter) {
+    void executionFilter(java.util.function.BiFunction<ExecutionTracker.Reference, GameEvent, ExecutionTracker.Reference> filter) {
         executionFilter = filter;
     }
 
@@ -208,7 +209,8 @@ public final class MatchActivity {
         };
     }
     private PublicImpact damageImpact(CardView card, PlayerView player, CardView source, int amount,
-                                      String damageType, Boolean combat, Boolean infect) {
+                                      String damageType, Boolean combat, Boolean infect,
+                                      Integer sourceControllerId, Integer recipientControllerId) {
         boolean anonymous = publicFaceDown(card);
         if (card != null && !(anonymous || publicOccurrence(card) && visible(card))) return null;
         boolean disclosedSource = publicOccurrence(source) && visible(source);
@@ -218,7 +220,44 @@ public final class MatchActivity {
                 player == null ? null : player.getId(),
                 disclosedSource ? eventVisualId(source) : null,
                 disclosedSource ? source.getCurrentState().getName() : null,
-                null, null, damageType, combat, infect);
+                null, null, damageType, combat, infect,
+                disclosedSource ? sourceControllerId : null, recipientControllerId, null, null);
+    }
+
+    private PublicImpact zoneImpact(GameEventCardChangeZone event, CardView disclosedCard, PublicEffectCause cause) {
+        ZoneType from = event.from() == null ? null : event.from().zoneType();
+        ZoneType to = event.to() == null ? null : event.to().zoneType();
+        if (from != ZoneType.Battlefield && to != ZoneType.Battlefield || from == to || !impactZone(from) || !impactZone(to)) return null;
+        boolean anonymous = publicFaceDown(disclosedCard);
+        boolean disclosed = visible(disclosedCard);
+        return new PublicImpact("zone", 1, anonymous ? identities.concealed(disclosedCard) : disclosed ? eventVisualId(disclosedCard) : null,
+                anonymous ? "Face-down card" : disclosed ? cardName(disclosedCard) : null, null,
+                cause == null ? null : cause.cardId(), cause == null ? null : cause.name(), null, null, null, null, null,
+                null, event.recipientControllerId(), from.name(), to.name());
+    }
+
+    private static boolean impactZone(ZoneType zone) {
+        return zone != null && switch (zone) {
+            case Battlefield, Stack, Graveyard, Exile, Command, Hand, Library -> true;
+            default -> false;
+        };
+    }
+
+    /** Admission for a source-less rules occurrence follows an actual public
+     * mutation, never an unproductive or private-only state-based check. */
+    synchronized boolean publicCommitted(GameEvent event) {
+        if (event instanceof GameEventCardChangeZone moved) {
+            ZoneType from = moved.from() == null ? null : moved.from().zoneType();
+            ZoneType to = moved.to() == null ? null : moved.to().zoneType();
+            return turn > 0 && from != to && to != null && (from == ZoneType.Battlefield || to == ZoneType.Battlefield);
+        }
+        if (event instanceof GameEventPlayerDamaged damaged) return damaged.amount() > 0;
+        if (event instanceof GameEventPlayerLivesChanged life) return turn > 0 && life.oldLives() != life.newLives();
+        if (event instanceof GameEventCardDamaged damaged)
+            return damaged.amount() > 0 && (publicFaceDown(damaged.card()) || publicOccurrence(damaged.card()) && visible(damaged.card()));
+        if (event instanceof GameEventCardCounters counters)
+            return counters.oldValue() != counters.newValue() && (visible(counters.card()) || publicFaceDown(counters.card()));
+        return false;
     }
     private String playerName(PlayerView player) { return player == null ? "A player" : player.equals(viewer) ? "You" : player.getName(); }
     private String possessive(PlayerView player) { return player != null && player.equals(viewer) ? "Your" : playerName(player) + "'s"; }
@@ -282,7 +321,7 @@ public final class MatchActivity {
         revision++;
         if (interruptsQuietYield) quietSequence++;
         boolean anonymousTarget = change != null && publicFaceDown(card);
-        var execution = executionFilter.apply(eventExecution);
+        var execution = eventExecution;
         entries.addLast(new Entry(++sequence, turn, phase, kind, player == null ? null : player.getId(),
                 message, anonymousTarget ? identities.concealed(card) : eventVisualId(card),
                 anonymousTarget ? "Face-down card" : visible(card) ? card.getCurrentState().getName() : null,
@@ -305,11 +344,16 @@ public final class MatchActivity {
         }
     }
 
-    @Subscribe public synchronized void committed(ExecutionTracker.Committed committed) {
-        var prior = eventExecution;
-        eventExecution = committed.execution();
-        try { onGameEvent(committed.event()); }
-        finally { eventExecution = prior; }
+    @Subscribe public void committed(ExecutionTracker.Committed committed) {
+        // Execution admission can inspect current disclosure. Keep its lock
+        // outside the activity lock, matching ordinary transition admission.
+        var admitted = executionFilter.apply(committed.execution(), committed.event());
+        synchronized (this) {
+            var prior = eventExecution;
+            eventExecution = admitted;
+            try { onGameEvent(committed.event()); }
+            finally { eventExecution = prior; }
+        }
     }
 
     public synchronized void onGameEvent(GameEvent event) {
@@ -368,38 +412,47 @@ public final class MatchActivity {
                         "", "", 0, null, null,
                         e.origin() != GameEventCardChangeZone.Origin.TURN_BASED_DRAW || viewer.equals(player));
             } else if (to == ZoneType.Battlefield) {
+                var cause = publicCause(e.cause());
                 // Ordinary land plays have their own event.
                 if (from != ZoneType.Hand || !e.card().getCurrentState().getType().isLand() || !visible(e.card()))
                     add("arrived", e.card().getController(), cardName(e.card()) + (visible(e.card()) && e.card().isToken() && !cardName(e.card()).toLowerCase(Locale.ROOT).endsWith("token") ? " token" : "")
-                            + " entered the battlefield under " + (viewer.equals(e.card().getController()) ? "your" : playerName(e.card().getController()) + "'s") + " control.", e.card());
+                            + " entered the battlefield under " + (viewer.equals(e.card().getController()) ? "your" : playerName(e.card().getController()) + "'s") + " control.", e.card(),
+                            "", "", 0, null, cause, true, zoneImpact(e, e.card(), cause));
             } else if (to == ZoneType.Graveyard || to == ZoneType.Exile || from == ZoneType.Battlefield) {
                 // The view may still be frozen in its previous zone during this event.
                 var publicCard = hiddenDestination ? null : e.card();
+                var cause = publicCause(e.cause());
                 add("moved", player, (visible(publicCard) ? cardName(publicCard) : "A card") + " moved "
                         + (from == null ? "" : "from " + from.name().toLowerCase(Locale.ROOT) + " ")
-                        + "to " + to.name().toLowerCase(Locale.ROOT) + ".", publicCard);
+                        + "to " + to.name().toLowerCase(Locale.ROOT) + ".", publicCard,
+                        "", "", 0, null, cause, true, zoneImpact(e, publicCard, cause));
             }
         } else if (event instanceof GameEventPlayerLivesChanged e && turn > 0 && e.oldLives() != e.newLives()) {
             long change = (long)e.newLives() - e.oldLives();
             add("life", e.player(), playerName(e.player()) + (change < 0 ? " lost " : " gained ") + Math.abs(change)
                     + " life (" + e.newLives() + " remaining).", null, "", "", 0, null, null, true,
                     new PublicImpact("life", change, null, null, e.player().getId(), null, null,
-                            e.oldLives(), e.newLives(), null, null, null));
+                            e.oldLives(), e.newLives(), null, null, null, null, e.player().getId(), null, null));
         } else if (event instanceof GameEventPlayerDamaged e) {
+            var cause = publicCause(e.cause());
             add("damage", e.target(), cardName(e.source()) + " dealt " + e.amount() + (e.combat() ? " combat" : "")
                     + " damage to " + playerName(e.target()) + (e.infect() ? " as poison counters." : "."), e.source(),
-                    "", "", 0, null, null, true,
-                    damageImpact(null, e.target(), e.source(), e.amount(), null, e.combat(), e.infect()));
+                    "", "", 0, null, cause, true,
+                    damageImpact(null, e.target(), e.source(), e.amount(), null, e.combat(), e.infect(),
+                            e.sourceControllerId(), e.target().getId()));
         } else if (event instanceof GameEventCardDamaged e) {
             String damageType = switch (e.type()) {
                 case Normal -> "normal";
                 case M1M1Counters -> "m1m1Counters";
                 case Deathtouch -> "deathtouch";
                 case LoyaltyLoss -> "loyaltyLoss";
+                case DefenseLoss -> "defenseLoss";
             };
+            var cause = publicCause(e.cause());
             add("damage", e.card().getController(), cardName(e.source()) + " dealt " + e.amount() + " damage to " + cardName(e.card()) + ".", e.card(),
-                    "", "", 0, null, null, true,
-                    damageImpact(e.card(), null, e.source(), e.amount(), damageType, null, null));
+                    "", "", 0, null, cause, true,
+                    damageImpact(e.card(), null, e.source(), e.amount(), damageType, e.combat(), null,
+                            e.sourceControllerId(), e.recipientControllerId()));
         } else if (event instanceof GameEventAttackersDeclared e && !e.attackersMap().isEmpty()) {
             var names = e.attackersMap().values().stream().map(this::cardName).toList();
             add("combat", e.player(), playerName(e.player()) + " attacked with " + String.join(", ", names) + ".", null);

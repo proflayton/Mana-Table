@@ -1,6 +1,7 @@
 package forge.game;
 
 import forge.game.card.CardView;
+import forge.game.card.Card;
 import forge.game.event.Event;
 import forge.game.event.GameEvent;
 import forge.game.spellability.SpellAbility;
@@ -21,15 +22,32 @@ public final class ExecutionTracker {
         private final String wire;
         Outcome(String wire) { this.wire = wire; }
     }
+    /** Rules processing is distinct from the outcome of its calling spell. */
+    public enum RuleKind {
+        REPLACEMENT("replacement"), STATE_BASED("stateBased");
+        private final String wire;
+        RuleKind(String wire) { this.wire = wire; }
+    }
+    public enum RuleResult {
+        NOT_REPLACED("notReplaced"), REPLACED("replaced"), PREVENTED("prevented"), UPDATED("updated"), SKIPPED("skipped");
+        private final String wire;
+        RuleResult(String wire) { this.wire = wire; }
+    }
     public record Reference(String id, String step) { }
     public record Occurrence(String id, String parentId, String budgetRootId, String kind,
                              Integer actorPlayerId, CardView source, String sourceName,
-                             String step, String outcome) { }
+                             String step, String outcome, String ruleKind, String ruleResult) {
+        public Occurrence(String id, String parentId, String budgetRootId, String kind,
+                          Integer actorPlayerId, CardView source, String sourceName, String step, String outcome) {
+            this(id, parentId, budgetRootId, kind, actorPlayerId, source, sourceName, step, outcome, null, null);
+        }
+    }
     public record Transition(long sequence, Occurrence occurrence) implements Event { }
     /** Synchronous event-time cause, copied before any further rules work. */
     public record Committed(GameEvent event, Reference execution) implements Event { }
     private final Game game;
     private final Map<String, Occurrence> occurrences = new LinkedHashMap<>();
+    private final Map<String, Occurrence> pendingRules = new HashMap<>();
     private final Map<String, Outcome> semanticOutcomes = new HashMap<>();
     private final Deque<Transition> history = new ArrayDeque<>();
     private final Deque<String> executing = new ArrayDeque<>();
@@ -42,7 +60,7 @@ public final class ExecutionTracker {
     public String prepare(SpellAbility ability, String parentId) {
         Occurrence existing = occurrence(ability);
         if (existing != null && !existing.step().equals("complete")) return existing.id();
-        Occurrence parent = occurrences.get(parentId);
+        Occurrence parent = materialize(parentId);
         String id = UUID.randomUUID().toString();
         String kind = ability.isManaAbility() ? "mana" : ability.isTrigger() ? "trigger"
                 : ability.isSpell() ? "spell" : ability.isActivatedAbility() ? "activation" : "rules";
@@ -75,7 +93,7 @@ public final class ExecutionTracker {
 
     /** Restore an explicitly captured deferred cause, never the latest stack entry. */
     public Scope enterCause(String id) {
-        if (id != null && occurrences.containsKey(id)) executing.push(id);
+        if (id != null && (occurrences.containsKey(id) || pendingRules.containsKey(id))) executing.push(id);
         else id = null;
         return new Scope(id);
     }
@@ -94,7 +112,7 @@ public final class ExecutionTracker {
 
     public String currentId() { return executing.peek(); }
     public Reference current() {
-        Occurrence occurrence = occurrences.get(currentId());
+        Occurrence occurrence = materialize(currentId());
         return occurrence == null ? null : new Reference(occurrence.id(), occurrence.step());
     }
     public Reference reference(SpellAbility ability) {
@@ -105,6 +123,81 @@ public final class ExecutionTracker {
         return ability == null ? null : occurrences.get(ability.getExecutionId());
     }
     public Occurrence occurrence(String id) { return occurrences.get(id); }
+
+    /** The state check is a real rules owner, but an empty poll is not an action.
+     * Publication starts only when it produces a committed fact or decision. */
+    public RulesScope enterStateBased() { return enterRules(RuleKind.STATE_BASED, null, null, null, true); }
+
+    public RulesScope enterReplacement(Card source, SpellAbility ability) {
+        return enterRules(RuleKind.REPLACEMENT, source,
+                source == null || source.getController() == null ? null : source.getController().getId(), ability, false);
+    }
+
+    private RulesScope enterRules(RuleKind kind, Card source, Integer actor, SpellAbility ability, boolean lazy) {
+        String id = UUID.randomUUID().toString();
+        String parentId = currentId();
+        Occurrence parent = lazy ? find(parentId) : materialize(parentId);
+        Occurrence occurrence = new Occurrence(id, parent == null ? null : parent.id(),
+                parent == null ? id : parent.budgetRootId(), "rules", actor, CardView.get(source),
+                source == null ? null : source.getName(), lazy ? "resolution" : "preparation", null, kind.wire, null);
+        if (lazy) pendingRules.put(id, occurrence); else publish(occurrence);
+        if (ability != null) bind(ability, id);
+        executing.push(id);
+        return new RulesScope(id);
+    }
+
+    private Occurrence find(String id) {
+        Occurrence known = occurrences.get(id);
+        return known == null ? pendingRules.get(id) : known;
+    }
+
+    private Occurrence materialize(String id) {
+        Occurrence pending = pendingRules.remove(id);
+        if (pending != null) { materialize(pending.parentId()); publish(pending); }
+        return occurrences.get(id);
+    }
+
+    /** View-refresh chatter must not turn every empty SBA poll into an action. */
+    public Reference committed(GameEvent event) {
+        if (pendingRules.containsKey(currentId()) && (event instanceof forge.game.event.GameEventCardStatsChanged
+                || event instanceof forge.game.event.GameEventAddLog)) return null;
+        return current();
+    }
+
+    public final class RulesScope implements AutoCloseable {
+        private final String id;
+        private boolean completed;
+        private boolean closed;
+        private RulesScope(String id) { this.id = id; }
+        public String id() { return id; }
+        public void step(Step step) {
+            Occurrence prior = find(id);
+            if (prior == null || completed) return;
+            if (prior.step().equals(step.wire)) return;
+            var next = new Occurrence(prior.id(), prior.parentId(), prior.budgetRootId(), prior.kind(),
+                    prior.actorPlayerId(), prior.source(), prior.sourceName(), step.wire, null, prior.ruleKind(), null);
+            if (pendingRules.containsKey(id)) pendingRules.put(id, next); else publish(next);
+        }
+        public void complete(Outcome outcome, RuleResult result) {
+            if (completed) return;
+            completed = true;
+            Outcome recorded = semanticOutcomes.remove(id);
+            if (outcome == Outcome.RESOLVED && recorded != null) outcome = recorded;
+            Occurrence prior = pendingRules.remove(id);
+            if (prior != null) return; // An empty state check has no public occurrence.
+            prior = occurrences.get(id);
+            if (prior == null || prior.step().equals("complete")) return;
+            publish(new Occurrence(prior.id(), prior.parentId(), prior.budgetRootId(), prior.kind(),
+                    prior.actorPlayerId(), prior.source(), prior.sourceName(), "complete", outcome.wire,
+                    prior.ruleKind(), result == null ? null : result.wire));
+        }
+        @Override public void close() {
+            if (closed) return;
+            if (!completed) complete(Outcome.FAILED, null);
+            if (!Objects.equals(executing.peek(), id)) throw new IllegalStateException("Rules scopes closed out of order");
+            executing.pop(); closed = true;
+        }
+    }
 
     public void step(SpellAbility ability, Step step) { transition(ability, step.wire, null); }
     /** An inner rules effect can decide its result before its owner finishes
@@ -124,7 +217,8 @@ public final class ExecutionTracker {
         if (prior.step().equals(step) && Objects.equals(prior.outcome(), outcome)) return;
         var source = ability.getHostCard();
         publish(new Occurrence(prior.id(), prior.parentId(), prior.budgetRootId(), prior.kind(),
-                prior.actorPlayerId(), CardView.get(source), source == null ? prior.sourceName() : source.getName(), step, outcome));
+                prior.actorPlayerId(), CardView.get(source), source == null ? prior.sourceName() : source.getName(), step, outcome,
+                prior.ruleKind(), prior.ruleResult()));
     }
 
     private void publish(Occurrence occurrence) {

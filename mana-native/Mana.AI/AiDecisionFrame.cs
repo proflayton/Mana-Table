@@ -39,6 +39,7 @@ public sealed class AiDecisionFrame
         if (!Enum.IsDefined(actionCoverage)) throw new ArgumentOutOfRangeException(nameof(actionCoverage));
         State = state; Task = AiTasks.From(decision.Payload);
         ExecutionFrames.Validate(state);
+        PublicActivityFacts.Validate(state);
         BlockingCapacityFacts.Validate(state);
         Domain = domain ?? DecisionActionDomain.None;
         Semantics = semantics ?? new();

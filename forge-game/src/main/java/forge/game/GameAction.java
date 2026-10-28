@@ -169,6 +169,10 @@ public class GameAction {
         return changeZone(zoneFrom, zoneTo, c, position, cause, null, Origin.OTHER);
     }
     private Card changeZone(final Zone zoneFrom, Zone zoneTo, final Card c, Integer position, SpellAbility cause, Map<AbilityKey, Object> params, Origin origin) {
+        // Capture the departing controller and explicit producing ability before
+        // replacement, cleanup or a zone transition can change their views.
+        final Integer departingControllerId = c.getController() == null ? null : c.getController().getId();
+        final GameEventCause movementCause = GameEventCause.from(cause);
         // 111.11. A copy of a permanent spell becomes a token as it resolves.
         // The token has the characteristics of the spell that became that token.
         // The token is not “created” for the purposes of any replacement effects or triggered abilities that refer to creating a token.
@@ -190,7 +194,7 @@ public class GameAction {
             zoneTo.add(c, position, CardCopyService.getLKICopy(c));
             checkStaticAbilities();
             game.getTriggerHandler().registerActiveTrigger(c, true);
-            game.fireEvent(new GameEventCardChangeZone(c, zoneFrom, zoneTo, origin));
+            game.fireEvent(new GameEventCardChangeZone(c, zoneFrom, zoneTo, origin, movementCause, departingControllerId));
             return c;
         }
 
@@ -658,7 +662,7 @@ public class GameAction {
         }
 
         // play the change zone sound
-        game.fireEvent(new GameEventCardChangeZone(c, zoneFrom, zoneTo, origin));
+        game.fireEvent(new GameEventCardChangeZone(c, zoneFrom, zoneTo, origin, movementCause, departingControllerId));
 
         game.getTriggerHandler().clearActiveTriggers(copied, null);
         game.getTriggerHandler().registerActiveTrigger(copied, false);
@@ -1482,6 +1486,14 @@ public class GameAction {
         return checkStateEffects(runEvents, Sets.newHashSet());
     }
     public boolean checkStateEffects(final boolean runEvents, final Set<Card> affectedCards) {
+        try (var execution = game.getExecutions().enterStateBased()) {
+            boolean changed = checkStateEffectsOwned(runEvents, affectedCards);
+            execution.complete(ExecutionTracker.Outcome.RESOLVED, null);
+            return changed;
+        }
+    }
+
+    private boolean checkStateEffectsOwned(final boolean runEvents, final Set<Card> affectedCards) {
         // check game over early for win conditions such as Platinum Angel + Hurricane lethal for both players
         checkGameOverCondition();
         if (game.isGameOver()) {

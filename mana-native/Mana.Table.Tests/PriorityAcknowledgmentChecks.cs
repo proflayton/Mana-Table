@@ -18,6 +18,47 @@ internal static class PriorityAcknowledgmentChecks
         Check("An unchanged publication while the accepted pass is in flight does not ask twice", stacked with { Revision = 3 }, false);
         Check("A new spell arriving during the pass keeps its own response unanswered", Stack(resolved, "another-spell", ExecutionKind.Spell), true);
         Check("A child trigger is a new response even when the accepted action caused it", Stack(resolved, "child-trigger", ExecutionKind.Trigger, "accepted-action"), true);
+        var replacement = RulesResults(stacked, 1); var nestedReplacement = RulesResults(stacked, 2);
+        Check("A disclosed replacement owned by the passed stack action settles without asking for the same response twice", replacement, false);
+        var zeroCost = replacement with { Executions = replacement.Executions! with {
+            LastSequence = replacement.Executions!.LastSequence + 1,
+            Transitions = replacement.Executions!.Transitions.SelectMany(item => item.ExecutionId == "replacement-1" && item.Step == ExecutionStep.Preparation
+                ? new[] { item, new ExecutionTransition(0, item.ExecutionId, ExecutionStep.Cost) } : new[] { item })
+                .Select((item, index) => item with { Sequence = replacement.Executions!.FirstSequence + index }).ToImmutableArray() } };
+        Check("A completed zero-cost replacement's historical cost phase does not invent a payment or required choice", zeroCost, false);
+        Check("A replacement still paying costs cannot inherit settled quiet continuation", replacement with {
+            Executions = replacement.Executions! with {
+                Occurrences = replacement.Executions!.Occurrences.Select(item => item.Id == "replacement-1"
+                    ? item with { Step = ExecutionStep.Cost, Outcome = null } : item).ToImmutableArray(),
+                Transitions = replacement.Executions!.Transitions.Select(item => item.ExecutionId == "replacement-1" && item.Step == ExecutionStep.Complete
+                    ? item with { Step = ExecutionStep.Cost, Outcome = null } : item).ToImmutableArray() } }, true);
+        Check("Nested disclosed replacements retain the exact passed response through every parent link", nestedReplacement, false);
+        Check("A same-root rules occurrence with no explicit parent does not inherit the passed response", MutateRule(replacement,
+            item => item with { ParentId = null }), true);
+        Check("A descendant trigger is a new response even when it retains the same budget root", MutateRule(replacement,
+            item => item with { Kind = ExecutionKind.Trigger, RuleKind = null }), true);
+        Check("An independent state-based action cannot inherit the passed stack response", MutateRule(replacement,
+            item => item with { ParentId = null, BudgetRootId = item.Id, RuleKind = ExecutionRuleKind.StateBased,
+                SourceCardId = null, SourceName = null }), true);
+        Check("An undisclosed rules source cannot authorize quiet continuation", MutateRule(replacement,
+            item => item with { SourceCardId = null }), true);
+        Check("Untyped legacy rules metadata remains unknown for response acknowledgment", MutateRule(replacement,
+            item => item with { RuleKind = null }), true);
+        Check("A hidden intermediate parent breaks nested replacement acknowledgment", MutateRule(nestedReplacement,
+            item => item.Id == "replacement-1" ? item with { SourceCardId = null } : item), true);
+        Check("Rules descendants cannot acknowledge a stack action hidden behind a rules label", replacement with {
+            Executions = replacement.Executions! with { Transitions = replacement.Executions!.Transitions.Select(item =>
+                item.ExecutionId == "replacement-1" && item.Step == ExecutionStep.Preparation ? item with { Step = ExecutionStep.Stack } : item).ToImmutableArray() } }, true);
+        Check("A required choice inside a replacement interrupts even when it settles between observations", replacement with {
+            Executions = replacement.Executions! with { Transitions = replacement.Executions!.Transitions.Select(item =>
+                item.ExecutionId == "replacement-1" && item.Step == ExecutionStep.Preparation ? item with { Step = ExecutionStep.Choice } : item).ToImmutableArray() } }, true);
+        Check("A live required replacement choice still takes attention immediately", RuleChoice(stacked), true);
+        Check("A replacement activity cost cannot be mistaken for a committed resolution", replacement with {
+            Activity = replacement.Activity.Select(item => item.ExecutionId == "replacement-1"
+                ? item with { ExecutionStep = ExecutionStep.Cost } : item).ToImmutableArray() }, true);
+        Check("A replacement cannot bypass a missing execution-history boundary", replacement with {
+            Executions = replacement.Executions! with { FirstSequence = 3,
+                Transitions = replacement.Executions!.Transitions.Where(item => item.Sequence >= 3).ToImmutableArray() } }, true);
         Check("A required choice retires the accepted response even when it belongs to that execution", Choice(stacked), true);
         Check("Another seat's private required choice interrupts without exposing its options", stacked with {
             Revision = 3, Decision = null, PriorityPlayerId = null, DecisionOwnerId = 1, ActionClass = "selection" }, true);
@@ -124,6 +165,50 @@ internal static class PriorityAcknowledgmentChecks
             Executions = frame with { LastSequence = frame.LastSequence + 1,
                 Occurrences = frame.Occurrences.Select(e => e.Id == id ? e with { Step = ExecutionStep.Choice } : e).ToImmutableArray(),
                 Transitions = frame.Transitions.Add(new(frame.LastSequence + 1, id, ExecutionStep.Choice)) } };
+    }
+
+    private static GameSnapshot RulesResults(GameSnapshot state, int depth)
+    {
+        var resolved = Resolve(state); var frame = state.Executions!; string root = state.Stack[0].ExecutionId;
+        var rootOccurrence = resolved.Executions!.Occurrences.Single(item => item.Id == root);
+        var occurrences = resolved.Executions.Occurrences.ToBuilder(); var transitions = frame.Transitions.ToBuilder();
+        long sequence = frame.LastSequence;
+        transitions.Add(new(++sequence, root, ExecutionStep.Resolution));
+        var activity = state.Activity.ToBuilder(); long eventId = activity.Select(item => item.Id).DefaultIfEmpty().Max();
+        string parent = root;
+        for (int index = 1; index <= depth; index++) {
+            string id = "replacement-" + index;
+            occurrences.Add(new(id, rootOccurrence.BudgetRootId, ExecutionKind.Rules, ExecutionStep.Complete) {
+                ParentId = parent, ActorPlayerId = 1, SourceCardId = "disclosed-rules-source-" + index,
+                SourceName = "Disclosed replacement", RuleKind = ExecutionRuleKind.Replacement, Outcome = ExecutionOutcome.Resolved });
+            transitions.Add(new(++sequence, id, ExecutionStep.Preparation));
+            transitions.Add(new(++sequence, id, ExecutionStep.Resolution));
+            activity.Add(new(++eventId, state.Turn, state.PhaseKey, "counters", state.ViewerId, "Replacement changed the actual result.", null, null) {
+                ExecutionId = id, ExecutionStep = ExecutionStep.Resolution, Change = new("counters", "+1/+1", 1, 3) });
+            parent = id;
+        }
+        for (int index = depth; index >= 1; index--)
+            transitions.Add(new(++sequence, "replacement-" + index, ExecutionStep.Complete) { Outcome = ExecutionOutcome.Resolved });
+        transitions.Add(new(++sequence, root, ExecutionStep.Complete) { Outcome = ExecutionOutcome.Resolved });
+        activity.Add(resolved.Activity.Last() with { Id = ++eventId });
+        return resolved with { Activity = activity.ToImmutable(), Executions = new(frame.FirstSequence, sequence, occurrences.ToImmutable(), transitions.ToImmutable()) };
+    }
+
+    private static GameSnapshot MutateRule(GameSnapshot state, Func<ExecutionOccurrence, ExecutionOccurrence> change)
+        => state with { Executions = state.Executions! with { Occurrences = state.Executions!.Occurrences
+            .Select(item => item.Kind == ExecutionKind.Rules ? change(item) : item).ToImmutableArray() } };
+
+    private static GameSnapshot RuleChoice(GameSnapshot state)
+    {
+        var frame = state.Executions!; string root = state.Stack[0].ExecutionId; long sequence = frame.LastSequence;
+        var rule = new ExecutionOccurrence("replacement-choice", root, ExecutionKind.Rules, ExecutionStep.Choice) {
+            ParentId = root, ActorPlayerId = 1, SourceCardId = "disclosed-rules-source", RuleKind = ExecutionRuleKind.Replacement };
+        return state with { Revision = state.Revision + 1, Stack = [], ActionClass = "selection", PriorityPlayerId = null,
+            Decision = new("replacement-number", new(), new NumberPayload("1")) { ExecutionId = rule.Id, ExecutionStep = ExecutionStep.Choice },
+            Executions = frame with { LastSequence = sequence + 3,
+                Occurrences = frame.Occurrences.Select(item => item.Id == root ? item with { Step = ExecutionStep.Resolution } : item).Append(rule).ToImmutableArray(),
+                Transitions = frame.Transitions.Add(new(++sequence, root, ExecutionStep.Resolution))
+                    .Add(new(++sequence, rule.Id, ExecutionStep.Preparation)).Add(new(++sequence, rule.Id, ExecutionStep.Choice)) } };
     }
 
     private static Decision Priority(string id, string token) => new(id, new(),

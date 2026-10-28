@@ -1290,7 +1290,13 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             var execution = prompt.input instanceof InputPayMana payment
                     ? game.getExecutions().reference(payment.getPaidForAbility())
                     : game.getExecutions().current();
-            if (execution != null) prompt.executionId = execution.id();
+            if (execution != null) {
+                // This path is reached only by this session's validated owned
+                // input or synchronous rules dialog. A source-less SBA may own
+                // a required legend/commander choice before it mutates a zone.
+                executions.referenceDecision(execution);
+                prompt.executionId = execution.id();
+            }
         }
         pending = prompt; table.publish();
     }

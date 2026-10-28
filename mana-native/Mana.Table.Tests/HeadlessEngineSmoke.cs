@@ -279,7 +279,7 @@ internal static class HeadlessEngineSmoke
             Check(view.Match is { Status: "finished", Result: "Defeat" }, "The real game concedes through production confirmation controls and publishes its result");
             Save("finished");
             if (productionJar != null) {
-                await ExecutionEngineJourney.RunAsync(engine, paths.Profile, Check);
+                await ExecutionEngineJourney.RunAsync(engine, paths.Profile, Check, sourceRevision);
                 await AiReleaseGoldens.RunAsync(engine, paths.Profile, Check);
             }
             await AiWholeSeatEngineCheck.RunAsync(engine, paths.Profile, Check);

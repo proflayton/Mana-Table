@@ -12,8 +12,8 @@ import java.util.*;
  * views and private execution identities never cross this boundary. */
 final class MatchExecutions {
     record Occurrence(String id, String parentId, String budgetRootId, String kind, Integer actorPlayerId,
-                      String sourceCardId, String sourceName, String step, String outcome) { }
-    record Transition(long sequence, String executionId, String step, String outcome) { }
+                      String sourceCardId, String sourceName, String step, String outcome, String ruleKind, String ruleResult) { }
+    record Transition(long sequence, String executionId, String step, String outcome, String ruleResult) { }
     record Frame(long firstSequence, long lastSequence, List<Occurrence> occurrences, List<Transition> transitions) { }
     private final ExecutionTracker rules;
     private final PlayerView viewer;
@@ -46,8 +46,9 @@ final class MatchExecutions {
         String cardId = visible ? activity.visualId(card) : null;
         String name = visible ? occurrence.sourceName() : null;
         admitted.put(occurrence.id(), new Occurrence(occurrence.id(), occurrence.parentId(), occurrence.budgetRootId(),
-                occurrence.kind(), occurrence.actorPlayerId(), cardId, name, occurrence.step(), occurrence.outcome()));
-        transitions.addLast(new Transition(transition.sequence(), occurrence.id(), occurrence.step(), occurrence.outcome()));
+                occurrence.kind(), occurrence.actorPlayerId(), cardId, name, occurrence.step(), occurrence.outcome(),
+                occurrence.ruleKind(), occurrence.ruleResult()));
+        transitions.addLast(new Transition(transition.sequence(), occurrence.id(), occurrence.step(), occurrence.outcome(), occurrence.ruleResult()));
         copyFrame();
     }
 
@@ -69,6 +70,38 @@ final class MatchExecutions {
         if (reference == null || !readable.containsKey(reference.id())) return null;
         return reference;
     }
+
+    /** Some rules actions intentionally have no player or source. Their mere
+     * execution is not public evidence: admit only the exact occurrence which
+     * is now committing an audience-visible result. Earlier filtered sequence
+     * numbers stay filtered; no retrospective transition is manufactured. */
+    synchronized ExecutionTracker.Reference reference(ExecutionTracker.Reference reference, forge.game.event.GameEvent event) {
+        if (reference == null) return null;
+        if (!readable.containsKey(reference.id())) {
+            var occurrence = rules.occurrence(reference.id());
+            if (occurrence == null || !"rules".equals(occurrence.kind()) || !"stateBased".equals(occurrence.ruleKind())
+                    || occurrence.source() != null || occurrence.actorPlayerId() != null || !activity.publicCommitted(event)) return null;
+            admitted.put(occurrence.id(), new Occurrence(occurrence.id(), occurrence.parentId(), occurrence.budgetRootId(),
+                    occurrence.kind(), null, null, null, occurrence.step(), occurrence.outcome(), occurrence.ruleKind(), occurrence.ruleResult()));
+            copyFrame();
+        }
+        return reference(reference);
+    }
+
+    /** Only the session currently publishing its owned required input may call
+     * this path. Other audiences still need an actual public committed result. */
+    synchronized ExecutionTracker.Reference referenceDecision(ExecutionTracker.Reference reference) {
+        if (reference == null) return null;
+        if (!readable.containsKey(reference.id())) {
+            var occurrence = rules.occurrence(reference.id());
+            if (occurrence == null || !"rules".equals(occurrence.kind()) || !"stateBased".equals(occurrence.ruleKind())
+                    || occurrence.source() != null || occurrence.actorPlayerId() != null || occurrence.step().equals("complete")) return null;
+            admitted.put(occurrence.id(), new Occurrence(occurrence.id(), occurrence.parentId(), occurrence.budgetRootId(),
+                    occurrence.kind(), null, null, null, occurrence.step(), occurrence.outcome(), occurrence.ruleKind(), occurrence.ruleResult()));
+            copyFrame();
+        }
+        return reference(reference);
+    }
     ExecutionTracker.Reference reference(String id) {
         var occurrence = id == null ? null : readable.get(id);
         return occurrence == null ? null : new ExecutionTracker.Reference(id, occurrence.step());
@@ -88,7 +121,8 @@ final class MatchExecutions {
             String parent = admitted.containsKey(occurrence.parentId()) ? occurrence.parentId() : null;
             String root = admitted.containsKey(occurrence.budgetRootId()) ? occurrence.budgetRootId() : occurrence.id();
             occurrences.add(new Occurrence(occurrence.id(), parent, root, occurrence.kind(), occurrence.actorPlayerId(),
-                    occurrence.sourceCardId(), occurrence.sourceName(), occurrence.step(), occurrence.outcome()));
+                    occurrence.sourceCardId(), occurrence.sourceName(), occurrence.step(), occurrence.outcome(),
+                    occurrence.ruleKind(), occurrence.ruleResult()));
         }
         latest = new Frame(rules.firstSequence(), rules.lastSequence(), List.copyOf(occurrences), List.copyOf(transitions));
     }

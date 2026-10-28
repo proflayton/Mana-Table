@@ -247,6 +247,27 @@ attempted conservatively once per turn. The independent per-turn attempt set
 cannot be evicted by the diagnostic ring; a hard bound stops further planning
 instead of permitting an infinite cast/cancel loop.
 
+In the current source, `AiObservedEvent` retains copied event IDs, execution steps
+and typed committed results, without faces, names, rules prose or action handles.
+Events deduplicate by ID within the configured history capacity (128 by default,
+maximum 4096); evicted facts are not a complete account of earlier play. Damage
+uses the disclosed producing ability's controller; only actual combat can fall
+back to the physical source's captured controller. Those controllers can differ
+when a permanent changes control after its ability goes on the stack. The
+affected activity seat is never a substitute actor, and a source leaving play
+does not erase or reattribute earlier damage. Unknown noncombat causes and older
+missing attribution remain unknown.
+
+Actual battlefield departures to graveyard, exile, hand or library contribute
+bounded resource-loss pressure only with a disclosed producing controller and a
+reported resolution step. Costs, unknown steps, arrivals and source-less
+state-based deaths do not become aggression. Distinct departures remain distinct
+facts; the policy does not price a removed card by looking up a later incarnation.
+Recent pressure/focus decays over two table rounds and remains capped. This is a
+limited social heuristic, separate from current board/resource assessment and
+not proof that the action was strategically hostile or that play feels human.
+Accepted commands and proposed targets never manufacture committed outcomes.
+
 `IAutomatedSimulation` starts an explicit four-bot Commander table. Normal live
 tables still require a human. The simulation ends through the rules engine's
 normal outcome; losing a nonexistent human does not terminate it. Its public

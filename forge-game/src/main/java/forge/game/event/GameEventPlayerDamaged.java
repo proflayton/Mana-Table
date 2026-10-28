@@ -3,7 +3,16 @@ package forge.game.event;
 import forge.game.card.CardView;
 import forge.game.player.PlayerView;
 
-public record GameEventPlayerDamaged(PlayerView target, CardView source, int amount, boolean combat, boolean infect) implements GameEvent {
+public record GameEventPlayerDamaged(PlayerView target, CardView source, int amount, boolean combat, boolean infect,
+                                     Integer sourceControllerId, GameEventCause cause) implements GameEvent {
+    /** A historical source view is not a controller snapshot. */
+    public GameEventPlayerDamaged(PlayerView target, CardView source, int amount, boolean combat, boolean infect) {
+        this(target, source, amount, combat, infect, null, null);
+    }
+    public GameEventPlayerDamaged(PlayerView target, CardView source, int amount, boolean combat, boolean infect,
+                                  Integer sourceControllerId) {
+        this(target, source, amount, combat, infect, sourceControllerId, null);
+    }
 
     /* (non-Javadoc)
      * @see forge.game.event.GameEvent#visit(forge.game.event.IGameEventVisitor)

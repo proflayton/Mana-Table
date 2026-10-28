@@ -29,6 +29,63 @@ The existing real-engine native smoke also performs the activation and replays
 its unchanged authorized snapshots through the production table renderer. These
 checks do not establish human readability or complete causal coverage.
 
+`ExecutionRulesJourneyTest` extends those real rules journeys through lethal
+creature damage, a normally cast planeswalker's zero-loyalty death, full damage
+prevention, buffered Phantom Flock counter removal, optional replacement
+decline/reuse, and Pir's modification of a draw trigger. It checks actual
+committed damage, counters and zone changes, including event-time physical and
+producing controllers. `ExecutionDisclosureTest` checks public mutation admission
+separately from a particular seat's owned private state-based choice. No-op
+checks and private changes must not disclose rules occurrences to other seats.
+
+The native Loch Mare journey now includes Pir and Chasm Skulker. It follows the
+paid draw into a distinct real trigger and replacement, verifies the committed
+two-counter result, and requires a fresh response to that new trigger before
+quiet passing resumes. Its authorized observations are persisted and loaded
+through the shared read-only projection connection, then prepared by the
+production `TableApplication` at the same identities, counters and publication
+revisions. `ExecutionPresentationChecks` additionally verifies prevention does
+not invent damage or turn a resolved spell into a failed one; declined/no-op
+rules work does not announce a phantom ability.
+
+For the focused local journey, use `--smoke-execution-journey` with
+`--engine-resources`, `--engine-jar` (the test-only fixture wrapper),
+`--production-engine-jar` (its actual dependency), and a fresh `--profile`.
+It verifies that launcher/dependency pair and records its hashes, but labels
+source/resources unbound. The normal packaged CI gate still runs the same
+journey with the exact-source package and receipt; local development evidence
+cannot substitute for that gate.
+
+### Private recorded presentation
+
+`Mana.Scenarios.ProjectionRecording` stores one provider-admitted viewer's ordered
+observation window, bounded to 512 observations and 64 MiB. Provider provenance
+is required; an absent source revision is explicitly unknown, never assumed to
+match a candidate. A declared source uses a full commit ID. Loading checks
+schema, viewer/game consistency, nondecreasing publications and shared execution
+and public-impact invariants. This does not prove that an arbitrary imported
+file was originally filtered correctly. Keep captures private: an authorized
+viewer may see their own hand, library choices and other private information.
+Never upload them as public spectator traces or release assets.
+
+The developer harness can load an existing capture without launching a live
+rules engine:
+
+```powershell
+dotnet '<built-harness>/Mana.Table.Tests.dll' --replay-projection '<private-capture>/viewer-private-projection.json' --profile '<fresh-private-profile>'
+```
+
+This prepares recorded observations through production presentation and writes
+`projection-replay.json`. Playback has no live provider, source-action discovery
+or executable answers; even a formerly valid pass or concede is rejected. It is
+observation playback, not rules resimulation, a saved game or proof of human
+readability. It uses synthetic 60 Hz ticks, two per observation; the original
+dwell, pointer and camera timing are not captured. It cannot reproduce real
+tempo or prove animation pacing. New evidence uses create-new storage so an earlier capture is never
+silently overwritten. The headless presentation suite checks persistence,
+provenance mismatch, corrupt/oversized windows, isolation and production frames
+at 1000x740 and 1600x900. Human review remains a separate gate.
+
 The existing graphics-free `Mana.Client.Tests` runner also checks the `Mana.AI`
 framework. Scripted policies exercise all fifteen typed decision families and
 the same contract permissions, plus source-offer membership, observation/offer

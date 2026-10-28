@@ -54,6 +54,7 @@ internal static class ForgeSnapshotDecoder
                 Executions = wire.Executions
             };
             ExecutionFrames.Validate(snapshot);
+            PublicActivityFacts.Validate(snapshot);
             BlockingCapacityFacts.Validate(snapshot);
             var operations = new ActionOperationValidation(snapshot);
             foreach (var item in snapshot.Stack) operations.ValidateCommitted(item);
