@@ -64,8 +64,9 @@ internal static class ProjectionRecordingChecks
             check(initial.Stamp.GameId == source.Id && initial.Stamp.Revision == source.Revision
                     && run.Advance() && run.Frame.Stamp.Revision == next.Revision
                     && run.Frame.Cards.Select(card => (card.Id, card.Zone)).SequenceEqual(initial.Cards.Select(card => (card.Id, card.Zone)))
-                    && run.Playback.RejectedCommands == 0,
+                    && run.Playback.RejectedCommands == 0 && run.Playback.ObservationRequests == 0,
                 "A recorded observation uses production presentation at both review sizes without rebuilding identities or issuing rules commands");
         }
+        ProjectionTimingChecks.Run(directory, source, revision, check);
     }
 }

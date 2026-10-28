@@ -79,12 +79,29 @@ This prepares recorded observations through production presentation and writes
 `projection-replay.json`. Playback has no live provider, source-action discovery
 or executable answers; even a formerly valid pass or concede is rejected. It is
 observation playback, not rules resimulation, a saved game or proof of human
-readability. It uses synthetic 60 Hz ticks, two per observation; the original
-dwell, pointer and camera timing are not captured. It cannot reproduce real
-tempo or prove animation pacing. New evidence uses create-new storage so an earlier capture is never
+readability. Older format-1 captures without a timeline use explicitly synthetic
+60 Hz ticks, two per observation; their original dwell is unknown. An optional
+timeline preserves accepted-observation offsets, final dwell and fixed baseline
+motion/text/table/viewport settings. Its clock advances without sleeping, at
+60 Hz plus exact acceptance boundaries. Equal-time observations arrive in order
+through one session pump before a frame is prepared. No background observation
+polls run in this composition.
+
+The private acceptance hook and bounded `ProjectionCapture` admit only successful
+publications. Changing viewer/game, settings or viewport, reversing time, or
+exceeding 512 observations or ten minutes stops a capture rather than silently
+certifying a partial window. The fixed settings must also match at completion.
+Pointer/camera input, pre-window animation progress and asset-loading timing are
+not captured. The existing real-engine Loch Mare capture remains untimed; native
+adapter acquisition times must not be relabeled as UI acceptance times.
+Timed playback cannot by itself prove that pacing is comfortable.
+New evidence uses create-new storage so an earlier capture is never
 silently overwritten. The headless presentation suite checks persistence,
-provenance mismatch, corrupt/oversized windows, isolation and production frames
-at 1000x740 and 1600x900. Human review remains a separate gate.
+provenance mismatch, corrupt/oversized windows, explicit timeline fields, exact
+delivery boundaries, final dwell, isolation and production frames at 1000x740 and
+1600x900 with normal and reduced motion. Client regressions check bounded external
+delivery, revocation, command-epoch fences and unchanged live receipt behavior.
+Human review remains a separate gate.
 
 The existing graphics-free `Mana.Client.Tests` runner also checks the `Mana.AI`
 framework. Scripted policies exercise all fifteen typed decision families and

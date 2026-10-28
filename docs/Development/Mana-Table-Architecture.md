@@ -493,6 +493,25 @@ recorded prompt handles are not portable commands. The existing conformance
 runner can compare canonical checkpoints, but current Forge journeys do not
 establish another provider's rules equivalence or a complete Forge state oracle.
 
+Recorded projection playback uses `ClientSession`'s existing completion pump and
+replica. Its explicit external-delivery composition disables polling and admits
+only a bounded, game/viewer-bound ingress. Replacing, resetting or closing that
+ingress revokes queued payloads; command epochs still reject observations queued
+before a command. Ordinary live polling and command receipts retain their existing
+path. A recording connection itself cannot execute commands or discover actions.
+
+`ProjectionRecording` format 1 can optionally retain acceptance offsets, final
+dwell and baseline motion/text/table/viewport settings. Missing timing remains
+unknown for older recordings. The table's private diagnostic hook reports only
+successfully accepted publications on its presentation update clock; capture
+stops on changed scope/settings, reversed time or the 512-observation/ten-minute
+bounds. Playback drives both presentation and session synchronization from one
+controlled clock, delivering equal-time observations in order before composing a
+frame. It preserves exact acceptance boundaries between resampled 60 Hz updates.
+This does not record pointer/camera input, pre-window animation progress or asset
+loading. Timed playback reproduces the observation timeline, not the full session
+experience. Captures remain viewer-private, including decision dwell information.
+
 The boundary is informed by inspected primary material; the mapping above is our
 design inference, not a claim about complete proprietary implementations:
 

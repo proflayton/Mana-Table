@@ -31,8 +31,15 @@ The native recorded journey follows Loch Mare's payment/draw, the new Chasm
 Skulker trigger and Pir's replacement through production presentation. Historical
 observations cannot execute commands. Headless review checks identity, source
 reading, exact counters, ordering and read-only authority; it does not assess
-whether the timing or emphasis feels right. Captures contain no original dwell
-or pointer/camera timing, so fixed-tick playback cannot establish actual pacing.
+whether the timing or emphasis feels right. That native journey's capture
+contains no original dwell or pointer/camera timing, so its fixed-tick playback
+cannot establish actual pacing. The next source iteration supports an optional
+timeline captured at production presentation acceptance, preserving reading gaps
+and final dwell through the same session pump. It changes no player controls or
+spatial arrangement. This is a diagnostic adaptation of the supplied Arena
+source/stack reading journey, not a claim about Arena's implementation. Timed
+recordings retain baseline motion/text/table/viewport settings; pointer/camera
+input, pre-window animation progress and asset loading remain unrecorded.
 Arena's two-player reference alone
 also does not establish readability at four-player scale.
 
