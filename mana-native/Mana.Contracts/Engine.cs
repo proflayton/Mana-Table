@@ -39,7 +39,7 @@ public interface ITableSetup
     Task<Lobby> HostAsync(int players, bool automaticPortForwarding);
     Task<Lobby> JoinAsync(string address);
     Task<Lobby> LobbyAsync();
-    Task SelectDeckAsync(string id);
+    Task<Lobby> SelectDeckAsync(LobbyDeckSelection selection);
     Task SetReadyAsync(bool ready);
     Task StartAsync();
     Task ReturnToLobbyAsync();
@@ -121,15 +121,23 @@ public sealed record SoloSetup(string DeckId, string DeckName, ImmutableArray<Ai
     public int MaxPlayers { get; init; } = 6;
 }
 public sealed record Address(string Label, string Url, string Invite);
+// An exact saved version selected for this table. An empty DeckId clears the
+// assignment. The private document identity never enters public seat state.
+public sealed record LobbyDeckSelection(string TableId, string DeckId, string LibraryToken);
+// Public, provider-owned identity of one captured seat assignment. SelectionId
+// is unrelated to a private saved document ID or a game action handle.
+public sealed record LobbyDeckPreview(string SelectionId, string Name, ImmutableArray<Card> Commanders, string? Problem);
 public sealed record Seat(int Index, string Name, string Type, string? Deck, bool Ready, bool Local)
 {
     public string? OpponentId { get; init; }
+    public LobbyDeckPreview? DeckPreview { get; init; }
 }
 public sealed record Lobby(string Mode, string Status, string? Error, bool CanStart, string? StartProblem,
     bool MatchActive, string PortMapping, string? InternetInvite, ImmutableArray<Address> Addresses, ImmutableArray<Seat> Seats, string TableId = "")
 {
     public ImmutableArray<AiOpponent> AiOpponents { get; init; } = [];
     public TempoSettings? Tempo { get; init; }
+    public long Revision { get; init; }
 }
 public sealed record Card
 {

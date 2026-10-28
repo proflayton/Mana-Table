@@ -90,7 +90,7 @@ internal sealed partial class TableApplication
         internal void CheckAppUpdates() => game.CheckAppUpdates();
         internal void Post(Action action) => game.updates.Enqueue(action);
         internal void SetUpdateGuardState(bool connected = false, string saveError = "", bool text = false) {
-            game.lobby = connected ? new("hosting", "Controlled table", null, false, null, false, "", null, [], []) : null;
+            game.session.BindLobby(connected ? new("hosting", "Controlled table", null, false, null, false, "", null, [], []) : null);
             game.selectedDeckDetails = new("update-test", "Update test", 0, [], [], "", saveError);
             game.textFocus = text; game.nextPoll = double.MaxValue;
         }
@@ -139,7 +139,25 @@ internal sealed partial class TableApplication
         internal void ConcedeWorkshop() => game.ReturnToWorkshop();
         internal Lobby? Lobby => game.lobby;
         internal bool LobbyAiSeatControlsAvailable => game.CanManageLobbySeats;
-        internal void PresentLobby(Lobby state, bool pausePolling) { game.lobby = state; game.nextPoll = pausePolling ? double.MaxValue : game.now; }
+        internal void PresentLobby(Lobby state, bool pausePolling) { game.session.BindLobby(state); game.nextPoll = pausePolling ? double.MaxValue : game.now; }
+        internal Mana.Table.Presentation.PresentationFrame ComposeLobbySnapshot(Lobby state)
+        {
+            if (game.busy || game.polling || game.match != null || game.lobby is not { } original || state.TableId != original.TableId)
+                throw new InvalidOperationException("Render a lobby snapshot only between commands and observations of the same table.");
+            var originalFrame = game.ReadPresentation();
+            var time = new GameTime(TimeSpan.FromSeconds(game.now), TimeSpan.Zero);
+            try {
+                // Compose only: a foreign viewer never reaches Update, input,
+                // the deck coordinator, or any transport command.
+                game.session.BindLobby(state);
+                game.PreparePresentation(time);
+                return game.ReadPresentation();
+            } finally {
+                game.session.BindLobby(original);
+                game.PreparePresentation(time); // Restore current host hit regions too.
+                game.Frame = originalFrame;
+            }
+        }
         internal void ImportDeck(string name, string text) => game.ImportDeck(() => game.catalog.ImportAsync(name, text), true);
         internal SoloSetup? SoloSetup => game.soloSetup;
         internal int[] SoloChoices => game.soloChoices;
@@ -156,7 +174,7 @@ internal sealed partial class TableApplication
         internal Mana.Renderer.TableScene? TableScene => game.tableScene;
         internal Mana.Renderer.BoardView CardSpreadView => game.spreadView;
         internal void ImportFilePath(string path) => game.ImportFilePath(path);
-        internal void SetConnectedTable(Lobby state) { game.localMatch = false; game.lobby = state; }
+        internal void SetConnectedTable(Lobby state) { game.localMatch = false; game.session.BindLobby(state); }
         internal bool Automatic => game.automatic;
         internal bool Held => game.held;
         internal PublicCounterBadge? CounterBadge(int player) => game.publicCounterBadges.TryGetValue(player, out var badge) ? badge : null;

@@ -1215,16 +1215,35 @@ does not authenticate, continuously synchronize or write back to Archidekt.
 The deck chooser and builder return to the shared deck stage. Optional Deck list
 reading is noncommitting; there is no Review/Confirm preparation gate. One solo
 Play prepares the captured valid deck if needed, then starts it. In multiplayer,
-Host/Join can bring that list but only explicit Ready submits any needed
-`SelectDeckAsync` before setting readiness. Selection and builder entry await
+the saved list is shared as soon as it is selected or changes. Selection and builder entry await
 ordinary `SetReadyAsync(false)` before opening or changing a document. Browsing
-the chooser or reselecting the current document preserves readiness. The internal
-confirmed ID is only a setup/assignment cache; rules and the synchronized roster
-remain authoritative.
+the chooser or reselecting the current document preserves readiness. Ready is
+separate consent, never an implicit result of saving or publishing a list.
+
+`Mana.Client.ClientSession` owns the ordered `Lobby` replica. Only explicit
+connect/disconnect binds a table; ordinary receipts and observations must match
+that table and cannot lower its provider revision. Existing command epochs and
+the captured lobby binding revoke older polls, including a same-table reconnect.
+The UI does not retain an independent mutable roster.
+
+`LobbyDeckSession` tracks which acknowledged saved document is shared, without
+owning transport. Its identity includes the bound table, saved deck ID and exact
+file token; an editor revision can restart on reopen. One generation-stamped
+attempt reaches `ITableSetup.SelectDeckAsync(LobbyDeckSelection)` through the
+existing command queue. The request guards the table and saved bytes; its receipt
+identifies the public assignment. Failed persistence withdraws the old assignment;
+a saved incomplete draft remains visible but cannot Ready or start. Failed
+publication waits for an explicit retry instead of resubmitting every frame.
+
+`SyncLobby` owns captured deck assignments and derives immutable public
+`LobbyDeckPreview` values from them. Each seat's name, commander faces and readiness
+come from that same provider roster, whether local, remote or AI. Assignment IDs
+are opaque and unrelated to saved document IDs or game action handles. Main-deck
+contents and detailed private legality diagnostics are not public previews.
 
 `TableApplication.LobbyView` renders the four-seat roster, commander preview, saved/precon
 chooser, optional Deck list, native invite entry, and connection details. Its hit
-scopes include the active reader, selected deck, setup cache, mode, readiness and
+scopes include the active reader, selected deck, lobby revision, mode, readiness and
 start permission. Scoped input cannot reach controls behind it. Friends Start
 requires the local host's readiness and the engine's CanStart state. Builder edits
 retain compatible selected AI opponent IDs when the updated deck is prepared.

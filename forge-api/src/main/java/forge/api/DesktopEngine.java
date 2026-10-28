@@ -126,7 +126,14 @@ public final class DesktopEngine implements AutoCloseable {
                 case "tableSocial" -> seat.social(p);
                 case "tableChat" -> seat.chat(p);
                 case "tableName" -> seat.rename(p);
-                case "multiplayerSelectDeck" -> { var loaded = documents.loadLobbyDeck(string(p, "deckId", "")); yield seat.selectDeck(loaded.deck(), loaded.format()); }
+                case "multiplayerSelectDeck" -> {
+                    String deckId = string(p, "deckId", "");
+                    String tableId = p.has("tableId") ? string(p, "tableId", "") : null;
+                    if (deckId.isBlank()) yield seat.clearDeck(tableId);
+                    String token = string(p, "libraryToken", "");
+                    var loaded = documents.loadLobbyDeck(deckId, token.isBlank() ? null : token);
+                    yield seat.selectDeck(loaded.deck(), loaded.format(), tableId);
+                }
                 case "multiplayerReady" -> seat.ready(p);
                 case "multiplayerTempo" -> seat.configureTempo(p);
                 case "multiplayerReturn" -> seat.returnToLobby();
@@ -244,8 +251,12 @@ public final class DesktopEngine implements AutoCloseable {
             case "multiplayerConfigure" -> multiplayer().configure(string(p, "tableId", ""), string(p, "format", "Constructed"), number(p, "playerCount", 2));
             case "multiplayerSetSeat" -> multiplayer().setSeat(p);
             case "multiplayerSelectDeck" -> {
-                var loaded = documents.loadLobbyDeck(string(p, "deckId", ""));
-                yield multiplayer().selectDeck(loaded.deck(), loaded.format());
+                String deckId = string(p, "deckId", "");
+                String tableId = p.has("tableId") ? string(p, "tableId", "") : null;
+                if (deckId.isBlank()) yield multiplayer().clearDeck(tableId);
+                String token = string(p, "libraryToken", "");
+                var loaded = documents.loadLobbyDeck(deckId, token.isBlank() ? null : token);
+                yield multiplayer().selectDeck(loaded.deck(), loaded.format(), tableId);
             }
             case "multiplayerReady" -> multiplayer().ready(p);
             case "multiplayerTempo" -> multiplayer().configureTempo(p);

@@ -49,7 +49,7 @@ internal sealed partial class TableApplication
         string tableId = state.TableId;
         Work(async () => {
             var updated = await service.ConfigureTempoAsync(tableId, preset, expiry);
-            updates.Enqueue(() => { if (lobby?.TableId == tableId) lobby = updated; });
+            updates.Enqueue(() => { if (lobby?.TableId == tableId) session.AcceptLobby(updated); });
         }, "Updating table tempo", "Everyone will ready up with the new timing.", foreground: false);
     }
     private void UpdateTempo()

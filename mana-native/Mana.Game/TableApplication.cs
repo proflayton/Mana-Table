@@ -55,7 +55,7 @@ internal sealed partial class TableApplication : IDisposable
     private ImmutableArray<DeckSummary> decks = [];
     private ImmutableArray<DeckPreset> presets = [];
     private DeckSummary? selectedDeck;
-    private Lobby? lobby;
+    private Lobby? lobby => session.Lobby;
     private GameSnapshot? match => session.State;
     private SoloSetup? soloSetup;
     private readonly int[] soloChoices = [0, 1, 2];
@@ -191,6 +191,7 @@ internal sealed partial class TableApplication : IDisposable
         AcceptedHit = null; AcceptedDrag = false;
         now = time.TotalGameTime.TotalSeconds;
         session.Pump();
+        UpdateLobbyDeck();
         UpdateActivity();
         UpdateTempo();
         UpdateSocial();
@@ -224,7 +225,7 @@ internal sealed partial class TableApplication : IDisposable
         UpdatePriorityNotification();
         if (!ExperienceLabOpen && loaded && fixture == null && !busy && !polling && now >= nextPoll && (localMatch || lobby != null)) {
             nextPoll = now + (session.NeedsRecovery ? 2 : match == null ? .6 : match.Decision == null ? .05 : .12);
-            session.Poll(!localMatch, nextLobby => lobby = nextLobby);
+            session.Poll(!localMatch, _ => { });
         }
         PreparePresentation(time);
     }

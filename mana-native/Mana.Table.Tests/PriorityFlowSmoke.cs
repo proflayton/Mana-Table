@@ -279,7 +279,7 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
         public Task<Lobby> HostAsync(int players, bool forwarding) => Unavailable<Lobby>();
         public Task<Lobby> JoinAsync(string address) => Unavailable<Lobby>();
         public Task<Lobby> LobbyAsync() => Unavailable<Lobby>();
-        public Task SelectDeckAsync(string id) => Unavailable();
+        public Task<Lobby> SelectDeckAsync(LobbyDeckSelection selection) => Unavailable<Lobby>();
         public Task SetReadyAsync(bool ready) => Unavailable();
         public Task StartAsync() => Unavailable();
         public Task ReturnToLobbyAsync() => Unavailable();

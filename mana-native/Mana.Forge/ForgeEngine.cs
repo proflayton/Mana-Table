@@ -229,12 +229,29 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         if (opponentIds.Length >= setup.GetProperty("maxPlayers").GetInt32()) throw new ArgumentException("This format supports fewer players.", nameof(opponentIds));
         await Request("matchStart", new { deckId = Text(setup, "deckId"), revision = setup.GetProperty("revision").GetInt64(), opponents = opponentIds });
     }
-    private static Lobby MapLobby(JsonElement data) => new(Text(data, "mode"), Text(data, "status"), Text(data, "error"),
+    internal static Lobby MapLobby(JsonElement data) => new(Text(data, "mode"), Text(data, "status"), Text(data, "error"),
         data.GetProperty("canStart").GetBoolean(), Text(data, "startProblem"), data.GetProperty("matchActive").GetBoolean(),
-        Text(data, "portMapping"), Text(data, "internetInvite"), Read<ImmutableArray<Address>>(data.GetProperty("addresses")), Read<ImmutableArray<Seat>>(data.GetProperty("slots")), Text(data, "tableId")) {
+        Text(data, "portMapping"), Text(data, "internetInvite"), Read<ImmutableArray<Address>>(data.GetProperty("addresses")),
+        data.GetProperty("slots").EnumerateArray().Select(MapLobbySeat).ToImmutableArray(), Text(data, "tableId")) {
             AiOpponents = data.TryGetProperty("aiOpponents", out var opponents) ? Read<ImmutableArray<AiOpponent>>(opponents) : [],
-            Tempo = data.TryGetProperty("tempo", out var tempo) ? Read<TempoSettings>(tempo) : null
+            Tempo = data.TryGetProperty("tempo", out var tempo) ? Read<TempoSettings>(tempo) : null,
+            Revision = data.TryGetProperty("revision", out var revision) && revision.ValueKind == JsonValueKind.Number
+                && revision.TryGetInt64(out var value) ? Math.Max(0, value) : 0
         };
+    private static Seat MapLobbySeat(JsonElement data)
+    {
+        var seat = new Seat(data.GetProperty("index").GetInt32(), Text(data, "name"), Text(data, "type"),
+            data.TryGetProperty("deck", out var deck) && deck.ValueKind == JsonValueKind.String ? deck.GetString() : null,
+            data.GetProperty("ready").GetBoolean(), data.GetProperty("local").GetBoolean()) {
+                OpponentId = data.TryGetProperty("opponentId", out var opponent) && opponent.ValueKind == JsonValueKind.String ? opponent.GetString() : null
+            };
+        if (!data.TryGetProperty("deckPreview", out var preview) || preview.ValueKind != JsonValueKind.Object) return seat;
+        var commanders = preview.TryGetProperty("commanders", out var faces) && faces.ValueKind == JsonValueKind.Array
+            ? faces.EnumerateArray().Select(MapCatalogFace).ToImmutableArray() : [];
+        var identity = new LobbyDeckPreview(Text(preview, "selectionId"), Text(preview, "name"), commanders,
+            preview.TryGetProperty("problem", out var problem) && problem.ValueKind == JsonValueKind.String ? problem.GetString() : null);
+        return seat with { Deck = identity.Name, DeckPreview = identity };
+    }
     public bool SupportsTempo => current?.TempoAvailable == true;
     public async Task<Lobby> ConfigureTempoAsync(string tableId, TempoPreset preset, TempoExpiry expiry) =>
         MapLobby(await Request("multiplayerTempo", new { tableId, preset = preset.ToString().ToLowerInvariant(), expiry = expiry.ToString().ToLowerInvariant() }));
@@ -248,7 +265,8 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
     public async Task<Lobby> HostAsync(int players, bool automaticPortForwarding) => MapLobby(await Request("multiplayerHost", new { format = "Commander", playerCount = players, autoPortForward = automaticPortForwarding }));
     public async Task<Lobby> JoinAsync(string address) => MapLobby(await Request("multiplayerJoin", new { address }));
     public async Task<Lobby> LobbyAsync() => MapLobby(await Request("multiplayerState"));
-    public async Task SelectDeckAsync(string id) => await Request("multiplayerSelectDeck", new { deckId = id });
+    public async Task<Lobby> SelectDeckAsync(LobbyDeckSelection selection) =>
+        MapLobby(await Request("multiplayerSelectDeck", new { tableId = selection.TableId, deckId = selection.DeckId, libraryToken = selection.LibraryToken }));
     public async Task SetReadyAsync(bool ready) => await Request("multiplayerReady", new { ready });
     public async Task<Lobby> ConfigureSeatsAsync(string tableId, int players) =>
         MapLobby(await Request("multiplayerConfigure", new { tableId, format = "Commander", playerCount = players }));

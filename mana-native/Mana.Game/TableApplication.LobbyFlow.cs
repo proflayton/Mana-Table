@@ -8,7 +8,7 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private string setupModal = "", joinAddress = "";
-    private string? confirmedDeckId;
+    private string? preparedSoloDeckId;
     private bool pickerPresets, setupSelectAll;
     private int connectionPage, homeDeckPage;
     private int friendPlayerCount = 4;
@@ -95,9 +95,11 @@ internal sealed partial class TableApplication
     }
     private bool Connected => lobby is { Mode: not "idle" };
     private Seat? LocalSeat => lobby?.Seats.FirstOrDefault(s => s.Local);
-    private bool DeckConfirmed => DeckReady && confirmedDeckId == selectedDeckDetails?.Id;
-    private string LobbyScope => $"{DeckScope}:{DeckLibraryScope}:{setupModal}:{soloTab}:{pickerPresets}:{deckPage}:{pickerSearch}:{pickerSeat}:{reviewList}:{reviewSearch}:{reviewSection}:{reviewPage}:{reviewCard?.Section}:{reviewCard?.Id}:{connectionPage}:{confirmedDeckId}:{friendPlayerCount}:{lobby?.TableId}:{lobby?.Mode}:{LocalSeat?.Ready}:{lobby?.CanStart}:{string.Join(',', soloChoices)}:{lobbyAiSeat}:{lobbyAiPage}:{string.Join(';', lobby?.Seats.Select(s => $"{s.Index}:{s.Type}:{s.OpponentId}:{s.Ready}") ?? [])}";
-    private void InvalidateDeckConfirmation() { confirmedDeckId = null; }
+    private bool DeckConfirmed => DeckReady && !deckEditor && (Connected
+        ? lobbyDeck.View.Document == DesiredLobbyDeck() && lobbyDeck.Matches(lobby!)
+        : preparedSoloDeckId == selectedDeckDetails?.Id);
+    private string LobbyScope => $"{DeckScope}:{DeckLibraryScope}:{setupModal}:{soloTab}:{pickerPresets}:{deckPage}:{pickerSearch}:{pickerSeat}:{reviewList}:{reviewSearch}:{reviewSection}:{reviewPage}:{reviewCard?.Section}:{reviewCard?.Id}:{connectionPage}:{preparedSoloDeckId}:{lobbyDeck.View.Generation}:{lobbyDeck.View.Status}:{friendPlayerCount}:{lobby?.TableId}:{lobby?.Revision}:{lobby?.Mode}:{LocalSeat?.Ready}:{lobby?.CanStart}:{string.Join(',', soloChoices)}:{lobbyAiSeat}:{lobbyAiPage}:{string.Join(';', lobby?.Seats.Select(s => $"{s.Index}:{s.Type}:{s.OpponentId}:{s.Ready}") ?? [])}";
+    private void InvalidateDeckConfirmation() { preparedSoloDeckId = null; }
     private void SetupMode(bool solo) { if (soloTab != solo) InvalidateDeckConfirmation(); soloTab = solo; setupModal = ""; }
     private void OpenDeckPicker() { pickerPresets = decks.Length == 0; pickerDeleted = false; pickerSeat = -1; pickerSearch = ""; deckPage = 0; setupModal = "decks"; textFocus = false; RefreshDeletedDecks(); }
     private void ReviewDeck() {
@@ -137,23 +139,25 @@ internal sealed partial class TableApplication
     }
     private void SetLobbyReady(bool ready)
     {
-        if (!Connected || match != null || ready && !DeckReady) return;
-        string? deckId = ready ? selectedDeckDetails?.Id : null;
-        if (ready && deckId == null) return;
-        bool select = ready && !DeckConfirmed;
+        if (busy || ActivityOpen || !Connected || match != null || ready && !DeckReady) return;
+        var document = DesiredLobbyDeck();
+        if (ready && document is not { DeckId.Length: > 0 }) return;
+        lobbyDeck.Observe(document);
+        if (ready) lobbyDeck.Retry();
+        var selection = ready && !lobbyDeck.Matches(lobby!) ? lobbyDeck.TryBegin() : null;
+        if (ready && !lobbyDeck.Matches(lobby!) && selection == null) return;
         var timing = lobby?.Tempo;
         string tableId = lobby?.TableId ?? "";
         int generation = deckSelectionGeneration;
         Work(async () => {
-            if (select) await tables.SelectDeckAsync(deckId!);
+            if (selection != null) await PublishLobbyDeck(selection);
             if (ready && generation != Volatile.Read(ref deckSelectionGeneration))
                 throw new InvalidOperationException("Your selected deck changed. Ready again with the current list.");
             if (services.Tempo is { SupportsTempo: true } tempo && timing != null)
                 await tempo.SetReadyAsync(tableId, ready, timing.Revision);
             else await tables.SetReadyAsync(ready);
             var state = await tables.LobbyAsync();
-            updates.Enqueue(() => { lobby = state;
-                if (ready && generation == deckSelectionGeneration) confirmedDeckId = deckId;
+            updates.Enqueue(() => { session.AcceptLobby(state);
                 message = ready ? "You are ready. Waiting for the table." : "You are no longer ready."; });
         }, ready ? "Taking your seat" : "Updating your seat", ready ? "Letting the table know you are ready." : "Letting the table know you need a moment.");
     }
@@ -171,8 +175,8 @@ internal sealed partial class TableApplication
             var opponents = prepared.Choices.Take(Math.Min(3, prepared.Setup.MaxPlayers - 1)).Select(index => prepared.Setup.Opponents[index].Id).ToImmutableArray();
             await tables.StartSoloAsync(deck.Id, opponents); var state = await matchConnection.ObserveAsync();
             updates.Enqueue(() => {
-                if (generation == deckSelectionGeneration) { ApplySoloPreparation(prepared); confirmedDeckId = deck.Id; }
-                setupModal = ""; ResetTableView(); lobby = null; localMatch = true; Accept(state); message = "Starting your AI table...";
+                if (generation == deckSelectionGeneration) { ApplySoloPreparation(prepared); preparedSoloDeckId = deck.Id; }
+                setupModal = ""; ResetTableView(); session.BindLobby(null); localMatch = true; Accept(state); message = "Starting your AI table...";
             });
         }, "Gathering your AI table", "Preparing your deck, AI opponents, and the opening hand.", scene: true);
     }
@@ -186,25 +190,19 @@ internal sealed partial class TableApplication
         if (Connected || match != null) return;
         string address = joinAddress.Trim();
         if (!hosting && address.Length == 0) return;
-        string? deckId = DeckReady ? selectedDeckDetails?.Id : null;
-        int generation = deckSelectionGeneration;
         Work(async () => {
             var state = hosting ? await tables.HostAsync(friendPlayerCount, forward) : await tables.JoinAsync(address);
             // Publish a successful connection even if submitting its deck later fails.
-            updates.Enqueue(() => { lobby = state; soloTab = false; setupModal = ""; textFocus = false; InvalidateDeckConfirmation(); });
+            updates.Enqueue(() => { session.BindLobby(state); soloTab = false; setupModal = ""; textFocus = false; InvalidateDeckConfirmation(); });
             if (!string.IsNullOrWhiteSpace(preferences.PlayerName) && services.Social is { } social) {
                 await social.SetPlayerNameAsync(state.TableId, preferences.PlayerName);
-                var named = await tables.LobbyAsync(); updates.Enqueue(() => lobby = named);
-            }
-            if (deckId != null && generation == Volatile.Read(ref deckSelectionGeneration)) {
-                await tables.SelectDeckAsync(deckId); var selected = await tables.LobbyAsync();
-                updates.Enqueue(() => { lobby = selected; if (generation == deckSelectionGeneration) confirmedDeckId = deckId; });
+                var named = await tables.LobbyAsync(); updates.Enqueue(() => session.AcceptLobby(named));
             }
             updates.Enqueue(() => message = hosting ? "Table open. Invite your friends." : "You joined the table. Ready when you are.");
         }, hosting ? "Opening your table" : "Joining your friends", hosting ? $"Preparing {friendPlayerCount} seats and your table connection." : "Connecting to the table from your invite.", scene: true);
     }
     private void LeaveLobby() => Work(async () => {
-        await tables.LeaveAsync(); updates.Enqueue(() => { lobby = null; InvalidateDeckConfirmation(); setupModal = ""; message = "You left the table."; });
+        await tables.LeaveAsync(); updates.Enqueue(() => { session.BindLobby(null); InvalidateDeckConfirmation(); setupModal = ""; message = "You left the table."; });
     }, "Leaving the table", "Returning to your own setup.");
     private void OpenJoin()
     {

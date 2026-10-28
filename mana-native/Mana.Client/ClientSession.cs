@@ -10,6 +10,7 @@ public sealed class ClientSession
     private readonly ITableSetup? setup;
     private readonly ConcurrentQueue<Action> completions = new();
     private readonly SessionReplica<GameSnapshot> replica = new(s => s.Id, s => s.Revision);
+    private SessionReplica<Lobby> lobbyReplica = new(s => s.TableId, s => s.Revision);
     private readonly ExecutionCursor executions = new();
     private readonly DecisionAdvance advance;
     private readonly TimeProvider time;
@@ -29,6 +30,7 @@ public sealed class ClientSession
     }
     public SourceActionSession SourceActions { get; }
     public GameSnapshot? State => replica.Current;
+    public Lobby? Lobby => lobbyReplica.Current;
     public ExecutionBatch ExecutionChanges { get; private set; } = ExecutionBatch.Empty;
     public string Scope => (State?.Id ?? "lobby") + ":" + (State?.Decision?.Id ?? "");
     public bool Busy { get; private set; }
@@ -52,6 +54,16 @@ public sealed class ClientSession
         while (!Busy && !NeedsRecovery && pendingSettings.TryDequeue(out var setting)) Submit(setting);
     }
     public bool Accept(GameSnapshot? state) => Accept(state, replica.Epoch);
+    // Connect/disconnect establishes ownership. Ordinary command receipts and
+    // observations can update only that bound table and cannot roll it back.
+    public void BindLobby(Lobby? state)
+    {
+        if (Closed) return;
+        lobbyReplica = new(s => s.TableId, s => s.Revision);
+        lobbyReplica.Accept(state, lobbyReplica.Epoch);
+    }
+    public bool AcceptLobby(Lobby state) => !Closed && Lobby != null && state.TableId == Lobby.TableId
+        && lobbyReplica.Accept(state, lobbyReplica.Epoch);
     public void Reset() { StopStackResolution(); CancelAdvance(); SourceActions.Clear(); pendingSettings.Clear(); LastFailureWasCommand = false; replica.BeginCommand(); Accept(null); }
     private bool Accept(GameSnapshot? state, long epoch)
     {
@@ -89,12 +101,19 @@ public sealed class ClientSession
     {
         if (Busy || Polling || Closed) return;
         Polling = true; long epoch = replica.Epoch;
+        var lobbyOwner = lobbyReplica;
         _ = Task.Run(async () => {
             try {
                 var lobby = withLobby ? await (setup ?? throw new InvalidOperationException("No lobby connection")).LobbyAsync() : null;
                 var state = !withLobby || lobby?.MatchActive == true ? await connection.ObserveAsync() : null;
-                Post(() => { if (epoch == replica.Epoch && Accept(state, epoch)) lobbyChanged(lobby); });
-            } catch (Exception error) { Post(() => { if (epoch == replica.Epoch) ReportFailure(error, false); }); }
+                Post(() => {
+                    if (epoch != replica.Epoch || withLobby && (!ReferenceEquals(lobbyOwner, lobbyReplica)
+                        || lobby == null || !AcceptLobby(lobby))) return;
+                    if (Accept(state, epoch)) lobbyChanged(lobby);
+                });
+            } catch (Exception error) { Post(() => {
+                if (epoch == replica.Epoch && (!withLobby || ReferenceEquals(lobbyOwner, lobbyReplica))) ReportFailure(error, false);
+            }); }
             finally { Post(() => Polling = false); }
         });
     }

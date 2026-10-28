@@ -149,7 +149,7 @@ internal sealed partial class TableApplication
         Work(async () => {
             if (SocialAvailable) {
                 var state = await services.Social!.SetPlayerNameAsync(lobby!.TableId, name);
-                var nextLobby = await tables.LobbyAsync(); updates.Enqueue(() => { lobby = nextLobby; AcceptConversation(state); });
+                var nextLobby = await tables.LobbyAsync(); updates.Enqueue(() => { if (session.AcceptLobby(nextLobby)) AcceptConversation(state); });
             }
             updates.Enqueue(() => { preferences = preferences with { PlayerName = name }; SavePreferences(); setupModal = ""; textFocus = false; message = "Display name saved."; });
         }, "Saving your display name", "Updating the name your table will see.");

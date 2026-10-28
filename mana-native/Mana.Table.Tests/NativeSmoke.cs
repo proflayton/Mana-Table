@@ -15,10 +15,10 @@ internal static class NativeSmoke
         void Check(bool value, string name) { if (!value) throw new InvalidOperationException(name); results.Add(name); File.AppendAllText(Path.Combine(paths.Profile, "progress.log"), name + "\n"); }
         try {
             await Task.WhenAll(engines.Select(e => e.InitializeAsync()));
-            var deckIds = new List<string>();
+            var decks = new List<DeckSummary>();
             for (int i = 0; i < engines.Length; i++) {
                 var deck = await engines[i].ImportAsync("Native adapter smoke " + i, "Deck\n99 Mountain\nCommander\n1 Rograkh, Son of Rohgahh");
-                Check(!string.IsNullOrEmpty(deck.Id), "Imported deck for seat " + i); deckIds.Add(deck.Id);
+                Check(!string.IsNullOrEmpty(deck.Id), "Imported deck for seat " + i); decks.Add(deck);
                 Check((await engines[i].DecksAsync()).Any(d => d.Id == deck.Id), "Saved deck listed for seat " + i);
             }
             Check((await engines[0].PresetsAsync()).Length >= 4, "Bundled precons available");
@@ -27,7 +27,10 @@ internal static class NativeSmoke
             var port = endpoint.Split(':').Last();
             for (int i = 1; i < engines.Length; i++) await engines[i].JoinAsync("127.0.0.1:" + port);
             await Wait(async () => (await engines[0].LobbyAsync()).Seats.Count(s => s.Type != "OPEN") == 4);
-            for (int i = 0; i < engines.Length; i++) { await engines[i].SelectDeckAsync(deckIds[i]); await engines[i].SetReadyAsync(true); }
+            for (int i = 0; i < engines.Length; i++) {
+                await engines[i].SelectDeckAsync(new(lobby.TableId, decks[i].Id, decks[i].LibraryToken));
+                await engines[i].SetReadyAsync(true);
+            }
             await Wait(async () => (await engines[0].LobbyAsync()).CanStart);
             await engines[0].StartAsync();
             var previous = new Dictionary<int, string>();

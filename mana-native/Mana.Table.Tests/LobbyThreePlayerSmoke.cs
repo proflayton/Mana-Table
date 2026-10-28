@@ -127,7 +127,7 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
             var deck = await guest.ImportAsync("Friend " + (i + 1), "Commander\n1 Rograkh, Son of Rohgahh\nDeck\n99 Mountain");
             var joined = await guest.JoinAsync(address);
             if (joined.Seats.Single(s => s.Local).Index != i + 1) throw new InvalidOperationException("A friend joined the wrong three-player seat");
-            await guest.SelectDeckAsync(deck.Id); await guest.SetReadyAsync(joined.TableId, true, joined.Tempo!.Revision);
+            await guest.SelectDeckAsync(new(joined.TableId, deck.Id, deck.LibraryToken)); await guest.SetReadyAsync(joined.TableId, true, joined.Tempo!.Revision);
         }
     }
     private async Task ReadyGuests()

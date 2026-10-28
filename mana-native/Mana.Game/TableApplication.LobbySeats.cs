@@ -28,7 +28,7 @@ internal sealed partial class TableApplication
             var state = await service.ConfigureSeatsAsync(table, players);
             updates.Enqueue(() => {
                 if (lobby?.TableId != table) return;
-                lobby = state; friendPlayerCount = state.Seats.Length;
+                session.AcceptLobby(state); friendPlayerCount = state.Seats.Length;
                 message = $"Your table has {state.Seats.Length} seats. Decks stay selected; everyone should Ready up again.";
             });
         }, "Resizing your table", $"Setting up {players} seats for your group. Everyone will ready up again.");
@@ -57,7 +57,7 @@ internal sealed partial class TableApplication
             var state = await service.SetSeatAsync(table, seat, "AI", opponentId);
             updates.Enqueue(() => {
                 if (lobby?.TableId != table) return;
-                lobby = state; setupModal = "";
+                session.AcceptLobby(state); setupModal = "";
                 message = $"AI seat {seat + 1} will play {deck}.";
             });
         }, "Preparing this AI seat", "Loading its deck and letting everyone at the table know.");
@@ -70,7 +70,7 @@ internal sealed partial class TableApplication
             var state = await service.SetSeatAsync(table, seat, "OPEN");
             updates.Enqueue(() => {
                 if (lobby?.TableId != table) return;
-                lobby = state; setupModal = ""; message = $"Seat {seat + 1} is open for a friend or another AI opponent.";
+                session.AcceptLobby(state); setupModal = ""; message = $"Seat {seat + 1} is open for a friend or another AI opponent.";
             });
         }, "Opening this seat", "Removing the AI opponent from your lobby.");
     }

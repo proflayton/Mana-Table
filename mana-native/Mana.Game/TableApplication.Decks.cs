@@ -106,7 +106,7 @@ internal sealed partial class TableApplication
         updates.Enqueue(InvalidateDeckConfirmation);
         if (lobby is not { Mode: not "idle" }) return;
         await tables.SetReadyAsync(false);
-        var state = await tables.LobbyAsync(); updates.Enqueue(() => lobby = state);
+        var state = await tables.LobbyAsync(); updates.Enqueue(() => session.AcceptLobby(state));
     }
     private void NewDeck(string name = "New Commander deck") => Work(async () => {
         await UnreadyForDeckEdit();

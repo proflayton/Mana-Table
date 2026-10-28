@@ -154,6 +154,20 @@ public sealed class TableWindow : Game
         internal GraphicsDevice GraphicsDevice => window.GraphicsDevice;
         internal Texture2D Surface => window.surface ?? throw new InvalidOperationException("The window has not loaded.");
         internal void CaptureWindow(string path) => window.windowCapture = path;
+        internal PresentationFrame CaptureLobbySnapshot(Lobby state, string path)
+        {
+            var frame = ComposeLobbySnapshot(state);
+            var backbuffer = window.GraphicsDevice.PresentationParameters;
+            var view = RenderViewport.Fit(new(backbuffer.BackBufferWidth, backbuffer.BackBufferHeight), frame.DesignHeight);
+            window.GraphicsDevice.SetRenderTarget(window.surface);
+            try {
+                window.GraphicsDevice.Clear(new Color(17, 22, 29));
+                window.painter!.Draw(frame.Drawing, view.Scale);
+            } finally { window.GraphicsDevice.SetRenderTarget(null); }
+            using var file = File.Create(path); Surface.SaveAsPng(file, Surface.Width, Surface.Height);
+            window.windowCapture = Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + "-window.png");
+            return frame;
+        }
         internal void Exit() => window.Exit();
         internal void SetAutomation(ITableAutomation? value) => window.Automation = value;
     }

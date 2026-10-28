@@ -248,7 +248,7 @@ internal static class UpdateSmoke
         public Task<Lobby> HostAsync(int players, bool forwarding) => Reject<Lobby>();
         public Task<Lobby> JoinAsync(string address) => Reject<Lobby>();
         public Task<Lobby> LobbyAsync() => Reject<Lobby>();
-        public Task SelectDeckAsync(string id) => Reject();
+        public Task<Lobby> SelectDeckAsync(LobbyDeckSelection selection) => Reject<Lobby>();
         public Task SetReadyAsync(bool ready) => Reject();
         public Task StartAsync() => Reject();
         public Task ReturnToLobbyAsync() => Reject();

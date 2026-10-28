@@ -70,7 +70,7 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
             var deck = await guest.ImportAsync("Guest Commander deck", "Commander\n1 Rhys the Redeemed\nDeck\n99 Forest");
             var joined = await guest.JoinAsync(address);
             await guest.SetPlayerNameAsync(joined.TableId, index == 0 ? "Jebb" : "Friend " + (index + 1));
-            await guest.SelectDeckAsync(deck.Id); await guest.SetReadyAsync(true);
+            await guest.SelectDeckAsync(new(joined.TableId, deck.Id, deck.LibraryToken)); await guest.SetReadyAsync(true);
         }));
     }
     private async Task FinishOpening()
@@ -246,8 +246,8 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
                 Click("change-deck", 223); break;
             case 223: Click("deck:" + otherDeckId, 122); break;
             case 122:
-                Check(Deck.Id == otherDeckId && view.SetupModal.Length == 0 && !view.DeckConfirmed && Local?.Ready == false,
-                    "Choosing another saved list returns to the same table, clears readiness and requires no review");
+                Check(Deck.Id == otherDeckId && view.SetupModal.Length == 0 && view.DeckConfirmed && Local is { Ready: false } && Local.DeckPreview?.Name == Deck.Name,
+                    "Choosing another saved list synchronizes its public deck preview, clears readiness and requires no review");
                 Click("ready", 124); break;
             case 124: Click("review-deck", 250); break;
             case 250: Click("review-list", 251); break;
@@ -262,7 +262,7 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
                 Check(view.DeckSelection?.Id == editCardId && view.Hits.Any(h => h.Id == "deck-card:Main:" + editCardId), "Opening the builder from review selects and reveals the exact card printing for editing");
                 Click("deck-done", 23); break;
             case 23:
-                Check(!view.DeckConfirmed && Local?.Ready == false, "Closing the builder leaves readiness explicit without another confirmation screen");
+                Check(view.DeckConfirmed && Local?.Ready == false, "Closing the builder retains its synchronized saved selection and leaves Ready explicit");
                 Click("ready", 25); break;
             case 25: background = JoinGuests(); stage++; break;
             case 26:
@@ -393,8 +393,8 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
                 Check(peerLobby!.Seats.Any(s => s.Type == "REMOTE" && !s.Ready && s.Deck == Deck.Name), "The host observes the guest becoming unready through ordinary synchronization");
                 Click("deck-done", 45); break;
             case 45:
-                Check(!view.DeckConfirmed && Local?.Ready == false && view.SetupModal.Length == 0,
-                    "Returning from guest deck editing preserves the table and leaves the next Ready intent explicit");
+                Check(view.DeckConfirmed && Local?.Ready == false && view.SetupModal.Length == 0,
+                    "Returning from guest deck editing preserves its synchronized selection and leaves the next Ready intent explicit");
                 Click("ready", 47); break;
             case 47: Click("leave", 48); break;
             case 48:
