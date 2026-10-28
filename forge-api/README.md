@@ -105,6 +105,11 @@ only when exactly one current stack occurrence has that identity. The shared
 native `ActionOperationValidation` checks both prospective and committed graphs,
 visibility, exact stack references and finite links before policy evaluation;
 the provider decoder also applies it before publishing pending graphs.
+Card entities require an exact occurrence in the viewer's published zones or an
+explicit stack/transient source. An internal rule object can supply a readable
+decision portrait without being a published card: commander replacement effects,
+for example, keep Unknown graph sources rather than borrowing a card identity.
+Portrait inspection does not grant selection, activation or retained disclosure.
 Private decision semantics can add `numeric` for an explicit rules announcement:
 `purpose`, entitled `sourceCardId`, declared `costs`, `manaCostKnowledge`, and
 read-only `funding`. Funding groups production routes by physical source, with

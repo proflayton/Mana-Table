@@ -703,8 +703,16 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (zone == null || !card.canBeShownTo(viewer)) return "";
         if (!currentCardView(card)) return "";
         if (zone == ZoneType.Library && table.libraryInspectionActive()) return "";
-        if (List.of(ZoneType.Battlefield, ZoneType.Hand, ZoneType.Library, ZoneType.Graveyard, ZoneType.Exile, ZoneType.Command).contains(zone))
-            return combatIds.id(card);
+        if (List.of(ZoneType.Battlefield, ZoneType.Hand, ZoneType.Library, ZoneType.Graveyard, ZoneType.Exile, ZoneType.Command).contains(zone)) {
+            // A current rules object need not be part of the audience's card
+            // projection. Internal replacement/effect sources can have a zone
+            // and a readable decision portrait while PlayerView omits them.
+            // Only the exact published zone occurrence grants a semantic ID.
+            boolean published = game.getRegisteredPlayers().stream().map(Player::getView)
+                    .map(player -> player.getCards(zone)).filter(Objects::nonNull)
+                    .anyMatch(cards -> cards.stream().anyMatch(current -> current == card && isVisibleInZone(current, zone, viewer)));
+            return published ? combatIds.id(card) : "";
+        }
         if (zone == ZoneType.Stack && game.getView().getStack().stream().anyMatch(item -> card.equals(item.getSourceCard())))
             return combatIds.id(card);
         if (zone == ZoneType.Sideboard && pending != null && pending.additionalCards.containsValue(card)) return combatIds.id(card);

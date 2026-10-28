@@ -85,13 +85,75 @@ public class PendingOperationProjectionTest {
         }
     }
 
+    @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void commanderReplacementPortraitDoesNotInventAPublishedSemanticCard() throws Exception {
+        String commander = "Rograkh, Son of Rohgahh";
+        try (var game = RulesScenario.automated("commander-replacement-semantic-scope",
+                Map.of(0, List.of("Seal of Removal")), "Island", commander)) {
+            var main = game.until(input -> input.seat() == 0 && priority(input)
+                    && text(input.state(), "phaseKey").equals("MAIN1") && input.state().getAsJsonArray("stack").isEmpty());
+            String commanderId = text(card(main.state(), "Command", commander), "visualId");
+            var before = JSON.toJsonTree(game.session(0).automatedObservation()).getAsJsonObject();
+            assertTrue(before.getAsJsonObject("domain").getAsJsonArray("actions").asList().stream()
+                    .map(value -> value.getAsJsonObject().getAsJsonObject("operationGraph"))
+                    .flatMap(graph -> graph.getAsJsonArray("operations").asList().stream())
+                    .map(value -> value.getAsJsonObject().getAsJsonObject("sources"))
+                    .flatMap(binding -> binding.getAsJsonArray("entities").asList().stream())
+                    .anyMatch(value -> text(value.getAsJsonObject(), "cardId").equals(commanderId)),
+                    "An actual published commander retains its ordinary source semantics");
+            start(game, main, "Command", commander, "cast");
+            finish(game, 0, 1, null, -1);
+            var resolved = game.until(input -> input.seat() == 0 && priority(input)
+                    && input.state().getAsJsonArray("stack").isEmpty()
+                    && hasCard(viewer(input.state()), "Battlefield", commander));
+            start(game, resolved, "Battlefield", "Seal of Removal", "activate");
+            finish(game, 0, 1, commander, -1);
+            var replacement = game.until(input -> input.seat() == 0
+                    && text(input.prompt(), "inputType").equals("InputConfirm"));
+            var observation = JSON.toJsonTree(game.session(0).automatedObservation()).getAsJsonObject();
+            var state = observation.getAsJsonObject("state");
+            var portrait = state.getAsJsonObject("prompt").getAsJsonObject("sourceCard");
+            assertEquals(text(portrait, "gamePieceType"), "effect");
+            assertFalse(text(portrait, "name").isEmpty(), "The real replacement source remains readable");
+            assertEquals(text(portrait, "key"), "");
+            assertFalse(portrait.get("selectable").getAsBoolean());
+            assertFalse(portrait.get("highlighted").getAsBoolean());
+            String portraitId = text(portrait, "visualId");
+            assertFalse(portraitId.isEmpty());
+            assertFalse(state.getAsJsonArray("players").asList().stream()
+                    .flatMap(value -> value.getAsJsonObject().getAsJsonArray("zones").asList().stream())
+                    .flatMap(value -> value.getAsJsonObject().getAsJsonArray("cards").asList().stream())
+                    .anyMatch(value -> text(value.getAsJsonObject(), "visualId").equals(portraitId)),
+                    "The internal replacement object is absent from the actual audience's published zones");
+            var graph = observation.getAsJsonObject("semantics").getAsJsonObject("operationGraph");
+            assertEquals(text(graph, "knowledge"), "Unknown");
+            assertFalse(graph.getAsJsonArray("operations").isEmpty(), "Retain the actual replacement recipe");
+            for (var value : graph.getAsJsonArray("operations")) {
+                var sources = value.getAsJsonObject().getAsJsonObject("sources");
+                assertEquals(text(sources, "knowledge"), "Unknown");
+                assertTrue(sources.getAsJsonArray("entities").isEmpty(),
+                        "A readable rules portrait cannot be borrowed as a current card entity");
+            }
+            Files.writeString(game.evidence.resolve("private-commander-replacement.json"), JSON.toJson(observation));
+            assertTrue(game.answer(replacement, Map.of("action", "ok")));
+            var returned = game.until(input -> input.seat() == 0 && priority(input)
+                    && input.state().getAsJsonArray("stack").isEmpty()
+                    && hasCard(viewer(input.state()), "Command", commander));
+            assertFalse(hasCard(viewer(returned.state()), "Hand", commander));
+            assertFalse(hasCard(viewer(returned.state()), "Battlefield", commander));
+        }
+    }
+
     private static void start(RulesScenario game, Input input, String name) {
-        var source = zone(viewer(input.state()), "Hand").getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject())
-                .filter(value -> text(value, "name").equals(name)).findFirst().orElseThrow();
+        start(game, input, "Hand", name, "cast");
+    }
+
+    private static void start(RulesScenario game, Input input, String zone, String name, String kind) {
+        var source = card(input.state(), zone, name);
         String key = text(source, "key");
-        var catalog = JSON.toJsonTree(game.table.seat(input.seat()).sourceActions(request(input, Map.of("key", key)))).getAsJsonObject();
+        var catalog = JSON.toJsonTree(game.session(input.seat()).sourceActions(request(input, Map.of("key", key)))).getAsJsonObject();
         var action = catalog.getAsJsonArray("actions").asList().stream().map(value -> value.getAsJsonObject())
-                .filter(value -> text(value, "kind").equals("cast")).findFirst().orElseThrow();
+                .filter(value -> text(value, "kind").equals(kind)).findFirst().orElseThrow();
         assertTrue(game.answer(input, Map.of("action", "useSourceAction", "key", key, "actionId", text(action, "id"))));
     }
 
@@ -113,6 +175,14 @@ public class PendingOperationProjectionTest {
     }
 
     private static boolean priority(Input input) { return text(input.prompt(), "inputType").equals("InputPassPriority"); }
+    private static JsonObject card(JsonObject state, String zone, String name) {
+        return zone(viewer(state), zone).getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject())
+                .filter(value -> text(value, "name").equals(name)).findFirst().orElseThrow();
+    }
+    private static boolean hasCard(JsonObject player, String zone, String name) {
+        return zone(player, zone).getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject())
+                .anyMatch(value -> text(value, "name").equals(name));
+    }
     private static JsonObject permanent(JsonObject state, String name) {
         return state.getAsJsonArray("players").asList().stream().map(value -> value.getAsJsonObject())
                 .flatMap(player -> zone(player, "Battlefield").getAsJsonArray("cards").asList().stream()).map(value -> value.getAsJsonObject())
