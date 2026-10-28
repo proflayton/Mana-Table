@@ -32,6 +32,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-draw-triggers");
         testRun |= args.Contains("--smoke-cluttered-changes") || args.Contains("--smoke-headless-clutter");
         testRun |= args.Contains("--smoke-priority-flow") || args.Contains("--smoke-headless-priority-flow");
+        testRun |= args.Contains("--smoke-audio-settings");
         testRun |= args.Contains("--capture-deck-workspace");
         var profile = Arg("--profile") ?? (testRun
             ? Path.Combine(Path.GetTempPath(), "ManaTableNative-tests", Guid.NewGuid().ToString())
@@ -68,6 +69,7 @@ internal static class Program
                 return 0;
             }
             if (args.Contains("--smoke-onboarding")) { OnboardingSmoke.Run(profile, size); return 0; }
+            if (args.Contains("--smoke-audio-settings")) { AudioSettingsSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-loading")) { LoadingSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-full-battlefield")) { FullBattlefieldSmoke.Run(profile, size, args.Contains("--real-art"), args.Contains("--readable-crowd"), Arg("--art-cache")); return 0; }
             if (args.Contains("--smoke-commander-tax")) {

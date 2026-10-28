@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Mana.Client;
+using Mana.Audio;
 using Mana.Magic;
 using System.Collections.Concurrent;
 using System.Text.Json;
@@ -30,6 +31,7 @@ internal sealed partial class TableApplication : IDisposable
     private readonly bool restartedAfterUpdate;
     internal bool CaptureMode { get; set; }
     private readonly PresentationResources resources;
+    private AudioMixer? audioMixer;
     internal bool Automated { get; set; }
     internal string? AcceptedHit { get; private set; }
     internal bool AcceptedDrag { get; private set; }
@@ -91,6 +93,7 @@ internal sealed partial class TableApplication : IDisposable
         InteractionScopeKind.Activity => ActivityScope,
         InteractionScopeKind.Experience => ExperienceScope,
         InteractionScopeKind.Chat => ChatScope,
+        InteractionScopeKind.Settings => "settings:" + profile,
         InteractionScopeKind.Playback when match != null => match.Id + ":viewer:" + match.ViewerId + ":playback",
         InteractionScopeKind.PhaseStop when match != null => match.Id + ":viewer:" + match.ViewerId + ":playback:phase-stop:" + match.PhaseKey,
         InteractionScopeKind.Source when SourceActionsSupported => Scope + ":source:" + sourceActions.View.Generation + ":" + sourceActions.View.Context,
@@ -142,6 +145,8 @@ internal sealed partial class TableApplication : IDisposable
     }
     internal void Initialize()
     {
+        audioMixer = new(resources.AudioOutput);
+        audioMixer.SetMix(preferences.Audio);
         if (Automated) automatic = false;
         if (initialState != null) { localMatch = true; loaded = true; Accept(initialState); return; }
         if (fixture != null) {
@@ -161,11 +166,10 @@ internal sealed partial class TableApplication : IDisposable
         if (state?.Status == "finished" && previous?.Status != "finished") tableGuideOpen = false;
         if (transition.Notice is { } latest) { notice = latest; noticeUntil = now + 8; }
         if (transition.Finished) { overlay = "result"; zoneName = null; }
-        if (!preferences.Sounds) return;
-        for (int i = 0; i < transition.LifeLosses; i++) resources.Play("life-loss", .45f);
-        if (transition.Finished) resources.Play("game-end", .5f);
-        if (transition.CombatStarted) resources.Play("combat", .35f);
-        if (transition.CardPlayed) resources.Play("card-play", .35f);
+        for (int i = 0; i < transition.LifeLosses; i++) audioMixer?.Play(new("life-loss", AudioBus.Effects, .45f));
+        if (transition.Finished) audioMixer?.Play(new("game-end", AudioBus.Effects, .5f));
+        if (transition.CombatStarted) audioMixer?.Play(new("combat", AudioBus.Effects, .35f));
+        if (transition.CardPlayed) audioMixer?.Play(new("card-play", AudioBus.Effects, .35f));
     }
     private void PrepareDecisionSession()
     {
@@ -190,6 +194,7 @@ internal sealed partial class TableApplication : IDisposable
     {
         AcceptedHit = null; AcceptedDrag = false;
         now = time.TotalGameTime.TotalSeconds;
+        audioMixer?.Update();
         session.Pump();
         UpdateLobbyDeck();
         UpdateActivity();
@@ -320,6 +325,8 @@ internal sealed partial class TableApplication : IDisposable
     {
         if (closing) return;
         closing = true; CloseUpdateRequests(); deckWorkspace.Close(); deckPersistence.Close(); catalogRead.Close(); printingRead.Close(); deckTokensRead.Close(); tokenPrintingsRead.Close(); session.Close(); matchPresentation.Reset();
+        FinishAudioAdjustment();
+        audioMixer?.Dispose();
         canvas.Dispose();
     }
 }

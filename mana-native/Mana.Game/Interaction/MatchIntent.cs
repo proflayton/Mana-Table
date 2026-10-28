@@ -113,7 +113,9 @@ internal abstract record MatchIntent : UiIntent
         internal override InteractionScopeKind ScopeKind => Armed ? InteractionScopeKind.Current : InteractionScopeKind.Playback;
     }
     internal sealed record ToggleReducedMotion : MatchIntent;
-    internal sealed record ToggleSounds : MatchIntent;
+    internal sealed record ToggleSounds : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Settings; }
+    internal sealed record SetMasterVolume(float Volume) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Settings; }
+    internal sealed record AdjustMasterVolume(int PercentagePoints) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Settings; }
     internal sealed record CycleTextScale : MatchIntent;
     internal sealed record OpenPriorityPassing : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record ReadPriorityAbility(string Id) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }

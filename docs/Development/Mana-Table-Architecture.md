@@ -226,6 +226,31 @@ cue. It never dispatches an action. Its temporary match-local mute, grace and
 cooldown do not alter global sound preferences, Auto or rules timing; background
 audio does not bypass physical-input admission.
 
+**Source candidate:** `Mana.Audio` owns the device-independent audio boundary.
+One immutable `AudioMix` contains master and Effects, Notifications and Music
+levels, each with an independent retained volume and mute. `AudioMixer` applies
+master × bus × authored cue gain once, including to voices already playing.
+Gameplay cues route to Effects; the quiet priority cue routes to Notifications.
+Music is a reserved route, not a music transport or playlist implementation.
+The mixer owns voice lifetime and reaps completed one-shots. `IAudioOutput`
+creates an `IAudioVoice`; the renderer's MonoGame adapter owns decoded assets and
+reports unavailable hardware or voice capacity without affecting the match.
+`TableApplication` creates the mixer after the window attaches its output and
+disposes voices before `TableAssets` disposes the device resources. There is no
+parallel fire-and-forget callback or process-global volume setting.
+
+`PlayPreferences.Audio` persists this mix in `play-preferences.json`. Loading a
+legacy file without `Audio` migrates `Sounds=false` to master mute; new saves
+write only the mix. Missing channels default to full volume; levels normalize
+to 0–1. Mute preserves all volumes. The current Settings surface exposes master
+volume only; future channel controls can edit the same model. A captured slider
+previews live and saves on release, close, focus loss or shutdown. Its local
+settings scope survives a new engine decision but cannot submit one. Audio
+preferences do not change passing policy or cancel a bounded continuation.
+Priority reminder admission uses effective Notifications gain, so 0% consumes a
+suppressed reminder and raising volume cannot replay it later. Temporary bell
+mute remains separate, match-local notification policy.
+
 `IMatchConnection` publishes deeply immutable `GameSnapshot` values and accepts a
 closed family of semantic `GameCommand` variants. Arrays and dictionaries in the
 entire match graph, including nested decision previews and event causes, use

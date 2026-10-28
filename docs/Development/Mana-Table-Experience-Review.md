@@ -253,6 +253,33 @@ both its named command and the generic priority Cancel alias before rules work
 is queued. Legacy projected Undo offers produce no native rollback control or
 command. The regression checks retain the actual Sol Ring tap and produced mana
 across rejected requests. Deck editing/deletion recovery remains its own lifecycle.
+## Master volume and mixer boundary: 27 October 2026
+
+**Source candidate; human review pending.** The player wants to turn down game
+audio now and eventually mix different types of sound independently. Arena puts
+its in-game volume controls in Settings, as documented by
+[Wizards' sound support](https://mtgarena-support.wizards.com/hc/en-us/articles/360059670812-Sound-issues-on-mobile).
+That source establishes the location, not Arena's precise channel arrangement or
+slider behavior. Our adaptation keeps volume in the existing in-match drawer,
+with a horizontal master track and a retained percentage. It does not introduce
+a scrollable settings page or claim Arena proves the correct scale for this app.
+
+Journey: open Settings from the table, press or drag the master track, hear
+currently playing and subsequent sounds at the new level, then release to save.
+Minus/plus and focused arrow keys change it by five percentage points; Home/End
+set 0%/100%. Mute silences sound while preserving the selected volume. Adjusting
+the track while muted changes that retained level without unmuting. A new game
+decision does not steal a drag; closing or losing foreground ownership ends it
+at the last preview. These are local audio changes with no engine transition,
+target selection or priority reply. Master, effects, notifications and music
+have separate levels in the framework, with only master exposed today.
+
+Review default, adjusted and muted states at 1000×740 and 1540×980, including 130%
+text. Check pointer travel, keyboard access, foreground loss and a live sound
+changing volume without restarting. Headless fake-device checks verify gain,
+persistence and input safety; CI window captures verify composition. Neither
+establishes actual loudness, sound quality or human acceptance. Human review of
+this candidate remains pending; the prior priority cue review is separate.
 
 ## Quiet priority notification: 27 October 2026
 

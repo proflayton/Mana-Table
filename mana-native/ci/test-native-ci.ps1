@@ -18,12 +18,13 @@ function New-PackageFixture([string]$Name, [string]$Mutation) {
     [IO.File]::WriteAllText($jar, 'verified shared engine', $utf8)
     $jarHash = (Get-FileHash -LiteralPath $jar -Algorithm SHA256).Hash
     $hashes = [ordered]@{}
-    foreach ($name in @('ManaTable.dll','Mana.Game.dll','Mana.Client.dll','Mana.Contracts.dll','Mana.Magic.dll','Mana.Forge.dll','Mana.Renderer.dll','Mana.Scenarios.dll')) {
+    foreach ($name in @('ManaTable.dll','Mana.Game.dll','Mana.Audio.dll','Mana.Client.dll','Mana.Contracts.dll','Mana.Magic.dll','Mana.Forge.dll','Mana.Renderer.dll','Mana.Scenarios.dll')) {
         $file = Join-Path $package $name
         [IO.File]::WriteAllText($file, ('verified bytes ' + $name), $utf8)
         $hashes[$name] = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
     }
     if ($Mutation -eq 'unbound-game') { $hashes.Remove('Mana.Game.dll') }
+    if ($Mutation -eq 'unbound-audio') { $hashes.Remove('Mana.Audio.dll') }
     $source = if ($Mutation -eq 'source') { 'b' * 40 } else { $env:GITHUB_SHA }
     Write-Json (Join-Path $package 'build.json') @{sourceRevision=$source; engineBaseRevision=$env:GITHUB_SHA; version=$env:MANA_RELEASE_VERSION; release=$true; engineSha256=$jarHash; clientFilesSha256=$hashes}
     $engineManifest = @{schemaVersion=2; sourceRevision=$env:GITHUB_SHA; engine=@{sha256=$jarHash; bytes=(Get-Item -LiteralPath $jar).Length}; fixtureLauncher=@{sha256=('f' * 64); bytes=1}}
@@ -36,6 +37,8 @@ function New-PackageFixture([string]$Name, [string]$Mutation) {
     if ($Mutation -eq 'engine') { [IO.File]::AppendAllText($jar, 'changed bytes', $utf8) }
     if ($Mutation -eq 'client') { [IO.File]::AppendAllText((Join-Path $package 'Mana.Client.dll'), 'changed bytes', $utf8) }
     if ($Mutation -eq 'game') { [IO.File]::AppendAllText((Join-Path $package 'Mana.Game.dll'), 'changed bytes', $utf8) }
+    if ($Mutation -eq 'audio') { [IO.File]::AppendAllText((Join-Path $package 'Mana.Audio.dll'), 'changed bytes', $utf8) }
+    if ($Mutation -eq 'missing-audio') { Remove-Item -LiteralPath (Join-Path $package 'Mana.Audio.dll') }
     if ($Mutation -eq 'missing-game') { Remove-Item -LiteralPath (Join-Path $package 'Mana.Game.dll') }
     if ($Mutation -eq 'renderer') { [IO.File]::AppendAllText((Join-Path $package 'Mana.Renderer.dll'), 'changed bytes', $utf8) }
     if ($Mutation -eq 'scenarios') { [IO.File]::AppendAllText((Join-Path $package 'Mana.Scenarios.dll'), 'changed bytes', $utf8) }
@@ -51,21 +54,26 @@ try {
     $env:MANA_RELEASE_VERSION = '0.2.123'
     $env:GITHUB_ENV = Join-Path $TestDirectory 'github-env.txt'
     [object[]]$inventory = & (Join-Path $PSScriptRoot 'native-ui.ps1') -ListOnly | ConvertFrom-Json
-    if ($inventory.Count -ne 12 -or @($inventory.name | Sort-Object -Unique).Count -ne 12 -or @($inventory.shard | Sort-Object -Unique).Count -ne 4 -or
+    if ($inventory.Count -ne 14 -or @($inventory.name | Sort-Object -Unique).Count -ne 14 -or @($inventory.shard | Sort-Object -Unique).Count -ne 4 -or
         @($inventory | Where-Object name -eq 'card-reading-1000').Count -ne 1 -or
-        @($inventory | Where-Object name -eq 'full-battlefield-1000').Count -ne 1) { throw 'Critical native suite discovery is incomplete or duplicated.' }
+        @($inventory | Where-Object name -eq 'full-battlefield-1000').Count -ne 1 -or
+        @($inventory | Where-Object { $_.name -eq 'audio-settings-1000' -and $_.shard -eq 1 }).Count -ne 1 -or
+        @($inventory | Where-Object { $_.name -eq 'audio-settings-1540' -and $_.shard -eq 2 }).Count -ne 1) { throw 'Critical native suite discovery is incomplete or duplicated.' }
     $checks++
     [object[]]$inventory = & (Join-Path $PSScriptRoot 'native-ui.ps1') -ListOnly -Extended | ConvertFrom-Json
-    if ($inventory.Count -ne 46 -or @($inventory.name | Sort-Object -Unique).Count -ne 46 -or @($inventory.shard | Sort-Object -Unique).Count -ne 12) { throw 'Extended native suite discovery is incomplete or duplicated.' }
+    if ($inventory.Count -ne 48 -or @($inventory.name | Sort-Object -Unique).Count -ne 48 -or @($inventory.shard | Sort-Object -Unique).Count -ne 12) { throw 'Extended native suite discovery is incomplete or duplicated.' }
     $checks++
     $valid = New-PackageFixture 'valid' ''
     & (Join-Path $PSScriptRoot 'restore-package.ps1') -Directory $valid -RequireHarness
     $checks++
-    foreach ($mutation in @('source','engine','client','game','missing-game','unbound-game','renderer','scenarios','harness','archive','legacy-engine-manifest','missing-fixture-binding')) {
+    foreach ($mutation in @('source','engine','client','game','missing-game','unbound-game','audio','missing-audio','unbound-audio','renderer','scenarios','harness','archive','legacy-engine-manifest','missing-fixture-binding')) {
         $fixture = New-PackageFixture $mutation $mutation
         $rejected = $false
         try { & (Join-Path $PSScriptRoot 'restore-package.ps1') -Directory $fixture -RequireHarness }
-        catch { $rejected = $true; Write-Output ("Rejected $mutation mutation: " + $_.Exception.Message) }
+        catch {
+            $rejected = $mutation -notin @('audio','missing-audio','unbound-audio') -or $_.Exception.Message.Contains('Mana.Audio.dll')
+            Write-Output ("Rejected $mutation mutation: " + $_.Exception.Message)
+        }
         if (-not $rejected) { throw "Native artifact mutation was accepted: $mutation" }
         $checks++
     }

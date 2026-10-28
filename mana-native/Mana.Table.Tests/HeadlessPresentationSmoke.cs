@@ -66,6 +66,7 @@ internal static partial class HeadlessPresentationSmoke
             KeyboardCameraChecks.Run(profile, Check);
             BackgroundInputChecks.Run(profile, Check);
             PriorityNotificationChecks.Run(profile, Check);
+            AudioSettingsChecks.Run(profile, Check);
             TokenArtworkChecks.Run(profile, Check);
             AttachmentStackChecks.Run(profile, Check);
             PendingEffectPresentationChecks.Run(profile, Check);

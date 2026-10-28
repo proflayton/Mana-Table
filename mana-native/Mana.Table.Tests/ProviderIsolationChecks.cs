@@ -13,7 +13,7 @@ internal static class ProviderIsolationChecks
         check(game.GetName().Name == "Mana.Game" && typeof(TableWindow).Assembly == game,
             "The production application and native window live in Mana.Game, outside the shipping provider/composition executable");
         string directory = Path.GetDirectoryName(game.Location) ?? throw new InvalidOperationException("Missing game assembly directory");
-        string[] neutralAssemblies = ["Mana.Game", "Mana.Contracts", "Mana.Client", "Mana.Magic", "Mana.Planning", "Mana.Renderer", "Mana.Scenarios"];
+        string[] neutralAssemblies = ["Mana.Game", "Mana.Contracts", "Mana.Client", "Mana.Magic", "Mana.Planning", "Mana.Renderer", "Mana.Scenarios", "Mana.Audio"];
         var pending = new Queue<(string Path, string Chain)>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         pending.Enqueue((game.Location, "Mana.Game"));

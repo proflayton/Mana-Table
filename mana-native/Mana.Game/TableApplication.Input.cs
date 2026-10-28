@@ -23,6 +23,7 @@ internal sealed partial class TableApplication
 
     private void CancelLocalInput()
     {
+        FinishAudioAdjustment(); audioVolumeFocused = false;
         CancelReleasedPlayIntent();
         pressed = null; dragSource = null; dragging = false; selectedCombat = null;
         ClearCardDrag();
@@ -47,6 +48,10 @@ internal sealed partial class TableApplication
         bool chatKeys = blockedInput || ChatKeys(keys);
         if (!chatKeys) { DeckKeys(keys); SetupKeys(keys); }
         pointer = RenderViewport.Fit(viewport, DesignHeight).ToLogical(new(mouse.X, mouse.Y));
+        if (UpdateAudioInput(mouse, keys, blockedInput)) {
+            previousMouse = mouse; previousKeys = keys;
+            return;
+        }
         ReconcileCardCollection();
         if (blockedInput) { boardPanning = spreadPanning = false; }
         if (!blockedInput) {

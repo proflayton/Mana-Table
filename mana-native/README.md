@@ -342,6 +342,7 @@ passes and earlier-head CI do not establish readiness.
 | `Mana.AI` | Whole-seat policy, scoped knowledge, current action mapping and automated-seat lifecycle |
 | `Mana.Magic` | Card classification, projected legal actions, combat/assignment guides and Magic art |
 | `Mana.Forge` | Java process/protocol lifetime and mapping between Forge JSON and typed contracts |
+| `Mana.Audio` | Device-independent master/bus mix, typed cue routing and active voice lifetime |
 | `Mana.Renderer` | Canvas/text/pixel upload, poses, layouts, geometry, motion and effects |
 | `Mana.Game` | Native controls, setup, builder, overlays and table input/rendering; no provider dependency |
 | `Mana.Table` | Shipping composition, provider lifetime, installation and update bootstrap |

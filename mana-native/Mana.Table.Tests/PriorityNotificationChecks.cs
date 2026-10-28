@@ -195,7 +195,7 @@ internal static class PriorityNotificationChecks
             new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = sounds }.Save(Profile);
             Engine.Present(state ?? Response());
             app = new(TestTableServices.For(Engine), Profile, initialState: Engine.State, resources: new() {
-                Play = (key, volume) => { if (key == "your-priority") Chimes.Add(new(key, volume)); }
+                AudioOutput = new RecordingAudioOutput((key, volume) => { if (key == "your-priority") Chimes.Add(new(key, volume)); })
             }) { Automated = true };
             app.Initialize(); app.EnableLiveTableStudy();
             View.PresentLobby(new("local", "Priority notification fixture", null, false, null, true, "", null, [], []), true);
