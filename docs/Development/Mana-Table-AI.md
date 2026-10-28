@@ -635,7 +635,7 @@ spell a flat positive score. This does not predict replacements or guarantee a
 spell resolves.
 
 `AiTurnPlan` is immutable, private memory owned by one `AiSeatSession`, scoped to
-one game, seat and global turn. It holds a purpose, response source/semantic route,
+one game, seat and global turn. It holds a purpose, response or follow-up source/semantic route,
 nominal bill, a funding witness and retained blocker occurrences. It holds no
 connections, executable action handles or old permissions. A policy proposes an
 optimistic versioned transition with its answer; only a current valid answer's
@@ -646,7 +646,11 @@ control, tapped witnesses, depleted pool or a new turn. An invalidated in-flight
 proposal cannot return through a late receipt. Replay and private decision evidence
 include both the input plan and proposed transition.
 
-The first planner reserves one known offered instant interaction route. A joint
+The first planner reserves one known offered instant interaction route. When no
+response is held, a chosen cast can instead preserve one other positively valued,
+known cast as a same-turn follow-up. Both goals use the same reservation construction,
+validation, payment and receipt lifecycle, with an explicit strategic purpose.
+A joint
 mana assignment checks the development bill plus response bill, followed by a
 check that development can preserve the pinned witness. Payment follows the
 current engine bill without using those sources or pool units. Pool permissions
@@ -655,7 +659,12 @@ can spend an applicable unreserved unit and re-observe rather than consuming the
 held response to manufacture a complete assignment. If the actual
 bill changes and cannot preserve them, it explicitly abandons the reservation
 before spending normally. Strong development may also intentionally relinquish
-the reserve; this is a soft opportunity cost, not a prohibition. Bundled producers
+the reserve; this is a soft opportunity cost, not a prohibition. Follow-up funding
+prevents a generic bill from consuming every source of a color needed by the next
+known play. The unchanged real Pir/Toothy golden exposed this: Toothy could consume
+all three Forests as generic, delaying Pir until after the required natural draw.
+The planner retains that green funding rather than adding resources to the test.
+Bundled producers
 are conservatively reserved as whole occurrences, so partial residual output is
 not yet planned. Routes absent from the current authorized catalog are unknown;
 the bot does not infer a hidden future route from card text. Deck-wide plans,

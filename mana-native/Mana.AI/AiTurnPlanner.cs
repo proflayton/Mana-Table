@@ -25,25 +25,47 @@ internal static class AiTurnPlanner
                     || !action.OperationGraph.Operations.Any(node => node.Effect is ActionEffectKind.CounterSpell
                         or ActionEffectKind.Destroy or ActionEffectKind.Exile or ActionEffectKind.Damage or ActionEffectKind.Bounce)
                     || action.Costs.Any(cost => cost.Kind != ActionCostKind.Mana && cost.Amount != 0)) continue;
-                var costs = action.Costs.Where(cost => cost.Kind == ActionCostKind.Mana).ToArray();
-                if (costs.Any(cost => cost.Amount == null) || costs.SelectMany(cost => cost.ManaSymbols).Any(symbol => symbol.Trim('{', '}') == "X")) continue;
-                int tax = source.Value.Zone == "Command" && route.Kind == "cast" ? source.Value.Card.CommanderTax : 0;
-                long generic = costs.Sum(cost => Math.Max(0L, cost.Amount ?? 0)) + tax;
-                if (generic > 1024) continue;
-                var funding = AiManaPlanner.ForAction(request with { Work = request.Work.CreateSlice(192, 8) }, action, tax);
-                if (funding.Status != AiManaPlanStatus.Funded) continue;
-                return new(set.SourceCardId, action.StableId, costs.SelectMany(cost => cost.ManaSymbols).ToImmutableArray(), (int)generic) {
-                    SourceZone = source.Value.Zone,
-                    ManaSourceIds = funding.Steps.OfType<AiManaStep.Source>().Select(step => step.SourceCardId).Distinct().ToImmutableArray(),
-                    PoolMana = funding.Steps.OfType<AiManaStep.Pool>().GroupBy(step => step.Color)
-                        .ToImmutableDictionary(group => group.Key, group => group.Sum(step => step.Amount))
-                };
+                if (Reserve(request, set, route, action, AiReservationPurpose.Interaction) is { } reservation) return reservation;
             }
         }
         return null;
     }
 
-    internal static bool IsResponse(AiResourceReservation reservation, string sourceId, ActionSemantics action)
+    // Sequence two currently known plays without assuming either will resolve.
+    // A follow-up shares the same session lifetime and payment witness as a
+    // held response; only its strategic purpose differs.
+    internal static AiResourceReservation? FollowUp(AiDecisionRequest request, SourceActionSet set,
+        SourceAction route, ActionSemantics action, ActionSemantics first, int firstTax)
+    {
+        if (route.Kind != "cast") return null;
+        var reservation = Reserve(request, set, route, action, AiReservationPurpose.FollowUp);
+        return reservation != null && Preserves(request, first, reservation, firstTax) ? reservation : null;
+    }
+
+    private static AiResourceReservation? Reserve(AiDecisionRequest request, SourceActionSet set,
+        SourceAction route, ActionSemantics action, AiReservationPurpose purpose)
+    {
+        var source = CardViews.FindActionSource(request.Frame.State, set.SourceCardKey);
+        if (source == null || action.StableId.Length == 0
+            || action.OperationGraph.Knowledge != SemanticKnowledge.Known
+            || action.Costs.Any(cost => cost.Kind != ActionCostKind.Mana && cost.Amount != 0)) return null;
+        var costs = action.Costs.Where(cost => cost.Kind == ActionCostKind.Mana).ToArray();
+        if (costs.Any(cost => cost.Amount == null) || costs.SelectMany(cost => cost.ManaSymbols).Any(symbol => symbol.Trim('{', '}') == "X")) return null;
+        int tax = source.Value.Zone == "Command" && route.Kind == "cast" ? source.Value.Card.CommanderTax : 0;
+        long generic = costs.Sum(cost => Math.Max(0L, cost.Amount ?? 0)) + tax;
+        if (generic > 1024 || request.Work.Remaining <= 12) return null;
+        var funding = AiManaPlanner.ForAction(request with { Work = request.Work.CreateSlice(192, 8) }, action, tax);
+        if (funding.Status != AiManaPlanStatus.Funded) return null;
+        return new AiResourceReservation(set.SourceCardId, action.StableId,
+            costs.SelectMany(cost => cost.ManaSymbols).ToImmutableArray(), (int)generic) {
+            Purpose = purpose, SourceZone = source.Value.Zone,
+            ManaSourceIds = funding.Steps.OfType<AiManaStep.Source>().Select(step => step.SourceCardId).Distinct().ToImmutableArray(),
+            PoolMana = funding.Steps.OfType<AiManaStep.Pool>().GroupBy(step => step.Color)
+                .ToImmutableDictionary(group => group.Key, group => group.Sum(step => step.Amount))
+        };
+    }
+
+    internal static bool Matches(AiResourceReservation reservation, string sourceId, ActionSemantics action)
         => reservation.SourceCardId == sourceId && reservation.StableRouteId == action.StableId;
 
     internal static bool Preserves(AiDecisionRequest request, ActionSemantics action, AiResourceReservation reservation, int tax)

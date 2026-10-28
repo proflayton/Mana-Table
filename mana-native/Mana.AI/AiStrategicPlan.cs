@@ -4,6 +4,7 @@ using Mana.Contracts;
 namespace Mana.AI;
 
 public enum AiPlanPurpose { Develop, HoldInteraction, Defend, Respond }
+public enum AiReservationPurpose { Interaction, FollowUp }
 
 // A retained intention references entitled occurrences and a semantic route,
 // never the action handles that authorized one old input. Funding is a witness
@@ -11,6 +12,7 @@ public enum AiPlanPurpose { Develop, HoldInteraction, Defend, Respond }
 public sealed record AiResourceReservation(string SourceCardId, string StableRouteId,
     ImmutableArray<string> ManaSymbols, int GenericMana)
 {
+    public AiReservationPurpose Purpose { get; init; }
     public string SourceZone { get; init; } = "";
     public ImmutableArray<string> ManaSourceIds { get; init; } = [];
     public ImmutableDictionary<string, int> PoolMana { get; init; } = ImmutableDictionary<string, int>.Empty;
@@ -66,7 +68,7 @@ internal static class AiPlanValidation
     }
 
     private static bool SameReservation(AiResourceReservation first, AiResourceReservation second)
-        => first.SourceCardId == second.SourceCardId && first.StableRouteId == second.StableRouteId
+        => first.SourceCardId == second.SourceCardId && first.StableRouteId == second.StableRouteId && first.Purpose == second.Purpose
             && first.SourceZone == second.SourceZone && first.GenericMana == second.GenericMana
             && first.ManaSymbols.SequenceEqual(second.ManaSymbols) && first.ManaSourceIds.SequenceEqual(second.ManaSourceIds)
             && first.PoolMana.Count == second.PoolMana.Count
@@ -90,7 +92,7 @@ internal static class AiPlanValidation
         var funding = new HashSet<string>(StringComparer.Ordinal);
         var pool = new Dictionary<string, long>(StringComparer.Ordinal);
         foreach (var reservation in plan.Reservations) {
-            if (reservation == null || !Identifier(reservation.SourceCardId) || !Identifier(reservation.StableRouteId)
+            if (reservation == null || !Enum.IsDefined(reservation.Purpose) || !Identifier(reservation.SourceCardId) || !Identifier(reservation.StableRouteId)
                 || !Identifier(reservation.SourceZone) || !responses.Add((reservation.SourceCardId, reservation.StableRouteId))
                 || reservation.GenericMana is < 0 or > 1024 || reservation.ManaSymbols.IsDefault || reservation.ManaSymbols.Length > 64
                 || reservation.ManaSymbols.Any(symbol => string.IsNullOrWhiteSpace(symbol) || symbol.Length > 32)

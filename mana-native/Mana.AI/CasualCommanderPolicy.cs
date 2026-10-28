@@ -57,7 +57,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             if (request.Work.Remaining <= 4) { limited = true; break; }
             var local = request with { Work = request.Work.CreateSlice(512, 4) };
             double score = ActionScore(local, offer, offers);
-            bool response = reservation != null && AiTurnPlanner.IsResponse(reservation, offer.Set.SourceCardId, offer.Semantics);
+            bool response = reservation != null && AiTurnPlanner.Matches(reservation, offer.Set.SourceCardId, offer.Semantics);
             int tax = CardViews.FindActionSource(state, offer.Set.SourceCardKey)?.Zone == "Command" && offer.Action.Kind == "cast" ? offer.Source.CommanderTax : 0;
             bool preserve = reservation == null || !response && AiTurnPlanner.Preserves(local, offer.Semantics, reservation, tax);
             if (score > 0 && reservation != null && !response && !preserve) score -= AiTurnPlanner.Opportunity(local, reservation);
@@ -74,15 +74,26 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             // forever. Activated routes receive the same conservative guard;
             // repetitive combo planning needs an explicit bounded plan later.
             if (request.History.AttemptedRoutes.Contains(new(state.Turn, offer.Set.SourceCardId, offer.Semantics.StableId))) continue;
-            bool response = reservation != null && AiTurnPlanner.IsResponse(reservation, offer.Set.SourceCardId, offer.Semantics);
+            bool response = reservation != null && AiTurnPlanner.Matches(reservation, offer.Set.SourceCardId, offer.Semantics);
+            var nextReservation = candidate.Preserve ? reservation : null;
+            if (reservation == null && offer.Action.Kind == "cast") {
+                int tax = CardViews.FindActionSource(state, offer.Set.SourceCardKey)?.Zone == "Command" ? offer.Source.CommanderTax : 0;
+                foreach (var following in candidates.Where(item => item.Offer.Set.SourceCardId != offer.Set.SourceCardId)
+                    .OrderByDescending(item => item.Score).ThenBy(item => item.Offer.Semantics.StableId, StringComparer.Ordinal).Take(8)) {
+                    nextReservation = AiTurnPlanner.FollowUp(request, following.Offer.Set, following.Offer.Action,
+                        following.Offer.Semantics, offer.Semantics, tax);
+                    if (nextReservation != null) break;
+                }
+            }
             return AiTurnPlanner.Remember(request,
                 Answer(request, new UseOfferedAction(state.Id, state.Decision!.Id, offer.Set.SourceCardKey, offer.Action.Id), reason),
-                response ? AiPlanPurpose.Respond : candidate.Preserve && reservation != null ? AiPlanPurpose.HoldInteraction : AiPlanPurpose.Develop,
-                candidate.Preserve ? reservation : null);
+                response && reservation?.Purpose == AiReservationPurpose.Interaction ? AiPlanPurpose.Respond
+                    : nextReservation?.Purpose == AiReservationPurpose.Interaction ? AiPlanPurpose.HoldInteraction : AiPlanPurpose.Develop,
+                nextReservation);
         }
         return priority.Pass.Enabled ? AiTurnPlanner.Remember(request,
             Answer(request, new PassPriority(state.Id, state.Decision!.Id), limited ? "priority-bounded-search" : "priority-no-profitable-route"),
-            reservation != null ? AiPlanPurpose.HoldInteraction : AiPlanPurpose.Develop, reservation)
+            reservation?.Purpose == AiReservationPurpose.Interaction ? AiPlanPurpose.HoldInteraction : AiPlanPurpose.Develop, reservation)
             : Missing("required-priority-route");
     }
 

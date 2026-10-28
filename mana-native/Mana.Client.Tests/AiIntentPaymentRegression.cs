@@ -8,6 +8,7 @@ internal static class AiIntentPaymentRegression
 
     internal static async Task RunAsync(Action<bool, string> check)
     {
+        await AiIntentFollowupRegression.RunAsync(check);
         // The fixture injects an already retained intention. All payment
         // selection, scope validation and accepted memory updates are production.
         using var seat = new AiSeatSession("intent-payment", 0, new RetainedAnswerFixture(), 17,
