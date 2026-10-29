@@ -148,6 +148,13 @@ own-land return is legitimate. Policy seeds do not control Forge's rules RNG.
 
 ## AI release evaluation
 
+The graphics-free client suite includes `AiDamageTargetRegression`: known five
+damage against a 40/40 and a 1/1, complete versus partially known operation
+graphs, candidate/seat order and seeds, marked damage, indestructible, zero
+damage, and unknown or distributed recipient amounts. These compare production
+policy commands against exact current target permissions. They establish
+nominal recipient choice, not prevention coverage or a guaranteed resolution.
+
 The short campaign checks progress. AI release evidence also needs completed
 games, controlled outcomes and recorded human review. Keep these gates separate:
 

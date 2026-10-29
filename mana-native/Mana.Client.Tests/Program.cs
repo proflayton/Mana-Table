@@ -169,6 +169,7 @@ AiSemanticRegression.Run(Check);
 await AiHostRegression.RunAsync(Check);
 await AiObservationSupersededRegression.RunAsync(Check);
 await AiPolicyRegression.RunAsync(Check);
+await AiDamageTargetRegression.RunAsync(Check);
 await AiTargetContinuationRegression.RunAsync(Check);
 AiManaPlannerRegression.Run(Check);
 await AiNumericRegression.RunAsync(Check);

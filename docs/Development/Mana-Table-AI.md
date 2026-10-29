@@ -6,6 +6,32 @@ casual policy. This is not in the published installer yet. The reported live
 games have not been replayed, so their individual decisions are not diagnosed.
 Human review of a replacement policy is pending.
 
+## Damage target uncertainty: 28 October 2026
+
+A player reported five damage being aimed at a creature with more than forty
+toughness while an opposing partner commander had one toughness. The running
+0.2.197 build retained no successful decision trace, so the exact spell and its
+legal alternatives cannot be reconstructed. A controlled regression does expose
+a matching policy failure: when an unrelated follow-up makes the operation graph
+incomplete, the old harmful-target fallback assigns the large body full removal
+value instead of comparing what five damage can accomplish.
+
+The source fix keeps complete graph estimates first. An active known damage
+operation can supply a partial nominal comparison even when another operation
+is unmodeled. That comparison requires a known per-recipient amount and a current
+target-domain member; a legacy scalar alone cannot establish either. Unknown
+amounts receive no invented removal value. The same existing public-stat damage
+model recognizes marked damage and effective indestructible, without claiming to
+simulate prevention, regeneration, shields, alternate damage sources or future
+responses. Optional zero-utility damage choices decline; required choices still
+answer with an engine-authorized target. No commander-name bonus or new control
+is involved.
+
+This change is source-only until a containing build is published. Automated
+regressions and independent inspection do not establish human acceptance of AI
+decision quality. Exact-candidate release evaluation and human gameplay review
+remain separate gates.
+
 ## Choosing decks for AI seats
 
 Solo opponent selection and the host's existing **Add AI / Change deck** gesture

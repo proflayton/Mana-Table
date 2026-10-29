@@ -286,6 +286,8 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 : Missing("mana-reduction-completion");
         var intent = EffectiveIntent(request.Frame.Semantics);
         bool cost = request.Frame.Semantics.SelectionIsCost || intent is DecisionIntent.Discard or DecisionIntent.Sacrifice;
+        bool damage = intent == DecisionIntent.Damage || request.Frame.Semantics.OperationGraph.Operations
+            .Any(node => node.Id == request.Frame.Semantics.OperationId && node.Effect == ActionEffectKind.Damage);
         var cards = CardViews.InZones(state).Where(item => item.Card.Selectable && item.Card.Key.Length > 0 && !item.Card.Highlighted)
             .GroupBy(item => item.Card.Key).Select(group => group.First())
             .Where(item => !cost || !AiTurnPlanner.ConflictsWithPendingSourceCosts(request, CardViews.Identity(item.Card))).ToArray();
@@ -312,6 +314,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             bool own = occurrence.PlayerId == state.ViewerId;
             double score = cost ? (own ? 100 - value : -100)
                 : IsBenefit(intent) ? (own ? 100 + value : -100)
+                : damage ? (own ? -100 : DamageThreat(occurrence.PlayerId))
                 : IsHarm(intent) ? (own ? -100 : 20 + value + CasualTableAssessment.OpponentScore(request, occurrence.PlayerId))
                 : 1 + CasualTableAssessment.Tie(request.Seed, identity);
             if (!cost && request.Frame.Semantics.OperationId is { } operation) {
@@ -320,7 +323,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                     CardViews.Source(state, state.Decision!));
                 if (assessment.Status == CasualAssessmentStatus.BudgetExceeded) return Missing("work-budget");
                 if (assessment.Status == CasualAssessmentStatus.SearchLimited) { score = double.NegativeInfinity; limited = true; }
-                if (assessment.Status == CasualAssessmentStatus.Estimated) score = assessment.Value
+                if (assessment.Status is CasualAssessmentStatus.Estimated or CasualAssessmentStatus.EstimatedPartial) score = assessment.Value
                     + (assessment.Value > 0 && !own ? Math.Clamp(CasualTableAssessment.OpponentScore(request, occurrence.PlayerId) * .01, 0, .25) : 0);
             }
             bool preservesFunding = cost && AiTurnPlanner.PreservesCurrentCostFunding(request with { Work = localWork }, identity);
@@ -333,6 +336,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             if (!localWork.TrySpend()) { limited = true; break; }
             double score = intent == DecisionIntent.StartingPlayer ? (player == state.ViewerId ? 100 : 0)
                 : IsBenefit(intent) || intent == DecisionIntent.Search ? (player == state.ViewerId ? 100 : -100)
+                : damage ? (player == state.ViewerId ? -100 : DamageThreat(player))
                 : IsHarm(intent) ? CasualTableAssessment.OpponentScore(request, player)
                 : CasualTableAssessment.Tie(request.Seed, player.ToString(CultureInfo.InvariantCulture));
             if (!cost && request.Frame.Semantics.OperationId is { } operation) {
@@ -341,7 +345,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                     CardViews.Source(state, state.Decision!));
                 if (assessment.Status == CasualAssessmentStatus.BudgetExceeded) return Missing("work-budget");
                 if (assessment.Status == CasualAssessmentStatus.SearchLimited) { score = double.NegativeInfinity; limited = true; }
-                if (assessment.Status == CasualAssessmentStatus.Estimated) score = assessment.Value
+                if (assessment.Status is CasualAssessmentStatus.Estimated or CasualAssessmentStatus.EstimatedPartial) score = assessment.Value
                     + (assessment.Value > 0 && player != state.ViewerId ? Math.Clamp(CasualTableAssessment.OpponentScore(request, player) * .01, 0, .25) : 0);
             }
             options.Add((new SelectPlayer(state.Id, state.Decision!.Id, player), score,
@@ -355,11 +359,16 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         }
         var best = options.OrderByDescending(option => option.PreservesFunding).ThenByDescending(option => option.Score)
             .ThenBy(option => option.Tie).FirstOrDefault();
-        if (best.Command != null && (best.Score >= 0 || !complete.Enabled)) return Answer(request, best.Command,
+        if (best.Command != null && ((damage && !cost ? best.Score > 0 : best.Score >= 0) || !complete.Enabled)) return Answer(request, best.Command,
             best.PreservesFunding ? "selection-preserve-current-cost-funding"
                 : limited ? "selection-bounded-known-candidate" : cost ? "selection-pay-lowest-opportunity-cost" : "selection-public-effect-recipient");
         if (complete.Enabled) return Answer(request, new CompleteSelection(state.Id, state.Decision!.Id), "selection-decline-optional-target");
         return cancel.Enabled ? Answer(request, new CancelSelection(state.Id, state.Decision!.Id), "selection-no-current-candidate") : Missing("required-selection");
+
+        // Unknown damage carries no invented removal value. Keep the same small
+        // social preference for card and player recipients, on the same scale
+        // as the nudge used alongside known effect estimates.
+        double DamageThreat(int player) => Math.Clamp(CasualTableAssessment.OpponentScore(request, player) * .01, 0, .25);
     }
 
     private static AiProposal Confirmation(AiDecisionRequest request, ConfirmationPayload confirmation)

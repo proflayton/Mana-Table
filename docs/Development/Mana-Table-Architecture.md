@@ -117,6 +117,17 @@ Unknown adjusted costs, conditions and resource dependencies cannot become
 fabricated legality. These components remain heuristic policy inputs, separate
 from the authoritative rules provider and any future forward-model port.
 
+Damage target comparisons prefer the complete operation graph. If an unrelated
+unmodeled operation makes that estimate incomplete, a known active damage node
+can supply an explicitly partial comparison using its per-recipient amount and
+current target domain. It cannot bypass an unsupported graph or an exhausted
+search. The legacy decision scalar may describe a distributed total and never
+fills an unknown recipient amount. Unknown damage earns no full-body removal
+value; card and player recipients retain the same bounded social preference.
+Current toughness, marked damage and effective indestructible inform nominal
+damage utility. Prevention, replacement and future responses remain unmodeled;
+only later engine observations establish actual damage and departures.
+
 Numeric announcements retain the exact callback's source and declared cost.
 `NumericDecision` distinguishes announcing X from an unrelated number. Its
 `ManaFundingContext` contains read-only physical resources and production
