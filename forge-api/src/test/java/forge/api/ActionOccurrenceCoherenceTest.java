@@ -47,22 +47,27 @@ public class ActionOccurrenceCoherenceTest {
                     && text(input.prompt(), "inputType").startsWith("InputPayMana"));
             assertTrue(payment.state().getAsJsonArray("stack").isEmpty(), "Paying does not yet put the spell on the actual stack");
             for (int publication = 0; publication < 3; publication++) {
-                var batch = table.automatedSeats().stream().map(MatchSession::automatedObservation).toList();
-                Files.writeString(evidence.resolve("private-payment-observations-" + publication + ".json"), JSON.toJson(batch));
-                var owner = batch.stream().map(row -> JSON.toJsonTree(row).getAsJsonObject())
-                        .filter(row -> row.getAsJsonObject("state").get("viewerId").getAsInt() == actor).findFirst().orElseThrow();
-                var state = owner.getAsJsonObject("state"); var prompt = state.getAsJsonObject("prompt");
-                var portrait = prompt.getAsJsonObject("sourceCard");
-                assertEquals(text(portrait, "name"), "Rhys the Redeemed");
-                assertEquals(text(prompt, "sourceZone"), "Stack");
-                assertFalse(text(portrait, "visualId").isEmpty(), "The current actual payment source must stay identifiable");
-                assertEquals(text(portrait, "combatId"), text(portrait, "visualId"));
-                assertEquals(text(owner.getAsJsonObject("semantics").getAsJsonObject("payment"), "sourceCardId"),
-                        text(portrait, "visualId"), "Current payment provenance and its entitled readonly portrait must be the same occurrence");
-                assertEquals(text(portrait, "key"), ""); assertFalse(portrait.get("selectable").getAsBoolean());
-                assertFalse(portrait.get("highlighted").getAsBoolean());
-                assertEquals(JSON.toJsonTree(table.automatedSeats().stream().map(MatchSession::automatedObservation).toList()), JSON.toJsonTree(batch),
-                        "A current payment read must not change any audience's occurrence");
+                var retained = HeadlessPlatform.query(table, () -> {
+                    // Compare pure reads at one observation cut; a queued input
+                    // publication may legitimately advance revisions between cuts.
+                    var batch = table.automatedSeats().stream().map(MatchSession::automatedObservation).toList();
+                    var owner = batch.stream().map(row -> JSON.toJsonTree(row).getAsJsonObject())
+                            .filter(row -> row.getAsJsonObject("state").get("viewerId").getAsInt() == actor).findFirst().orElseThrow();
+                    var state = owner.getAsJsonObject("state"); var prompt = state.getAsJsonObject("prompt");
+                    var portrait = prompt.getAsJsonObject("sourceCard");
+                    assertEquals(text(portrait, "name"), "Rhys the Redeemed");
+                    assertEquals(text(prompt, "sourceZone"), "Stack");
+                    assertFalse(text(portrait, "visualId").isEmpty(), "The current actual payment source must stay identifiable");
+                    assertEquals(text(portrait, "combatId"), text(portrait, "visualId"));
+                    assertEquals(text(owner.getAsJsonObject("semantics").getAsJsonObject("payment"), "sourceCardId"),
+                            text(portrait, "visualId"), "Current payment provenance and its entitled readonly portrait must be the same occurrence");
+                    assertEquals(text(portrait, "key"), ""); assertFalse(portrait.get("selectable").getAsBoolean());
+                    assertFalse(portrait.get("highlighted").getAsBoolean());
+                    assertEquals(JSON.toJsonTree(table.automatedSeats().stream().map(MatchSession::automatedObservation).toList()), JSON.toJsonTree(batch),
+                            "A current payment read must not change any audience's occurrence");
+                    return JSON.toJson(batch);
+                });
+                Files.writeString(evidence.resolve("private-payment-observations-" + publication + ".json"), retained);
                 table.publish();
             }
             payment = until(table, answered, actor, input -> input.seat() == actor
@@ -113,31 +118,35 @@ public class ActionOccurrenceCoherenceTest {
             assertEquals(viewer(gained.state()).get("life").getAsInt(), 43);
             var end = until(table, answered, 0, input -> input.seat() == 0 && priority(input)
                     && text(input.state(), "phaseKey").equals("END_OF_TURN") && input.state().getAsJsonArray("stack").size() == 2);
-            HeadlessPlatform.query(table, () -> null);
-            var batch = table.automatedSeats().stream().map(MatchSession::automatedObservation).toList();
-            Files.writeString(evidence.resolve("private-observations.json"), JSON.toJson(batch));
-            String currentId = null;
-            for (var observation : batch) {
-                var row = JSON.toJsonTree(observation).getAsJsonObject();
-                assertCurrentOccurrences(row);
-                var state = row.getAsJsonObject("state");
-                var haliya = card(state, "Battlefield", "Haliya, Guided by Light");
-                if (currentId == null) currentId = text(haliya, "visualId");
-                assertEquals(text(haliya, "visualId"), currentId, "All audiences share one live public occurrence");
-                assertEquals(state.getAsJsonArray("stack").size(), 2);
-                for (var item : state.getAsJsonArray("stack")) {
-                    var portrait = item.getAsJsonObject().getAsJsonObject("card");
-                    assertNotNull(portrait.get("visualId")); assertFalse(portrait.get("visualId").isJsonNull());
-                    assertNotNull(portrait.get("combatId")); assertFalse(portrait.get("combatId").isJsonNull());
+            record WarpObservation(String json, String sourceId) { }
+            var retained = HeadlessPlatform.query(table, () -> {
+                var batch = table.automatedSeats().stream().map(MatchSession::automatedObservation).toList();
+                String currentId = null;
+                for (var observation : batch) {
+                    var row = JSON.toJsonTree(observation).getAsJsonObject();
+                    assertCurrentOccurrences(row);
+                    var state = row.getAsJsonObject("state");
+                    var haliya = card(state, "Battlefield", "Haliya, Guided by Light");
+                    if (currentId == null) currentId = text(haliya, "visualId");
+                    assertEquals(text(haliya, "visualId"), currentId, "All audiences share one live public occurrence");
+                    assertEquals(state.getAsJsonArray("stack").size(), 2);
+                    for (var item : state.getAsJsonArray("stack")) {
+                        var portrait = item.getAsJsonObject().getAsJsonObject("card");
+                        assertNotNull(portrait.get("visualId")); assertFalse(portrait.get("visualId").isJsonNull());
+                        assertNotNull(portrait.get("combatId")); assertFalse(portrait.get("combatId").isJsonNull());
+                    }
+                    assertTrue(state.getAsJsonArray("stack").asList().stream().map(value -> value.getAsJsonObject().getAsJsonObject("card"))
+                            .anyMatch(portrait -> text(portrait, "visualId").isEmpty()), "The Warp trigger's historical portrait grants no live identity");
                 }
-                assertTrue(state.getAsJsonArray("stack").asList().stream().map(value -> value.getAsJsonObject().getAsJsonObject("card"))
-                        .anyMatch(portrait -> text(portrait, "visualId").isEmpty()), "The Warp trigger's historical portrait grants no live identity");
-            }
-            var spectator = JSON.toJsonTree(table.spectatorState()).getAsJsonObject();
-            assertEquals(text(card(spectator, "Battlefield", "Haliya, Guided by Light"), "visualId"), currentId);
-            var stable = JSON.toJsonTree(batch);
-            assertEquals(JSON.toJsonTree(table.automatedSeats().stream().map(MatchSession::automatedObservation).toList()), stable,
-                    "A historical portrait cannot rotate identities during repeated current reads");
+                var spectator = JSON.toJsonTree(table.spectatorState()).getAsJsonObject();
+                assertEquals(text(card(spectator, "Battlefield", "Haliya, Guided by Light"), "visualId"), currentId);
+                var stable = JSON.toJsonTree(batch);
+                assertEquals(JSON.toJsonTree(table.automatedSeats().stream().map(MatchSession::automatedObservation).toList()), stable,
+                        "A historical portrait cannot rotate identities during repeated current reads");
+                return new WarpObservation(JSON.toJson(batch), currentId);
+            });
+            Files.writeString(evidence.resolve("private-observations.json"), retained.json());
+            String currentId = retained.sourceId();
             table.publish();
             for (var seat : table.automatedSeats()) {
                 var row = JSON.toJsonTree(seat.automatedObservation()).getAsJsonObject(); assertCurrentOccurrences(row);
@@ -213,17 +222,20 @@ public class ActionOccurrenceCoherenceTest {
             assertCurrentOccurrences(observation);
             for (var seat : table.automatedSeats()) seat.automatedObservation();
             table.publish();
-            assertCurrentOccurrences(JSON.toJsonTree(table.automatedSeat(actor).automatedObservation()).getAsJsonObject());
-            var republished = JSON.toJsonTree(table.automatedSeat(actor).automatedObservation());
-            assertEquals(JSON.toJsonTree(table.automatedSeat(actor).automatedObservation()), republished,
-                    "Repeated current observations cannot rotate another audience's occurrence identities");
-            var state = republished.getAsJsonObject().getAsJsonObject("state");
-            var current = new Input(actor, state, state.getAsJsonObject("prompt"));
-            var returned = zone(viewer(state), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
-            assertThrows(IllegalArgumentException.class, () -> table.automatedSeat(actor).action(request(current,
-                    Map.of("action", "useSourceAction", "key", text(returned, "key"), "actionId", text(cast, "id")))));
-            assertEquals(JSON.toJsonTree(table.automatedSeat(actor).automatedObservation()), republished,
-                    "The old cast handle cannot be rebound to the returned card's new current key");
+            HeadlessPlatform.query(table, () -> {
+                assertCurrentOccurrences(JSON.toJsonTree(table.automatedSeat(actor).automatedObservation()).getAsJsonObject());
+                var republished = JSON.toJsonTree(table.automatedSeat(actor).automatedObservation());
+                assertEquals(JSON.toJsonTree(table.automatedSeat(actor).automatedObservation()), republished,
+                        "Repeated current observations cannot rotate another audience's occurrence identities");
+                var state = republished.getAsJsonObject().getAsJsonObject("state");
+                var current = new Input(actor, state, state.getAsJsonObject("prompt"));
+                var returned = zone(viewer(state), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
+                assertThrows(IllegalArgumentException.class, () -> table.automatedSeat(actor).action(request(current,
+                        Map.of("action", "useSourceAction", "key", text(returned, "key"), "actionId", text(cast, "id")))));
+                assertEquals(JSON.toJsonTree(table.automatedSeat(actor).automatedObservation()), republished,
+                        "The old cast handle cannot be rebound to the returned card's new current key");
+                return null;
+            });
         }
     }
 

@@ -1269,6 +1269,12 @@ one final `receipt.json` on JVM shutdown. Reused Surefire forks can create sever
 TestNG executions, so ending the first class cannot finalize the process. Failure
 stacks are retained immediately; a crash without a final receipt is incomplete.
 
+Tests of read-only observation purity must capture both complete batches within
+one existing `HeadlessPlatform.query(table, ...)` state boundary. Comparing
+separately unlocked batches can mistake an intervening input publication for a
+mutating read. Keep exact equality and all domain assertions; retain serialized
+evidence outside the boundary and leave deliberate publications between checks.
+
 The opt-in `api-test-trial` Maven profile compares the complete API suite in one
 reused JVM and in two reused JVMs over one compilation. Upstream module tests run
 once. The first mode uses the normal test phase; the second runs at integration
