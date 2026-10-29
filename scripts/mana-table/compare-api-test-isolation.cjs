@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 
 const HEX = /^[a-f0-9]{64}$/;
 const CLASS = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/;
-const MODES = { serial: [1], parallel: [1, 2] };
+const MODE_FORK_COUNTS = { serial: 1, parallel: 2 };
 const BASE = ['schemaVersion', 'trialId', 'mode', 'forkId', 'pid', 'sourceRevision',
   'testClassSetSha256', 'jdk', 'workspace', 'startedAtEpochMs'];
 const IDENTITY = ['className', 'methodName', 'parameterTypes', 'parameterSha256', 'status'];
@@ -211,10 +211,16 @@ function compareTrial({ root, manifestPath = path.join(root, 'manifest.json') })
     && new Set(manifest.selectedClassNames).size === manifest.selectedClassNames.length, 'A unique selected test class inventory is required.');
   const modes = {}, knownPids = new Set(), knownNonces = new Set();
   directory(path.join(root, 'reports'));
-  entries(path.join(root, 'reports'), Object.keys(MODES));
-  for (const [mode, forkIds] of Object.entries(MODES)) {
+  entries(path.join(root, 'reports'), Object.keys(MODE_FORK_COUNTS));
+  for (const [mode, forkCount] of Object.entries(MODE_FORK_COUNTS)) {
     directory(path.join(root, mode)); directory(path.join(root, 'reports', mode));
-    entries(path.join(root, mode), forkIds.map(id => 'fork-' + id));
+    const owners = fs.readdirSync(path.join(root, mode));
+    requireFact(owners.length === forkCount, 'Missing, foreign or duplicate fork/report ownership.');
+    const forkIds = owners.map(name => {
+      const label = /^fork-([1-9][0-9]{0,8})$/.exec(name);
+      requireFact(label, 'Fork owners require canonical numeric labels.');
+      return Number(label[1]);
+    }).sort((left, right) => left - right);
     entries(path.join(root, 'reports', mode), forkIds.map(id => 'fork-' + id));
     const forks = forkIds.map(id => readFork(root, manifest, mode, id, knownPids, knownNonces));
     const counts = new Map(), classes = new Map();

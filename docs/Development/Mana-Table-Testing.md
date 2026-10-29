@@ -1312,6 +1312,10 @@ same source defines the expected cases; the case count is not a permanent golden
 Each fork requires root Surefire TEST XML reports. Direct `junitreports/` mirrors
 for that fork's owned classes are recognized TestNG diagnostics; they do not
 count as additional invocations or replace the root reports and journals.
+Fork numbers are Surefire allocator labels reused across executions: after the
+parallel mode, the serial process may legitimately use `fork-2`. Ownership means
+exactly one serial process and two parallel processes, with each report directory
+and receipt bound to the same actual label, PID and workspace.
 
 The output records wall time, bootstrap time and per-pool peak heap usage. Heap
 pool peaks are diagnostics, not process RSS or a simultaneous total. Equivalence

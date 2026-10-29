@@ -81,6 +81,28 @@ function addTestNgMirrors(record) {
   return mirrors;
 }
 
+function relabelFork(record, label, forkId) {
+  const previous = path.dirname(record.workspace), next = path.join(path.dirname(previous), label);
+  const nextReport = path.join(path.dirname(record.report), label);
+  assert.equal(path.dirname(previous), path.dirname(next));
+  assert.equal(path.dirname(record.report), path.dirname(nextReport));
+  fs.renameSync(previous, next); fs.renameSync(record.report, nextReport);
+  record.workspace = path.join(next, path.basename(record.workspace)); record.report = nextReport;
+  record.start.workspace = record.receipt.workspace = record.workspace;
+  record.start.forkId = record.receipt.forkId = forkId;
+  persist(record);
+}
+
+function shiftExecution(record, milliseconds) {
+  record.start.startedAtEpochMs += milliseconds;
+  record.receipt.startedAtEpochMs += milliseconds;
+  record.receipt.completedAtEpochMs += milliseconds;
+  for (const value of [...record.receipt.executedClasses, ...record.rows]) {
+    value.startedAtEpochMs += milliseconds; value.completedAtEpochMs += milliseconds;
+  }
+  persist(record);
+}
+
 test('matches exact dynamic invocation multisets and independently owned overlapping processes', t => {
   const f = fixture(t), result = f.compare();
   assert.equal(result.equivalent, true); assert.equal(result.invocations, 5); assert.equal(result.classes, 3);
@@ -107,6 +129,32 @@ test('each JDK trial binds its own compiled bytes rather than requiring Java 17 
   }
   assert.equal(f.compare().jdk.runtimeVersion, '21.0.1+1');
 });
+
+test('a reverse-order serial JVM can own the returned Surefire fork-2 label after two parallel JVMs', t => {
+  const f = fixture(t);
+  f.manifest.executionOrder = ['parallel', 'serial']; write(path.join(f.root, 'manifest.json'), f.manifest);
+  relabelFork(f.serial, 'fork-2', 2);
+  shiftExecution(f.serial, 4000); shiftExecution(f.left, -2000); shiftExecution(f.right, -2000);
+  const result = f.compare();
+  assert.equal(result.invocations, 5); assert.equal(result.classes, 3);
+  assert.deepEqual(result.executionOrder, ['parallel', 'serial']);
+  assert.deepEqual(result.serial.forks.map(fork => fork.forkId), [2]);
+  assert.deepEqual(result.parallel.forks.map(fork => fork.forkId), [1, 2]);
+  assert.notEqual(result.serial.forks[0].pid, result.parallel.forks[1].pid,
+    'A reused allocator label does not reuse an actual test process.');
+});
+
+test('numeric fork labels identify owners rather than mode-local ordinal ranges', t => {
+  const f = fixture(t);
+  relabelFork(f.serial, 'fork-9', 9); relabelFork(f.left, 'fork-17', 17); relabelFork(f.right, 'fork-8', 8);
+  assert.deepEqual(f.compare().parallel.forks.map(fork => fork.forkId), [8, 17]);
+});
+
+for (const label of ['fork-0', 'fork-01', 'Fork-1', 'fork-1e0', 'fork-+1', 'fork-1000000000', 'fork-1.extra'])
+  test('rejects a noncanonical fork owner label: ' + label, t => {
+    const f = fixture(t); relabelFork(f.serial, label, 1);
+    assert.throws(f.compare, /canonical numeric labels/);
+  });
 
 test('retains real Surefire root reports and owned one-level TestNG junitreports mirrors as separate diagnostics', t => {
   const f = fixture(t);
@@ -162,6 +210,12 @@ const mutations = [
   ['missing per-fork XML diagnostics', f => { fs.unlinkSync(path.join(f.right.report, 'TEST-TestSuite.xml')); }],
   ['empty per-fork XML diagnostics', f => { fs.writeFileSync(path.join(f.right.report, 'TEST-TestSuite.xml'), ''); }],
   ['a foreign report fork', f => { fs.mkdirSync(path.join(f.root, 'reports', 'parallel', 'fork-3')); }],
+  ['a missing process owner', f => { fs.renameSync(path.dirname(f.right.workspace), path.join(f.root, 'timings')); }],
+  ['an additional serial process owner', f => { fs.mkdirSync(path.join(f.root, 'serial', 'fork-2')); }],
+  ['a missing report owner', f => { fs.renameSync(f.right.report, path.join(f.root, 'timings')); }],
+  ['report labels that disagree with process owners', f => { fs.renameSync(f.right.report, path.join(path.dirname(f.right.report), 'fork-3')); }],
+  ['a relabeled owner with its old receipt ID', f => { relabelFork(f.serial, 'fork-2', 1); }],
+  ['a workspace path alias after otherwise valid owner relabeling', f => { relabelFork(f.serial, 'fork-2', 2); f.serial.start.workspace = f.serial.receipt.workspace = path.dirname(f.serial.workspace) + path.sep + '.' + path.sep + path.basename(f.serial.workspace); persist(f.serial); }],
   ['nested duplicate TEST reports', f => { fs.mkdirSync(path.join(f.right.report, 'foreign')); fs.copyFileSync(path.join(f.right.report, 'TEST-TestSuite.xml'), path.join(f.right.report, 'foreign', 'TEST-TestSuite.xml')); }],
   ['TestNG mirrors without a root Surefire report', f => { addTestNgMirrors(f.right); fs.unlinkSync(path.join(f.right.report, 'TEST-TestSuite.xml')); }],
   ['empty TestNG mirrors', f => { const mirrors = addTestNgMirrors(f.right); fs.writeFileSync(path.join(mirrors, 'TEST-' + f.right.receipt.executedClasses[0].name + '.xml'), ''); }],
