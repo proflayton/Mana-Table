@@ -55,6 +55,10 @@ reentrant hold while waiting and restore them afterward. Copying several live
 views under the adapter gate alone is insufficient: a mana task can otherwise
 change a card between two audience projections. Other upstream hosts retain
 their default behavior unless they opt in and instrument their waits.
+That guarantee applies to one committed publication, not a batch of independent
+network reads. Sequential responses can legitimately have different board
+revisions. Transport convergence correlates the retained operation receipt and
+checks each frame's facts without granting a new action or retrying the inverse.
 Publication first revokes lost visibility for all seat audiences, then allocates
 identities for their new snapshots and the spectator. A stale audience can revoke
 only the identity generation it previously observed. This ordering also covers
@@ -177,6 +181,26 @@ payability remains a separate fact. The prospective action and later numeric
 announcement use the same resource projection, avoiding a commitment which the
 numeric planner then cannot support. Unsupported costs remain unknown rather
 than being silently treated as free.
+
+Forge's internal `ManaPool.quoteFixedPayment` is a separate, bounded read query
+for an already fixed bill and already floating mana. It copies the conversion
+matrix behind `ManaPaymentMatrix` and walks a detached bill and unit inventory
+using the actual payment weighting. It never borrows or refunds live units,
+invokes a controller to break a tie, activates a producer or rewrites the paying
+ability. A complete witness is `PAYABLE`; every inconclusive result is `UNKNOWN`.
+Unsupported restrictions, unresolved X, hybrid/snow costs and oversized inputs
+cannot become a negative payability claim. A partial residual describes one
+greedy allocation, not proof that another allocation cannot pay. This internal
+witness supplies no command handle or additional client protocol.
+
+The fixed-bill manual-route fallback uses that query instead of borrowing pool
+mana. Mandatory payment inputs use its complete positive witness, retaining the
+ordinary rules check for every unknown result so an inconclusive quote cannot
+enable cancellation of a required payment. This is a focused migration: the
+primary `ComputerUtilMana` planner still mutates temporary live payment state,
+and its existing `test=true` borrowing contract remains unchanged. Controller
+swaps, cost calculation and manual-producer discovery are not certified pure.
+The bulk planner must therefore remain deferred during a manual Undo window.
 
 Human source catalogs carry a smaller `ManaCostPreview`, not the bot's private
 action semantics. It contains nominal costs, cost knowledge and read-only funding

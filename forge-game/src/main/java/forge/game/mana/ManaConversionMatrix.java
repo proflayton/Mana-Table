@@ -1,10 +1,11 @@
 package forge.game.mana;
 
 import forge.card.mana.ManaAtom;
+import forge.card.mana.ManaCostShard;
 
 import java.util.Arrays;
 
-public class ManaConversionMatrix {
+public class ManaConversionMatrix implements ManaPaymentMatrix {
     static byte[] identityMatrix = { ManaAtom.WHITE, ManaAtom.BLUE, ManaAtom.BLACK, ManaAtom.RED, ManaAtom.GREEN, ManaAtom.COLORLESS };
 
     // Conversion matrix ORs byte values to make mana more payable
@@ -29,6 +30,38 @@ public class ManaConversionMatrix {
         byte colorUse = colorConversionMatrix[matrixIdx];
         colorUse &= colorRestrictionMatrix[matrixIdx];
         return colorUse;
+    }
+
+    public boolean canPayForShardWithColor(ManaCostShard shard, byte color) {
+        return canPayForShard(this, shard, color);
+    }
+
+    private static boolean canPayForShard(ManaPaymentMatrix matrix, ManaCostShard shard, byte color) {
+        if (shard.isOfKind(ManaAtom.COLORLESS) && color == ManaAtom.GENERIC) {
+            return false; // Preserve the existing generic/colorless distinction.
+        }
+        byte line = matrix.getPossibleColorUses(color);
+        for (byte outColor : ManaAtom.MANATYPES) {
+            if ((line & outColor) != 0 && shard.canBePaidWithManaOfColor(outColor)) return true;
+        }
+        return shard.canBePaidWithManaOfColor((byte) 0);
+    }
+
+    /** Exact detached arrays, with no operations that can change the live matrix. */
+    public ManaPaymentMatrix paymentSnapshot() {
+        return new PaymentSnapshot(colorConversionMatrix.clone(), colorRestrictionMatrix.clone(), snowForColor);
+    }
+
+    private record PaymentSnapshot(byte[] conversions, byte[] restrictions, boolean snowForColor) implements ManaPaymentMatrix {
+        @Override public boolean isSnowForColor() { return snowForColor; }
+        @Override public byte getPossibleColorUses(byte color) {
+            int row = ManaAtom.getIndexOfFirstManaType(color);
+            if (row < 0) row = identityMatrix.length - 1;
+            return (byte) (conversions[row] & restrictions[row]);
+        }
+        @Override public boolean canPayForShardWithColor(ManaCostShard shard, byte color) {
+            return canPayForShard(this, shard, color);
+        }
     }
 
     public void adjustColorReplacement(byte originalColor, byte replacementColor, boolean additive) {

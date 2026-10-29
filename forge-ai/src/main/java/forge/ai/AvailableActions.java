@@ -204,18 +204,14 @@ public final class AvailableActions {
             // chains with a choice before production. Its failure is not proof that
             // a human cannot pay. Keep relevant manual routes discoverable, and
             // leave the scan incomplete so they can never authorize Auto passing.
-            var remaining = ComputerUtilMana.calculateManaCost(sa.getPayCosts(), sa, player, true, 0, false);
-            var floating = new ArrayList<forge.game.mana.Mana>();
-            try {
-                player.getManaPool().payManaCostFromPool(remaining, sa, true, floating);
-            } finally {
-                // The pool's test operation refunds a complete payment itself;
-                // partial payment remains borrowed until its caller refunds it.
-                player.getManaPool().refundMana(floating);
-            }
+            var bill = ComputerUtilMana.calculateManaCost(sa.getPayCosts(), sa, player, true, 0, false);
+            var quote = player.getManaPool().quoteFixedPayment(bill, sa);
+            // An omitted inventory or unsupported bill cannot prove that a
+            // manual route is irrelevant, and can never authorize Auto.
+            if (quote.remainingBill() == null) return PaymentAvailability.MANUAL;
             for (SpellAbility mana : manualRoutes()) {
                 for (String symbol : List.of("W", "U", "B", "R", "G", "C")) {
-                    if (mana.canProduce(symbol) && remaining.isAnyPartPayableWith(ManaAtom.fromName(symbol), player.getManaPool()))
+                    if (mana.canProduce(symbol) && quote.canUseColor(ManaAtom.fromName(symbol)))
                         return PaymentAvailability.MANUAL;
                 }
             }

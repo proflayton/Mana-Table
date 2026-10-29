@@ -64,6 +64,14 @@ cached/random stream barriers, permission restoration and unsupported routes.
 `CertifiedUndoTest`, `CertifiedUndoTransportTest` and `CertifiedUndoFaultTest`
 exercise normal Commander actions, actual local/TCP seats, stale offers, source
 queries, clocks, competing departures and post-inverse publication failure.
+The local test captures one committed audience cohort and requires exact revision
+and restoration-marker equality across it. Sequential TCP responses can straddle
+a publication. The transport test deliberately retains a real pre-Undo response
+beside a real restored response, then waits by observation only for both seats
+to receive the original restoration receipt. Every frame is checked immediately
+against its own marker, tap and mana state; convergence never answers priority
+or retries Undo. Network traces and restoration observations remain under
+`target/rules-regressions` so CI failure uploads retain them.
 Shared client/AI regressions cover restoration chronology and lost receipts;
 native `GameplayUndoWireChecks` and `GameplayUndoPresentationChecks` cover the
 negotiated protocol, pointer/keyboard/focus, Auto and one-time scene reconciliation.
@@ -596,6 +604,21 @@ current source state, leaving the stack, an already-running clock and provider
 classification validation. Its authored observations test presentation and
 command safety; the Java journeys supply the rules evidence. Window captures
 and human readability review remain separate.
+
+`ManaPoolPaymentQuoteTest` exercises the internal fixed-bill pool query with real
+mana provenance. It checks exact unit identity and occurrence counts, unchanged
+pool order, events, rules timestamps, reversal barriers and ability metadata;
+conversion snapshots and tied choices require no controller. Unsupported input
+and an adversarial greedy allocation stay unknown, while complete witnesses
+agree with ordinary payment. The availability journey distinguishes a fresh
+manual source offer from bulk affordability knowledge and completes real paid
+casts; explicit unpaid color requirements reject Continue without spending the
+wrong mana. `MandatoryManaQuoteTest` exercises the actual required-payment
+constructor and its Cancel button through a real controller: a supported positive
+quote leaves exact pool units and mana events untouched, while restricted and
+hybrid unknowns retain the ordinary forced-payment check. An ineligible restricted
+unit cannot force payment of a noncreature spell. These tests do not certify the
+broader live availability planner as pure or replace its manual Undo deferral.
 The small-window full card-reading journey also runs in the fast native release
 set, sharing the AI-seat shard. It waits for the actual automatic pass after a
 visible stack announcement, rather than assuming the earlier shorter animation

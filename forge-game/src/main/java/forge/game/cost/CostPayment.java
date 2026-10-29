@@ -34,6 +34,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 
 /**
  * <p>
@@ -246,14 +247,31 @@ public class CostPayment extends ManaConversionMatrix {
      */
     public static Mana getMana(final Player player, final ManaCostShard shard, final SpellAbility saBeingPaidFor,
             final byte colorsPaid, Map<String, Integer> xManaCostPaidByColor) {
-        final List<Pair<Mana, Integer>> weightedOptions = selectManaToPayFor(player.getManaPool(), shard,
-            saBeingPaidFor, colorsPaid, xManaCostPaidByColor);
+        final List<Mana> manaChoices = bestManaChoices(selectManaToPayFor(player.getManaPool(), player.getManaPool(), shard,
+                colorsPaid, xManaCostPaidByColor, mana ->
+                    (mana.getManaAbility() == null || mana.getManaAbility().meetsSpellAndShardRestrictions(saBeingPaidFor, shard, mana.getColor()))
+                        && saBeingPaidFor.allowsPayingWithShard(mana.getSourceCard(), mana.getColor())));
 
         // Exclude border case
-        if (weightedOptions.isEmpty()) {
+        if (manaChoices.isEmpty()) {
             return null; // There is no matching mana in the pool
         }
 
+        // got an only one best option?
+        if (manaChoices.size() == 1) return manaChoices.get(0);
+        // Only actual payment asks a controller to break a tie.
+        return player.getController().chooseManaFromPool(manaChoices);
+    }
+
+    /** Pure shared weighting for an already detached, unrestricted unit ledger.
+     *  Purpose restrictions must have been excluded by the caller's closed quote boundary. */
+    public static List<Mana> unrestrictedManaChoices(List<Mana> units, ManaPaymentMatrix matrix,
+            ManaCostShard shard, byte colorsPaid) {
+        return List.copyOf(bestManaChoices(selectManaToPayFor(units, matrix, shard, colorsPaid, null,
+                mana -> !mana.isRestricted())));
+    }
+
+    private static List<Mana> bestManaChoices(List<Pair<Mana, Integer>> weightedOptions) {
         // select equal weight possibilities
         List<Mana> manaChoices = new ArrayList<>();
         int bestWeight = Integer.MIN_VALUE;
@@ -281,24 +299,19 @@ public class CostPayment extends ManaConversionMatrix {
             }
         }
 
-        // got an only one best option?
-        if (manaChoices.size() == 1) {
-            return manaChoices.get(0);
-        }
-
-        // Let them choose then
-        return player.getController().chooseManaFromPool(manaChoices);
+        return manaChoices;
     }
 
-    private static List<Pair<Mana, Integer>> selectManaToPayFor(final ManaPool manapool, final ManaCostShard shard,
-            final SpellAbility saBeingPaidFor, final byte colorsPaid, Map<String, Integer> xManaCostPaidByColor) {
+    private static List<Pair<Mana, Integer>> selectManaToPayFor(final Iterable<Mana> units,
+            final ManaPaymentMatrix matrix, final ManaCostShard shard,
+            final byte colorsPaid, Map<String, Integer> xManaCostPaidByColor, Predicate<Mana> eligible) {
         final List<Pair<Mana, Integer>> weightedOptions = new ArrayList<>();
-        for (final Mana thisMana : Lists.newArrayList(manapool)) {
+        for (final Mana thisMana : Lists.newArrayList(units)) {
             if (shard == ManaCostShard.COLORED_X && !ManaCostBeingPaid.canColoredXShardBePaidByColor(MagicColor.toShortString(thisMana.getColor()), xManaCostPaidByColor)) {
                 continue;
             }
 
-            if (!manapool.canPayForShardWithColor(shard, thisMana.getColor())) {
+            if (!matrix.canPayForShardWithColor(shard, thisMana.getColor())) {
                 continue;
             }
 
@@ -306,13 +319,7 @@ public class CostPayment extends ManaConversionMatrix {
                 continue;
             }
 
-            if (thisMana.getManaAbility() != null && !thisMana.getManaAbility().meetsSpellAndShardRestrictions(saBeingPaidFor, shard, thisMana.getColor())) {
-                continue;
-            }
-
-            if (!saBeingPaidFor.allowsPayingWithShard(thisMana.getSourceCard(), thisMana.getColor())) {
-                continue;
-            }
+            if (!eligible.test(thisMana)) continue;
 
             int weight = 0;
             if (colorsPaid == -1) {
