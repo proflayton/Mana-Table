@@ -11,6 +11,19 @@ point for the Windows client.
 
 ## AI policy boundary
 
+Optional human payment preferences belong to `Mana.Client/ClientSession`, not
+the renderer, AI policy or Forge's strategic controller. The rules provider
+certifies the actual original fixed bill, current optional input provenance and
+current safe funding support; `Mana.Contracts` carries those immutable facts and
+the closed `AutoPayOptionalPayment` command. Each accepted command rechecks its
+exact offer and live resources, executes one ordinary funding gesture and then
+reobserves. Failed bounded funding searches mean unknown, never unpayable; only
+a separate absence proof permits a quiet decline. The client owns match-local
+source/ability consent, accepted-snapshot lifecycle and interruption. Its existing
+serialized finite runner owns dispatch and reconciliation. Source preferences do
+not grant priority yields, persist across matches or authorize arbitrary choices.
+The game projects those preferences onto the actual source and reader controls.
+
 AI seats use `Mana.AI` through the same scoped decisions as human players;
 Forge supplies the rules and current legal choices. The lobby offers bundled
 opponents and validated, committed saved decks through the same seat picker.

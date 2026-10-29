@@ -117,6 +117,8 @@ internal abstract record MatchIntent : UiIntent
         internal override InteractionScopeKind ScopeKind => Armed ? InteractionScopeKind.Current : InteractionScopeKind.Playback;
     }
     internal sealed record DeclineRepeatedPayments : MatchIntent;
+    internal sealed record SetOptionalPaymentMode(Mana.Client.OptionalPaymentMode Mode) : MatchIntent;
+    internal sealed record ClearOptionalPaymentPolicy(string Id) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record ToggleReducedMotion : MatchIntent;
     internal sealed record ToggleSounds : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Settings; }
     internal sealed record SetMasterVolume(float Volume) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Settings; }

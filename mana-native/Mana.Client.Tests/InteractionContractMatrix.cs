@@ -56,9 +56,10 @@ internal static class InteractionContractMatrix
     {
         var timer = Stopwatch.StartNew();
         var commandTypes = typeof(GameCommand).Assembly.GetTypes().Where(type => !type.IsAbstract && typeof(GameCommand).IsAssignableFrom(type)).OrderBy(type => type.FullName);
-        // Stateful finite grants have their own serial execute/observe and
+        // Stateful finite grants and optional funding have serial execute/observe and
         // recovery journeys; they are not ordinary prompt-reply fixture rows.
         check(Cases.Select(row => row.CommandType).Concat(RejectedLegacyCommands).Concat(FiniteYieldLifecycleRegression.CommandTypes)
+                .Concat(OptionalPaymentRegression.CommandTypes)
                 .Distinct().OrderBy(type => type.FullName).SequenceEqual(commandTypes)
                 && Cases.Select(row => row.PayloadType).Distinct().OrderBy(type => type.FullName).SequenceEqual(
                     typeof(DecisionPayload).Assembly.GetTypes().Where(type => type.IsSealed && typeof(DecisionPayload).IsAssignableFrom(type)).OrderBy(type => type.FullName)),

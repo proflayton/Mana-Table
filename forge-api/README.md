@@ -1421,8 +1421,28 @@ future answer. `InputConfirm` repetition is not certified here.
 Certification follows the actual cancellable payment and producing trigger;
 it does not require an `OptionalDecider` parameter in the card's script.
 
+**Source candidate:** a supported fixed literal mana payment can additionally
+publish `optionalPaymentSupport: {policyKey, originalManaParts, availability,
+canAutoPay}`. These facts require the existing certified `optionalDecline` offer.
+Supported bills contain generic or ordinary W/U/B/R/G/C mana; snow, hybrid,
+Phyrexian and variable bills omit support in this first scope.
+The policy key binds its actual original bill after modifiers, source ability and
+payer; remaining payment terms can change during partial funding. Availability
+is `Unknown`, `Payable` or `Unpayable`. A failed bounded witness is unknown. Only
+a separate absence proof across currently available mana routes can establish
+unpayability. `canAutoPay` requires a complete safe witness using eligible pool
+units and supported ordinary taps, without nonmana commitments or nested choices.
+The typed `autoPayOptionalPayment` match action requires `sessionId`, current
+`promptId` and exact `offerId`. It rechecks live support and resource version and
+executes one ordinary funding gesture, then requires a fresh observed decision.
+It does not invoke strategic AI. Original bills are captured when the actual
+input begins, never reconstructed from its first observed partial state.
+Missing support preserves manual answers. These additive protocol-2 fields and
+the new typed command need no deck or player-save migration; future-answer
+preferences live only in the client's current match.
+
 Snapshots add `stackActionVersion` and viewer-local `resolutionChoiceVersion`.
-Actual nonpass priority actions, including mana, advance the former. New owned
+Actual nonpass actions, including mana abilities during payment, advance the former. New owned
 nonpriority inputs advance the latter unless the provider certifies the current
 cancellable trigger payment. Other seats' private choices are not disclosed.
 The existing `stackInterruptionVersion` keeps its full choice/action behavior;

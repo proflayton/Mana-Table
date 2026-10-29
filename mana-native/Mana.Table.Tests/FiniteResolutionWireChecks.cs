@@ -40,6 +40,51 @@ internal static class FiniteResolutionWireChecks
         check(actual.Stack.All(item => item.ExecutionId != "current")
                 && GameCommandPermissions.Allows(actual, new CancelPayment(actual.Id, actual.Decision.Id)),
             "An in-resolution trigger may have left the stack while its exact owned Cancel action remains current");
+        var automatic = wire.DeepClone();
+        automatic["prompt"]!["optionalPaymentSupport"] = JsonNode.Parse("""
+            {"policyKey":"source-original-cost","originalManaParts":[{"symbol":"{2}","count":1}],"availability":"Payable","canAutoPay":true}
+            """);
+        var supported = Decode(automatic);
+        var pay = new AutoPayOptionalPayment(supported.Id, supported.Decision!.Id, "offer-2");
+        var scope = new ForgeCommandScope(); scope.Observe(supported); var encoded = scope.Encode(pay);
+        check(supported.Decision.Payload is PaymentPayload { Pay.Enabled: false,
+                    OptionalPaymentSupport: { PolicyKey: "source-original-cost", OriginalManaParts.Length: 1,
+                        Availability: OptionalManaPaymentAvailability.Payable, CanAutoPay: true } }
+                && encoded["action"] as string == "autoPayOptionalPayment" && encoded["offerId"] as string == "offer-2"
+                && encoded["expectedTask"] as string == "mana"
+                && !GameCommandPermissions.Allows(supported, pay with { OfferId = "earlier-offer" })
+                && !GameCommandPermissions.Allows(actual, pay),
+            "Safe optional funding is a separate exact-offer command and cannot borrow the broad legacy Auto button or older unknown facts");
+        foreach (string availability in new[] { "Unknown", "Unpayable" }) {
+            var unavailable = automatic.DeepClone(); unavailable["prompt"]!["optionalPaymentSupport"]!["availability"] = availability;
+            unavailable["prompt"]!["optionalPaymentSupport"]!["canAutoPay"] = false;
+            check(!GameCommandPermissions.Allows(Decode(unavailable), pay),
+                "Unknown funding and proved absence both withhold automatic spending while remaining distinct: " + availability);
+            unavailable["prompt"]!["optionalPaymentSupport"]!["canAutoPay"] = true;
+            check(Reject(unavailable), "A contradictory positive funding capability fails decoding: " + availability);
+        }
+        foreach (string required in new[] { "policyKey", "originalManaParts", "availability", "canAutoPay" }) {
+            var missing = automatic.DeepClone(); missing["prompt"]!["optionalPaymentSupport"]!.AsObject().Remove(required);
+            check(Reject(missing), "Optional funding support cannot invent an omitted current fact: " + required);
+        }
+        foreach (JsonNode malformed in new JsonNode[] {
+            JsonNode.Parse("""{"policyKey":"","originalManaParts":[{"symbol":"{1}","count":1}],"availability":"Unknown","canAutoPay":false}""")!,
+            JsonNode.Parse("""{"policyKey":"key","originalManaParts":[],"availability":"Unknown","canAutoPay":false}""")!,
+            JsonNode.Parse("""{"policyKey":"key","originalManaParts":[{"symbol":"{X}","count":1}],"availability":"Unknown","canAutoPay":false}""")!,
+            JsonNode.Parse("""{"policyKey":"key","originalManaParts":[{"symbol":"{1}","count":2}],"availability":"Unknown","canAutoPay":false}""")!,
+            JsonNode.Parse("""{"policyKey":"key","originalManaParts":[{"symbol":"{1}","count":1}],"availability":0,"canAutoPay":false}""")!
+        }) {
+            var invalidSupport = automatic.DeepClone(); invalidSupport["prompt"]!["optionalPaymentSupport"] = malformed;
+            check(Reject(invalidSupport), "Malformed, variable, expanded or untyped original funding terms fail before an automatic answer");
+        }
+        var unownedSupport = automatic.DeepClone(); unownedSupport["prompt"]!.AsObject().Remove("optionalDecline");
+        check(Reject(unownedSupport), "Funding support never invents a payer, source or optional offer by itself");
+        foreach (string remaining in new[] { "{3}", "{W}" }) {
+            var enlarged = automatic.DeepClone(); enlarged["prompt"]!["unpaidManaParts"]![0]!["symbol"] = remaining;
+            check(Reject(enlarged), "An increased or different remaining bill cannot borrow a smaller original payment policy: " + remaining);
+        }
+        var missingBill = automatic.DeepClone(); missingBill["prompt"]!.AsObject().Remove("unpaidManaParts");
+        check(Reject(missingBill), "A supported optional payment must retain its actual counted remaining bill");
         var legacy = wire.DeepClone(); legacy["prompt"]!["optionalDecline"] = null;
         legacy["stack"]![0]!["repetition"] = null; legacy.AsObject().Remove("stackActionVersion"); legacy.AsObject().Remove("resolutionChoiceVersion");
         var unknown = Decode(legacy);

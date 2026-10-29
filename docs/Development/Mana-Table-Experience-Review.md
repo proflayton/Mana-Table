@@ -88,7 +88,7 @@ progress and whole-queue completed/remaining counts stay visible while that fini
 work proceeds. Take control remains beside the local portrait during costs and
 choices. Hovering or opening the source pauses local continuation for reading.
 A new response or an unmatched required choice takes attention immediately.
-There is no persistent Always No preference and no matching by display names.
+That finite gesture does not set a future answer preference or match by display names.
 
 Only explicitly captured repeated work uses the grouped presentation beat.
 The initial source/effect remains readable and the live count reflects actual
@@ -158,6 +158,40 @@ explicit withdrawal. Combat checks select actual physical groups of 100 at
 both sizes and preserve identities/camera when entering and leaving the mode.
 These establish control safety and composition, not engine rules proof or human
 acceptance. Real-engine retention and circulation have separate integration gates.
+
+## Optional payment preferences: 29 October 2026 (source candidate)
+
+Panther Idol's actual Mind's Eye trigger must not ask whether to pay when there
+is no available funding route. Empty floating mana alone does not establish
+that: an untapped land can pay. The rules provider separately certifies a fixed
+original bill and current funding availability. Unknown and unsupported routes
+remain explicit questions; the UI never infers impossibility from its mana estimate.
+
+The reference is the same observed [MTGO source-specific Yes/No controls and
+automation marker](https://www.mtgo.com/news/combo-play-improvements) described
+above, separate from yielding priority. The player's intent starts at this actual
+source's optional bill. **Pay once** and **Decline once** answer one occurrence;
+**Ask**, **Auto pay**, and **Auto decline** configure this ability for this game.
+Auto pay is available only for a supported, currently funded literal mana cost.
+Each ordinary funding gesture rechecks the current payment; sacrifice, life,
+targets, variable bills, mana with spending effects and unsupported routes still
+need manual play. This conservative funding scope is our adaptation, not a claim
+that MTGO uses the same payment model.
+
+A quiet marker stays on the actual source permanent. Reading that card reveals
+the saved cost and **Ask instead**, including after its prompt has ended. Reading
+pauses continuation; Take control clears source preferences while reconciling a
+command already sent. No preference passes priority. A changed original bill,
+lost source/control/visibility, new match, recovery or interrupted funding chain
+withdraws or pauses the relevant permission. Source and ability identities, not
+card names, bind future answers. These preferences are match-local, not saved
+deck data. A proved unpayable cost is declined quietly, including inside the
+existing captured-resolution queue; it does not grant permission to spend later.
+
+**Human review: pending for this source candidate.** Authored production pointer
+journeys at 1000x740 and 1540x980, enlarged text and reduced motion check the
+whole source/answer/marker/reader/Ask journey and Take control. They are separate
+from real-engine funding tests and from whether people find the controls clear.
 
 ## Design rules learned from player feedback
 

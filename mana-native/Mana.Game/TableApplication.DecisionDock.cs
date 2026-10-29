@@ -20,7 +20,7 @@ internal sealed partial class TableApplication
         if (turnPassRequest != null) return DecisionDockPauseReason.Interaction;
         if (commandFailure && error.Length > 0) return DecisionDockPauseReason.CommandFailure;
         if (readingId != null || CardCollectionOpen || expandedStackWorkload.Length > 0 || HoveredPendingReference() != null) return DecisionDockPauseReason.Inspection;
-        if ((finiteResolutionIntent != null || groupBlockIntent?.IsActive == true)
+        if ((finiteResolutionIntent != null || groupBlockIntent?.IsActive == true || !session.OptionalPaymentPolicies.IsEmpty)
                 && HitAt(pointer) is { Card: { FaceDown: false } } cardHit && CurrentHit(cardHit))
             return DecisionDockPauseReason.Inspection;
         if (OverlayOpen) return DecisionDockPauseReason.Overlay;
@@ -66,6 +66,7 @@ internal sealed partial class TableApplication
         }
 
         DrawPortraitTurnControls();
+        if (QuietUnpayableOptionalPayment) { decisionPanelBounds = Rectangle.Empty; return; }
         if (DrawGroupBlockDock()) return;
         bool finiteChoice = finiteResolutionIntent != null && d?.Payload is not PriorityPayload;
         if (finiteChoice) DrawPortraitPriority(decisionDock);

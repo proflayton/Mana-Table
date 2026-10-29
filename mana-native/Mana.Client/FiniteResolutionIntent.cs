@@ -252,7 +252,23 @@ public sealed class FiniteResolutionIntent : IFiniteDecisionPolicy
         if (decline != null && state.Decision.Payload is PaymentPayload { OptionalDecline: { } offer }
             && SamePayment(offer) && OwnedDecline(state, offer) && declineMembers.Contains(offer.ProducingTriggerExecutionId)
             && AdmitOffer(offer)) return true;
+        // The provider has proved there is no payable route. This mechanical
+        // negative answer grants no permission to spend resources or answer a
+        // different choice, and remains inside the captured execution fence.
+        if (decline == null && UnpayableCapturedOffer(state) is { } unpayable && AdmitUnpayableOffer(unpayable)) return true;
         return End("unmatched-choice");
+    }
+
+    private OptionalDeclineOffer? UnpayableCapturedOffer(GameSnapshot state)
+        => state.Decision?.Payload is PaymentPayload { OptionalDecline: { } offer,
+            OptionalPaymentSupport.Availability: OptionalManaPaymentAvailability.Unpayable }
+            && members.ContainsKey(offer.ProducingTriggerExecutionId) && OwnedDecline(state, offer) ? offer : null;
+
+    private bool AdmitUnpayableOffer(OptionalDeclineOffer offer)
+    {
+        if (lastOfferId.Length > 0) return AdmitOffer(offer);
+        seenOffers.Add(offer.OfferId); lastOfferId = offer.OfferId; lastOfferExecution = offer.ProducingTriggerExecutionId;
+        return !answered.Contains(offer.ProducingTriggerExecutionId);
     }
 
     private bool AdmitOffer(OptionalDeclineOffer offer)
@@ -268,7 +284,7 @@ public sealed class FiniteResolutionIntent : IFiniteDecisionPolicy
         && offer.SourceCardId == original.SourceCardId && offer.Purpose == original.Purpose
         && offer.PayerId == original.PayerId && !offer.Mandatory;
 
-    private static bool OwnedDecline(GameSnapshot state, OptionalDeclineOffer offer)
+    internal static bool OwnedDecline(GameSnapshot state, OptionalDeclineOffer offer)
     {
         if (state.Decision is not { Payload: PaymentPayload { Cancel.Enabled: true, OptionalDecline: { } current } } decision
             || current != offer || offer.Mandatory || offer.PayerId != state.ViewerId
@@ -314,7 +330,7 @@ public sealed class FiniteResolutionIntent : IFiniteDecisionPolicy
                 var pass = new PassPriority(game, decision.Id) { StackInterruptionVersion = state.StackInterruptionVersion };
                 return GameCommandPermissions.Allows(state, pass) ? pass : null;
             }
-            return decision.Payload is PaymentPayload { OptionalDecline: { } offer } && decline != null
+            return decision.Payload is PaymentPayload { OptionalDecline: { } offer } && (decline != null || UnpayableCapturedOffer(state) != null)
                 && !answered.Contains(offer.ProducingTriggerExecutionId)
                 ? new CancelPayment(game, decision.Id) : null;
         }

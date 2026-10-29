@@ -37,6 +37,9 @@ internal sealed partial class TableApplication
         internal int StackResolutionRemaining => game.CapturedStackRemaining;
         internal Mana.Client.FiniteResolutionIntent? FiniteResolution => game.finiteResolutionIntent;
         internal Mana.Client.FiniteResolutionProgress? FiniteResolutionProgress => game.finiteProgressProjection?.Progress ?? game.lastFiniteProgress;
+        internal System.Collections.Immutable.ImmutableArray<Mana.Client.OptionalPaymentPolicyEntry> OptionalPaymentPolicies => game.session.OptionalPaymentPolicies;
+        internal Mana.Client.OptionalPaymentOffer? CurrentOptionalPayment => game.session.CurrentOptionalPayment;
+        internal bool OptionalPaymentsPaused => game.session.OptionalPaymentsPaused;
         internal int AnnouncementCount => game.matchPresentation.AnnouncementCount;
         internal string? AnnouncementId => game.matchPresentation.Announcement(game.now)?.Id;
         internal ManaJourneyPaint? ManaJourney => game.manaJourneyPaint;

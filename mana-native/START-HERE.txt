@@ -511,6 +511,14 @@ visible. A different cost or required choice stops it. It never pays a cost or
 answers future triggers. Take control and reading withdraw any live server yield;
 resume uses the current queue. A manual action during a live yield first takes
 control; choose your action again once priority returns. No old action is replayed.
+Source candidate: Optional bills also offer Ask, Auto pay and Auto decline for
+that source ability in this game. Pay once / Decline once answer only this offer.
+Auto pay uses supported ordinary mana funding; other commitments remain manual.
+A quiet mark on the source shows an active preference. Read the source and choose
+Ask instead to clear it after the prompt ends. Reading pauses these answers;
+Take control clears them. They do not yield priority or carry into another game.
+Costs proved unpayable by the engine are declined quietly. An empty mana pool
+alone is insufficient: untapped lands and other available routes still matter.
 Repeated trigger sources appear as card piles with pending counts. NEXT marks
 the actual next entry; the piles do not change resolution order or predict how
 many counters will be added. Read the ability or its source for complete details.

@@ -160,7 +160,9 @@ internal sealed partial class TableApplication
             }
             return;
         }
-        if (SourceActionsSupported) { DrawSourceReaderControls(entry); return; }
+        if (SourceActionsSupported || session.OptionalPaymentPolicies.Any(policy => policy.SourceCardId == CardViews.Identity(entry.Card))) {
+            DrawSourceReaderControls(entry); return;
+        }
         if (match?.Decision?.Payload is PriorityPayload or PaymentPayload && IsCardActionable(entry.Card)) {
             string label = entry.Zone == "Battlefield" ? "Abilities"
                 : !entry.Card.Selectable && HandPlacements.Options(match, entry.Card).Length > 0 ? "Place"

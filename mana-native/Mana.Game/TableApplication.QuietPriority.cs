@@ -52,6 +52,7 @@ internal sealed partial class TableApplication
 
     private void TakePriorityControl()
     {
+        session.ClearAllOptionalPaymentPolicies();
         StopQuietPriority(); StopStackResolution(); StopGroupBlocks(); session.CancelAdvance();
         held = true; priorityAttention.Interrupt();
     }

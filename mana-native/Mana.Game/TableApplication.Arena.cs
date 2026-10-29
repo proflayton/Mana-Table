@@ -63,6 +63,7 @@ internal sealed partial class TableApplication
         // offer only after those cards have been prepared for this frame.
         PrepareManaJourney();
         DrawManaJourney();
+        DrawOptionalPaymentMarkers();
         // Decision text and its controls have priority over card readers and
         // held cards. Their input regions are registered last for the same reason.
         if (!BattlefieldFocused && !OverlayOpen && !AbilityActionPending && (!CardCollectionOpen || EmptyPublicCollection)) { DrawDecisionDock(); }
@@ -279,6 +280,10 @@ internal sealed partial class TableApplication
     private void DrawStack()
     {
         var state = match!;
+        if (QuietUnpayableOptionalPayment) {
+            if (state.Stack.Length > 0) { DrawStackFlow(); DrawPendingSpellCards(); }
+            return;
+        }
         var decision = decisions.Presentation?.Payload == null ? null : state.Decision;
         var paymentSource = decision?.Payload is OptionsPayload { ManaPaymentContext: { Source: { } parent } }
             ? parent : decision?.Payload is PaymentPayload or EntitySelectionPayload { ManaReduction: not null } ? decision.Context.Source : null;

@@ -17,9 +17,11 @@ internal sealed partial class TableApplication
         switch (decisions.Presentation?.Payload) {
             case OpeningHandPayload opening: DrawOpeningHand(state, decision, opening); return true;
             case ConfirmationPayload confirmation: DrawConfirmation(state, decision, confirmation); return true;
-            case PaymentPayload payment when RepeatedDeclineOffer != null:
+            case PaymentPayload payment when RepeatedDeclineOffer != null || CurrentOptionalPayment != null:
                 var card = CardViews.Source(state, decision);
-                DrawDecisionAlternatives(state, decision, payment.Pay, payment.Cancel,
+                DrawDecisionAlternatives(state, decision,
+                    CurrentOptionalPayment == null ? payment.Pay : payment.Pay with { Label = "Pay once" },
+                    CurrentOptionalPayment == null ? payment.Cancel : payment.Cancel with { Label = "Decline once" },
                     card is { FaceDown: false } ? card.Name : decision.Context.Title, decision.Context.Message, false, true);
                 return true;
             default: return false;
@@ -62,6 +64,7 @@ internal sealed partial class TableApplication
         const int gap = 10, actionHeight = 52;
         bool hasBoth = acceptReply.Enabled && declineReply?.Enabled == true;
         bool offerBatch = repeatedPayment && !ResolvingCapturedStack && RepeatedDeclineOffer != null;
+        int policyHeight = repeatedPayment ? OptionalPaymentControlsHeight(width) : 0;
         string batchLabel = offerBatch ? "Decline " + RepeatedDeclineOffer!.DeclineProgress!.CapturedCount + " + resolve queue" : "";
         string accept = acceptReply.Label;
         (int TitleHeight, int TextHeight, bool FullDetails, bool Stacked, int BatchHeight, int Height) Measure(int availableWidth)
@@ -72,7 +75,7 @@ internal sealed partial class TableApplication
             bool stack = hasBoth && Math.Max(canvas.TextWidth(accept, .76f, true), canvas.TextWidth((declineReply?.Label ?? ""), .76f, true)) + 24 > (availableWidth - gap) / 2;
             int actions = stack ? actionHeight * 2 + gap : actionHeight;
             int batch = offerBatch ? Math.Max(44, canvas.TextSize(batchLabel, .76f, availableWidth - 24, 80, true).Y + 12) : 0;
-            return (heading, body, full, stack, batch, 10 + heading + (body > 0 ? 6 + body : 0) + (full ? 36 : 0) + 12 + actions + 6 + (offerBatch ? batch + 10 : 0));
+            return (heading, body, full, stack, batch, 10 + heading + (body > 0 ? 6 + body : 0) + (full ? 36 : 0) + 12 + actions + 6 + (offerBatch ? batch + 10 : 0) + policyHeight);
         }
         var text = Measure(width);
         int requestedHeight = text.Height;
@@ -84,6 +87,7 @@ internal sealed partial class TableApplication
         } else {
             var available = DecisionActionArea(anchor, width, Math.Max(130, requestedHeight), reserveBattlefield: true);
             width = available.Width;
+            policyHeight = repeatedPayment ? OptionalPaymentControlsHeight(width) : 0;
             text = Measure(width); requestedHeight = text.Height;
             area = new(available.X, available.Y,
                 width, requestedHeight);
@@ -97,7 +101,7 @@ internal sealed partial class TableApplication
             Button("decision-read-all", "Read full effect", area.X + 12, textY + text.TextHeight + 5, width - 24,
                 new MatchIntent.OpenDecisionHelp(), height: 30);
         int actionsHeight = text.Stacked ? actionHeight * 2 + gap : actionHeight;
-        int actionY = area.Bottom - actionsHeight - 6 - (offerBatch ? text.BatchHeight + 10 : 0);
+        int actionY = area.Bottom - actionsHeight - 6 - (offerBatch ? text.BatchHeight + 10 : 0) - policyHeight;
         int actionWidth = hasBoth && !text.Stacked ? (width - gap) / 2 : width;
         if (acceptReply.Enabled)
             Button("confirm", accept, area.X, actionY, actionWidth, new MatchIntent.ConfirmDecision(), !busy, true, actionHeight);
@@ -106,8 +110,9 @@ internal sealed partial class TableApplication
                 text.Stacked ? actionY + actionHeight + gap : actionY, actionWidth,
                 new MatchIntent.CancelDecision(), !busy, true, actionHeight);
         if (offerBatch)
-            CompleteActionButton("finite-resolution-decline", batchLabel, new(area.X, area.Bottom - text.BatchHeight - 6,
+            CompleteActionButton("finite-resolution-decline", batchLabel, new(area.X, area.Bottom - text.BatchHeight - 6 - policyHeight,
                 width, text.BatchHeight), new MatchIntent.DeclineRepeatedPayments(), !busy);
+        if (policyHeight > 0) DrawOptionalPaymentControls(new(area.X, area.Bottom - policyHeight, width, policyHeight));
         if (!opening && source is { } pose) {
             canvas.CardFrame(pose with { Size = pose.Size + new Vector2(7) }, Gold * .65f, 2);
             var destination = new Pose(area.Center.ToVector2(), area.Size.ToVector2()).EdgeToward(pose.Center, 5);

@@ -574,6 +574,19 @@ revocation.
 `FiniteResolutionProgressRegression` keeps worker-ahead outcomes separate from
 accepted progress, retains confirmed receipts across accepted history eviction,
 and checks capture-revision, execution identity and atomic rejection fences.
+`OptionalPaymentRegression` covers quiet engine-certified unpayable costs,
+explicit source modes, exact offer permissions, partial funding with fresh
+decisions and the original bill, unchanged-receipt deduplication, reading,
+Take control during dispatch, unknown continuations and source/match/recovery
+lifecycle. It also composes unpayable costs with captured priority yielding;
+payable or unknown costs still stop that consent. Java `OptionalManaPaymentTest`
+checks actual Mind's Eye and Mana Vault inputs, floating/restricted mana,
+untapped/manual/hidden-zone routes, safe ordinary funding and resource changes.
+`OptionalPaymentPresentationChecks` runs in the existing headless presentation
+lane with enlarged text and reduced motion at both window sizes. It follows
+source choice through the marker and reader reset, rather than merely asserting
+button labels. Authored checkpoints establish interaction safety, not live
+rules correctness or human approval.
 `CombatAssignmentRegression` stages 100 reviewed pairs with current
 handles, bounded command chunks, constrained-edge matching and separate final
 confirmation. These tests run without starting a JVM for each case.
