@@ -61,7 +61,8 @@ internal sealed partial class TableApplication
             var plan = PlanMana("payment:" + state.Id + ":" + state.ViewerId + ":" + decision.Id + ":" + state.Revision,
                 payment.FundingContext, parts, null);
             manaJourney = new(paying, true, parts, payment.FundingContext, plan,
-                plan?.Status != ManaFundingStatus.Funded ? "Choose mana sources"
+                payment.OptionalPaymentSupport?.Availability == OptionalManaPaymentAvailability.Unpayable ? "Cannot pay this optional cost"
+                    : plan?.Status != ManaFundingStatus.Funded ? "Choose mana sources"
                     : plan.Steps.OfType<ManaFundingStep.Source>().Any() ? "Choose the lit sources" : "Use floating mana");
             return;
         }
