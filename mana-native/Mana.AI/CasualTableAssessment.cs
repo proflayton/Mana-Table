@@ -116,6 +116,28 @@ public static class CasualTableAssessment
     internal static long UnblockedDamage(Card attacker) => Math.Max(0L, attacker.Power ?? 0)
         * (HasKeyword(attacker, "double strike") ? 2 : 1);
 
+    internal static long? IncomingDamage(GameSnapshot state, int playerId)
+    {
+        long damage = 0;
+        foreach (var attack in state.Combat!.Attackers.Where(attack => attack.HasDefender && attack.DefendingPlayerId == playerId
+            && (attack.Defender == null || attack.Defender.Kind == "player"))) {
+            var attacker = CardViews.FindZoneOccurrence(state, attack.CardId)?.Card;
+            if (attacker?.Power == null) return null;
+            if (attack.BlockerIds.IsEmpty) {
+                if (!attack.Blocked || HasKeyword(attacker, "trample")) damage += UnblockedDamage(attacker);
+            } else if (HasKeyword(attacker, "trample")) {
+                // Reuse the ordinary one-blocker exchange for staged blocks.
+                // Multiple-blocker assignment/order requires a richer model;
+                // missing knowledge must not become a forecast of zero damage.
+                if (attack.BlockerIds.Length != 1) return null;
+                var blocker = CardViews.FindZoneOccurrence(state, attack.BlockerIds[0])?.Card;
+                if (blocker?.Power == null || blocker.Toughness == null || attacker.Toughness == null) return null;
+                damage += Exchange(attacker, blocker).DamageToDefender;
+            }
+        }
+        return damage;
+    }
+
     internal static CasualCombatExchange Exchange(Card attacker, Card blocker)
     {
         long attackerDamage = Math.Max(0L, attacker.Damage), blockerDamage = Math.Max(0L, blocker.Damage), defenderDamage = 0;

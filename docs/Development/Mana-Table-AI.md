@@ -32,6 +32,35 @@ regressions and independent inspection do not establish human acceptance of AI
 decision quality. Exact-candidate release evaluation and human gameplay review
 remain separate gates.
 
+## Decision-quality audit: 28 October 2026
+
+The follow-up audit reproduces five more source-policy gaps in small current
+decision fixtures. Each command still passes the existing engine-offer and
+visibility boundary; the failure is strategic use of the supplied facts:
+
+| Reproduced gap | Shared policy correction |
+| --- | --- |
+| An optional confirmation accepts a fully known draw/life-loss sequence that would be self-lethal | Consult the existing complete consequence estimate before accepting; preserve required acknowledgments and disabled-decline constraints |
+| An incomplete draw headline outranks a modeled favorable scry mode | Rank completed positive estimates before unmodeled fallbacks; do not manufacture effect utility from a headline |
+| A nonpermanent alternate cast borrows its physical creature source's body value, while a real permanent can count that body twice | Attribute body value to the offered permanent outcome once, preserving low-confidence exploration separately |
+| Staged blocks remove all of a trampler's damage from the remaining threat | Retain nominal player damage from the existing one-blocker exchange; multiple-blocker trample remains unknown |
+| Attacking a planeswalker counts as eliminating its controller and bypasses retaining a needed blocker | Restrict player-lethal and final-opponent win incentives to actual player defenders |
+
+These are source-only policy changes until a containing build is published.
+Ninety-one bounded regression checks cover the failures, controls, order/seed
+variations and current command authority. They do not establish human acceptance
+or full-game outcomes. The earlier short campaign cutoffs remain inconclusive.
+
+Three next abstractions need separate work. An optional confirmation needs an
+explicit affirmative/decline consequence: current provider graphs intentionally
+mark some optional operations conditional, so this audit does not reinterpret
+those as known branches. Multiple chosen modes need a composed bundle valuation,
+including shared recipient bindings and cumulative draws, rather than adding
+independent mode scores. Optional action commitment also needs quantified cost
+utility: source-bound counter removal currently has no signed resource value.
+Unknown quantities, donors and counter purposes must remain explicit instead of
+being treated as free. None of these gaps is declared solved by this patch.
+
 ## Choosing decks for AI seats
 
 Solo opponent selection and the host's existing **Add AI / Change deck** gesture

@@ -155,6 +155,16 @@ damage, and unknown or distributed recipient amounts. These compare production
 policy commands against exact current target permissions. They establish
 nominal recipient choice, not prevention coverage or a guaranteed resolution.
 
+`AiDecisionQualityRegression`, `AiActionOutcomeRegression` and
+`AiCombatContextRegression` add 91 bounded policy checks for complete known
+optional consequences, known versus incomplete modes, physical-source versus
+cast-outcome value, staged trample blocks and player versus planeswalker attack
+incentives. Control cases preserve required choices, disabled declines,
+card/mana choices, exploration, true permanent value and legal finishing attacks.
+Seed and order permutations use the same small facts without starting a JVM for
+each probe. These regressions do not supply a conditional prompt's missing
+affirmative branch, combined mode-bundle utility or full-game release evidence.
+
 The short campaign checks progress. AI release evidence also needs completed
 games, controlled outcomes and recorded human review. Keep these gates separate:
 
