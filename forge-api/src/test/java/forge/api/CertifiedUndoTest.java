@@ -1,6 +1,7 @@
 package forge.api;
 
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import forge.game.card.Card;
 import forge.game.mana.Mana;
@@ -8,6 +9,7 @@ import forge.game.zone.ZoneType;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +54,9 @@ public class CertifiedUndoTest {
             var request = undo(offer);
             assertTrue(game.answer(active, request));
             var restored = freshPriority(game, active);
+            // An ordinary publication can supersede a captured restoration frame
+            // without another rules action. Compare audiences from one cohort.
+            game.table.publish();
             assertEquals(footprint(game, rulesSource), before,
                     "Undo restores internal activation/tap history and exact mana, not only the tapped flag");
             assertFalse(card(restored.state(), name).get("tapped").getAsBoolean());
@@ -65,13 +70,31 @@ public class CertifiedUndoTest {
             assertEquals(text(restored.state().getAsJsonObject("undo").getAsJsonObject("lastRestoration"), "actionId"), text(offer, "actionId"));
             assertTrue(restored.state().getAsJsonArray("activity").asList().stream()
                     .anyMatch(row -> text(row.getAsJsonObject(), "kind").equals("restoration")));
-            for (int seat = 1; seat < 4; seat++) {
-                var other = game.state(seat);
-                assertEquals(other.get("boardRevision"), restored.state().get("boardRevision"));
+            var audienceJson = new GsonBuilder().serializeNulls().create();
+            var cohort = game.table.testViews().stream()
+                    .map(view -> audienceJson.toJsonTree(view).getAsJsonObject()).toList();
+            Files.writeString(game.evidence.resolve("restored-cohort.json"), JSON.toJson(cohort));
+            assertEquals(cohort.size(), 4);
+            var currentActor = cohort.get(0);
+            assertTrue(currentActor.get("boardRevision").getAsLong() > restored.state().get("boardRevision").getAsLong(),
+                    "The regression deliberately advances publication after capturing the actor's frame");
+            assertEquals(text(currentActor.getAsJsonObject("prompt"), "id"), text(restored.prompt(), "id"),
+                    "Publication alone retains the same rules decision");
+            assertEquals(currentActor.getAsJsonObject("undo").get("lastRestoration"),
+                    restored.state().getAsJsonObject("undo").get("lastRestoration"),
+                    "Later publications retain the original restoration marker");
+            for (var other : cohort) {
+                assertEquals(other.get("boardRevision"), currentActor.get("boardRevision"),
+                        "All audiences in one publication cohort must agree exactly");
                 assertEquals(other.getAsJsonObject("undo").get("restorationVersion").getAsLong(), 1);
+                assertEquals(other.getAsJsonObject("undo").get("lastRestoration"),
+                        currentActor.getAsJsonObject("undo").get("lastRestoration"));
                 assertTrue(other.getAsJsonObject("undo").get("offer").isJsonNull(), "An observer never receives the actor's capability");
                 var actor = player(other, restored.state().get("viewerId").getAsInt());
                 assertEquals(actor.getAsJsonObject("mana").get(color).getAsInt(), 0);
+                var source = zone(actor, "Battlefield").getAsJsonArray("cards").asList().stream()
+                        .map(value -> value.getAsJsonObject()).filter(value -> text(value, "name").equals(name)).findFirst().orElseThrow();
+                assertFalse(source.get("tapped").getAsBoolean(), "Every audience sees the restored untapped source");
             }
             var unchanged = game.state(0);
             assertThrows(IllegalArgumentException.class, () -> game.session(0).action(request(restored, request)));
