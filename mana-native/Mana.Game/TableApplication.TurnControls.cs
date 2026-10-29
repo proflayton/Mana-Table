@@ -90,7 +90,7 @@ internal sealed partial class TableApplication
             finiteSource = state.Executions?.Occurrences.FirstOrDefault(item => resolving.CapturedExecutionIds.Contains(item.Id)
                     && item.Step is ExecutionStep.Choice or ExecutionStep.Cost or ExecutionStep.Resolution)?.SourceName
                 ?? state.Stack.FirstOrDefault(item => resolving.CapturedExecutionIds.Contains(item.ExecutionId))?.Name ?? finiteSource;
-        string finiteProgress = finiteResolutionIntent is { } finite
+        string finiteProgress = finiteResolutionIntent != null && finiteProgressProjection is { } finite
             ? (finite.DeclineProgress is { } declined ? $"Source: {declined.CompletedCount} / {declined.CapturedCount} completed\nQueue: " : "")
                 + $"{finite.Progress.CompletedCount} / {finite.Progress.CapturedCount} completed \u00b7 {finite.Progress.RemainingCount} remaining" : "";
         if (finiteProgress.Length > 0) {

@@ -36,7 +36,7 @@ internal sealed partial class TableApplication
         internal bool ResolvingCapturedStack => game.ResolvingCapturedStack;
         internal int StackResolutionRemaining => game.CapturedStackRemaining;
         internal Mana.Client.FiniteResolutionIntent? FiniteResolution => game.finiteResolutionIntent;
-        internal Mana.Client.FiniteResolutionProgress? FiniteResolutionProgress => game.finiteResolutionIntent?.Progress ?? game.lastFiniteProgress;
+        internal Mana.Client.FiniteResolutionProgress? FiniteResolutionProgress => game.finiteProgressProjection?.Progress ?? game.lastFiniteProgress;
         internal int AnnouncementCount => game.matchPresentation.AnnouncementCount;
         internal string? AnnouncementId => game.matchPresentation.Announcement(game.now)?.Id;
         internal ManaJourneyPaint? ManaJourney => game.manaJourneyPaint;

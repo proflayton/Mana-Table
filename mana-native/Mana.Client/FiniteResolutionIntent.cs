@@ -25,7 +25,7 @@ public sealed class FiniteResolutionIntent : IFiniteDecisionPolicy
     private readonly string game, phase;
     private readonly int viewer, turn;
     private readonly int? activePlayer;
-    private readonly long actionVersion, choiceVersion, initialInterruption;
+    private readonly long actionVersion, choiceVersion, initialInterruption, captureRevision;
     private readonly OptionalDeclineOffer? decline;
     private readonly ImmutableDictionary<string, Member> members;
     private readonly ImmutableDictionary<string, Queued> originalQueue;
@@ -48,7 +48,7 @@ public sealed class FiniteResolutionIntent : IFiniteDecisionPolicy
     {
         game = state.Id; viewer = state.ViewerId; turn = state.Turn; phase = state.PhaseKey; activePlayer = state.ActivePlayerId;
         actionVersion = state.StackActionVersion!.Value; choiceVersion = state.ResolutionChoiceVersion!.Value;
-        initialInterruption = state.StackInterruptionVersion!.Value; revision = state.Revision; decline = offer;
+        initialInterruption = state.StackInterruptionVersion!.Value; captureRevision = revision = state.Revision; decline = offer;
         if (offer != null) { lastOfferId = offer.OfferId; lastOfferExecution = offer.ProducingTriggerExecutionId; seenOffers.Add(offer.OfferId); }
         originalQueue = state.Stack.Select((item, position) => (item, position)).ToImmutableDictionary(pair => pair.item.Id,
             pair => new Queued(pair.position, pair.item.ExecutionId, pair.item.Kind, pair.item.ControllerId,
@@ -123,6 +123,12 @@ public sealed class FiniteResolutionIntent : IFiniteDecisionPolicy
     public string StopReason { get { lock (gate) return stopReason; } }
     public FiniteResolutionProgress Progress { get { lock (gate) return ProgressFor(members.Keys); } }
     public FiniteResolutionProgress? DeclineProgress { get { lock (gate) return decline == null ? null : ProgressFor(declineMembers); } }
+    // A separate owner-thread projection consumes only accepted publications.
+    // Worker progress remains policy state, never presentation authority.
+    public FiniteResolutionProgressProjection CaptureProgressProjection()
+        => new(game, viewer, captureRevision, members.Values.Select(member => new FiniteResolutionProgressProjection.Member(
+            member.ExecutionId, member.RootId, member.ParentId, member.Kind, member.ActorId, member.SourceId)).ToImmutableArray(),
+            decline == null ? null : declineMembers);
     private FiniteResolutionProgress ProgressFor(IEnumerable<string> ids)
     {
         var captured = ids.ToArray();
@@ -143,7 +149,7 @@ public sealed class FiniteResolutionIntent : IFiniteDecisionPolicy
             return new(new(game, serverGrantId), viewer, revision);
         }
     }
-    internal bool OwnsServerGrant(FiniteStackYieldState grant)
+    public bool OwnsServerGrant(FiniteStackYieldState grant)
     {
         lock (gate) return serverGrantId.Length > 0 && grant.GrantId == serverGrantId;
     }

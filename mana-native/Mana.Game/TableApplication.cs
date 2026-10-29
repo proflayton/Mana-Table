@@ -179,6 +179,7 @@ internal sealed partial class TableApplication : IDisposable
         => projectionCapture?.ObserveEnvironment(updateTime, ProjectionSettings(updateViewport), match);
     private void AcceptPresentation(GameSnapshot? previous, GameSnapshot? state)
     {
+        if (state != null) finiteProgressProjection?.Observe(state);
         var transition = matchPresentation.Observe(previous, state, now, boardView, session.ExecutionChanges,
             finiteResolutionIntent is { } finite && FiniteProgress(finite, repeatedPresentationExecutions, previous, state));
         if (transition.ScopeChanged) { ResetTableView(); tableGuideOpen = false; sceneRevealAt = now; }
@@ -279,6 +280,7 @@ internal sealed partial class TableApplication : IDisposable
     private bool Send(DecisionCommand? command, bool confirmedTurnPass = false)
     {
         if (command == null || fixture != null || session.NeedsRecovery || match?.Id != command.GameId || match.Decision?.Id != command.DecisionId) return false;
+        if (AwaitingFinitePublication) return false;
         if (command is UndoLastAction) return false;
         if (match.FiniteStackYield is { Status: FiniteStackYieldStatus.Active }) {
             TakePriorityControl(); ClearReaderActions();

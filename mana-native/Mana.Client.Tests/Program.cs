@@ -163,6 +163,7 @@ AudioMixerRegression.Run(Check);
 await QuietPriorityRegression.RunAsync(Check);
 await StackResolutionRegression.RunAsync(Check);
 await FiniteResolutionRegression.RunAsync(Check);
+FiniteResolutionProgressRegression.Run(Check);
 await CombatAssignmentRegression.RunAsync(Check);
 await FiniteYieldLifecycleRegression.RunAsync(Check);
 await SourceActionSessionRegression.RunAsync(Check);

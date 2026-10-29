@@ -1835,6 +1835,16 @@ snapshot to acknowledge its revoke. Match-changing operations use the explicit
 Missing or malformed revoke evidence remains uncertain. Grouped announcements
 are presentation membership only: actual execution outcomes and event-time
 public facts remain the authority for progress and history.
+The worker policy's completion is not a presentation publication. An external
+pump can accept an earlier FIFO prefix after the worker has already stopped.
+GAME keeps the finite presentation reserved until the command lane's queued
+receipts and completion are accepted; explicit Take control remains immediate.
+`FiniteResolutionProgressProjection` separately captures the queue and optional
+subset, then consumes only owner-accepted snapshots. It retains confirmed
+terminal outcomes across history eviction and rejects stale, foreign or changed
+execution identity/outcome evidence atomically. Displayed counts never read
+the worker's mutable progress. A retained projection can reconcile an operation
+already sent after manual control returns; it grants no command permission.
 If Reset has retired the game before negative cleanup becomes uncertain, an
 explicit `RunMatchOperation` may reobserve its exact pending revokes. Only when
 all are acknowledged under the current command epoch and the replica remains

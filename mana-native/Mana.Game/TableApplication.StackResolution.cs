@@ -9,15 +9,18 @@ internal sealed partial class TableApplication
 {
     private StackResolutionIntent? stackResolutionIntent;
     private FiniteResolutionIntent? finiteResolutionIntent;
+    private FiniteResolutionProgressProjection? finiteProgressProjection;
     private GameSnapshot? repeatedDeclineSnapshot;
     private FiniteResolutionIntent? repeatedDeclineOffer;
     private FiniteResolutionProgress? lastFiniteProgress;
     private ImmutableHashSet<string> repeatedPresentationExecutions = ImmutableHashSet<string>.Empty;
     private GameSnapshot? stackEligibilitySnapshot;
     private bool cachedStackEligibility;
-    private bool ResolvingCapturedStack => stackResolutionIntent?.IsActive == true || finiteResolutionIntent?.IsActive == true;
-    private int CapturedStackRemaining => finiteResolutionIntent?.Progress.RemainingCount ?? stackResolutionIntent?.Remaining ?? 0;
-    private bool AutomatedCapturedPayment => finiteResolutionIntent is { IsActive: true, DeclinesOptionalPayments: true } finite
+    private bool AwaitingFinitePublication => finiteResolutionIntent is { IsActive: false } && busy;
+    private bool ResolvingCapturedStack => stackResolutionIntent?.IsActive == true || finiteResolutionIntent != null;
+    private int CapturedStackRemaining => finiteResolutionIntent != null ? finiteProgressProjection?.Progress.RemainingCount ?? 0
+        : stackResolutionIntent?.Remaining ?? 0;
+    private bool AutomatedCapturedPayment => finiteResolutionIntent is { DeclinesOptionalPayments: true } finite
         && match?.Decision?.Payload is PaymentPayload { OptionalDecline: { } offer }
         && finite.CapturedExecutionIds.Contains(offer.ProducingTriggerExecutionId);
     private FiniteResolutionIntent? RepeatedDeclineOffer
@@ -29,7 +32,7 @@ internal sealed partial class TableApplication
                     repeatedDeclineOffer = FiniteResolutionIntent.TryArmQueueWithDecline(state,
                         state.Stack.Select(item => item.Id), offer);
             }
-            return fixture == null && !session.NeedsRecovery && finiteResolutionIntent?.IsActive != true
+            return fixture == null && !session.NeedsRecovery && finiteResolutionIntent == null
                 && repeatedDeclineOffer?.DeclineProgress?.CapturedCount > 1 ? repeatedDeclineOffer : null;
         }
     }
@@ -49,6 +52,7 @@ internal sealed partial class TableApplication
         if (!CanOfferStackResolution || busy || match == null) return;
         StopQuietPriority(); session.CancelAdvance();
         held = false; priorityAttention.Resume();
+        finiteProgressProjection = null; lastFiniteProgress = null;
         finiteResolutionIntent = FiniteResolutionIntent.TryArm(match, match.Stack.Select(item => item.Id));
         if (finiteResolutionIntent != null) BeginFinitePresentation(match, finiteResolutionIntent);
         else stackResolutionIntent = StackResolutionIntent.TryArm(match);
@@ -67,6 +71,8 @@ internal sealed partial class TableApplication
     private void BeginFinitePresentation(GameSnapshot state, FiniteResolutionIntent intent)
     {
         lastFiniteProgress = null;
+        finiteProgressProjection = intent.CaptureProgressProjection();
+        finiteProgressProjection.Observe(state);
         var groups = state.Stack.Where(item => intent.CapturedExecutionIds.Contains(item.ExecutionId))
             .Select(item => (Execution: item.ExecutionId, Group: item.Repetition?.GroupKey ?? "execution:" + item.ExecutionId)).ToList();
         if (state.Decision?.Payload is PaymentPayload { OptionalDecline: { } offer }
@@ -84,14 +90,16 @@ internal sealed partial class TableApplication
     {
         if (stackResolutionIntent == null && finiteResolutionIntent == null) return;
         stackResolutionIntent?.Stop(); stackResolutionIntent = null;
-        if (finiteResolutionIntent is { } finite) {
-            lastFiniteProgress = finite.Progress;
-            if (finite.StopReason == "completed" && finite.Progress.UnknownCount == 0) {
-                notice = finite.DeclineProgress is { } declined
-                    ? finite.SourceName + " \u00b7 " + declined.CompletedCount + " / " + declined.CapturedCount + " source effects completed \u00b7 " + finite.Progress.CompletedCount + " / " + finite.Progress.CapturedCount + " completed"
-                    : finite.SourceName + " \u00b7 " + finite.Progress.CompletedCount + " / " + finite.Progress.CapturedCount + " completed";
+        if (finiteResolutionIntent is { } finite && finiteProgressProjection is { } accepted) {
+            var progress = accepted.Progress;
+            lastFiniteProgress = progress;
+            if (finite.StopReason == "completed" && progress.RemainingCount == 0 && progress.UnknownCount == 0) {
+                notice = accepted.DeclineProgress is { } declined
+                    ? finite.SourceName + " \u00b7 " + declined.CompletedCount + " / " + declined.CapturedCount + " source effects completed \u00b7 " + progress.CompletedCount + " / " + progress.CapturedCount + " completed"
+                    : finite.SourceName + " \u00b7 " + progress.CompletedCount + " / " + progress.CapturedCount + " completed";
                 noticeUntil = now + 2.6;
-            } else if (match?.FiniteStackYield is { Status: FiniteStackYieldStatus.Revoked } stopped) {
+            } else if (finite.StopReason == "server-grant-revoked"
+                && match?.FiniteStackYield is { Status: FiniteStackYieldStatus.Revoked } stopped && finite.OwnsServerGrant(stopped)) {
                 string reason = stopped.ReasonCode switch {
                     "outside-action" => "A new action needs your attention.",
                     "required-choice" or "payment-changed" or "unobserved-choice-completion" => "A choice needs your attention.",
@@ -100,18 +108,28 @@ internal sealed partial class TableApplication
                     "match-ended" => "The game ended.",
                     _ => "Review the current stack before continuing."
                 };
-                notice = "Resolution stopped \u00b7 " + finite.Progress.CompletedCount + " / " + finite.Progress.CapturedCount + " completed. " + reason;
+                notice = "Resolution stopped \u00b7 " + progress.CompletedCount + " / " + progress.CapturedCount + " completed. " + reason;
                 noticeUntil = now + 4;
             }
         }
         finiteResolutionIntent?.Stop(); finiteResolutionIntent = null;
+        // Retain accepted outcome facts for an already-sent answer which may
+        // publish after explicit Take control. This is read-only history;
+        // a new capture or table/viewer reset replaces it, never any authority.
         repeatedPresentationExecutions = ImmutableHashSet<string>.Empty;
         matchPresentation.EndFinite(); session.CancelAdvance();
     }
 
     private bool UpdateStackResolution(bool interactionBlocked)
     {
-        if (finiteResolutionIntent is { IsActive: false }) StopStackResolution();
+        if (finiteResolutionIntent is { IsActive: false }) {
+            // The worker posts every receipt before its Busy=false completion.
+            // An external pump may have consumed only an earlier FIFO prefix.
+            // Keep this presentation and its reservation until that publication
+            // boundary, without granting the ended policy another command.
+            if (busy) return true;
+            StopStackResolution();
+        }
         if (!ResolvingCapturedStack) return false;
         if (finiteResolutionIntent is { } finite) {
             if (held || fixture != null || session.NeedsRecovery || commandFailure || match == null || !finite.CanContinue(match)) {

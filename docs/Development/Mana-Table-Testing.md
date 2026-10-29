@@ -558,7 +558,11 @@ intermediate publication, actual terminal outcomes, refreshed prompt identities,
 lineage/terms/membership changes and unsupported decisions. `FiniteYieldLifecycleRegression`
 checks provider capability fallback, exact grants, reading and Take control,
 reset/close/recovery ordering, unknown acknowledgements and explicit match-work
-revocation. `CombatAssignmentRegression` stages 100 reviewed pairs with current
+revocation.
+`FiniteResolutionProgressRegression` keeps worker-ahead outcomes separate from
+accepted progress, retains confirmed receipts across accepted history eviction,
+and checks capture-revision, execution identity and atomic rejection fences.
+`CombatAssignmentRegression` stages 100 reviewed pairs with current
 handles, bounded command chunks, constrained-edge matching and separate final
 confirmation. These tests run without starting a JVM for each case.
 
@@ -580,6 +584,11 @@ Native wire checks reject malformed facts and legacy omissions remain unknown.
 `FiniteResolutionPresentationChecks` and `CombatGroupPresentationChecks` exercise
 production pointer hits, session pumping and actual card cohorts at 1000x740 and
 1540x980, including source reading, interleaving, stopping and 100 staged blocks.
+The finite server-stop case gates worker completion before its publication can
+enter the current pump prefix. It checks accepted-only counts, retained Take
+control, blocked normal commits and the subsequent provider-stop reason, and
+writes its frame/progress/grant timeline before the assertion for first-failure
+diagnosis. Explicit-stop coverage also retains a later committed receipt.
 Their authored snapshots establish presentation behavior; Java establishes the
 real rules transitions. Neither supplies human UX approval or all-card coverage.
 

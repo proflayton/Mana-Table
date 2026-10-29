@@ -14,7 +14,7 @@ internal sealed partial class TableApplication
         StopStackResolution(); expandedStackWorkload = "";
         StopGroupBlocks();
         RetireGroupedCombatView();
-        repeatedDeclineSnapshot = null; repeatedDeclineOffer = null; lastFiniteProgress = null;
+        repeatedDeclineSnapshot = null; repeatedDeclineOffer = null; lastFiniteProgress = null; finiteProgressProjection = null;
         workloadSnapshot = stackEligibilitySnapshot = null; cachedWorkloads = []; cachedStackEligibility = false;
         workloadOrder.Clear(); workloadOrderScope = null;
         hits.RevokePublished(); Frame = null; tableScene = null; hovered = null;

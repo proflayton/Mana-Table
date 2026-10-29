@@ -97,7 +97,8 @@ internal static class FiniteResolutionPresentationChecks
                 run.Port.Release.TrySetResult();
                 run.Until(() => !run.View.Busy, "reconcile stopped answer");
                 check(run.View.FiniteResolution == null && run.View.Held && run.Port.Commands.Count == 1
-                        && run.View.Match?.Executions?.Occurrences.Count(item => item.Step == ExecutionStep.Complete) == 1,
+                        && run.View.Match?.Executions?.Occurrences.Count(item => item.Step == ExecutionStep.Complete) == 1
+                        && run.View.FiniteResolutionProgress?.CompletedCount == 1,
                     "Take control stops further work and still presents the one already committed answer without inventing an undo at " + viewport);
             }
 
@@ -121,34 +122,78 @@ internal static class FiniteResolutionPresentationChecks
 
     private static void CheckServerGrant(string profile, Point viewport, Action<bool, string> check)
     {
-        foreach (string mode in new[] { "complete", "control", "history-stop" }) {
-            bool manual = mode == "control", stopped = mode == "history-stop";
+        foreach (string mode in new[] { "history-stop-delayed", "complete", "control", "history-stop" }) {
+            bool manual = mode == "control", stopped = mode.StartsWith("history-stop", StringComparison.Ordinal),
+                delayedPublication = mode == "history-stop-delayed";
             string path = Path.Combine(profile, "finite-server-" + mode + "-" + viewport.X);
             Directory.CreateDirectory(path);
             new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = true, TextScale = 1.3f }.Save(path);
-            var port = new ServerPort(automatic: !manual, revokeReason: stopped ? "history-overflow" : "");
+            using var port = new ServerPort(automatic: !manual, revokeReason: stopped ? "history-overflow" : "",
+                holdStopPublication: delayedPublication);
             var setup = new InteractionScenarioEngine();
             using var run = new PresentationRun(new(setup, setup, port, () => Task.CompletedTask), path, port.State, viewport);
             Point pointer = new(20, 60);
+            var checkpoints = new List<ServerCheckCheckpoint>();
+            void Capture(string stage) => File.WriteAllText(Path.Combine(path, stage + ".json"), JsonSerializer.Serialize(new {
+                frame = run.Frame.Observe(), progress = ObserveProgress(run.View.FiniteResolutionProgress),
+                stopReason = run.View.FiniteResolution?.StopReason, busy = run.View.Busy,
+                publishedRevision = run.View.Match?.Revision, publishedGrant = run.View.Match?.FiniteStackYield,
+                providerRevision = port.State.Revision, providerGrant = port.State.FiniteStackYield,
+                commands = port.Commands.Select(command => command.GetType().Name), checkpoints
+            }, new JsonSerializerOptions { WriteIndented = true }));
             void Tick(ButtonState left = ButtonState.Released) {
                 var point = RenderViewport.Fit(viewport, run.View.DesignHeight).ToPhysical(pointer.ToVector2());
                 run.Tick(TimeSpan.FromSeconds(1d / 60), new((int)MathF.Ceiling(point.X), (int)MathF.Ceiling(point.Y), 0,
                     left, default, default, default, default));
+                var text = string.Join(" ", run.Frame.Drawing.Commands.Select(item => item switch {
+                    DrawCommand.Text line => line.Value, DrawCommand.CenterText line => line.Value, _ => "" }));
+                var current = new ServerCheckCheckpoint(run.Elapsed.TotalSeconds, run.View.Match?.Revision, run.View.Busy,
+                    run.View.FiniteResolution?.IsActive, run.View.FiniteResolution?.StopReason,
+                    run.View.FiniteResolutionProgress?.CompletedCount, run.View.Match?.FiniteStackYield?.Status,
+                    run.View.Match?.FiniteStackYield?.ReasonCode, text.Contains("Resolution stopped"),
+                    text.Contains("Earlier results could not be confirmed"));
+                if (checkpoints.Count == 0 || (current with { Time = checkpoints[^1].Time }) != checkpoints[^1]) checkpoints.Add(current);
             }
             void Until(Func<bool> ready, string step) {
                 var deadline = DateTime.UtcNow.AddSeconds(8);
                 while (!ready() && DateTime.UtcNow < deadline) { Tick(); Thread.Sleep(1); }
-                if (!ready()) throw new InvalidOperationException("Finite server presentation stopped at " + step + "; " + run.View.Error);
+                if (!ready()) { Capture("timeout"); throw new InvalidOperationException("Finite server presentation stopped at " + step + "; " + run.View.Error); }
             }
             Tick(); Tick();
             pointer = run.Frame.Hits.Single(hit => hit.Id == "stack-resolution-arm").Bounds.Center;
             Tick(ButtonState.Pressed); Tick(); pointer = new(20, 60);
             check(port.Commands.IsEmpty && run.View.FiniteResolution?.Progress.CapturedCount == 55,
                 "A server-capable source queue still presents its initial readable beat before sending any finite yield grant at " + viewport + "; manual=" + manual);
+            if (delayedPublication) {
+                Until(() => port.StopPublicationReady.Task.IsCompleted, "provider's held terminal observation");
+                var intent = run.View.FiniteResolution!;
+                // Pump takes a bounded FIFO prefix. Release the worker while
+                // processing that prefix so its terminal receipt is pending
+                // for the next update, but its shared policy is already ended.
+                run.View.Post(() => {
+                    port.ReleaseStopPublication.TrySetResult();
+                    if (!SpinWait.SpinUntil(() => !intent.IsActive, TimeSpan.FromSeconds(2)))
+                        throw new InvalidOperationException("The held server stop did not end its worker policy.");
+                });
+                Tick(); Capture("deferred-worker-before-publication");
+                check(!intent.IsActive && run.View.Match?.FiniteStackYield?.Status != FiniteStackYieldStatus.Revoked,
+                    "The controlled worker stop precedes its accepted revoked publication without inventing another authoritative snapshot at " + viewport);
+                var stop = run.Frame.Hits.SingleOrDefault(hit => hit.Id == "stack-resolution-stop");
+                check(run.View.ResolvingCapturedStack && run.View.FiniteResolution != null
+                        && run.View.FiniteResolutionProgress is { CompletedCount: 0, RemainingCount: 55 }
+                        && stop != null && run.View.HitAt(stop.Bounds.Center)?.Id == stop.Id
+                        && !run.Frame.Hits.Any(hit => hit.Id is "confirm" or "stack-resolution-arm" or "finite-resolution-decline"),
+                    "Pending publication retains its readable captured-queue view and Take control, exposes only accepted zero progress and no normal commit controls at " + viewport);
+                var current = run.View.Match!;
+                bool submitted = run.View.SubmitCurrent(new PassPriority(current.Id, current.Decision!.Id));
+                check(!submitted && run.View.FiniteResolution != null && port.Commands.Count == 1,
+                    "A retained manual action cannot commit or retire the pending receipt presentation before its accepted snapshot at " + viewport);
+            }
             if (stopped) {
                 Until(() => run.View.FiniteResolution == null && !run.View.Busy, "explicit provider stop");
                 string text = string.Join(" ", run.Frame.Drawing.Commands.Select(item => item switch {
                     DrawCommand.Text line => line.Value, DrawCommand.CenterText line => line.Value, _ => "" }));
+                Capture("history-stop-before-assert");
                 check(run.View.FiniteResolutionProgress is { CapturedCount: 55, CompletedCount: 1, RemainingCount: 54 }
                         && text.Contains("Resolution stopped") && text.Contains("Earlier results could not be confirmed")
                         && port.State.FiniteStackYield?.Status == FiniteStackYieldStatus.Revoked,
@@ -190,13 +235,18 @@ internal static class FiniteResolutionPresentationChecks
         }
     }
 
-    private sealed class ServerPort(bool automatic, string revokeReason = "") : IMatchConnection
+    private sealed record ServerCheckCheckpoint(double Time, long? Revision, bool Busy, bool? IntentActive, string? StopReason,
+        int? Completed, FiniteStackYieldStatus? GrantStatus, string? GrantReason, bool StoppedVisible, bool HistoryReasonVisible);
+
+    private sealed class ServerPort(bool automatic, string revokeReason = "", bool holdStopPublication = false) : IMatchConnection, IDisposable
     {
         private readonly object gate = new();
         private GameSnapshot state = ServerProjection(0, 1, null);
         internal GameSnapshot State { get { lock (gate) return state; } }
         internal ConcurrentQueue<GameCommand> Commands { get; } = new();
         internal ConcurrentQueue<int> RevokedAt { get; } = new();
+        internal TaskCompletionSource StopPublicationReady { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource ReleaseStopPublication { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task ExecuteAsync(GameCommand command)
         {
             lock (gate) {
@@ -217,6 +267,8 @@ internal static class FiniteResolutionPresentationChecks
         public async Task<GameSnapshot?> ObserveAsync()
         {
             await Task.Delay(15);
+            GameSnapshot observed;
+            bool held;
             lock (gate) {
                 if (automatic && state.FiniteStackYield is { Status: FiniteStackYieldStatus.Active } grant) {
                     int completed = state.Executions!.Occurrences.Count(item => item.Step == ExecutionStep.Complete) + 1;
@@ -225,10 +277,14 @@ internal static class FiniteResolutionPresentationChecks
                         FiniteStackYield = state.FiniteStackYield! with { Status = FiniteStackYieldStatus.Revoked, ReasonCode = revokeReason }
                     };
                 }
-                return state;
+                observed = state;
+                held = holdStopPublication && state.FiniteStackYield is { Status: FiniteStackYieldStatus.Revoked, ReasonCode: "history-overflow" };
             }
+            if (held) { StopPublicationReady.TrySetResult(); await ReleaseStopPublication.Task; }
+            return observed;
         }
         public Task ConcedeAsync(string gameId) => throw new NotSupportedException();
+        public void Dispose() => ReleaseStopPublication.TrySetResult();
     }
 
     private static GameSnapshot ServerProjection(int completed, long revision, FiniteStackYieldState? grant)
