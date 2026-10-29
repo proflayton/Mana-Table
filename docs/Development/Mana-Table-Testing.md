@@ -1418,12 +1418,20 @@ automatic coverage. A local mode's existence does not mean CI runs it. The
 extended inventory remains available for targeted investigation; it is not the
 default local checklist.
 
-The package producer shares immutable runtime, source and harness artifacts
-before the real-engine adapter walkthrough. The required `packaged-engine` job
-restores those exact bytes and runs the unchanged `--smoke-headless-engine`
-journey while UI and installer jobs proceed. Its reports, logs and provenance
-manifests are retained even on failure. The normal Windows aggregate still
-requires this job, every UI shard and all existing lifecycle checks.
+The package producer builds the source-bound harness, overlays the actual
+packaged policy/boundary assemblies, and shares immutable runtime, source and
+harness artifacts before either native verification suite runs. The required
+`native-verification` matrix has exactly two cases. `presentation` runs the
+unchanged `--smoke-presentation`, `--smoke-headless-presentation`,
+`--smoke-headless-clutter` and `--smoke-headless-priority-flow` modes with their
+existing profiles and assertions. `engine` runs the unchanged
+`--smoke-headless-engine` journey against the verified packaged runtime and
+resources. Both restore the source-bound harness; the engine case additionally
+requires the bound launcher. Neither rebuilds the application. UI and installer
+jobs proceed alongside them. A failure does not cancel the sibling suite, and
+separate reports, logs and provenance manifests are retained even on failure.
+The normal Windows aggregate requires both cases, every UI shard and all
+existing lifecycle checks; available artifacts do not establish success.
 
 Within native verification, the installed SDK update lifecycle starts after the
 immutable tools artifact is available. It can run alongside packaging. The
@@ -1444,14 +1452,22 @@ launch directory. A positive case places an unrelated engine beside the inputs
 and verifies that the actual launch pair still uses the packaged dependency.
 The test-only launcher stays outside the extracted shipping inventory. These
 small byte/metadata fixtures use no JVM, graphics, downloads or installed code;
-the independent adapter job supplies the actual gameplay execution evidence.
+the engine matrix suite supplies the actual gameplay execution evidence.
+
+The [orchestration fixtures](../../mana-native/ci/test-native-verification.ps1)
+execute the actual PowerShell restore and run blocks
+extracted from the workflow, with controlled command stubs. They verify the four
+presentation invocations and distinct profiles, the engine's complete command
+and launcher requirement, immediate stop on a failed mode, and rejection of
+empty, unknown or differently cased suite names before any command runs. They
+do not replace the controlled assertions or real-engine journey in CI.
 
 The installer workflow has a read-only PR caller and a master-only staging
 caller. The required Windows aggregate rejects missing or foreign job results,
 expects exactly its authorized caller to succeed and the other to be skipped,
 and requires every remaining dependency to succeed. Repository tests execute
 that actual aggregate script for both contexts, remove each required result,
-inject a foreign result and reject failed/cancelled/skipped adapter checks. They
+inject a foreign result and reject failed/cancelled/skipped matrix results. They
 exercise release staging/promotion failures through injected API fixtures.
 Private drafts do not establish a successful release or bypass final source CI.
 
