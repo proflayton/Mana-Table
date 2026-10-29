@@ -43,6 +43,8 @@ internal static class CleanupSmoke
                 Check(state.Viewer.Zone("Graveyard").Count == 1, "Discard moved to the graveyard");
                 finished = true;
                 await engine.ConcedeAsync(state.Id);
+                var ended = await MatchCompletion.WaitAsync(engine, state, MatchDepartureObservation.Remaining(deadline));
+                Check(ended is { Status: "finished", Result: "Defeat" }, "Cleanup fixture observes actual solo completion after concession");
                 break;
             }
             var decision = state.Decision;

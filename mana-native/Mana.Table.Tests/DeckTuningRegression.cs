@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using Mana.Client;
 using Mana.Forge;
 
 namespace Mana.Table;
@@ -87,9 +88,12 @@ internal static class DeckTuningRegression
                 await Task.Delay(100);
             }
             Check(state is { Players.Length: 2 }, "The configured two-player test launches a real rules-engine table");
+            var completionDeadline = DateTime.UtcNow.AddSeconds(24);
             await engine.ConcedeAsync(state!.Id);
+            var ended = await MatchCompletion.WaitAsync(engine, state, MatchDepartureObservation.Remaining(completionDeadline));
+            Check(ended is { Status: "finished", Result: "Defeat" }, "Conceding a workshop test reaches actual rules completion before returning to its durable record");
             DeckTest? finished = null;
-            for (int attempt = 0; attempt < 240; attempt++) {
+            while (DateTime.UtcNow < completionDeadline) {
                 finished = (await engine.GetTestsAsync(deck.Id)).Single(t => t.Id == test.Id);
                 if (finished.Status != "running") break;
                 await engine.ObserveAsync();

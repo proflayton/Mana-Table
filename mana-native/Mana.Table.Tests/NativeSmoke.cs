@@ -73,13 +73,14 @@ internal static class NativeSmoke
             Check(fixture.Players.All(p => p.CommanderDamage.Length == 4), "Each player sees all four commander-damage totals");
             bool rejected = false;
             try { await engines[staleSeat].ExecuteAsync(staleReply!); }
-            catch (InvalidOperationException ex) when (ex.Message.Contains("choice has changed")) { rejected = true; }
+            catch (EngineCommandRejectedException ex) when (ex.Message.Contains("choice has changed")
+                || ex.Message == "That command does not answer the currently observed decision. Observe the table again.") { rejected = true; }
             Check(rejected, "Stale decision rejected through the typed adapter");
             await File.WriteAllTextAsync(Path.Combine(paths.Profile, "table-fixture.json"), JsonSerializer.Serialize(fixture, new JsonSerializerOptions { WriteIndented = true }));
             for (int i = 3; i > 0; i--) {
                 var state = await engines[i].ObserveAsync();
                 await engines[i].ConcedeAsync(state!.Id);
-                await Task.Delay(300);
+                await MatchDepartureObservation.WaitAsync(engines[i], state, MatchDepartureObservation.Remaining(deadline));
             }
             await Wait(async () => (await engines[0].ObserveAsync())?.Status == "finished");
             Check((await engines[0].ObserveAsync())?.Result == "Victory", "Last remaining player wins");

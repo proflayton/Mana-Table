@@ -219,9 +219,13 @@ internal sealed partial class TableApplication
     private void ReturnToWorkshop(bool testAgain = false)
     {
         if (workshopMatchDeckId is not { } deckId) return;
+        var ending = match;
         Work(async () => {
             // Returning early ends this local game explicitly and records it as conceded.
-            if (match is { Status: not "finished" and not "error" } state) await matchConnection.ConcedeAsync(state.Id);
+            if (ending is { Status: not "finished" and not "error" }) {
+                await matchConnection.ConcedeAsync(ending.Id);
+                await MatchCompletion.WaitAsync(matchConnection, ending, clock: clock);
+            }
             var deck = await catalog.OpenDeckAsync(deckId);
             updates.Enqueue(() => {
                 localMatch = false; session.Reset(); ResetTableView(); ApplyDeck(deck, true);

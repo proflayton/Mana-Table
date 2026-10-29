@@ -54,6 +54,8 @@ public interface IMatchConnection
 {
     Task<GameSnapshot?> ObserveAsync();
     Task ExecuteAsync(GameCommand command);
+    /// <summary>Requests this seat's concession. Completion acknowledges admission;
+    /// observe actual rules loss or match completion before a dependent transition.</summary>
     Task ConcedeAsync(string gameId);
 }
 // Reading a source's current engine-owned actions does not answer its decision.

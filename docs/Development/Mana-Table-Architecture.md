@@ -821,6 +821,13 @@ those revelations wait. The host's eliminated seat can keep observing while its
 server and automated-seat driver serve the surviving human players; leaving or
 closing that hosted table retains its separate lifetime operation.
 
+Native local exits and returns to the deck workshop use the shared client
+`MatchCompletion` observation barrier before replacing the game or reopening
+its workspace. It binds the original game and viewer, retains the newest
+revision, and waits for actual terminal state within a bounded, cancellable
+deadline. It never answers a choice or resubmits concession. Normal multiplayer
+concession instead keeps polling the surviving table.
+
 Concession cleanup can remove a player-control override while the game thread
 reads it. `Player` keeps those overrides in timestamp order in a concurrent map
 and reads one entry snapshot, falling back to the base controller when empty.

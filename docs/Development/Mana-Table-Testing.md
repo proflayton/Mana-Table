@@ -1258,6 +1258,11 @@ The existing headless presentation lane separately runs
 keep both host and guest watching the active table, with private hands filtered
 and table departure still explicit. These checks do not establish human UX
 acceptance or reproduce an unrecorded player's exact match.
+`MatchCompletionRegression` runs in the existing client suite and uses a
+controlled clock to verify the dependent local-return barrier, exact game/viewer
+scope, stale publications, cancellation and both delayed and hung observations.
+Real native journeys retain their original watchdogs while waiting for actual
+departure or completion, including conformance-to-rematch and workshop returns.
 
 ## Profiles and artifacts
 

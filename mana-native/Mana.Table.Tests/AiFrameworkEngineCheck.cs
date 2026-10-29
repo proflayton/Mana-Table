@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Mana.AI;
+using Mana.Client;
 using Mana.Contracts;
 using Mana.Forge;
 
@@ -21,7 +22,7 @@ internal static class AiFrameworkEngineCheck
         var fixturePasses = new HashSet<string>();
         try {
             while (!landPlayed) {
-                if (elapsed.Elapsed > TimeSpan.FromSeconds(25)) throw new TimeoutException("AI framework engine conformance did not reach its offered land route.");
+                Guard();
                 state = await engine.ObserveAsync();
                 if (expiredSourceObservation is { } expired) {
                     if (state == null || state.Id != expired.Id || state.Revision <= expired.Revision)
@@ -90,7 +91,17 @@ internal static class AiFrameworkEngineCheck
         }
         // A failed fixture is torn down by its engine owner. A secondary
         // concession failure must not replace the original contract failure.
-        if (state != null) await engine.ConcedeAsync(state.Id);
+        if (state != null) {
+            await engine.ConcedeAsync(state.Id);
+            Guard();
+            var finished = await MatchCompletion.WaitAsync(engine, state, TimeSpan.FromSeconds(25) - elapsed.Elapsed);
+            check(finished is { Status: "finished", Result: "Defeat", Viewer.Eliminated: true },
+                "Conformance concession finishes the same solo game before the adapter starts its next game");
+        }
+        void Guard()
+        {
+            if (elapsed.Elapsed > TimeSpan.FromSeconds(25)) throw new TimeoutException("AI framework engine conformance did not reach its offered land route and finish within its bounded watchdog.");
+        }
     }
 
     private sealed class ScriptedPolicy : IAiPolicy
