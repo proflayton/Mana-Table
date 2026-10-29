@@ -216,6 +216,10 @@ public class ManaCostBeingPaid {
 
     // isNeeded(String) still used by the Computer, might have problems activating Snow abilities
     public final boolean isAnyPartPayableWith(byte colorMask, final ManaPool pool) {
+        return isAnyPartPayableWith(colorMask, (ManaPaymentMatrix) pool);
+    }
+
+    public final boolean isAnyPartPayableWith(byte colorMask, final ManaPaymentMatrix pool) {
         for (ManaCostShard shard : unpaidShards.keySet()) {
             if (pool.canPayForShardWithColor(shard, colorMask)) {
                 return true;
@@ -225,6 +229,10 @@ public class ManaCostBeingPaid {
     }
 
     public final boolean isNeeded(final Mana paid, final ManaPool pool) {
+        return isNeeded(paid, (ManaPaymentMatrix) pool);
+    }
+
+    public final boolean isNeeded(final Mana paid, final ManaPaymentMatrix pool) {
         for (ManaCostShard shard : unpaidShards.keySet()) {
             if (canBePaidWith(shard, paid, pool, xManaCostPaidByColor)) {
                 return true;
@@ -473,6 +481,10 @@ public class ManaCostBeingPaid {
      * @return a boolean.
      */
     public final boolean payMana(final Mana mana, final ManaPool pool) {
+        return payMana(mana, (ManaPaymentMatrix) pool);
+    }
+
+    public final boolean payMana(final Mana mana, final ManaPaymentMatrix pool) {
         if (!this.isNeeded(mana, pool)) {
             throw new RuntimeException("ManaCost : addMana() error, mana not needed - " + mana);
         }
@@ -560,7 +572,7 @@ public class ManaCostBeingPaid {
         return true;
     }
 
-    private static boolean canBePaidWith(final ManaCostShard shard, final Mana mana, final ManaPool pool, Map<String, Integer> xManaCostPaidByColor) {
+    private static boolean canBePaidWith(final ManaCostShard shard, final Mana mana, final ManaPaymentMatrix pool, Map<String, Integer> xManaCostPaidByColor) {
         if (shard.isSnow() && !mana.isSnow()) {
             return false;
         }

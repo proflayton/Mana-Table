@@ -331,21 +331,12 @@ public class ManaPool extends ManaConversionMatrix implements Iterable<Mana> {
         manaSpent.clear();
     }
 
-    public boolean canPayForShardWithColor(ManaCostShard shard, byte color) {
-        if (shard.isOfKind(ManaAtom.COLORLESS) && color == ManaAtom.GENERIC) {
-            return false; // FIXME: testing Colorless against Generic is a recipe for disaster, but probably there should be a better fix.
-        }
-
-        byte line = getPossibleColorUses(color);
-
-        for (byte outColor : ManaAtom.MANATYPES) {
-            if ((line & outColor) != 0 && shard.canBePaidWithManaOfColor(outColor)) {
-                return true;
-            }
-        }
-
-        return shard.canBePaidWithManaOfColor((byte)0);
+    /** A bounded pool-only query, separate from the legacy borrowing test-payment operation. */
+    public ManaPoolPaymentQuote quoteFixedPayment(ManaCostBeingPaid bill, SpellAbility purpose) {
+        return owner.getGame().getAction().readState(() -> ManaPoolPaymentQuote.capture(this, bill, purpose));
     }
+
+    Game paymentGame() { return owner.getGame(); }
 
     /**
      * Checks if the given mana cost can be paid from floating mana.

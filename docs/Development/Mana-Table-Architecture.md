@@ -178,6 +178,26 @@ announcement use the same resource projection, avoiding a commitment which the
 numeric planner then cannot support. Unsupported costs remain unknown rather
 than being silently treated as free.
 
+Forge's internal `ManaPool.quoteFixedPayment` is a separate, bounded read query
+for an already fixed bill and already floating mana. It copies the conversion
+matrix behind `ManaPaymentMatrix` and walks a detached bill and unit inventory
+using the actual payment weighting. It never borrows or refunds live units,
+invokes a controller to break a tie, activates a producer or rewrites the paying
+ability. A complete witness is `PAYABLE`; every inconclusive result is `UNKNOWN`.
+Unsupported restrictions, unresolved X, hybrid/snow costs and oversized inputs
+cannot become a negative payability claim. A partial residual describes one
+greedy allocation, not proof that another allocation cannot pay. This internal
+witness supplies no command handle or additional client protocol.
+
+The fixed-bill manual-route fallback uses that query instead of borrowing pool
+mana. Mandatory payment inputs use its complete positive witness, retaining the
+ordinary rules check for every unknown result so an inconclusive quote cannot
+enable cancellation of a required payment. This is a focused migration: the
+primary `ComputerUtilMana` planner still mutates temporary live payment state,
+and its existing `test=true` borrowing contract remains unchanged. Controller
+swaps, cost calculation and manual-producer discovery are not certified pure.
+The bulk planner must therefore remain deferred during a manual Undo window.
+
 Human source catalogs carry a smaller `ManaCostPreview`, not the bot's private
 action semantics. It contains nominal costs, cost knowledge and read-only funding
 facts bound to the observed source-query revision. Payment publications separately

@@ -28,9 +28,20 @@ public class InputPayManaOfCostPayment extends InputPayMana {
         // CR 118.3c forced cast must use pool mana
         // TODO this introduces a small risk for illegal payments if the human "wastes" enough mana for abilities like Doubling Cube
         if (spellAbility.getPayCosts().isMandatory()) {
-            List<Mana> refund = new ArrayList<>();
-            mandatory = payer.getManaPool().payManaCostFromPool(new ManaCostBeingPaid(cost), spellAbility, true, refund);
-            payer.getManaPool().refundMana(refund);
+            var quote = payer.getManaPool().quoteFixedPayment(cost, spellAbility);
+            if (quote.canPayEntireBill()) {
+                mandatory = true;
+            } else {
+                // Unknown cannot relax a mandatory rules payment. Retain the
+                // legacy check for every inconclusive quote; a partial witness
+                // also does not prove that the full payment is unavailable.
+                List<Mana> refund = new ArrayList<>();
+                try {
+                    mandatory = payer.getManaPool().payManaCostFromPool(new ManaCostBeingPaid(cost), spellAbility, true, refund);
+                } finally {
+                    payer.getManaPool().refundMana(refund);
+                }
+            }
         }
 
         // Set Mana cost being paid for SA to be able to reference it later

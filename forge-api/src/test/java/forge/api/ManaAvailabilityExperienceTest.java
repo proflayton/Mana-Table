@@ -9,7 +9,8 @@ import java.util.Map;
 import static forge.api.RulesScenario.*;
 import static org.testng.Assert.*;
 
-/** Compare the current playable cue with payment through the same live input. */
+/** Compare scoped nominal funding facts with payment through the same live input.
+ * A deferred bulk availability scan is not evidence that a route is absent. */
 public class ManaAvailabilityExperienceTest {
     private static final Gson JSON = new Gson();
 
@@ -27,9 +28,11 @@ public class ManaAvailabilityExperienceTest {
         };
     }
 
-    @Test(dataProvider = "payments", timeOut = 90000)
+    @Test(dataProvider = "payments", groups = "canonical-interaction", timeOut = 90000)
     public void currentManaCueDistinguishesGenericColoredAndColorlessRequirements(String spell, List<String> permanents, boolean payable) throws Exception {
-        try (var game = new RulesScenario("mana-availability-" + spell.replaceAll("[^A-Za-z]", ""),
+        String fixture = "mana-availability-" + spell.replaceAll("[^A-Za-z]", "") + "-"
+                + String.join("-", permanents).replaceAll("[^A-Za-z-]", "");
+        try (var game = new RulesScenario(fixture,
                 Map.of(0, permanents), spell, "Omnath, Locus of the Void")) {
             var input = game.until(next -> next.seat() == 0 && priority(next) && text(next.state(), "phaseKey").equals("MAIN1"));
             if (permanents.contains("Basalt Monolith")) {
@@ -42,17 +45,48 @@ public class ManaAvailabilityExperienceTest {
                         && viewer(next.state()).getAsJsonObject("mana").get("C").getAsInt() == 3);
                 assertTrue(card(input.state(), "Battlefield", "Basalt Monolith").get("tapped").getAsBoolean());
             }
-            var hand = zone(viewer(input.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
-            boolean offered = hand.get("selectable").getAsBoolean();
-            if (!payable) { assertFalse(offered, "Colorless production must not satisfy a missing colored requirement"); return; }
-            if (permanents.contains("Victory Chimes")) {
+            if (payable && permanents.contains("Victory Chimes")) {
                 assertFalse(input.prompt().get("canAutoPass").getAsBoolean(), "An unplanned manual mana route cannot authorize Auto");
                 input = floatChimes(game, input);
-                hand = zone(viewer(input.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
             }
-            assertTrue(game.answer(input, Map.of("action", "card", "key", text(hand, "key"))));
+            var offered = readCast(game, input, spell);
+            input = offered.input();
+            int handBefore = count(viewer(input.state()), "Hand");
+            if (input.state().has("undo") && !input.state().getAsJsonObject("undo").get("offer").isJsonNull()) {
+                assertFalse(input.prompt().get("canAutoPass").getAsBoolean(),
+                        "A manual correction window leaves bulk availability unverified while exact source actions remain answerable");
+            }
+            assertTrue(game.answer(input, Map.of("action", "useSourceAction", "expectedTask", "priority",
+                    "key", text(offered.catalog(), "sourceCardKey"), "actionId", text(offered.action(), "id"))));
             var casting = game.until(next -> next.seat() == 0 && (text(next.prompt(), "inputType").startsWith("InputPayMana")
                     || priority(next) && stacked(next.state(), spell)));
+            if (!payable) {
+                assertTrue(text(casting.prompt(), "inputType").startsWith("InputPayMana"),
+                        "A timing-legal cast offer must not turn missing colored or colorless mana into a completed payment");
+                HeadlessPlatform.query(game.table, () -> null);
+                var unpaid = game.state(0);
+                assertEquals(text(unpaid.getAsJsonObject("prompt"), "id"), text(casting.prompt(), "id"));
+                casting = new Input(0, unpaid, unpaid.getAsJsonObject("prompt"));
+                String missing = spell.equals("Opt") ? "{U}" : "{C}";
+                assertTrue(casting.prompt().getAsJsonArray("unpaidManaParts").asList().stream()
+                        .map(value -> value.getAsJsonObject()).anyMatch(part -> text(part, "symbol").equals(missing)
+                                && part.get("count").getAsInt() > 0), "The actual unpaid bill retains the unsatisfied " + missing + " requirement");
+                assertFalse(casting.prompt().get("okEnabled").getAsBoolean(), "Auto cannot complete the actual missing-mana payment");
+                assertFalse(stacked(casting.state(), spell));
+                var unchanged = game.state(0);
+                var denied = expectThrows(IllegalArgumentException.class,
+                        () -> game.session(0).action(request(new Input(0, unchanged, unchanged.getAsJsonObject("prompt")), Map.of("action", "ok"))));
+                assertEquals(denied.getMessage(), "Continue is not available");
+                assertEquals(game.state(0), unchanged, "Attempting disabled payment cannot spend resources or cast the spell");
+                assertTrue(game.answer(casting, Map.of("action", "cancel", "expectedTask", "mana")));
+                String previousPriorityId = text(input.prompt(), "id");
+                var cancelled = game.until(next -> next.seat() == 0 && priority(next)
+                        && !text(next.prompt(), "id").equals(previousPriorityId));
+                assertFalse(stacked(cancelled.state(), spell));
+                assertEquals(count(viewer(cancelled.state()), "Hand"), handBefore,
+                        "Cancelling the unpaid cast returns the card through the ordinary rules path");
+                return;
+            }
             if (text(casting.prompt(), "inputType").startsWith("InputPayMana")) {
                 assertTrue(game.answer(casting, Map.of("action", "ok")));
                 long deadline = System.nanoTime() + java.time.Duration.ofSeconds(5).toNanos();
@@ -65,10 +99,61 @@ public class ManaAvailabilityExperienceTest {
                 }
                 casting = new Input(0, state, state.getAsJsonObject("prompt"));
             }
-            assertTrue(stacked(casting.state(), spell), "The engine must accept the same payment as the playable cue");
-            assertEquals(offered, payable, "A spell that the player can actually pay for must remain discoverable before manual mana production");
+            assertTrue(stacked(casting.state(), spell), "The exact offered route must complete its actual legal payment");
             assertEquals(text(casting.state().getAsJsonArray("stack").get(0).getAsJsonObject(), "kind"), "spell");
         }
+    }
+
+    private record CastOffer(Input input, JsonObject catalog, JsonObject action) { }
+
+    private static CastOffer readCast(RulesScenario game, Input input, String spell) {
+        // Drain the preceding normal publication before comparing query purity.
+        HeadlessPlatform.query(game.table, () -> null);
+        var before = game.state(0);
+        assertEquals(text(before.getAsJsonObject("prompt"), "id"), text(input.prompt(), "id"));
+        var current = new Input(0, before, before.getAsJsonObject("prompt"));
+        var hand = card(before, "Hand", spell);
+        var catalog = JSON.toJsonTree(game.session(0).sourceActions(request(current,
+                Map.of("key", text(hand, "key"), "expectedRevision", before.get("revision"))))).getAsJsonObject();
+        assertEquals(text(catalog, "gameId"), text(before, "id"));
+        assertEquals(text(catalog, "decisionId"), text(current.prompt(), "id"));
+        assertEquals(catalog.get("revision"), before.get("revision"));
+        assertEquals(text(catalog, "sourceCardKey"), text(hand, "key"));
+        assertEquals(text(catalog, "sourceCardId"), text(hand, "visualId"));
+        var casts = catalog.getAsJsonArray("actions").asList().stream().map(value -> value.getAsJsonObject())
+                .filter(action -> text(action, "kind").equals("cast")).toList();
+        assertEquals(casts.size(), 1, "The current timing-legal source retains one exact cast route independently of funding certainty");
+        var action = casts.get(0);
+        assertFalse(text(action, "id").isBlank());
+        var preview = action.getAsJsonObject("costPreview");
+        assertNotNull(preview, "The offered route describes its own nominal bill rather than borrowing card-face text");
+        assertEquals(text(preview, "manaCostKnowledge"), "Unknown", "A nominal bill does not claim the final adjusted cost");
+        var mana = preview.getAsJsonArray("costs").asList().stream().map(value -> value.getAsJsonObject())
+                .filter(cost -> text(cost, "kind").equals("Mana")).toList();
+        assertEquals(mana.size(), 1);
+        assertEquals(mana.get(0).get("amount").getAsInt(), switch (spell) {
+            case "Opt" -> 0;
+            case "Endbringer" -> 5;
+            default -> 3;
+        });
+        assertEquals(mana.get(0).getAsJsonArray("manaSymbols").asList().stream().map(value -> value.getAsString()).toList(),
+                switch (spell) {
+                    case "Opt" -> List.of("{U}");
+                    case "Ultima" -> List.of("{W}", "{W}");
+                    case "Endbringer" -> List.of("{C}");
+                    default -> List.of();
+                });
+        var funding = preview.getAsJsonObject("funding");
+        assertEquals(text(funding, "knowledge"), "Unknown", "A battlefield funding subset cannot prove all routes absent");
+        for (var pool : funding.getAsJsonObject("pool").entrySet())
+            assertTrue(pool.getValue().getAsInt() >= 0 && pool.getValue().getAsInt()
+                    <= viewer(before).getAsJsonObject("mana").get(pool.getKey()).getAsInt(), "A read-only preview cannot invent floating mana");
+        for (var source : funding.getAsJsonArray("sources"))
+            assertTrue(zone(viewer(before), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .anyMatch(value -> text(value.getAsJsonObject(), "visualId").equals(text(source.getAsJsonObject(), "sourceCardId"))),
+                    "Funding sources belong to current disclosed owned battlefield occurrences");
+        assertEquals(game.state(0), before, "Reading cost/funding facts preserves the full observation, action scope and retained Undo metadata");
+        return new CastOffer(current, catalog, action);
     }
 
     @Test(groups = "canonical-interaction", timeOut = 90000)

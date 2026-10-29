@@ -596,6 +596,21 @@ current source state, leaving the stack, an already-running clock and provider
 classification validation. Its authored observations test presentation and
 command safety; the Java journeys supply the rules evidence. Window captures
 and human readability review remain separate.
+
+`ManaPoolPaymentQuoteTest` exercises the internal fixed-bill pool query with real
+mana provenance. It checks exact unit identity and occurrence counts, unchanged
+pool order, events, rules timestamps, reversal barriers and ability metadata;
+conversion snapshots and tied choices require no controller. Unsupported input
+and an adversarial greedy allocation stay unknown, while complete witnesses
+agree with ordinary payment. The availability journey distinguishes a fresh
+manual source offer from bulk affordability knowledge and completes real paid
+casts; explicit unpaid color requirements reject Continue without spending the
+wrong mana. `MandatoryManaQuoteTest` exercises the actual required-payment
+constructor and its Cancel button through a real controller: a supported positive
+quote leaves exact pool units and mana events untouched, while restricted and
+hybrid unknowns retain the ordinary forced-payment check. An ineligible restricted
+unit cannot force payment of a noncreature spell. These tests do not certify the
+broader live availability planner as pure or replace its manual Undo deferral.
 The small-window full card-reading journey also runs in the fast native release
 set, sharing the AI-seat shard. It waits for the actual automatic pass after a
 visible stack announcement, rather than assuming the earlier shorter animation
