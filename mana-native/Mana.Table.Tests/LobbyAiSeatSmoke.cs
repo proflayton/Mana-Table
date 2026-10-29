@@ -21,6 +21,7 @@ internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
     private readonly List<int> joinedSeats = [];
     private MouseState mouse;
     private Task? background;
+    private IDisposable? observationPause;
     private double lastStep;
     private int step;
     private string firstAi = "", secondAi = "", deckId = "";
@@ -99,20 +100,25 @@ internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
         Step(.25, () => {
             Check(PartnerPortraits(view.Frame!), "The native host frame draws both public partners inside their shared seat medallion");
             Capture("05-three-friends-one-ai");
+            observationPause = view.PauseObservationScheduling();
             background = ReadGuestAndCheckAuthority();
         });
         Wait(() => !view.Polling, 10, () => {
-            Check(guestRejected && guestView?.Mode == "joined" && guestView.Seats.Any(s => s.Type == "AI" && s.Ready),
-                "The guest receives the public AI deck/readiness and the engine rejects its attempt to change a seat");
-            Check(PairedGuestPreview(guestView!) && guestView!.Seats.Single(seat => seat.Type == "AI").DeckPreview is { Commanders.Length: > 0 },
-                "The guest receives the same public partner faces and AI commander preview");
-            Check(!view.Polling, "The host's in-flight observation finishes before presenting the guest projection");
-            var frame = view.CaptureLobbySnapshot(guestView!, Path.Combine(view.Profile, "06-guest-read-only.png"));
-            Check(frame.Hits.All(hit => !hit.Id.StartsWith("lobby-ai", StringComparison.Ordinal)) && frame.Hits.All(hit => hit.Id != "start"),
-                "Rendering the actual guest snapshot exposes no Add, Change, Remove or Start controls");
-            Check(PartnerPortraits(frame), "The native guest frame draws both public partner portraits");
-            Check(view.Lobby?.Mode == "hosting" && view.DeckConfirmed && HostReady(),
-                "Finite guest snapshot composition restores the actual host owner and its Ready acknowledgment immediately");
+            try {
+                Check(guestRejected && guestView?.Mode == "joined" && guestView.Seats.Any(s => s.Type == "AI" && s.Ready),
+                    "The guest receives the public AI deck/readiness and the engine rejects its attempt to change a seat");
+                Check(PairedGuestPreview(guestView!) && guestView!.Seats.Single(seat => seat.Type == "AI").DeckPreview is { Commanders.Length: > 0 },
+                    "The guest receives the same public partner faces and AI commander preview");
+                Check(!view.Polling, "The host's in-flight observation finishes before presenting the guest projection");
+                var frame = view.CaptureLobbySnapshot(guestView!, Path.Combine(view.Profile, "06-guest-read-only.png"));
+                Check(frame.Hits.All(hit => !hit.Id.StartsWith("lobby-ai", StringComparison.Ordinal)) && frame.Hits.All(hit => hit.Id != "start"),
+                    "Rendering the actual guest snapshot exposes no Add, Change, Remove or Start controls");
+                Check(PartnerPortraits(frame), "The native guest frame draws both public partner portraits");
+                Check(view.Lobby?.Mode == "hosting" && view.DeckConfirmed && HostReady(),
+                    "Finite guest snapshot composition restores the actual host owner and its Ready acknowledgment immediately");
+            } finally {
+                observationPause?.Dispose(); observationPause = null;
+            }
             background = Task.Run(async () => hostAfterCapture = await view.Services.Tables.LobbyAsync());
         });
         Wait(() => view.Lobby?.Mode == "hosting" && view.Hits.Any(h => h.Id == "lobby-ai-remove:1"), 10, () => {
@@ -191,6 +197,7 @@ internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
     }
     public void Dispose()
     {
+        observationPause?.Dispose(); observationPause = null;
         try { background?.GetAwaiter().GetResult(); } catch { }
         foreach (var guest in guests) guest.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }

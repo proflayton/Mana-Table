@@ -780,6 +780,11 @@ covers actual host/guest assignments, private-data filtering, saved-token/table
 guards and readiness legality; the native mixed-seat journey captures the same
 shared commander previews. These checks do not supply human portrait-legibility
 or gameplay acceptance.
+The native mixed-seat snapshot probe temporarily stops scheduling new polls,
+waits for the actual in-flight observation to finish, then composes the guest
+view and restores the host. It does not rebind the lobby or retire observation
+ownership to manufacture idle state; the strict snapshot guard and existing
+quiescence/journey time limits remain in force.
 
 The headless lane also reads a modal spell/land card, checks both offered-action
 orders and rejects a land offer replaced between press and release. It also
