@@ -56,6 +56,62 @@ source/resources unbound. The normal packaged CI gate still runs the same
 journey with the exact-source package and receipt; local development evidence
 cannot substitute for that gate.
 
+### Proposed gameplay Undo gates
+
+**Planned checks; no gameplay Undo implementation or passing gate is claimed.**
+The [one-step design](Mana-Table-Architecture.md#proposed-one-step-gameplay-undo)
+requires a private rules-state oracle separate from viewer snapshots. Inventory
+authoritative state owners, logical continuations, ordered hidden zones and RNG
+before claiming exact restoration. A digest that omits the same fields as the
+capture is not an independent oracle. Public multi-view comparisons supplement
+that proof; they cannot establish complete rules equivalence.
+
+Use a small deterministic matrix in the existing Java and native journeys:
+
+- Activate a plain tap-for-mana source and a multi-mana source, restore once,
+  then compare the complete certified rules footprint with its original state.
+  Include exact producer provenance/restrictions, tapped-this-turn history,
+  activation/resolution ledgers and costs,
+  not just the source's tapped flag. Undoing spent or otherwise changed mana
+  must reject with zero additional writes. Preserve the reported artifact
+  partial-undo regression as an explicit negative oracle. Activate again after
+  restoration and verify subsequent rules behavior matches one activation,
+  including conditions which consult the internal histories.
+- Queue a tap/land/draw trigger without stacking it; detect a replacement,
+  state-based consequence, private disclosure or random use. Each must prevent
+  an uncertified offer or invalidate one before any inverse work. Add an
+  unclassified-mutation sentinel so missing event coverage cannot grant Undo.
+- Race a captured offer with a human or AI command, Auto pass, host timeout and
+  concession. Validate at admission and execution; exactly one outcome commits.
+  Polling and reading alone keep an otherwise valid offer. Duplicate, consumed,
+  foreign-viewer, prior-match and unsupported-provider offers do not mutate.
+  Include mana abilities' general cast/ability-resolves triggers, not just
+  effects explicitly triggered by tapping or producing mana.
+- Inject a late/lost receipt and reconnect. Reconcile the resulting newer state
+  without replaying Undo. Compare every local/TCP viewer and spectator in one
+  common `BoardRevision`, preserving per-viewer monotonic `Revision` values,
+  including a card returned to a hidden zone. Old action handles and cached faces
+  must not regain authority. Skip the restoration event in another journey:
+  the retained restoration version still reconciles consumers in the same match.
+- Subscribe to intermediate rules events and concurrently poll while restoring.
+  Observers see only the committed restoration. No artificial enter/leave,
+  tap/untap or counter triggers execute during restore; duplicate observations
+  do not repeat the result. Old latches/queued continuations cannot act afterward.
+- Assert newer board/activity/execution ordering and the original action's
+  reversed relationship. Clear abandoned announcements, finite yields and AI
+  resource/social consequences without deleting unrelated history; preserve
+  configured monotonic clock budgets when regenerated inputs rebind their episode.
+  A second Undo cannot expose an older checkpoint or become Redo.
+
+Run focused checks on source changes, then one real packaged local/TCP journey
+before enabling the control. Use controlled clocks and bounded small traces;
+do not run an exhaustive card-pair matrix or copy the whole game per UI frame.
+Measure one checkpoint's memory and capture/restore latency on a large table;
+exceeding its budget disables the offer rather than weakening coverage.
+Pointer/keyboard journeys at 1000x740 and a larger window with 130% text verify
+the full source name, source/stack separation, expiration while hovered, focus
+loss and reduced motion. Human gameplay review stays pending until performed.
+
 ### Private recorded presentation
 
 `Mana.Scenarios.ProjectionRecording` stores one provider-admitted viewer's ordered

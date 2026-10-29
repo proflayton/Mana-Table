@@ -444,10 +444,12 @@ departed source's action authority. Display reconciliation keeps a current maske
 face rather than falling back to an older revealed report. None of these queries
 cache a previous snapshot or match a printed name.
 
-Forge priority alternatives are explicit state: Undo, pass turn or none. Native
-Undo and pass-turn commands never emulate Forge's overloaded Cancel button.
-The Java adapter validates their current meaning both before queueing and on the
-input thread; a changed Undo cannot fall through to yielding the turn. Ordinary
+Forge internally distinguishes Undo, pass turn and no priority alternative.
+Gameplay Undo is currently disabled: the Java adapter rejects both its named
+command and generic priority Cancel, and native permission checks reject the
+retained legacy command even if an older provider advertises it. Pass-turn
+commands never emulate Forge's overloaded Cancel button. The Java adapter
+validates current meaning both before queueing and on the input thread. Ordinary
 priority passing also invokes the explicit pass operation, independently of a
 Forge yield-suggestion button. The private IPC remains version 2 and adds the
 required `semantic-priority-actions` capability; new clients reject older jars.
@@ -738,6 +740,162 @@ and allows local battlefield inspection. The stopped rules thread cannot resume
 that game. Technical details remain in the engine log rather than becoming its
 outcome label. This fixes the failure boundary; it does not implement the full
 execution projection described above.
+
+## Proposed one-step gameplay Undo
+
+**Design proposal, 29 October 2026; not implemented or enabled.** The player wants
+one immediate correction while no other rules work has followed. This replaces
+the earlier request to remove gameplay Undo, but does not make the existing
+partial inverse safe. Deck-history Undo and cancellation of an unfinished choice
+remain separate operations.
+
+### Player journey and game precedent
+
+The documented [Magic Online controls](https://www.mtgo.com/getting-started/getting-started-tips-tricks)
+use Ctrl+Z for the most recent mana activation and permit revising unfinished
+multi-choice sequences. They prohibit undoing a spell already on the stack or a
+mana activation that moved a card from a hidden zone. MTGO supports repeated
+mana reversals; our proposal deliberately retains only one opportunity.
+[Arena's mobile guide](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-january-2021-01-21)
+documents a contextual Undo arrow, without specifying a complete safety matrix.
+These are documented behaviors, not a new direct playtest. Paper Magic's
+[MTR 4.8](https://media.wizards.com/ContentResources/WPN/MTG_MTR_2026_Feb27_EN.pdf#page=26)
+also requires no information gained; it is discretionary judge policy, not an
+automatic software rollback specification.
+
+Our proposed first journey is: manually tap a fixed, unrestricted mana source
+while retaining priority, outside an in-progress payment, see its tap and exact
+produced mana, then choose the contextual
+`Undo tap <full source name>` or Ctrl+Z. The complete activation is restored:
+the source, exact mana provenance and every associated rules ledger. Keep the
+control beside the existing priority/payment interaction, clear of the stack;
+do not add another modal. Reading and camera movement do not consume the offer.
+The control disappears when authority expires, and an already captured gesture
+is revalidated. No peer confirmation, redo, turn rewind or automatic replay.
+This gesture and one-step limit are our adaptation, not claims about Arena.
+
+Undo does not introduce a confirmation or delay for every play. It exists only
+while the actor naturally retains the current decision; ordinary Auto/passes
+still close the window. If a later journey needs a deliberate opportunity to
+hold priority, specify and review that separately rather than secretly delaying
+the table or making a restored action available after another seat can respond.
+
+### One action, one private checkpoint, one current offer
+
+The rules provider owns the reversible unit: one completed player gesture,
+including its nested choices, cost payment and consequences. Existing execution
+identities explain its causal work; they do not grant reversal permission. A
+command admission receipt also does not prove the action finished. Capture a
+checkpoint before an eligible action and offer Undo only after that action has
+settled at a known rules/input boundary. Never capture on every frame or poll.
+
+Keep at most one bounded private checkpoint per match. A subsequent accepted
+player or automated action invalidates it before that action's rules work;
+the next eligible completed action may replace it. Undo consumes the checkpoint
+without exposing an earlier one. Oversized captures or incomplete state coverage
+mean no offer, while the ordinary action remains playable. Capture and restore
+latency and memory need explicit measured budgets before enabling the feature.
+
+The neutral contract needs only an optional, viewer-scoped `UndoOffer` with an
+opaque one-use ID, action/execution reference, authorized source description and
+current rules/input version. Submission names that exact offer through the
+closed command family. The host, including remote-seat admission, rechecks it
+under the same rules-state boundary at admission and execution. A publication
+revision, an empty stack, a visual card ID or Forge's `canUndo` flag cannot supply
+this authority. Do not reactivate legacy `UndoLastAction` payloads: negotiate a
+new capability and keep older providers conservatively unsupported.
+
+`UndoOffer` is public authority for its owning viewer, not the checkpoint itself.
+Provider-specific objects, hidden zones and restoration data stay behind the
+provider. A replacement engine must implement the same observable semantics or
+offer no Undo; neither `Mana.Client` nor the renderer may invent an inverse.
+
+### Close the window on information or causal progress
+
+An authoritative barrier advances before any subsequent accepted command and
+at each relevant rules change. It must cover work queued before a corresponding
+event is published. Invalidate on a newly detected or queued trigger, a related
+replacement or state-based change outside the certified action footprint,
+another decision/response, priority handoff, phase/turn change, concession,
+timeout or terminal/fault transition. Also invalidate on drawing, revealing,
+searching, shuffling, random consumption or any other new private information,
+including information newly disclosed to a different seat. A trigger that is
+waiting for placement already closes the window, even if the stack is empty.
+
+Unknown coverage, event gaps or an unclassified write are barriers. Polling,
+inspection, camera gestures and connection latency are not themselves rules
+progress. A reconnect discards retained client offers and reconciles current
+authority; it never resubmits an uncertain Undo automatically. These limits are
+our conservative policy, stricter than paper's discretionary immediate takeback.
+
+### Restore rules state atomically; keep history moving forward
+
+A checkpoint must cover every authoritative partition it can affect: ordered
+zones and occurrences; card state, counters, marked damage and attachments;
+mana units with producer/spending restrictions; player resources and commander
+tax; turn/activation/cast/land-use ledgers; continuous/replacement/delayed effects;
+stack and waiting triggers; logical pending choices and deferred work; and
+match-owned random state. State owners need explicit capture/restore coverage
+or a complete reversible write journal. Existing public activity is filtered,
+bounded evidence and cannot serve as that journal. Unknown legacy mutation
+paths must forbid an offer before use; absence of a published event is no proof.
+
+Validate a complete restoration plan before applying it. A supported restore
+must have an all-or-nothing commit boundary, including buffering intermediate
+events and observations; the existing state lock alone is insufficient because
+rules callbacks can publish synchronously. Reversal is administrative state
+restoration, not a new untap/move/counter game action which fires fresh triggers.
+Never rewind threads, latches or futures: retire their generation and reissue
+the restored logical decision with fresh scoped handles.
+
+Return a truthful applied/rejected result through the existing serialized
+command/reconciliation path. An unknown receipt requires observation and cannot
+be blindly retried. An unexpected internal failure must interrupt the table,
+never publish a partially restored board as a successful Undo.
+
+Publish the restored board as a newer revision in the same match. Invalidate
+old input/source/automation scopes and visibility identities as needed. Retain
+a monotonic restoration version and original action reference in current state,
+so a reconnect or skipped observation can detect reversal even after bounded
+activity history loses the event. Process that marker inside the existing
+client acceptance boundary before notifying consumers; resetting/retiring the
+match is not reconciliation. Append a viewer-filtered restoration fact;
+activity and execution sequences never run backward or erase what observers
+saw. Do not relabel an already completed execution as a cancellation.
+Consumers stop old queued cues/AI proposals/yields, reconcile to the new board,
+and treat the original action as reversed rather than another resolved effect.
+AI resource and social projections must stop counting its reversed consequences.
+Retain immutable decision/receipt history, actual knowledge and unrelated social
+evidence. Unknown/missing ancestry requires rebasing derived projections, not
+inventing an inverse impact. Host clocks remain monotonic and do not regain
+thinking time. Rebind the fresh input to the existing logical tempo episode,
+preserving its remaining budget, strikes and preparation allowance; a new input
+object must not create a fresh clock. Old queued expiry still needs its exact
+authority check. Local audio/camera preferences and chat/history are not rolled
+back.
+
+### Current gaps and implementation order
+
+The current [experimental Forge snapshot](../../forge-game/src/main/java/forge/game/GameSnapshot.java)
+is not a certified checkpoint: it omits state, retains aliases, and restores
+some ledgers incompletely. `MagicStack.undo()` instead compensates selected mana
+costs and can return true even when its inner inverse fails. Neither provides
+the required full-action proof. The existing game-state boundary, immutable
+snapshots and execution/activity streams are useful foundations, not a complete
+mutation ledger or atomic restoration facility.
+
+First inventory state owners and add the rules action/barrier boundary with
+private capture/restore conformance tests. Prove one closed mana-activation path
+before offering it: a bounded reversible journal must include tapped-this-turn
+history, per-card activation/resolution counters, stack activation history,
+the ability's last produced mana and exact pool provenance as well as tap costs.
+Current affordability stability checks are not a complete Undo certificate.
+Support depends on complete state coverage, not card names.
+Nested payment, sacrifice/counter/life costs and land drops remain unsupported
+until their full footprints and logical continuations pass the same proof.
+Then add neutral offers, local/TCP admission, history reconciliation and the
+contextual gesture. Keep current gameplay Undo disabled until the positive and
+adversarial [Undo gates](Mana-Table-Testing.md#proposed-gameplay-undo-gates) pass.
 
 ## Deck and pregame journey ownership
 
