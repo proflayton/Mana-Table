@@ -27,6 +27,7 @@ import forge.game.card.CardView;
 import forge.game.card.Card;
 import forge.game.card.CounterType;
 import forge.game.combat.CombatUtil;
+import forge.game.combat.BlockRemovalRepair;
 import forge.game.player.*;
 import forge.game.spellability.SpellAbilityView;
 import forge.game.spellability.SpellAbility;
@@ -1525,13 +1526,25 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (attacking && !attackValid) for (var entry : combat.getAttackConstraints().getLegalAttackers().getLeft().entrySet())
             if (CombatDefenders.isCurrent(entry.getValue()))
                 repair.add(map("cardId", combatIds.id(entry.getKey().getView()), "defender", combatDefender(entry.getValue())));
+        String blockProblem = blocking ? CombatUtil.validateBlocks(combat, human.getPlayer()) : null;
+        List<Object> blockRepair = null;
+        if (blocking && blockProblem != null) {
+            var witness = BlockRemovalRepair.find(combat, human.getPlayer(), 128).assignments();
+            if (witness != null) {
+                blockRepair = new ArrayList<>();
+                for (var assignment : witness)
+                    blockRepair.add(map("attackerId", combatIds.id(assignment.attacker().getView()),
+                            "blockerId", combatIds.id(assignment.blocker().getView())));
+            }
+        }
         return map("attackingPlayerId", combat.getAttackingPlayer().getId(), "attackers", attacks,
                 "defenders", defenders, "selectedDefender", selectedDefender == null ? null : combatDefender(selectedDefender),
                 "attackerCandidates", candidates,
                 "attackOptions", attackOptions,
                 "attackValid", attackValid, "attackRepair", repair,
+                "blockRepair", blockRepair,
                 "blockerCandidates", blockers.stream().map(card -> combatIds.id(card.getView())).toList(),
-                "blockProblem", blocking ? CombatUtil.validateBlocks(combat, human.getPlayer()) : null);
+                "blockProblem", blockProblem);
     }
 
     private Map<String, Object> combatDefender(GameEntity entity) {

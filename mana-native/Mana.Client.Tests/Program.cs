@@ -174,6 +174,7 @@ await AiRouteRetryRegression.RunAsync(Check);
 await AiDecisionQualityRegression.RunAsync(Check);
 await AiActionOutcomeRegression.RunAsync(Check);
 await AiCombatContextRegression.RunAsync(Check);
+await AiBlockRepairRegression.RunAsync(Check);
 await AiTargetContinuationRegression.RunAsync(Check);
 AiManaPlannerRegression.Run(Check);
 await AiNumericRegression.RunAsync(Check);

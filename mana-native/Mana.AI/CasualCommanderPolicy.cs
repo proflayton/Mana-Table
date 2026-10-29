@@ -630,6 +630,17 @@ public sealed class CasualCommanderPolicy : IAiPolicy
     {
         var state = request.Frame.State;
         var combat = state.Combat!;
+        if (!string.IsNullOrEmpty(combat.BlockProblem) && combat.BlockRepair is { } repair)
+            return RepairBlockers(request, repair);
+        // The rules witness repairs this declaration, not another opportunity
+        // to rebuild the same invalid tactical plan. Prompt UUIDs can refresh
+        // after each toggle; the provider's combat episode remains the owner.
+        if (string.IsNullOrEmpty(combat.BlockProblem) && request.History.Decisions.Any(record =>
+                record.EpisodeId == request.Frame.EpisodeId && record.Outcome == AiDecisionOutcome.Accepted
+                && record.Command == nameof(ToggleBlock) && record.ReasonCode == "combat-block-repair-remove"))
+            return payload.Complete.Enabled
+                ? Answer(request, new CompleteBlockers(state.Id, state.Decision!.Id), "combat-complete-repaired-blocks")
+                : Missing("combat-block-repair-completion");
         var assigned = combat.Attackers.SelectMany(attack => attack.BlockerIds).ToHashSet();
         long? incoming = CasualTableAssessment.IncomingDamage(state, state.ViewerId);
         var options = new List<(DecisionCommand Command, double Score, double Tie)>();
@@ -671,6 +682,25 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             return Answer(request, fallback, "combat-required-offered-block");
         return payload.Complete.Enabled && string.IsNullOrEmpty(combat.BlockProblem)
             ? Answer(request, new CompleteBlockers(state.Id, state.Decision!.Id), "combat-complete-blockers") : Missing("required-block-assignment");
+    }
+
+    private static AiProposal RepairBlockers(AiDecisionRequest request, ImmutableArray<BlockAssignment> repair)
+    {
+        var state = request.Frame.State;
+        var desired = repair.Select(pair => (pair.AttackerId, pair.BlockerId)).ToHashSet();
+        foreach (var attack in state.Combat!.Attackers.OrderBy(attack => attack.CardId, StringComparer.Ordinal))
+        foreach (string id in attack.BlockerIds.Order(StringComparer.Ordinal)) {
+            if (!request.Work.TrySpend()) return Missing("work-budget");
+            var blocker = CardViews.FindZoneOccurrence(state, id);
+            if (blocker?.PlayerId != state.ViewerId || desired.Contains((attack.CardId, id))) continue;
+            var attacker = CardViews.FindZoneOccurrence(state, attack.CardId)?.Card;
+            if (attacker is not { Key.Length: > 0 } || blocker?.Card is not { Key.Length: > 0 } card)
+                return Missing("combat-block-repair-occurrence");
+            var command = new ToggleBlock(state.Id, state.Decision!.Id, attacker.Key, card.Key);
+            return request.Frame.Allows(command) ? Answer(request, command, "combat-block-repair-remove")
+                : Missing("combat-block-repair-current-pair");
+        }
+        return Missing("combat-block-repair-difference");
     }
 
     private static AiProposal RepairAttackers(AiDecisionRequest request)

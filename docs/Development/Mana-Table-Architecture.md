@@ -139,6 +139,15 @@ multi-blocker knowledge remains unknown. Explicit confirmation branches,
 composed mode-bundle utility and quantified counter-cost commitment remain
 separate follow-up boundaries, not assumed consequences of these estimates.
 
+Joint combat repair belongs to the rules provider. Optional `Combat.BlockRepair`
+is a certified complete subset of this defender's current assignments, produced
+by bounded removal search against the real validator on detached assignment
+maps. Null is unknown; an empty array is a certified own clear. Shared contract
+validation runs at decoding and AI admission; the witness grants no new command
+authority. Policy reconciliation uses fresh offered block toggles and the same
+stable combat episode, then completes a valid declaration after accepted repair.
+It does not infer constraints from warning text or claim a complete block solver.
+
 Numeric announcements retain the exact callback's source and declared cost.
 `NumericDecision` distinguishes announcing X from an unrelated number. Its
 `ManaFundingContext` contains read-only physical resources and production

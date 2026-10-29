@@ -179,6 +179,15 @@ eviction and absent stable identity. Both run in the same graphics-free suite.
 These guard the retained first integrated Fireball loop; they do not claim to
 price additional-target costs or replace the packaged whole-seat game gate.
 
+`AiBlockRepairRegression` covers the retained packaged-game failure: an invalid
+singleton with no unassigned blockers. Twenty-six policy checks exercise fresh
+scopes, accepted versus rejected repair, episode boundaries, retained and foreign
+assignments, unknown/malformed witnesses and 64 removals in one 1,024-unit budget.
+`BlockRepairWireChecks` adds 17 decoding checks. Java `BlockRemovalRepairTest`
+covers bounded search, forced blocks, bands, foreign assignments, live-state
+purity and an actual InputBlock removal-to-completion journey. These certify a
+bounded removal witness, not every reassignment or optimal combat strategy.
+
 `AiDecisionQualityRegression`, `AiActionOutcomeRegression` and
 `AiCombatContextRegression` add 91 bounded policy checks for complete known
 optional consequences, known versus incomplete modes, physical-source versus

@@ -74,6 +74,27 @@ behavior under missing facts, not a claim to price target-dependent costs:
 incremental target funding and composed target-set consequences still need
 explicit provider data and a bounded bundle assessment.
 
+The first exact-package evaluation of the corrected cast candidate then stopped
+on an invalid block declaration at turn 46: every blocker was already assigned,
+including a singleton against menace. The policy considered only unassigned
+blockers, so it could neither repair nor complete. All ten goldens passed and
+all four stale-command probes were rejected correctly; the remaining rotations
+never ran. That first mechanical failure remains retained separately from the
+earlier cast loop, and neither run supplies release readiness.
+
+Block repair follows the existing attack-repair boundary. The rules provider may
+certify a complete subset of the current defender's assignments by validating a
+detached combat projection, preserving every other defender's blocks. Its search
+is bounded; null means no witness supplied, while an empty witness certifies
+removing all of this defender's blocks. It is a legality witness, not a tactical
+solver or permission to execute a stored identity. The policy removes only an
+extra currently offered pair, using fresh action keys, and completes a valid
+declaration after accepted repair in the same stable combat episode. Refreshed
+prompt UUIDs cannot make it rebuild the invalid plan. Required blocks remain
+governed by the engine validator; no error prose or keyword-name classifier
+stands in for those constraints. A removal-only search does not claim to find
+every legal reassignment or the strongest defense.
+
 Three next abstractions need separate work. An optional confirmation needs an
 explicit affirmative/decline consequence: current provider graphs intentionally
 mark some optional operations conditional, so this audit does not reinterpret

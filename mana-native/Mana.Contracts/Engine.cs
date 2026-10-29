@@ -273,12 +273,16 @@ public sealed record Attack(string CardId, int DefendingPlayerId, ImmutableArray
     public bool Blocked { get; init; }
 }
 public sealed record AttackAssignment(string CardId, Defender Defender);
+public sealed record BlockAssignment(string AttackerId, string BlockerId);
 public sealed record Combat(ImmutableArray<Attack> Attackers, ImmutableArray<AttackOption> AttackOptions, string? BlockProblem)
 {
     public bool AttackValid { get; init; } = true;
     // One legal witness from the rules constraint solver, not a tactical plan.
     // It is supplied only when the current declaration fails joint constraints.
     public ImmutableArray<AttackAssignment> AttackRepair { get; init; } = [];
+    // A complete rules-certified subset of this seat's staged assignments.
+    // Null is unknown/unreported; an empty witness certifies clearing own blocks.
+    public ImmutableArray<BlockAssignment>? BlockRepair { get; init; }
 }
 public enum StackActionKind { Spell, ActivatedAbility, TriggeredAbility, Ability }
 [method: System.Text.Json.Serialization.JsonConstructor]
