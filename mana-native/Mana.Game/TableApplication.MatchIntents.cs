@@ -52,7 +52,8 @@ internal sealed partial class TableApplication
             case MatchIntent.FlipReaderText flip: FlipReaderText(flip.Id); break;
             case MatchIntent.SubmitCommand { Command: DecisionCommand command }: Send(command); break;
             case MatchIntent.SubmitCommand { Command: RestorePriorityAbility command }: session.SubmitSetting(command); break;
-            case MatchIntent.ConfirmDecision confirm when match?.Decision != null:
+            case MatchIntent.ConfirmDecision confirm when match?.Decision != null
+                && (match.Decision.Payload is not BlockPayload || CanConfirmCombatNow):
                 if (confirm.CloseOverlay) overlay = "";
                 Send(DecisionCommands.Confirm(match)); break;
             case MatchIntent.CancelDecision when match?.Decision != null: Send(DecisionCommands.Cancel(match)); break;
@@ -99,6 +100,10 @@ internal sealed partial class TableApplication
             case MatchIntent.RemoveCombatAssignment remove: RemoveAssignment(remove.Id, remove.Attacker); break;
             case MatchIntent.OpenCombat open: OpenCombat(open.Candidates); break;
             case MatchIntent.ReviewBlockers review: reviewedAttacker = review.Attacker; combatPage = 0; overlay = "blockers"; break;
+            case MatchIntent.BeginGroupBlocks: BeginGroupBlocks(); break;
+            case MatchIntent.SelectAllGroupBlocks all: SelectAllGroupBlocks(all.Incoming); break;
+            case MatchIntent.ApplyGroupBlocks apply: ApplyGroupBlocks(apply.Assignments); break;
+            case MatchIntent.StopGroupBlocks: StopGroupBlocks(); break;
             case MatchIntent.ReturnFromMatch: ReturnFromMatch(); break;
             case MatchIntent.ReturnToWorkshop back: ReturnToWorkshop(back.Again); break;
             case MatchIntent.RetryConnection: nextPoll = 0; break;
@@ -106,7 +111,7 @@ internal sealed partial class TableApplication
             case MatchIntent.Concede when match is { } current:
                 overlay = "";
                 Work(async () => { await matchConnection.ConcedeAsync(current.Id); var next = await matchConnection.ObserveAsync(); updates.Enqueue(() => Accept(next)); },
-                    "Leaving this game", "Updating the result for your seat.", true); break;
+                    "Leaving this game", "Updating the result for your seat.", true, changesMatch: true); break;
             case MatchIntent.OpenChanges open: OpenChanges(open.Id); break;
             case MatchIntent.FocusChange focus when matchPresentation.Changes.FirstOrDefault(group => group.Id == focus.Id) is { } group: FocusAffectedChange(group); break;
             case MatchIntent.ShowResolution read:
@@ -151,6 +156,7 @@ internal sealed partial class TableApplication
                 SavePreferences(); break;
             case MatchIntent.SetQuietPriority setting: if (setting.Armed) ArmQuietPriority(); else TakePriorityControl(); break;
             case MatchIntent.SetStackResolution setting: if (setting.Armed) ArmStackResolution(); else TakePriorityControl(); break;
+            case MatchIntent.DeclineRepeatedPayments: ArmRepeatedDecline(); break;
             case MatchIntent.ToggleReducedMotion: preferences = preferences with { ReducedMotion = !preferences.ReducedMotion }; SavePreferences(); break;
             case MatchIntent.ToggleSounds when overlay == "settings":
                 preferences = preferences with { Sounds = !preferences.Sounds }; ApplyAudioMix(); SaveAudioPreferences(); break;

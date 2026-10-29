@@ -178,12 +178,12 @@ internal sealed partial class TableApplication
                 if (generation == deckSelectionGeneration) { ApplySoloPreparation(prepared); preparedSoloDeckId = deck.Id; }
                 setupModal = ""; ResetTableView(); session.BindLobby(null); localMatch = true; Accept(state); message = "Starting your AI table...";
             });
-        }, "Gathering your AI table", "Preparing your deck, AI opponents, and the opening hand.", scene: true);
+        }, "Gathering your AI table", "Preparing your deck, AI opponents, and the opening hand.", scene: true, changesMatch: true);
     }
     private void StartFriends()
     {
         if (!DeckConfirmed || LocalSeat?.Ready != true || lobby is not { Mode: "hosting", CanStart: true }) return;
-        Work(async () => { await tables.StartAsync(); var state = await matchConnection.ObserveAsync(); updates.Enqueue(() => { setupModal = ""; Accept(state); }); }, "Starting Commander", $"Bringing all {lobby.Seats.Length} players to the table.", scene: true);
+        Work(async () => { await tables.StartAsync(); var state = await matchConnection.ObserveAsync(); updates.Enqueue(() => { setupModal = ""; Accept(state); }); }, "Starting Commander", $"Bringing all {lobby.Seats.Length} players to the table.", scene: true, changesMatch: true);
     }
     private void ConnectLobby(bool hosting)
     {
@@ -199,11 +199,11 @@ internal sealed partial class TableApplication
                 var named = await tables.LobbyAsync(); updates.Enqueue(() => session.AcceptLobby(named));
             }
             updates.Enqueue(() => message = hosting ? "Table open. Invite your friends." : "You joined the table. Ready when you are.");
-        }, hosting ? "Opening your table" : "Joining your friends", hosting ? $"Preparing {friendPlayerCount} seats and your table connection." : "Connecting to the table from your invite.", scene: true);
+        }, hosting ? "Opening your table" : "Joining your friends", hosting ? $"Preparing {friendPlayerCount} seats and your table connection." : "Connecting to the table from your invite.", scene: true, changesMatch: true);
     }
     private void LeaveLobby() => Work(async () => {
         await tables.LeaveAsync(); updates.Enqueue(() => { session.BindLobby(null); InvalidateDeckConfirmation(); setupModal = ""; message = "You left the table."; });
-    }, "Leaving the table", "Returning to your own setup.");
+    }, "Leaving the table", "Returning to your own setup.", changesMatch: true);
     private void OpenJoin()
     {
         string value = "", clipboardError = "";

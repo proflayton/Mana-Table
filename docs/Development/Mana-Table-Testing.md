@@ -540,6 +540,86 @@ creating 70 independent triggers; another real response brings the stack to 71.
 It verifies every actual resolution and Pir's resulting counters, response and
 immediate-mana interruption, and a required choice between pass acceptance and
 execution. These are authority and rules checks, not proof of readability.
+
+`FiniteResolutionRegression` covers 71 ordinary captured passes, 55 supported
+optional declines, mixed 110-entry queues with only 55 negative answers, every
+intermediate publication, actual terminal outcomes, refreshed prompt identities,
+lineage/terms/membership changes and unsupported decisions. `FiniteYieldLifecycleRegression`
+checks provider capability fallback, exact grants, reading and Take control,
+reset/close/recovery ordering, unknown acknowledgements and explicit match-work
+revocation. `CombatAssignmentRegression` stages 100 reviewed pairs with current
+handles, bounded command chunks, constrained-edge matching and separate final
+confirmation. These tests run without starting a JVM for each case.
+
+Java `FiniteResolutionProjectionTest` follows 55 real Nadir Kraken optional
+payments interleaved with Toothy triggers. Its separate Mind's Eye case follows
+55 actual optional payments in the other player's seat alongside 55 Toothy
+triggers, with four independent grants, 440 actual priority passes, exact
+negative-answer lineage and terminal receipts, unchanged payer hand/mana, and
+55 added Toothy counters. MSC collectors 288 and 447 identify Panther Idol as
+Mind's Eye; the test checks that catalog mapping. This script has no
+`OptionalDecider` parameter, so the real input's payment authority and producing
+trigger must certify it. It also exercises four independently
+consenting human seats against 50 real Toothy/Pir triggers,
+including actual automatic pass counts, result receipts, action/choice fences,
+explicit revoke and bounded evidence retention. `FiniteStackYieldTest` checks
+the bounded consent state machine. Transport-generation checks
+exercise disconnect/reconnect ownership independently of rules behavior.
+Native wire checks reject malformed facts and legacy omissions remain unknown.
+`FiniteResolutionPresentationChecks` and `CombatGroupPresentationChecks` exercise
+production pointer hits, session pumping and actual card cohorts at 1000x740 and
+1540x980, including source reading, interleaving, stopping and 100 staged blocks.
+Their authored snapshots establish presentation behavior; Java establishes the
+real rules transitions. Neither supplies human UX approval or all-card coverage.
+
+`FiniteCombatStagingTest` issues 100 actual attack toggles and 100 actual block
+toggles with fresh offered authority, checks every staged count, and requires a
+separate final confirmation under its unchanged 180-second limit. Its bounded
+scale trace keeps compact command/offer receipts and initial, previous, current,
+final and first-failure frames; ordinary scenarios retain full traces.
+`CombatChoiceScopeTest` and `CombatChoicePublicationTest` distinguish unknown
+domains from certified empty ones, reject stale owner/input/sequence/rules
+versions, and prove that a same-input rules event withholds stale authority then
+recovers through the actual input callback. `BlockRemovalRepairTest` compares
+each single-build query domain to ordinary live `canBlock` across flying,
+protection, menace, bands, foreign assignments, tapped state, extra block capacity,
+forced blocks and taxes, including mutations between builds. These checks guard
+pure scoped reuse without authorizing a cache across rules changes or weakening
+live command validation.
+
+`AiRepeatedCadenceRegression` runs two human `ClientSession` finite executors and
+two actual `AiTableHost` seats against an authored provider with fifty trigger
+occurrences. It uses the real `TimedAiHostPacing` and a monotonic test clock:
+no bot evaluates before the initial 2.4-second beat, then all 200 fresh priority
+answers complete without adding 2.4 seconds per trigger. Controls retain ordinary
+beats for new responses, retargeting, reordering, controller/source changes,
+action/owned-choice fences, phase changes, unrelated public events and unknown
+ancestry. Explicit parent progress and translated prose are separate positives;
+an originally disclosed parent aging out of the public event tail is separate
+from contradictory known reparenting or a private intermediate ancestor.
+Legacy evidence and queues above 256 remain conservative. This fixture checks
+host cadence, fresh authority and receipts; real Forge rules coverage remains in
+the separate Java and packaged-engine journeys above.
+
+`AiRepeatedCadenceEngineJourney` also runs inside the existing
+`--smoke-headless-engine` JVM. Its test-only pregame factory supplies Grim
+Haruspex, Pestilence, one Swamp and fifty Memnites to a legal Commander deck.
+Ordinary offered activation and mana inputs kill the Memnites and create fifty
+forced draw triggers. Two `ClientSession` finite drivers and two actual
+`AiTableHost` drivers then use the production adapter and shipping 2.4-second
+monotonic-clock pacing. The fixed 30-second setup and 30-second/2,048-step
+workload budgets require fifty actual draws, all terminal execution receipts,
+one initial readable beat and one fresh policy evaluation for each bot input.
+The actual pacer's `Ready` results must never restart a wait for the captured
+queue after the first accepted bot command; elapsed command timestamps are
+retained separately. One host owns private discovery and publishes copied seat
+replicas for both client drivers, whose receipts wait for a later publication.
+This is a four-seat real-rules simulation with two finite client drivers and
+two AI drivers; it does not prove networked mixed-lobby behavior. The standalone
+`--smoke-ai-repeated-cadence` route uses the same declared fixture with explicit
+fixture/production JARs and a disposable profile. Its local evidence is not
+exact-source release-package verification.
+
 `AiHostRegression` also checks fresh authority after a public pacing beat,
 divergent viewer-local event sequences and retention of original host failures.
 `AutomatedWireFailureChecks` verifies the shipping provider's private diagnostic

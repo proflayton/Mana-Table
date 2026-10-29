@@ -14,6 +14,7 @@ internal sealed class StackArrivalPresentation
     {
         internal string ExecutionId { get; init; } = "";
         internal bool AwaitingMetadata { get; init; }
+        internal int CapturedCount { get; init; } = 1;
     }
     private readonly Queue<Announcement> pending = new();
     private readonly HashSet<string> seen = new(StringComparer.Ordinal);
@@ -21,8 +22,33 @@ internal sealed class StackArrivalPresentation
     private Announcement? current;
     private double elapsed, lastTick;
     private bool holding, presented;
+    private readonly Dictionary<string, string> finiteGroups = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> finiteCounts = new(StringComparer.Ordinal);
+    private readonly HashSet<string> finitePresented = new(StringComparer.Ordinal);
     internal int IncompleteCount { get; private set; }
     internal int PendingCount => pending.Count + (current == null ? 0 : 1);
+
+    // A deliberate finite gesture changes the presentation of only its exact
+    // captured executions. The public execution/activity streams remain intact.
+    internal void BeginFinite(IEnumerable<(string Execution, string Group)> captured, double now)
+    {
+        EndFinite();
+        foreach (var (execution, group) in captured)
+            if (execution.Length > 0 && group.Length > 0) finiteGroups.TryAdd(execution, group);
+        foreach (var group in finiteGroups.Values) finiteCounts[group] = finiteCounts.GetValueOrDefault(group) + 1;
+        Tick(now);
+        var queued = (current == null ? pending.ToArray() : new[] { current }.Concat(pending)).ToArray();
+        current = null; pending.Clear(); elapsed = 0; lastTick = now; presented = false;
+        foreach (var announcement in queued) {
+            if (GroupFinite(announcement) is not { } grouped) continue;
+            if (current == null) current = grouped; else pending.Enqueue(grouped);
+        }
+    }
+
+    internal void EndFinite()
+    {
+        finiteGroups.Clear(); finiteCounts.Clear(); finitePresented.Clear();
+    }
 
     internal void Observe(GameSnapshot? before, GameSnapshot after, double now,
         ImmutableArray<ActivityEntry> events = default, bool historyGap = false,
@@ -137,10 +163,19 @@ internal sealed class StackArrivalPresentation
         if (!seen.Add(announcement.Id)) return;
         recent.Enqueue(announcement.Id);
         while (recent.Count > 2048) seen.Remove(recent.Dequeue());
+        if (GroupFinite(announcement) is not { } grouped) return;
+        announcement = grouped;
         if (PendingCount >= Capacity) { IncompleteCount++; return; }
         if (PendingCount == 0) presented = false;
         pending.Enqueue(announcement);
         if (current == null) { current = pending.Dequeue(); elapsed = 0; lastTick = now; }
+    }
+
+    private Announcement? GroupFinite(Announcement announcement)
+    {
+        if (!finiteGroups.TryGetValue(announcement.ExecutionId, out string? group)) return announcement;
+        if (!finitePresented.Add(group)) return null;
+        return announcement with { CapturedCount = finiteCounts[group] };
     }
 
     private void Tick(double now)
@@ -169,6 +204,7 @@ internal sealed class StackArrivalPresentation
     internal void Clear()
     {
         current = null; pending.Clear(); seen.Clear(); recent.Clear();
+        EndFinite();
         elapsed = lastTick = 0; holding = presented = false; IncompleteCount = 0;
     }
 }

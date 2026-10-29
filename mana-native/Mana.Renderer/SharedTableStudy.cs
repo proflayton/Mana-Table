@@ -34,11 +34,18 @@ public static class SharedTableStudy
     internal static BattlefieldCluster[] Arrange(int seat, int owner, IReadOnlyList<Card> cards,
         Func<Card, bool> isResource, IReadOnlySet<string>? separate,
         Func<string, Rectangle>? lanes = null, float faceScale = 1, bool horizontalRows = false, bool centerRows = false,
-        BattlefieldAttachments? attachments = null, bool seatFacing = true)
+        BattlefieldAttachments? attachments = null, bool seatFacing = true, IReadOnlyDictionary<string, string>? combatCohorts = null)
     {
         faceScale = float.IsFinite(faceScale) && faceScale > 0 ? faceScale : 1;
         string Identity(Card card) => CardViews.Identity(card) is { Length: > 0 } id ? id
             : "anonymous:" + Enumerable.Range(0, cards.Count).First(index => ReferenceEquals(cards[index], card));
+        string Partition(Card card)
+        {
+            string id = Identity(card);
+            if (separate?.Contains(id) == true) return "separate:" + id;
+            if (combatCohorts != null && !combatCohorts.ContainsKey(id)) return "unreported:" + id;
+            return "availability:" + card.Selectable + ":" + card.Highlighted + ":" + combatCohorts?.GetValueOrDefault(id);
+        }
         // A family joins public names, not mutable characteristics. Hidden and
         // anonymous identities never acquire a family through their printed face.
         var families = cards.GroupBy(card => attachments?.Under(Identity(card)).Count > 0 ? "assembly:" + Identity(card)
@@ -46,10 +53,9 @@ public static class SharedTableStudy
                 ? "occurrence:" + Identity(card) : "name:" + card.Name, StringComparer.Ordinal)
             .Select(group => {
                 var members = group.ToArray();
-                var cohorts = members.GroupBy(card => separate?.Contains(Identity(card)) == true
-                        ? "separate:" + Identity(card) : "availability:" + card.Selectable + ":" + card.Highlighted,
-                        StringComparer.Ordinal)
-                    .SelectMany(partition => BattlefieldLayout.Groups(partition.ToArray(), null, int.MaxValue)).ToArray();
+                var cohorts = members.GroupBy(Partition, StringComparer.Ordinal)
+                    .SelectMany(partition => BattlefieldLayout.Groups(partition.ToArray(), null, int.MaxValue,
+                        includeCombatTargets: combatCohorts == null || partition.Any(card => !combatCohorts.ContainsKey(Identity(card))))).ToArray();
                 string role = members.Any(card => card.Type.Contains("Creature", StringComparison.Ordinal)) ? "Creatures"
                     : members.Any(isResource) ? "Lands" : "Support";
                 string name = members[0].FaceDown ? "Face-down permanent"

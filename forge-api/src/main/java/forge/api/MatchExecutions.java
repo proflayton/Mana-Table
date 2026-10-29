@@ -24,6 +24,10 @@ final class MatchExecutions {
     private volatile Map<String, Occurrence> readable = Map.of();
     private final Deque<Transition> transitions = new ArrayDeque<>();
     private Set<String> pinnedStack = Set.of();
+    private String finiteGrantId = "";
+    private Set<String> finiteRoots = Set.of();
+    private final Set<String> finiteDescendants = new HashSet<>();
+    private boolean finiteOverflow;
     private volatile Frame latest = new Frame(1, 0, List.of(), List.of());
 
     MatchExecutions(ExecutionTracker rules, PlayerView viewer, MatchActivity activity) {
@@ -49,6 +53,7 @@ final class MatchExecutions {
                 occurrence.kind(), occurrence.actorPlayerId(), cardId, name, occurrence.step(), occurrence.outcome(),
                 occurrence.ruleKind(), occurrence.ruleResult()));
         transitions.addLast(new Transition(transition.sequence(), occurrence.id(), occurrence.step(), occurrence.outcome(), occurrence.ruleResult()));
+        retainFinite(occurrence.id());
         copyFrame();
     }
 
@@ -58,6 +63,7 @@ final class MatchExecutions {
         Set<String> retained = new HashSet<>();
         for (var occurrence : rules.occurrences()) retained.add(occurrence.id());
         retained.addAll(pinnedStack);
+        retained.addAll(finiteDescendants);
         for (String id : List.copyOf(retained)) {
             var occurrence = admitted.get(id);
             if (occurrence != null) retained.add(occurrence.budgetRootId());
@@ -83,6 +89,7 @@ final class MatchExecutions {
                     || occurrence.source() != null || occurrence.actorPlayerId() != null || !activity.publicCommitted(event)) return null;
             admitted.put(occurrence.id(), new Occurrence(occurrence.id(), occurrence.parentId(), occurrence.budgetRootId(),
                     occurrence.kind(), null, null, null, occurrence.step(), occurrence.outcome(), occurrence.ruleKind(), occurrence.ruleResult()));
+            retainFinite(occurrence.id());
             copyFrame();
         }
         return reference(reference);
@@ -98,6 +105,7 @@ final class MatchExecutions {
                     || occurrence.source() != null || occurrence.actorPlayerId() != null || occurrence.step().equals("complete")) return null;
             admitted.put(occurrence.id(), new Occurrence(occurrence.id(), occurrence.parentId(), occurrence.budgetRootId(),
                     occurrence.kind(), null, null, null, occurrence.step(), occurrence.outcome(), occurrence.ruleKind(), occurrence.ruleResult()));
+            retainFinite(occurrence.id());
             copyFrame();
         }
         return reference(reference);
@@ -112,6 +120,30 @@ final class MatchExecutions {
     synchronized void pinStack(Collection<String> ids) {
         pinnedStack = Set.copyOf(ids);
         copyFrame();
+    }
+
+    synchronized void finiteGrant(String id, Collection<String> roots) {
+        if (finiteGrantId.equals(id)) return;
+        finiteGrantId = id; finiteRoots = Set.copyOf(roots); finiteDescendants.clear(); finiteOverflow = false;
+        for (String candidate : admitted.keySet()) retainFinite(candidate);
+        copyFrame();
+    }
+    synchronized boolean finiteOverflow() { return finiteOverflow; }
+
+    // Called from Activity while its monitor is held: immutable audience copy
+    // only. Taking this projection's monitor here would invert admission order.
+    boolean finiteDescendant(String id, Set<String> roots) { return descendant(id, roots, readable); }
+    private void retainFinite(String id) {
+        if (!descendant(id, finiteRoots, admitted) || finiteDescendants.contains(id)) return;
+        if (finiteDescendants.size() >= MatchActivity.MAXIMUM_FINITE_ENTRIES) finiteOverflow = true;
+        else finiteDescendants.add(id);
+    }
+    private static boolean descendant(String id, Set<String> roots, Map<String, Occurrence> known) {
+        if (id == null || roots.isEmpty()) return false;
+        var visited = new HashSet<String>();
+        for (var current = known.get(id); current != null && visited.add(current.id()); current = current.parentId() == null ? null : known.get(current.parentId()))
+            if (roots.contains(current.id())) return true;
+        return false;
     }
 
     private void copyFrame() {

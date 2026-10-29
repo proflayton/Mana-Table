@@ -108,15 +108,15 @@ public static class BattlefieldLayout
     }
     public static string Role(Card card, Func<Card, bool> isResource) => card.Type.Contains("Creature", StringComparison.Ordinal)
         ? "Creatures" : isResource(card) ? "Lands" : "Support";
-    internal static Card[][] Groups(IReadOnlyList<Card> cards, IReadOnlySet<string>? separate, int maximumCopies) => cards
+    internal static Card[][] Groups(IReadOnlyList<Card> cards, IReadOnlySet<string>? separate, int maximumCopies, bool includeCombatTargets = true) => cards
         .GroupBy(card => separate?.Contains(card.VisualId) == true ? "ordered:" + card.VisualId : "family:" + FamilyKey(card))
-        .SelectMany(family => family.GroupBy(StateKey).SelectMany(group => group.Chunk(maximumCopies))).ToArray();
+        .SelectMany(family => family.GroupBy(card => StateKey(card, includeCombatTargets)).SelectMany(group => group.Chunk(maximumCopies))).ToArray();
     // Decision handles, Selectable and Highlighted deliberately do not participate.
     // Never use a hidden printed face or infer a face-down card's characteristics.
     private static string FamilyKey(Card c) => c.FaceDown ? "anonymous:" + CardViews.Identity(c)
         : string.Join("\u001f", c.Name, c.ArtFace, c.Type);
-    private static string StateKey(Card c) => string.Join("\u001f", c.Name, c.ArtFace, c.Type, c.ManaCost, c.Text, c.Power, c.Toughness, c.Damage,
-        c.Tapped, c.PhasedOut, c.Sick, c.FaceDown, c.Attacking, c.Blocking, c.DefenderId, c.Defender,
+    internal static string StateKey(Card c, bool includeCombatTargets = true) => string.Join("\u001f", c.Name, c.ArtFace, c.Type, c.ManaCost, c.Text, c.Power, c.Toughness, c.Damage,
+        c.Tapped, c.PhasedOut, c.Sick, c.FaceDown, c.Attacking, c.Blocking, includeCombatTargets ? c.DefenderId : null, includeCombatTargets ? c.Defender : null,
         string.Join(',', c.CombatKeywords.Order(StringComparer.Ordinal)), string.Join(',', c.Counters.OrderBy(v => v.Key, StringComparer.Ordinal)),
         c.States == null ? "legacy" : System.Text.Json.JsonSerializer.Serialize(c.States.Value.OrderBy(state => state.Id, StringComparer.Ordinal)),
         c.AttachedTo?.Id, string.Join(',', c.Attachments.Select(a => a.Id).Order(StringComparer.Ordinal)));

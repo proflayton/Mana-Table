@@ -27,7 +27,7 @@ internal sealed partial class TableApplication
         && (ActivityPending || now < activityCompleted + 1.6);
     private string ActivityScope => $"activity:{activityGeneration}:{startupFailed}:{activityFailed}";
 
-    private void Work(Func<Task> operation, string title = "Updating your table", string detail = "Applying your changes.", bool? foreground = null, bool scene = false)
+    private void Work(Func<Task> operation, string title = "Updating your table", string detail = "Applying your changes.", bool? foreground = null, bool scene = false, bool changesMatch = false)
     {
         if (busy || closing || loaded && ActivityOpen) return;
         error = ""; activityFailed = false; activityTracked = true;
@@ -35,8 +35,9 @@ internal sealed partial class TableApplication
         activityScene = scene;
         activityTitle = title; activityDetail = detail;
         activityStarted = now; activityCompleted = -1; activityGeneration++;
-        ClearExperienceInput();
-        session.Run(operation);
+        ClearExperienceInput(cancelAdvance: changesMatch || match == null || activityForeground);
+        if (changesMatch) session.RunMatchOperation(operation);
+        else session.Run(operation);
     }
 
     private void FinishActivity()

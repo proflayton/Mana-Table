@@ -56,7 +56,10 @@ internal static class InteractionContractMatrix
     {
         var timer = Stopwatch.StartNew();
         var commandTypes = typeof(GameCommand).Assembly.GetTypes().Where(type => !type.IsAbstract && typeof(GameCommand).IsAssignableFrom(type)).OrderBy(type => type.FullName);
-        check(Cases.Select(row => row.CommandType).Concat(RejectedLegacyCommands).Distinct().OrderBy(type => type.FullName).SequenceEqual(commandTypes)
+        // Stateful finite grants have their own serial execute/observe and
+        // recovery journeys; they are not ordinary prompt-reply fixture rows.
+        check(Cases.Select(row => row.CommandType).Concat(RejectedLegacyCommands).Concat(FiniteYieldLifecycleRegression.CommandTypes)
+                .Distinct().OrderBy(type => type.FullName).SequenceEqual(commandTypes)
                 && Cases.Select(row => row.PayloadType).Distinct().OrderBy(type => type.FullName).SequenceEqual(
                     typeof(DecisionPayload).Assembly.GetTypes().Where(type => type.IsSealed && typeof(DecisionPayload).IsAssignableFrom(type)).OrderBy(type => type.FullName)),
             "The finite interaction-contract matrix names every closed command variant and supported decision task; it is not exhaustive rules coverage");

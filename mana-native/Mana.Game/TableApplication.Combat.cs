@@ -29,18 +29,43 @@ internal sealed partial class TableApplication
     private void DrawCombatBar()
     {
         if (!HasCombat || match == null) return;
+        // Formation counts belong to their physical links. The declaration's
+        // actions live below its existing dock rather than over public piles.
+        if (CanGroupBlock || GroupBlocksOpen) return;
+        if (GroupedCombatReview) {
+            if (match.Status == "playing" && match.Viewer is { Eliminated: false })
+                Button("combat-review", "Combat", 1266, DecisionY(868), 110, new MatchIntent.OpenCombat(), height: 29);
+            return;
+        }
         var attacks = match.Combat!.Attackers;
         canvas.Gradient(new(1250, 623, 328, 88), Color.Transparent, new Color(14, 22, 27) * .8f);
         var selected = CombatSource == null ? null : CombatGuide.Find(match, CombatSource);
         string message = selected != null ? selected.Name + " · choose a blue target"
             : $"{attacks.Length} attacking · {attacks.Count(a => a.Blocked || a.BlockerIds.Length > 0)} blocked";
         if (!string.IsNullOrWhiteSpace(match.Combat.BlockProblem)) message = match.Combat.BlockProblem;
-        canvas.Text(message, 1266, 628, selected != null ? Gold : Ink, .61f, 200, 2, true);
+        canvas.Text(message, 1266, 628, selected != null ? Gold : Ink, .61f, 296, 2, true);
         if (selectedCombat != null) {
             Button("combat-clear", "Cancel", 1266, 677, 82, new MatchIntent.ClearCombatant(), height: 29);
             Button("combat-remove", "Remove", 1354, 677, 91, new MatchIntent.RemoveCombatAssignment(selectedCombat!), !busy && CombatGuide.Remove(match, selectedCombat) != null, height: 29);
         }
-        Button("combat-review", "Combat · C", 1451, 677, 111, new MatchIntent.OpenCombat(), height: 29);
+        else if (CanGroupBlock && !GroupBlocksOpen)
+            Button("group-block-begin", "Group blocks", 1266, 677, 179, new MatchIntent.BeginGroupBlocks(), !busy, height: 29);
+        Button("combat-review", "Combat", 1451, 677, 111, new MatchIntent.OpenCombat(), height: 29);
+    }
+    private void DrawBlockReviewActions()
+    {
+        int y = DecisionY(852);
+        if (selectedCombat is { } selected) {
+            int clear = canvas.TextWidth("Cancel", .76f, true) + 8, remove = canvas.TextWidth("Remove", .76f, true) + 8,
+                review = canvas.TextWidth("Combat", .76f, true) + 8;
+            MenuAction("combat-clear", "Cancel", new(1266, y, clear, 32), new MatchIntent.ClearCombatant(), size: .76f);
+            MenuAction("combat-remove", "Remove", new(1274 + clear, y, remove, 32), new MatchIntent.RemoveCombatAssignment(selected),
+                !busy && CombatGuide.Remove(match!, selected) != null, size: .76f);
+            MenuAction("combat-review", "Combat", new(1282 + clear + remove, y, review, 32), new MatchIntent.OpenCombat(), size: .76f);
+        } else {
+            Button("group-block-begin", "Group blocks", 1266, y, 178, new MatchIntent.BeginGroupBlocks(), !busy, height: 32);
+            Button("combat-review", "Combat", 1452, y, 110, new MatchIntent.OpenCombat(), height: 32);
+        }
     }
     private void DrawCombatReview()
     {
@@ -102,7 +127,7 @@ internal sealed partial class TableApplication
         Button("combat-next", "Next", 361, 736, 141, new MatchIntent.SetPage(MatchPage.Combat, combatPage + 1), (combatPage + 1) * count < total);
         canvas.Text($"Page {combatPage + 1} / {Math.Max(1, (total + count - 1) / count)}", 529, 748, Muted, .69f, 430, 1);
         if (match != null && match.Decision?.Payload is AttackPayload or BlockPayload)
-            Button("combat-confirm", TurnGuide.Confirm(match), 1080, 730, 309, new MatchIntent.ConfirmDecision(true), !busy && CombatGuide.CanConfirm(match), true, 48);
+                Button("combat-confirm", TurnGuide.Confirm(match), 1080, 730, 309, new MatchIntent.ConfirmDecision(true), !busy && CanConfirmCombatNow && CombatGuide.CanConfirm(match), true, 48);
     }
     private void DrawBlockerReview()
     {

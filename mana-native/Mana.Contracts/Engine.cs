@@ -276,6 +276,8 @@ public sealed record AttackAssignment(string CardId, Defender Defender);
 public sealed record BlockAssignment(string AttackerId, string BlockerId);
 public sealed record Combat(ImmutableArray<Attack> Attackers, ImmutableArray<AttackOption> AttackOptions, string? BlockProblem)
 {
+    // Exact declaration episode, stable across staged command/prompt refreshes.
+    public string DeclarationId { get; init; } = "";
     public bool AttackValid { get; init; } = true;
     // One legal witness from the rules constraint solver, not a tactical plan.
     // It is supplied only when the current declaration fails joint constraints.
@@ -288,6 +290,7 @@ public enum StackActionKind { Spell, ActivatedAbility, TriggeredAbility, Ability
 [method: System.Text.Json.Serialization.JsonConstructor]
 public sealed record StackItem(string Name, string Text, StackActionKind Kind, Card? Card)
 {
+    public StackRepetition? Repetition { get; init; }
     // Compatibility for authored projections that do not distinguish ability kinds.
     public StackItem(string Name, string Text, bool Ability, Card? Card)
         : this(Name, Text, Ability ? StackActionKind.Ability : StackActionKind.Spell, Card) { }
@@ -314,6 +317,11 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
     // Monotonic provider fence for explicit, finite current-stack yielding.
     // Omitted by older providers: clients must not arm that continuation.
     public long? StackInterruptionVersion { get; init; }
+    // Separate finite-resolution guards. Omission remains unknown. Required
+    // choices for other seats do not consume this viewer's choice guard.
+    public long? StackActionVersion { get; init; }
+    public long? ResolutionChoiceVersion { get; init; }
+    public FiniteStackYieldState? FiniteStackYield { get; init; }
     public int? PriorityPlayerId { get; init; }
     // Public acting seat only. Another seat's private prompt/options are never copied here.
     public int? DecisionOwnerId { get; init; }

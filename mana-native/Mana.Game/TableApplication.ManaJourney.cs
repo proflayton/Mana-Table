@@ -146,9 +146,16 @@ internal sealed partial class TableApplication
         // Counted requirements are drawn directly. X=129 or a million repeated
         // shards must not allocate or paint one object for every mana unit.
         var tokens = journey.Parts.Where(part => part.Count > 0).ToArray();
+        var declineBatch = !ResolvingCapturedStack ? RepeatedDeclineOffer : null;
+        string declineLabel = declineBatch == null ? "" : "Decline " + declineBatch.DeclineProgress!.CapturedCount + " + resolve queue";
+        var currentPayment = journey.Payment ? match.Decision?.Payload as PaymentPayload : null;
+        int payWidth = canvas.TextWidth("Auto pay", .76f) + 24;
+        int declineWidth = currentPayment?.Cancel.Enabled == true ? canvas.TextWidth(currentPayment.Cancel.Label, .76f) + 24 : 0;
         const int symbolSide = 36, advance = 44;
         int symbolWidth = tokens.Sum(token => advance + (token.Count > 1 ? canvas.TextWidth("×" + token.Count, .66f, true) : 0));
         int width = Math.Clamp(Math.Max(symbolWidth + 20, canvas.TextWidth(journey.Advice, .66f) + 20), 220, 360);
+        if (currentPayment != null) width = Math.Max(width, Math.Min(420, payWidth + declineWidth + 28));
+        if (declineLabel.Length > 0) width = Math.Max(width, Math.Min(420, canvas.TextWidth(declineLabel, .76f, true) + 40));
         var positions = new List<(ManaBillPart Part, int X, int Row)>();
         int columnX = 12, row = 0;
         foreach (var token in tokens) {
@@ -160,7 +167,9 @@ internal sealed partial class TableApplication
         var reductionChoice = match.Decision?.Payload as EntitySelectionPayload;
         bool reducing = reductionChoice?.ManaReduction != null;
         bool paymentControls = match.Decision?.Payload is PaymentPayload || reducing;
-        int height = 31 + rows * 42 + (reducing ? 68 : paymentControls && journey.Payment ? 54 : 25);
+        int batchHeight = declineLabel.Length == 0 ? 0 : Math.Max(40, canvas.TextSize(declineLabel, .76f, width - 40, 80, true).Y + 12);
+        int height = 31 + rows * 42 + (reducing ? 68 : paymentControls && journey.Payment ? 54 : 25)
+            + (declineBatch != null ? batchHeight + 11 : 0);
         // Optional metadata must not turn into an unbounded billboard or a
         // negative viewport clamp. Exceptionally complex bills keep the normal
         // exact engine instructions and current manual payment controls.
@@ -194,12 +203,15 @@ internal sealed partial class TableApplication
         int adviceY = y + 29 + rows * 42;
         canvas.Text(journey.Advice, x + 9, adviceY, Muted, .66f, width - 18, 1);
         if (journey.Payment && match.Decision?.Payload is PaymentPayload payment) {
-            int controlY = area.Bottom - 31;
-            if (payment.Pay.Enabled) Button("mana-auto", "Auto pay", x + 8, controlY, 100,
+            int controlY = area.Bottom - 31 - (declineBatch != null ? batchHeight + 11 : 0);
+            if (payment.Pay.Enabled) Button("mana-auto", "Auto pay", x + 8, controlY, payWidth,
                 new MatchIntent.ConfirmDecision(), !busy, height: 27);
-            if (payment.Cancel.Enabled) Button("mana-cancel", payment.Cancel.Label, x + width - 94, controlY, 86,
+            if (payment.Cancel.Enabled) Button("mana-cancel", payment.Cancel.Label, x + width - declineWidth - 8, controlY, declineWidth,
                 new MatchIntent.CancelDecision(), !busy, height: 27);
         }
+        if (journey.Payment && declineBatch != null)
+            CompleteActionButton("finite-resolution-decline", declineLabel,
+                new(x + 8, area.Bottom - batchHeight - 7, width - 16, batchHeight), new MatchIntent.DeclineRepeatedPayments(), !busy);
         if (reducing && reductionChoice is { } selection) {
             int completeWidth = selection.Cancel.Enabled ? width - 110 : width - 16;
             Button("confirm", selection.Complete.Label, x + 8, area.Bottom - 48, completeWidth,

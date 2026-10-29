@@ -134,7 +134,7 @@ internal sealed partial class TableApplication
             "card:" + card.Key + ":" + card.VisualId, new MatchIntent.UseCard(card),
             (displayed, focus) => {
                 if (node.Attachment != null && !focus && displayed.Size.X < 300) PaintBattlefieldAttachment(node, displayed,
-                    card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId || TableChoices.Index(match!, card) is { } choice && decisions.Selections.Contains(choice), IsCardActionable(card));
+                    card.Highlighted || GroupBlockSelected(card) || card.CombatId.Length > 0 && selectedCombat == card.CombatId || TableChoices.Index(match!, card) is { } choice && decisions.Selections.Contains(choice), IsCardActionable(card));
                 else PaintSceneCard(card, displayed, node.Zone, node.Owner, focus, node.Compact, node.GroupFront, node.GroupCount);
             }, node.Entrance, node.EntranceDelay, readingAnchor: node.Attachment?.Edge(node.Pose));
         if (!string.IsNullOrEmpty(card.CombatId)) {
@@ -149,7 +149,7 @@ internal sealed partial class TableApplication
     private void PaintSceneCard(Card card, Pose pose, string zone, int owner, bool focus, bool compact = false, bool groupFront = true, int groupCount = 1)
     {
         int? choice = match == null ? null : TableChoices.Index(match, card);
-        bool selected = choice is { } index ? decisions.Selections.Contains(index) : card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId;
+        bool selected = choice is { } index ? decisions.Selections.Contains(index) : card.Highlighted || GroupBlockSelected(card) || card.CombatId.Length > 0 && selectedCombat == card.CombatId;
         bool legal = IsCardActionable(card);
         bool scanFace = zone == "Battlefield" && !focus && !pose.IsProjected && pose.Size.X < 300
             && tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) is { ScanFace: true };
@@ -246,7 +246,14 @@ internal sealed partial class TableApplication
     }
     private void DrawCombatConnections()
     {
+        combatRelations.Clear();
         if (match!.Combat is not { } combat) return;
+        if (GroupedCombatReview && tableScene != null) {
+            DrawCohortCombatConnections(combat);
+            if (selectedCombat != null && cardPositions.TryGetValue(selectedCombat, out var focused) && !dragging)
+                DrawCombatAim(focused, Blue * .8f);
+            return;
+        }
         foreach (var attack in combat.Attackers) {
             if (!cardPositions.TryGetValue(attack.CardId, out var attacker)) continue;
             Vector2? destination = null;

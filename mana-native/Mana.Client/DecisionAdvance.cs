@@ -3,8 +3,8 @@ using Mana.Contracts;
 
 namespace Mana.Client;
 
-/// <summary>Drains authorized empty decisions without publishing the intervening snapshots.
-/// Uses the same seat connection for local and remote games; rules still run in the engine.</summary>
+/// <summary>Bounded continuation through current authorized decisions on the same
+/// seat connection. Intent policies own consent; rules still run in the engine.</summary>
 public sealed class DecisionAdvance(IMatchConnection connection)
 {
     private string? automaticSubmitted, quietSubmitted;
@@ -20,8 +20,13 @@ public sealed class DecisionAdvance(IMatchConnection connection)
         return await RunBatchAsync(initial, token, canContinue, shouldPresent, cancellation);
     }
 
-    public async Task<GameSnapshot?> RunStackAsync(GameSnapshot initial, StackResolutionIntent intent,
+    public Task<GameSnapshot?> RunStackAsync(GameSnapshot initial, StackResolutionIntent intent,
         Func<GameSnapshot, GameSnapshot, bool> shouldPresent, CancellationToken cancellation = default)
+        => RunFiniteAsync(initial, intent, shouldPresent, null, cancellation);
+
+    internal async Task<GameSnapshot?> RunFiniteAsync(GameSnapshot initial, IFiniteDecisionPolicy intent,
+        Func<GameSnapshot, GameSnapshot, bool> shouldPresent, Action<GameSnapshot>? observed,
+        CancellationToken cancellation = default)
     {
         ArgumentNullException.ThrowIfNull(intent);
         var clock = Stopwatch.StartNew();
@@ -29,22 +34,28 @@ public sealed class DecisionAdvance(IMatchConnection connection)
         int passes = 0;
         try {
             while (!cancellation.IsCancellationRequested) {
-                if (!intent.CanContinue(state) || shouldPresent(initial, state)) return state;
-                var command = intent.NextPass(state);
+                if (intent.IsPaused || !intent.CanContinue(state) || shouldPresent(initial, state)) return state;
+                var command = intent.NextCommand(state);
                 if (!intent.IsActive) return state;
                 if (command != null) {
+                    if (!GameCommandPermissions.Allows(state, command)) { intent.Stop(); return state; }
                     if (cancellation.IsCancellationRequested) return state;
                     await connection.ExecuteAsync(command);
-                    intent.Submitted(state); passes++;
+                    intent.Submitted(state, command); passes++;
                 }
                 // Cancellation never hides the result of a pass already sent.
                 var next = await connection.ObserveAsync();
                 if (next == null) { intent.Stop(); return null; }
-                if (next.Id != state.Id) { intent.Stop(); return next; }
-                if (next.Revision >= state.Revision) state = next;
-                // Yield at every real effect boundary. The application presents
-                // its full beat before it starts another batch of this intent.
-                if (!intent.CanContinue(state) || shouldPresent(initial, state)) return state;
+                if (next.Id != state.Id) { intent.Stop(); observed?.Invoke(next); return next; }
+                if (next.Revision >= state.Revision) {
+                    bool changed = next.Revision > state.Revision || next.ViewerId != state.ViewerId || next.Decision?.Id != state.Decision?.Id;
+                    state = next;
+                    if (changed) observed?.Invoke(state);
+                }
+                // The caller owns visible checkpoints. Ordinary stack passing
+                // keeps every effect beat; explicit finite presentation can
+                // aggregate only its captured work while observing every result.
+                if (intent.IsPaused || !intent.CanContinue(state) || shouldPresent(initial, state)) return state;
                 if (clock.ElapsedMilliseconds >= 350 || passes >= 32) return state;
                 if (command == null || state.Decision == null) {
                     try { await Task.Delay(10, cancellation); }

@@ -30,6 +30,14 @@ final class RulesScenario implements AutoCloseable {
     private final boolean automated;
     private final List<Object> trace = new ArrayList<>();
     private final Map<Integer, String> answered = new HashMap<>();
+    enum TraceMode { FULL, SCALE }
+    private TraceMode traceMode = TraceMode.FULL;
+    private Input firstInput, previousInput, currentInput;
+    private Object firstFailure;
+
+    RulesScenario(String name, Map<Integer, List<String>> battlefield, TraceMode mode) throws Exception {
+        this(name, battlefield); traceMode = mode;
+    }
 
     RulesScenario(String name, Map<Integer, List<String>> battlefield) throws Exception {
         this(name, battlefield, "Forest", "Rhys the Redeemed");
@@ -146,6 +154,7 @@ final class RulesScenario implements AutoCloseable {
                 var prompt = state.getAsJsonObject("prompt");
                 if (text(prompt, "id").equals(answered.get(seat))) continue;
                 var input = new Input(seat, state, prompt);
+                remember(input);
                 if (stop.test(input)) return input;
                 String type = text(prompt, "inputType");
                 if (state.get("turn").getAsInt() == 0 && prompt.has("playerChoices") && !prompt.getAsJsonArray("playerChoices").isEmpty()) {
@@ -168,7 +177,12 @@ final class RulesScenario implements AutoCloseable {
         try {
             session(input.seat()).action(request);
             answered.put(input.seat(), text(input.prompt(), "id"));
-            trace.add(Map.of("seat", input.seat(), "state", input.state(), "answer", answer));
+            if (traceMode == TraceMode.FULL) trace.add(Map.of("seat", input.seat(), "state", input.state(), "answer", answer));
+            else {
+                remember(input);
+                if (trace.size() >= 512) throw new AssertionError("Scale fixture exceeded its512-receipt evidence bound");
+                trace.add(compactReceipt(input, answer));
+            }
             return true;
         } catch (IllegalArgumentException error) {
             // Publication may supersede a prompt before it is answered. Never replay
@@ -208,9 +222,62 @@ final class RulesScenario implements AutoCloseable {
     static int count(JsonObject player, String zone) { return zone(player, zone).get("count").getAsInt(); }
     static String text(JsonObject object, String key) { var value = object.get(key); return value == null || value.isJsonNull() ? "" : value.getAsString(); }
 
+    private void remember(Input input) {
+        if (traceMode != TraceMode.SCALE || currentInput == input) return;
+        if (firstInput == null) firstInput = input;
+        previousInput = currentInput; currentInput = input;
+    }
+    void failed(Throwable failure) {
+        if (traceMode != TraceMode.SCALE || firstFailure != null) return;
+        String message = String.valueOf(failure);
+        firstFailure = Map.of("type", failure.getClass().getName(), "message", message.substring(0, Math.min(message.length(), 2048)),
+                "receiptCount", trace.size());
+    }
+    private Object compactReceipt(Input input, Map<String, ?> answer) {
+        var receipt = new LinkedHashMap<String, Object>();
+        receipt.put("step", trace.size()); receipt.put("seat", input.seat()); receipt.put("decisionId", text(input.prompt(), "id"));
+        receipt.put("inputType", text(input.prompt(), "inputType")); receipt.put("revision", input.state().get("revision"));
+        receipt.put("phaseKey", text(input.state(), "phaseKey")); receipt.put("answer", answer); receipt.put("accepted", true);
+        if (input.state().has("combat") && !input.state().get("combat").isJsonNull()) {
+            var combat = input.state().getAsJsonObject("combat");
+            receipt.put("declarationId", text(combat, "declarationId"));
+            receipt.put("attackersBefore", combat.getAsJsonArray("attackers").size());
+            receipt.put("assignedPairsBefore", combat.getAsJsonArray("attackers").asList().stream()
+                    .mapToInt(value -> value.getAsJsonObject().getAsJsonArray("blockerIds").size()).sum());
+            String attackerId = combatId(input.state(), Objects.toString(answer.get("attackerKey"), ""));
+            String blockerId = combatId(input.state(), Objects.toString(answer.get("blockerKey"), ""));
+            if (!attackerId.isEmpty()) {
+                receipt.put("attackerId", attackerId);
+                if (!blockerId.isEmpty()) {
+                    receipt.put("blockerId", blockerId);
+                    receipt.put("currentlyOffered", combat.getAsJsonArray("attackers").asList().stream().map(value -> value.getAsJsonObject())
+                            .anyMatch(value -> text(value, "cardId").equals(attackerId)
+                                    && value.getAsJsonArray("eligibleBlockerIds").asList().stream().anyMatch(id -> id.getAsString().equals(blockerId))));
+                } else if (combat.has("attackOptions")) receipt.put("currentAttackOffer", combat.getAsJsonArray("attackOptions").asList().stream()
+                        .map(value -> value.getAsJsonObject()).filter(value -> text(value, "cardId").equals(attackerId)).findFirst().orElse(null));
+            }
+        }
+        return receipt;
+    }
+    private static String combatId(JsonObject state, String key) {
+        if (key.isEmpty()) return "";
+        for (var player : state.getAsJsonArray("players")) for (var zone : player.getAsJsonObject().getAsJsonArray("zones"))
+            for (var value : zone.getAsJsonObject().getAsJsonArray("cards")) {
+                var card = value.getAsJsonObject(); if (text(card, "key").equals(key)) return text(card, "combatId");
+            }
+        return "";
+    }
+
     @Override public void close() throws Exception {
         try {
-            Files.writeString(evidence.resolve("trace.json"), JSON.toJson(Map.of("actions", trace, "lastViews", views())));
+            if (traceMode == TraceMode.FULL) Files.writeString(evidence.resolve("trace.json"), JSON.toJson(Map.of("actions", trace, "lastViews", views())));
+            else {
+                var evidenceFrame = new LinkedHashMap<String, Object>();
+                evidenceFrame.put("traceMode", "scale"); evidenceFrame.put("actions", trace); evidenceFrame.put("firstDecision", firstInput);
+                evidenceFrame.put("previousDecision", previousInput); evidenceFrame.put("currentDecision", currentInput);
+                evidenceFrame.put("firstFailure", firstFailure); evidenceFrame.put("lastViews", views());
+                Files.writeString(evidence.resolve("trace.json"), JSON.toJson(evidenceFrame));
+            }
         } finally { table.close(); }
     }
 }

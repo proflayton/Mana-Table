@@ -48,7 +48,7 @@ public class InputProxy implements Observer {
     /** The input. */
     private AtomicReference<Input> input = new AtomicReference<>();
     private final PlayerControllerHuman controller;
-    private long inputSequence;
+    private volatile long inputSequence;
     private long autoPassedSequence = -1;
 
 //    private static final boolean DEBUG_INPUT = true; // false;
@@ -56,6 +56,9 @@ public class InputProxy implements Observer {
     public InputProxy(final PlayerControllerHuman controller0) {
         controller = controller0;
     }
+
+    /** Published input generation; reading it grants no command authority. */
+    public long getInputSequence() { return inputSequence; }
 
     public void publishCombatChoices(Input expected, CombatInputState choices) {
         synchronized (input) {

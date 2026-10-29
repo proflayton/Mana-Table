@@ -11,6 +11,7 @@ import java.util.*;
 
 /** Copies an allowlist of events at emission time; never exports raw engine logs or views. */
 public final class MatchActivity {
+    static final int MAXIMUM_FINITE_ENTRIES = 4096;
     public record Entry(long id, int turn, String phaseKey, String kind, Integer playerId,
                         String message, String cardId, String cardName, String detail, String outcome, int count,
                         PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact, String stackId,
@@ -56,6 +57,11 @@ public final class MatchActivity {
     private final java.util.function.Function<CardView, CardView> currentOccurrence;
     private boolean ownsIdentities;
     private final Deque<Entry> entries = new ArrayDeque<>();
+    private final Map<Long, Entry> finiteEntries = new LinkedHashMap<>();
+    private String finiteGrantId = "";
+    private Set<String> finiteRoots = Set.of();
+    private boolean finiteOverflow;
+    private java.util.function.BiPredicate<String, Set<String>> finiteDescendant = (id, roots) -> false;
     // CardView equality is physical ID only. A delayed trigger may hold a
     // different historical view with that same ID and no current zone.
     private record VisibleOccurrence(CardView view, String id) { }
@@ -77,6 +83,19 @@ public final class MatchActivity {
     void executionFilter(java.util.function.BiFunction<ExecutionTracker.Reference, GameEvent, ExecutionTracker.Reference> filter) {
         executionFilter = filter;
     }
+    void finiteAncestry(java.util.function.BiPredicate<String, Set<String>> ancestry) { finiteDescendant = ancestry; }
+    synchronized void finiteGrant(String id, Collection<String> roots) {
+        if (finiteGrantId.equals(id)) return;
+        finiteGrantId = id; finiteRoots = Set.copyOf(roots); finiteEntries.clear(); finiteOverflow = false;
+        for (var entry : entries) retainFinite(entry);
+        revision++;
+    }
+    synchronized boolean finiteOverflow() { return finiteOverflow; }
+    private void retainFinite(Entry entry) {
+        if (entry.executionId() == null || !finiteDescendant.test(entry.executionId(), finiteRoots) || finiteEntries.containsKey(entry.id())) return;
+        if (finiteEntries.size() >= MAXIMUM_FINITE_ENTRIES) finiteOverflow = true;
+        else finiteEntries.put(entry.id(), entry);
+    }
 
     MatchActivity(PlayerView viewer) { this(viewer, new MatchIdentities()); ownsIdentities = true; }
     MatchActivity(PlayerView viewer, MatchIdentities identities) { this(viewer, identities, Objects::nonNull); }
@@ -91,7 +110,10 @@ public final class MatchActivity {
     }
 
     public synchronized List<Entry> snapshot() {
-        return List.copyOf(entries);
+        if (finiteEntries.isEmpty()) return List.copyOf(entries);
+        var merged = new TreeMap<Long, Entry>(finiteEntries);
+        for (var entry : entries) merged.put(entry.id(), entry);
+        return List.copyOf(merged.values());
     }
 
     /** The rules stream may advance after an activity copy releases this lock.
@@ -322,11 +344,13 @@ public final class MatchActivity {
         if (interruptsQuietYield) quietSequence++;
         boolean anonymousTarget = change != null && publicFaceDown(card);
         var execution = eventExecution;
-        entries.addLast(new Entry(++sequence, turn, phase, kind, player == null ? null : player.getId(),
+        var added = new Entry(++sequence, turn, phase, kind, player == null ? null : player.getId(),
                 message, anonymousTarget ? identities.concealed(card) : eventVisualId(card),
                 anonymousTarget ? "Face-down card" : visible(card) ? card.getCurrentState().getName() : null,
                 detail, outcome, count, change, cause, interruptsQuietYield, impact, stackId,
-                execution == null ? null : execution.id(), execution == null ? null : execution.step()));
+                execution == null ? null : execution.id(), execution == null ? null : execution.step());
+        entries.addLast(added);
+        retainFinite(added);
         if (cause != null && change != null && change.kind().equals("counters")) {
             latestCounterCause = cause.id();
             entriesAfterLatestCounterCause = 0;

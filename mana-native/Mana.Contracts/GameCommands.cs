@@ -13,6 +13,9 @@ public abstract record GameCommand
     {
         static bool Present(string? value) => !string.IsNullOrWhiteSpace(value);
         bool valid = Present(GameId) && (this is not DecisionCommand decision || Present(decision.DecisionId)) && this switch {
+            GrantFiniteStackYield value => FiniteStackYieldFacts.Id(value.GrantId) && FiniteStackYieldFacts.Members(value.ExecutionIds)
+                && value.StackActionVersion >= 0 && value.ResolutionChoiceVersion >= 0,
+            RevokeFiniteStackYield value => FiniteStackYieldFacts.Id(value.GrantId),
             SelectCard value => Present(value.Card), PlayCard value => Present(value.Card),
             ActivateCard value => Present(value.Card), UseManaSource value => Present(value.Card),
             SpendPoolMana value => value.Color is "W" or "U" or "B" or "R" or "G" or "C",
@@ -96,7 +99,10 @@ public static class GameCommandPermissions
     public static bool Allows(GameSnapshot state, GameCommand command)
     {
         try { command.Validate(); } catch (ArgumentException) { return false; }
-        if (state.Id != command.GameId || state.Status is "finished" or "error") return false;
+        if (state.Id != command.GameId) return false;
+        if (command is RevokeFiniteStackYield revoke)
+            return state.FiniteStackYield is { } yield && yield.GrantId == revoke.GrantId && yield.Status != FiniteStackYieldStatus.Idle;
+        if (state.Status is "finished" or "error") return false;
         if (command is RestorePriorityAbility restore)
             return state.IgnoredPriorityAbilities.Any(ability => ability.Id == restore.AbilityId);
         if (command is not DecisionCommand scoped || state.Decision is not { } decision || scoped.DecisionId != decision.Id) return false;
@@ -110,6 +116,7 @@ public static class GameCommandPermissions
         bool Selectable(string key) => Card(key) is { Selectable: true };
         bool Located(string key, params string[] zones) => CardViews.Located(state).Any(item => item.Card.Key == key && zones.Contains(item.Zone));
         return command switch {
+            GrantFiniteStackYield grant => payload is PriorityPayload { Pass.Enabled: true } && FiniteStackYieldFacts.CanGrant(state, grant),
             PassPriority value => payload is PriorityPayload { Pass.Enabled: true }
                 && (value.StackInterruptionVersion == null || state.Status == "playing" && state.Stack.Length > 0
                     && value.StackInterruptionVersion == state.StackInterruptionVersion),

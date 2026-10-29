@@ -6,7 +6,7 @@ namespace Mana.Client;
 public enum ObservationDeliveryMode { Polled, External }
 
 /// <summary>Serial commands and ordered snapshots for every connection, without a graphics dependency.</summary>
-public sealed class ClientSession
+public sealed partial class ClientSession
 {
     private readonly IMatchConnection connection;
     private readonly ITableSetup? setup;
@@ -21,7 +21,8 @@ public sealed class ClientSession
     private int queuedExternalObservations;
     private bool recoveryRequired;
     private CancellationTokenSource? advancing;
-    private StackResolutionIntent? stackIntent;
+    private IFiniteDecisionPolicy? finiteIntent;
+    private Task commandTask = Task.CompletedTask;
     private readonly Queue<RestorePriorityAbility> pendingSettings = [];
     private RestorePriorityAbility? activeSetting;
     public ClientSession(IMatchConnection connection, ITableSetup? setup = null, TimeProvider? clock = null,
@@ -64,6 +65,7 @@ public sealed class ClientSession
         int remaining = ObservationDelivery == ObservationDeliveryMode.External
             ? completions.Count : int.MaxValue;
         while (remaining-- > 0 && completions.TryDequeue(out var action)) if (!Closed) action();
+        DrainFiniteRevocation();
         while (!Busy && !NeedsRecovery && pendingSettings.TryDequeue(out var setting)) Submit(setting);
     }
     public ObservationIngress OpenObservationIngress(string gameId, int viewerId)
@@ -155,27 +157,31 @@ public sealed class ClientSession
     }
     public bool AcceptLobby(Lobby state) => !Closed && Lobby != null && state.TableId == Lobby.TableId
         && lobbyReplica.Accept(state, lobbyReplica.Epoch);
-    public void Reset() { RevokeObservationIngress(); StopStackResolution(); CancelAdvance(); SourceActions.Clear(); pendingSettings.Clear(); LastFailureWasCommand = false; BeginCommand(); Accept(null); }
+    public void Reset() { RevokeObservationIngress(); StopFiniteIntent(); CancelAdvance(); SourceActions.Clear(); pendingSettings.Clear(); LastFailureWasCommand = false; BeginCommand(); Accept(null); }
     private bool Accept(GameSnapshot? state, long epoch, ObservationIngress? ingress = null)
     {
         GameSnapshot? previous;
         bool recovered;
-        lock (observationGate) {
+        try { lock (observationGate) {
             previous = State;
             if (Closed || ingress != null && !ingress.Active || epoch != replica.Epoch
                 || state != null && previous != null && state.Id == previous.Id && state.Revision < previous.Revision) return false;
             executions.Validate(state);
+            if (state != null) { FiniteResolutionFacts.Validate(state); FiniteStackYieldFacts.Validate(state); }
+            ValidateFiniteAcknowledgement(state);
             if (!replica.Accept(state, epoch)) return false;
             if (observationIngress != null && !observationIngress.Matches(state))
                 RevokeObservationIngress();
-            if (stackIntent != null && (state == null || !stackIntent.CanContinue(state))) StopStackResolution();
+            if (finiteIntent != null && (state == null || NeedsRecovery || !finiteIntent.CanContinue(state))) StopFiniteIntent();
             if (SourceActions.View.Context is { } context && CurrentSourceContext(state, context.SourceCardKey) != context)
                 SourceActions.Clear();
             recovered = NeedsRecovery;
+            ReconcileFiniteYield(state, recovered);
+            PruneFiniteAcknowledgement(state);
             ExecutionChanges = executions.Observe(state, baseline: recovered);
             LastSynchronizedAt = time.GetUtcNow();
             recoveryRequired = UncertainCommand = false; LastConnectionError = "";
-        }
+        } } catch (FiniteYieldOwnershipException error) { ReportFailure(error, true); return false; }
         // Revocation and state commit share one boundary. Notification runs
         // outside it, so callbacks cannot block a background source on the gate.
         Changed?.Invoke(previous, state);
@@ -185,13 +191,37 @@ public sealed class ClientSession
     public void Run(Func<Task> operation)
     {
         if (Busy || Closed) return;
-        StopStackResolution(); Run(_ => operation());
+        Run(_ => operation());
+    }
+    // Catalog/setup reads do not withdraw match consent. Operations that leave,
+    // replace or reconnect a match explicitly use this boundary instead.
+    public void RunMatchOperation(Func<Task> operation)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        if (Busy || Closed) return;
+        StopFiniteIntent();
+        var pending = finiteRevocations.Values.ToArray();
+        Run(async epoch => {
+            foreach (var item in pending) {
+                var next = await ObserveFiniteRevocationAsync(item);
+                if (RemainsActive(next, item.Command))
+                    throw new IOException("The finite-yield revocation must be observed before changing the match connection.");
+                // The following operation may replace the match. Retain only
+                // this negative acknowledgement, never publish its old scope.
+                Post(() => {
+                    RecordFiniteRevocation(next, item.Command);
+                    finiteRevocations.Remove((item.Command.GameId, item.Command.GrantId));
+                });
+            }
+            if (pending.Length > 0) Post(() => RecoverRetiredFiniteCleanup(epoch));
+            await operation();
+        });
     }
     private void Run(Func<long, Task> operation)
     {
         if (Busy || Closed) return;
         long epoch = BeginCommand(); Busy = true;
-        _ = Task.Run(async () => {
+        commandTask = Task.Run(async () => {
             try { await operation(epoch); }
             catch (Exception error) { Post(() => { if (epoch == replica.Epoch) ReportFailure(error, true); }); }
             finally { Post(() => { Busy = false; activeSetting = null; Completed?.Invoke(); }); }
@@ -223,7 +253,8 @@ public sealed class ClientSession
         if (command is UseOfferedAction offered && (CurrentSourceContext(State, offered.Card) is not { } context
             || SourceActions.TryCreateCommand(context, offered.ActionId) != offered)) return false;
         command.Validate();
-        StopStackResolution();
+        StopFiniteIntent();
+        if (finiteRevocations.Count > 0) return false;
         if (command is RestorePriorityAbility restore) activeSetting = restore;
         Run(async epoch => { await connection.ExecuteAsync(command); var state = await connection.ObserveAsync(); Post(() => Accept(state, epoch)); });
         return true;
@@ -233,36 +264,54 @@ public sealed class ClientSession
     public bool SubmitSetting(RestorePriorityAbility command)
     {
         if (Closed || NeedsRecovery || State == null || !GameCommandPermissions.Allows(State, command)) return false;
-        command.Validate(); StopStackResolution(); CancelAdvance();
+        command.Validate(); StopFiniteIntent(); CancelAdvance();
         if (activeSetting == command || pendingSettings.Contains(command)) return false;
-        if (!Busy) return Submit(command);
+        if (!Busy && finiteRevocations.Count == 0) return Submit(command);
         pendingSettings.Enqueue(command); return true;
     }
     public bool Advance(Func<GameSnapshot, bool> canPass, Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
-        => StartAdvance(canPass, (initial, cancellation) => advance.RunAsync(initial, canPass, shouldPresent, cancellation));
-    public void CancelAdvance() => advancing?.Cancel();
+        => StartAdvance(canPass, (initial, cancellation, _) => advance.RunAsync(initial, canPass, shouldPresent, cancellation));
+    public void CancelAdvance() { advancing?.Cancel(); QueueFiniteRevocation(); }
     public bool AdvanceQuietly(string token, Func<GameSnapshot, bool> canContinue,
         Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
         => StartAdvance(initial => QuietPriorityPolicy.CanPass(initial, token) && canContinue(initial),
-            (initial, cancellation) => advance.RunQuietlyAsync(initial, token, canContinue, shouldPresent, cancellation));
+            (initial, cancellation, _) => advance.RunQuietlyAsync(initial, token, canContinue, shouldPresent, cancellation));
     public bool AdvanceStack(StackResolutionIntent intent, Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
     {
         ArgumentNullException.ThrowIfNull(intent);
         ArgumentNullException.ThrowIfNull(shouldPresent);
         return StartAdvance(state => intent.CanContinue(state) && state.Decision?.Payload is PriorityPayload,
-            (initial, cancellation) => advance.RunStackAsync(initial, intent, shouldPresent, cancellation), intent);
+            (initial, cancellation, _) => advance.RunStackAsync(initial, intent, shouldPresent, cancellation), intent);
     }
-    private bool StartAdvance(Func<GameSnapshot, bool> canStart, Func<GameSnapshot, CancellationToken, Task<GameSnapshot?>> operation,
-        StackResolutionIntent? nextStackIntent = null)
+
+    public bool AdvanceFinite(FiniteResolutionIntent intent, Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
+        => AdvanceFiniteCore(intent, shouldPresent);
+
+    internal bool AdvanceFiniteCore(IFiniteDecisionPolicy intent, Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
     {
-        if (Busy || Polling || Closed || NeedsRecovery || State is not { } initial || !canStart(initial)) return false;
-        if (!ReferenceEquals(stackIntent, nextStackIntent)) StopStackResolution();
-        stackIntent = nextStackIntent;
+        ArgumentNullException.ThrowIfNull(intent); ArgumentNullException.ThrowIfNull(shouldPresent);
+        return StartAdvance(state => !intent.IsPaused && intent.CanContinue(state),
+            (initial, cancellation, observed) => advance.RunFiniteAsync(initial, intent, shouldPresent, observed, cancellation),
+            intent, streamObservations: true);
+    }
+    private bool StartAdvance(Func<GameSnapshot, bool> canStart,
+        Func<GameSnapshot, CancellationToken, Action<GameSnapshot>?, Task<GameSnapshot?>> operation,
+        IFiniteDecisionPolicy? nextFiniteIntent = null, bool streamObservations = false)
+    {
+        if (Busy || Polling || Closed || NeedsRecovery || finiteRevocations.Count > 0 || State is not { } initial || !canStart(initial)) return false;
+        if (!ReferenceEquals(finiteIntent, nextFiniteIntent)) StopFiniteIntent();
+        if (finiteRevocations.Count > 0) return false;
+        finiteIntent = nextFiniteIntent;
         var cancellation = advancing = new CancellationTokenSource();
         Run(async epoch => {
             try {
-                var state = await operation(initial, cancellation.Token);
-                Post(() => Accept(state, epoch));
+                GameSnapshot? lastPosted = streamObservations ? initial : null;
+                void Observed(GameSnapshot state) { lastPosted = state; Post(() => Accept(state, epoch)); }
+                var state = await operation(initial, cancellation.Token, streamObservations ? Observed : null);
+                if (!streamObservations || state == null && lastPosted != null
+                    || state != null && (lastPosted == null || state.Id != lastPosted.Id || state.ViewerId != lastPosted.ViewerId
+                        || state.Revision != lastPosted.Revision || state.Decision?.Id != lastPosted.Decision?.Id))
+                    Post(() => Accept(state, epoch));
             } finally {
                 Post(() => { if (advancing == cancellation) advancing = null; cancellation.Dispose(); });
             }
@@ -271,9 +320,9 @@ public sealed class ClientSession
     }
     private void ReportFailure(Exception error, bool command)
     {
-        StopStackResolution();
+        StopFiniteIntent();
         LastFailureWasCommand = command;
-        if (State != null) {
+        if (State != null || finiteRevocations.Count > 0) {
             CancelAdvance();
             if (!command || error is not EngineCommandRejectedException) {
                 recoveryRequired = true; UncertainCommand |= command;
@@ -290,10 +339,11 @@ public sealed class ClientSession
         var card = CardViews.FindActionSource(state, key)?.Card;
         return card is not { FaceDown: false } ? null : new(state.Id, decision.Id, state.Revision, state.ViewerId, card.Key, CardViews.Identity(card));
     }
-    private void StopStackResolution() { stackIntent?.Stop(); stackIntent = null; }
+    private void StopFiniteIntent() { QueueFiniteRevocation(); finiteIntent?.Stop(); finiteIntent = null; }
     public void Close()
     {
-        StopStackResolution(); CancelAdvance(); SourceActions.Close(); pendingSettings.Clear();
+        StopFiniteIntent(); CancelAdvance(); SourceActions.Close(); pendingSettings.Clear();
         lock (observationGate) { Closed = true; RevokeObservationIngress(); BeginCommand(); }
+        commandTask = RevokeAtCloseAsync(commandTask, finiteRevocations.Values.ToArray());
     }
 }

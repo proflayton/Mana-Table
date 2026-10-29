@@ -5,6 +5,7 @@ import forge.game.player.RegisteredPlayer;
 import forge.item.IPaperCard;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /** Test-classpath-only pregame fixtures. All observations, controllers, rules and IPC are production code. */
@@ -36,6 +37,13 @@ public final class AiReleaseFixtureEngine {
             case "AI gate tap-cost-funding" -> List.of("Selesnya Evangel", "Birds of Paradise", "Grizzly Bears", "Concordant Crossroads");
             case "Execution journey Loch Mare" -> List.of("Loch Mare", "Pir, Imaginative Rascal", "Chasm Skulker",
                     "Island", "Island", "Island");
+            case "AI cadence fifty forced draws" -> {
+                // One real Pestilence activation kills fifty nontoken creatures.
+                // Haruspex survives its one damage and supplies fifty forced draws.
+                var cards = new ArrayList<>(List.of("Grim Haruspex", "Pestilence", "Swamp"));
+                cards.addAll(Collections.nCopies(50, "Memnite"));
+                yield cards;
+            }
             default -> null;
         };
         if (extras == null) return;

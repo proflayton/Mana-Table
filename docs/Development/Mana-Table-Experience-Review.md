@@ -50,6 +50,115 @@ the final recipient state is legible, and a fresh trigger requires its own
 response without repeating already acknowledged work. No human acceptance is
 inferred from passing checks.
 
+## Finite repeated decisions: 28 October 2026
+
+The player reported paying for a draw burst with 55 Panther Idol triggers and
+having to alternate Resolve these and Cancel for every occurrence. The source
+piles preserved the objects, but priority consent did not express the player's
+actual decision to decline the repeated optional payment. That interaction is
+rejected. It also does not scale to a token army's combat declaration.
+The repository's Marvel Super Heroes Commander edition identifies Panther Idol
+as Mind's Eye (MSC collectors 288 and 447). Its actual Drawn trigger offers the
+optional {1} payment through a Draw ability with a cost, without an
+`OptionalDecider` script parameter. Consent must follow that real input and its
+producing trigger, rather than a displayed name or one optional-trigger spelling.
+
+The reference is Magic Online's
+[effect-specific yields and optional answers](https://www.mtgo.com/getting-started/getting-started-tips-tricks).
+Its gesture begins on the actual stack ability; yielding and Always No are
+separate permissions. Its [September 2025 group-yield update](https://www.mtgo.com/news/through-the-omenpaths)
+captures the current stack, leaving later arrivals outside that consent.
+The [August 2026 combo improvements](https://www.mtgo.com/news/combo-play-improvements)
+show saved choices attached to their source and a visible automation marker.
+That article also describes an automated optional loop which cannot immediately
+be stopped manually. We retain an immediate Take control gesture instead.
+These are observed game controls. A finite, explicitly captured set of our
+execution identities and a completed/remaining presentation are our adaptation,
+not claims about MTGO's internal model.
+
+The journey starts at the actual optional payment beside its source card. The
+player can decline that payment once or deliberately choose **Decline N +
+resolve queue**. This explicitly combines two permissions: decline only the
+current engine-described equivalent optional costs, and yield priority for the
+whole currently captured queue, including interleaved triggers from other
+sources. A different optional cost still stops. It never accepts or spends a
+cost. Each answer still uses its own current engine permission; each trigger
+still resolves separately, with the other seats' response windows. Source-effect
+progress and whole-queue completed/remaining counts stay visible while that finite
+work proceeds. Take control remains beside the local portrait during costs and
+choices. Hovering or opening the source pauses local continuation for reading.
+A new response or an unmatched required choice takes attention immediately.
+There is no persistent Always No preference and no matching by display names.
+
+Only explicitly captured repeated work uses the grouped presentation beat.
+The initial source/effect remains readable and the live count reflects actual
+terminal execution receipts. Ordinary spells and unrelated changes retain their
+normal pacing. Historical execution events and source-linked public changes
+remain separate retained facts; presentation grouping does not rewrite them as
+one simultaneous effect or predict a final counter total. Providers that
+advertise finite server yields may circulate this seat's priority on the same
+captured queue without a network command for every pass. Each seat consents
+independently; reading, Take control, a new response or another required choice
+withdraws that exact grant. Captured progress pulses preserve the same grant.
+Attempting a manual action first visibly takes control and asks for a fresh
+action once priority returns; old action commands are never replayed.
+
+For combat, the observed [MTGO red-zone journey](https://www.mtgo.com/getting-started/getting-started-gameplay)
+stages attackers and blocker-to-attacker assignments before confirming the
+declaration. Selecting physical token groups and previewing many assignments is
+our extension; those official controls do not prove a usable 100-blocker
+experience. Arena's [250-token limit and per-trigger engine work](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-december-2020-12-07)
+also do not establish four-player readability. Review both realistic scale and
+mixed restrictions rather than replacing cards with tiny boxes.
+
+The source combat journey is **Group blocks**, select the own physical token
+group, select the incoming group, then **Assign N blocks**. The ordinary
+**Confirm blocks** remains a separate final gesture after those actual
+assignments are observed. All blockers and All incoming select the same current
+occurrences when several physical groups are involved. Selection and proposed
+pairings send no command; the review shows selected counts and unpaired
+attackers. Take control stops later assignments while observing any toggle
+already sent. This first arrangement pairs at most one selected blocker with
+each selected uncovered attacker through current published eligibility. It does
+not solve tactical blocking or joint restrictions such as menace; the engine's
+declaration problem and final confirmation remain authoritative.
+
+Actual GPU inspection rejected the first source candidate despite its passing
+pointer checks: the negative batch action and assignment count were ellipsized,
+and staging 100 blocks expanded the two armies into 200 tiny faces and crossing
+individual arrows. A retained full label string in a draw command did not prove
+that its glyphs were visible. Decision controls now reserve their actual measured
+font width or a complete multiline block; the same check covers the single
+negative payment answer.
+
+The replacement keeps the explicitly selected combat formation through staging,
+review, interruption and the same combat's retained result. A new declaration,
+combat end, game, viewer or turn retires that presentation context. Intrinsic
+public state, controller, actual defender and blocking capacity separate the
+initial physical cohorts. A monotonic partition then separates differing counts
+of assigned and eligible neighbors by cohort. This summarizes actual topology;
+it does not claim graph isomorphism or identical exact legal options. Unknown
+members or defender facts remain individual. One counted line represents each
+actual cohort relationship, with the count taken from the real assignment edges.
+Exact member identities, individual inspection/editing and separate engine
+confirmation remain available. Canceling another preview cannot undo the
+readability of a declaration already staged. This extends the observed game
+gesture above; Arena's limited battlefield does not establish this 100-creature
+formation as human-approved.
+
+**Human review: pending for this source candidate.** Automated journeys must
+exercise 55 actual scoped declines alongside 55 Toothy triggers, reading,
+interruption, Take control, and unknown or foreign
+prompts at 1000x740 and a larger window. The optional-payment Panther checkpoint
+is authored presentation evidence, not a claim that it reproduces that card's
+script. The real-engine Mind's Eye case separately covers Panther Idol's exact
+rules family with its controller in another seat; Nadir Kraken remains an
+additional optional-trigger control. Server-capable presentation checks exercise stable grant identity and
+explicit withdrawal. Combat checks select actual physical groups of 100 at
+both sizes and preserve identities/camera when entering and leaving the mode.
+These establish control safety and composition, not engine rules proof or human
+acceptance. Real-engine retention and circulation have separate integration gates.
+
 ## Design rules learned from player feedback
 
 1. **Design the journey before its controls.** Identify the player's intent,

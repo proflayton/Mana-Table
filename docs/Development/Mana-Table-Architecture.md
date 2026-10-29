@@ -484,6 +484,23 @@ on the next step; it never retains an answer across the beat. Headless campaigns
 use the fast default without this presentation cadence. A local client's Auto
 pause alone cannot govern AI progression or actions inside one rules execution.
 
+`AiResolutionProgress` adds read-only public occurrence evidence to that cadence
+port. `TimedAiHostPacing` can retain the initial 2.4-second announcement beat for
+at most 256 originally observed queue members when typed `StackRepetition`
+identifies repeated triggers. Only ordered surviving members and their actual
+public execution progress can share the elapsed beat. Current controller,
+source, targets, action/owned-choice fences and phase must remain unchanged;
+ancestry requires explicit parent links. A new response, unrelated public event,
+unknown ancestry, unsupported input or ordinary nonrepeated resolution starts
+the ordinary beat. The bounded cohort retains immutable parent/root evidence
+already disclosed for its original members when old public events leave the
+retained tail. A contradictory newly disclosed parent/root stops it; newly
+arrived children still require their current explicit public parent chain.
+Private preparation, faces, names, offers and proposed answers
+are excluded from this projection. Legacy/missing evidence keeps ordinary timing.
+This is host cadence, not a bot strategy, human consent or server grant: every
+automated input still receives a fresh observation and policy evaluation.
+
 `IAiHostDiagnostics` is a separate host-only failure sink. Shipping composition
 retains original exception chains in `diagnostics/ai-host.log`; the provider
 quarantines the last decoded private bot batch and any rejected wire batch in
@@ -1789,6 +1806,64 @@ handoff. If a response remains available after a captured batch finishes, an
 additional attention stop can remain. Extending that handoff requires an explicit
 captured-queue completion receipt, rather than treating the mode toggle as consent
 for later work.
+
+`FiniteResolutionIntent` composes two separately captured permissions: priority
+yielding for an exact queue and, only after an explicit additional gesture,
+negative answers for one provider-certified optional payment family. Mixed
+queues retain a distinct decline subset. Structural `StackRepetition` and
+`OptionalDeclineOffer` facts bind source incarnation, rules structure, recipients,
+actual producing execution, payer, complete supported cost terms and input
+lineage. Names, formatted text and a common budget root grant no authority.
+Unknown or changed facts stop the continuation. The first supported negative
+family is optional mana-only trigger costs; this is not a generic choice solver.
+
+Providers may advertise `FiniteStackYieldState`. The closed command family adds
+an exact current-priority grant and an out-of-prompt, grant-bound revoke. Java
+stores at most 256 captured executions for that seat, rechecks queue membership,
+turn/phase, actual priority-action and owned-choice fences on the input thread,
+and uses the ordinary rules input for every pass. Other seats grant their own
+consent. A grant never pays, declines, selects or controls another seat. Supported
+captured optional costs pause it; only the exact negative completion can resume
+it. A new response, unsupported choice or transport-generation change revokes it.
+Legacy providers keep the bounded client executor without claiming fewer RPCs.
+
+`ClientSession` owns the single command lane, queued revocations, recovery and
+immutable observation delivery. Reading/Take control withdraw server consent;
+an already sent operation is reconciled. Reset and close cannot resurrect an old
+snapshot to acknowledge its revoke. Match-changing operations use the explicit
+`RunMatchOperation` boundary; catalog reads do not gain mutation authority.
+Missing or malformed revoke evidence remains uncertain. Grouped announcements
+are presentation membership only: actual execution outcomes and event-time
+public facts remain the authority for progress and history.
+If Reset has retired the game before negative cleanup becomes uncertain, an
+explicit `RunMatchOperation` may reobserve its exact pending revokes. Only when
+all are acknowledged under the current command epoch and the replica remains
+empty can it clear that cleanup uncertainty. It cannot restore the retired
+snapshot, replay an action or clear a live game's unrelated uncertainty.
+Per-audience execution and activity projections retain grant members and proven
+parent-linked descendants so a fast burst cannot outrun the ordinary history
+tail. Additional retained activity and descendant metadata each have a 4,096-item
+bound. Overflow stops further automatic passes and reports a history gap; one
+rules resolution can itself exceed a storage bound, so complete retention is not
+claimed in that case. New consent replaces that bounded pin set. Hidden events
+are never admitted merely because their execution is related to a public source.
+
+`CombatAssignmentPreview` computes a bounded one-to-one pairing over disclosed
+current legal edges. `CombatAssignmentIntent` applies the reviewed exact pairs
+through the same finite executor using fresh ordinary toggles. It preserves
+foreign assignments, stops on changed declaration/membership/permissions, and
+never confirms combat. Individual pair eligibility does not prove the whole
+declaration legal or strategically desirable; engine validation and the player's
+separate final confirmation remain required.
+
+Forge's actual input publishes `CombatInputState` as the sole offered combat
+domain. The adapter binds it to the exact input, owner, input sequence and rules
+version; unknown or invalidated facts withhold the executable decision until a
+fresh input callback. A private block-domain factory reuses pure blocker and
+attacker/defender subqueries only during that one immutable publication. The
+query cannot escape or survive a mutation. Pair commands use the existing
+sequence-checked input primitives and ordinary live rules predicates; the
+projection never substitutes its retained domain for command validation.
 
 `StackWorkloads` is a source census over current entries, including interleaved
 triggers. Exact physical source, controller, effect and target identity bound a

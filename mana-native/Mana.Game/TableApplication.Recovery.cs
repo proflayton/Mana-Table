@@ -42,8 +42,8 @@ internal sealed partial class TableApplication
             string id = match!.Id;
             Work(async () => {
                 await matchConnection.ConcedeAsync(id);
-                updates.Enqueue(ReturnFromMatch);
-            }, "Ending your game", "Conceding this local game before returning to setup.", true);
+                updates.Enqueue(FinishLocalMatchReturn);
+            }, "Ending your game", "Conceding this local game before returning to setup.", true, changesMatch: true);
             return;
         }
         overlay = "";
@@ -53,6 +53,6 @@ internal sealed partial class TableApplication
                 session.BindLobby(null); session.Reset(); ResetTableView(); InvalidateDeckConfirmation();
                 setupModal = ""; message = "You left the table. Choose your next game.";
             });
-        }, "Leaving the table", "Closing your connection and returning to setup.", true);
+        }, "Leaving the table", "Closing your connection and returning to setup.", true, changesMatch: true);
     }
 }

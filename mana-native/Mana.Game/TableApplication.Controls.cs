@@ -91,4 +91,15 @@ internal sealed partial class TableApplication
         } else if (over)
             canvas.Line(new(bounds.X + 7, bounds.Bottom - 3), new(bounds.Right - 7, bounds.Bottom - 3), Blue, 2);
     }
+
+    // An explicit decision must never lose its meaning to centered single-line
+    // ellipsis. Callers reserve this measured block's complete height.
+    private void CompleteActionButton(string id, string label, Rectangle bounds, UiIntent action, bool enabled = true)
+    {
+        Button(id, "", bounds, action, enabled, true);
+        var size = canvas.TextSize(label, .76f, bounds.Width - 24, 80, true);
+        canvas.Text(label, bounds.X + Math.Max(12, (bounds.Width - size.X) / 2),
+            bounds.Y + Math.Max(4, (bounds.Height - size.Y) / 2), enabled ? Ink : Muted * .6f,
+            .76f, bounds.Width - 24, 80, true);
+    }
 }

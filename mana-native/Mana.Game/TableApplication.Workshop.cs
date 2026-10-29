@@ -192,7 +192,7 @@ internal sealed partial class TableApplication
                 message = "Testing your saved deck version.";
             });
             if (state?.Status == "error") throw new InvalidOperationException(state.Error ?? "The test game could not start.");
-        }, "Gathering your test table", "Preparing your exact deck version, AI opponents and opening hand.", scene: true);
+        }, "Gathering your test table", "Preparing your exact deck version, AI opponents and opening hand.", scene: true, changesMatch: true);
     }
     private void PracticeWorkshop(string action, int? index = null)
     {
@@ -229,7 +229,7 @@ internal sealed partial class TableApplication
                 workshopTab = testAgain ? "test" : "results"; workshopDialog = "";
                 message = "Back at your deck. This test keeps the version that was played.";
             });
-        }, "Returning to your deck", "Saving the test record and reopening your deck workspace.", true);
+        }, "Returning to your deck", "Saving the test record and reopening your deck workspace.", true, changesMatch: true);
     }
 
     private void ImportArchidekt(string? suppliedUrl = null)

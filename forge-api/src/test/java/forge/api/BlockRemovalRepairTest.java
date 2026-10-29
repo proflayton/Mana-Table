@@ -6,6 +6,7 @@ import forge.deck.Deck;
 import forge.game.card.Card;
 import forge.game.combat.BlockRemovalRepair;
 import forge.game.combat.Combat;
+import forge.game.combat.CombatInputState;
 import forge.game.combat.CombatUtil;
 import forge.game.event.GameEvent;
 import forge.game.player.Player;
@@ -14,6 +15,8 @@ import org.testng.annotations.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -21,6 +24,108 @@ import static forge.api.RulesScenario.*;
 import static org.testng.Assert.*;
 
 public class BlockRemovalRepairTest {
+    @Test public void oneBuildBlockDomainMatchesLiveRulesAcrossConstraintsAndFreshMutations() throws Exception {
+        try (var fixture = new Fixture()) {
+            var ordinary = fixture.attacker("Grizzly Bears", 1);
+            var protection = fixture.attacker("White Knight", 1);
+            var flying = fixture.attacker("Wind Drake", 1);
+            var menace = fixture.attacker("Ripscale Predator", 1);
+            var companion = fixture.add("Grizzly Bears", 0);
+            fixture.combat.addAttacker(companion, fixture.player(1), fixture.combat.getBandOfAttacker(menace));
+            var foreignAttack = fixture.attacker("Grizzly Bears", 2);
+            fixture.blocker("Grizzly Bears", 2, foreignAttack);
+            var ground = fixture.add("Grizzly Bears", 1);
+            var black = fixture.add("Black Knight", 1);
+            var air = fixture.add("Wind Drake", 1);
+            fixture.add("Mogg Flunkies", 1);
+            fixture.add("Qal Sisma Behemoth", 1);
+            var tapped = fixture.add("Grizzly Bears", 1); tapped.setTapped(true);
+            var additional = fixture.blocker("Grizzly Bears", 1, ordinary);
+            additional.addCanBlockAdditional(1, 700L);
+            var shared = fixture.blocker("Grizzly Bears", 1, menace);
+
+            var domain = assertLiveBlockDomain(fixture);
+            assertFalse(domain.blockOptions().get(flying.getId()).contains(ground.getId()));
+            assertFalse(domain.blockOptions().get(protection.getId()).contains(black.getId()));
+            assertFalse(domain.blockOptions().get(ordinary.getId()).contains(tapped.getId()));
+            assertTrue(domain.blockOptions().get(flying.getId()).contains(air.getId()));
+            assertTrue(domain.blockOptions().get(protection.getId()).contains(additional.getId()));
+            assertTrue(domain.blockOptions().get(companion.getId()).contains(shared.getId()), "Existing band pairs remain removable");
+            assertTrue(domain.blockOptions().get(foreignAttack.getId()).isEmpty(), "An owner cannot block an attack on a different seat");
+
+            // Every subsequent builder gets fresh facts: none of its invariant
+            // reads may survive tap, assignment-capacity, or rules changes.
+            tapped.setTapped(false); ground.setTapped(true);
+            additional.removeCanBlockAdditional(700L);
+            domain = assertLiveBlockDomain(fixture);
+            assertTrue(domain.blockOptions().get(ordinary.getId()).contains(tapped.getId()));
+            assertFalse(domain.blockOptions().get(protection.getId()).contains(additional.getId()));
+            assertFalse(domain.blockOptions().get(ordinary.getId()).contains(ground.getId()));
+
+            var lure = fixture.attacker("Taunting Elf", 1);
+            air.addMustBlockCard(701L, ordinary);
+            domain = assertLiveBlockDomain(fixture);
+            assertTrue(domain.blockOptions().get(lure.getId()).contains(tapped.getId()));
+            assertFalse(domain.blockOptions().get(ordinary.getId()).contains(tapped.getId()));
+            var tax = fixture.attacker("Archangel of Tithes", 1);
+            assertNotNull(CombatUtil.getBlockCost(fixture.table.game, tapped, lure));
+            domain = assertLiveBlockDomain(fixture);
+            assertTrue(domain.blockOptions().get(ordinary.getId()).contains(tapped.getId()), "An optional global block tax does not compel paying for lure");
+            tax.setTapped(true);
+            assertLiveBlockDomain(fixture);
+        }
+    }
+
+    private static CombatInputState assertLiveBlockDomain(Fixture fixture) {
+        var events = new EventCounter(); fixture.table.game.subscribeToEvents(events);
+        try {
+            var view = fixture.table.game.getView().getCombat();
+            for (int repeat = 0; repeat < 2; repeat++) {
+                var expected = new LinkedHashMap<Integer, List<Integer>>();
+                for (Card attacker : fixture.combat.getAttackers()) {
+                    var blockers = new ArrayList<Integer>();
+                    for (Card blocker : fixture.player(1).getCreaturesInPlay()) {
+                        if (fixture.combat.isBlocking(blocker, attacker) || CombatUtil.canBlock(attacker, blocker, fixture.combat)) {
+                            blockers.add(blocker.getId());
+                        }
+                    }
+                    expected.put(attacker.getId(), List.copyOf(blockers));
+                }
+                var domain = CombatInputState.blockers(fixture.combat, fixture.player(1));
+                assertEquals(domain.blockOptions(), expected, "The live predicate is the domain oracle, including assigned-pair removals");
+                assertEquals(domain.blockerCandidates(), fixture.player(1).getCreaturesInPlay().stream().map(Card::getId).toList());
+                assertEquals(domain.blockProblem(), CombatUtil.validateBlocks(fixture.combat, fixture.player(1)));
+                assertSame(fixture.table.game.getView().getCombat(), view);
+            }
+            assertEquals(events.count, 0, "A domain query must not mutate cards/combat or publish rules events");
+            return CombatInputState.blockers(fixture.combat, fixture.player(1));
+        } finally { fixture.table.game.unsubscribeFromEvents(events); }
+    }
+
+    @Test public void outstandingLureStillRespectsOptionalBlockingCostsAndSatisfiedRequirements() throws Exception {
+        try (var fixture = new Fixture()) {
+            var lure = fixture.attacker("Taunting Elf", 1);
+            var ordinary = fixture.attacker("Grizzly Bears", 1);
+            var free = fixture.add("Grizzly Bears", 1);
+            var taxed = fixture.add("Qal Sisma Behemoth", 1);
+            assertTrue(CombatUtil.mustBlockAnAttacker(free, fixture.combat, null));
+            assertFalse(CombatUtil.canBlock(ordinary, free, fixture.combat));
+            assertNotNull(CombatUtil.getBlockCost(fixture.table.game, taxed, lure));
+            assertFalse(CombatUtil.mustBlockAnAttacker(taxed, fixture.combat, null),
+                    "A player is not compelled to pay a blocking cost to satisfy lure");
+            assertTrue(CombatUtil.canBlock(ordinary, taxed, fixture.combat),
+                    "An outstanding lure does not remove an optional taxed alternative");
+        }
+        try (var fixture = new Fixture()) {
+            var requirement = fixture.attacker("Grizzly Bears", 1);
+            requirement.addIntrinsicKeyword("CARDNAME must be blocked if able.");
+            var ordinary = fixture.attacker("Grizzly Bears", 1);
+            fixture.blocker("Grizzly Bears", 1, requirement);
+            var free = fixture.add("Grizzly Bears", 1);
+            assertFalse(CombatUtil.mustBlockAnAttacker(free, fixture.combat, null));
+            assertTrue(CombatUtil.canBlock(ordinary, free, fixture.combat), "An already satisfied one-block requirement imposes no new lure assignment");
+        }
+    }
     @Test public void minimalWitnessPreservesValidOwnAndForeignBlocksWithoutChangingLiveState() throws Exception {
         try (var fixture = new Fixture()) {
             var menace = fixture.attacker("Ripscale Predator", 1);
