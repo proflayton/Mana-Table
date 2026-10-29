@@ -97,6 +97,48 @@ internal static class AiDamageTargetRegression
                 && !restrictedFrame.Allows(new SelectCard(restricted.Id, restricted.Decision!.Id, BodyId + ":current"))
                 && !restrictedFrame.Allows(new SelectCard(restricted.Id, restricted.Decision!.Id, "")),
             "Damage estimates preserve exact target authority, avoid an owned lethal body, and cannot select a nonselectable public body or concealed face without a handle");
+
+        // A positive single-recipient estimate is not an estimate of adding to
+        // an already staged bundle. Divided damage and coupled costs can change
+        // every recipient's outcome as that bundle grows.
+        foreach (string uncertainty in new[] { "absent", "unknown-recipient-amount", "partial-follow-up" })
+        foreach (bool selectedPlayer in new[] { false, true }) {
+            var staged = State(optional: true);
+            staged = staged with { Decision = staged.Decision! with {
+                Payload = ((TargetSelectionPayload)staged.Decision.Payload) with { Range = new(0, 8), Players = [1, 2] }
+            }, Players = staged.Players.Select(player => player.Id != 1 || selectedPlayer ? player : player with {
+                Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Select(card =>
+                    card.VisualId == CommanderId ? card with { Highlighted = true } : card).ToImmutableArray() }).ToImmutableArray()
+            }).ToImmutableArray() };
+            var uncertain = uncertainty == "absent" ? Semantics(staged, 5, GraphShape.Absent)
+                : Semantics(staged, uncertainty == "unknown-recipient-amount" ? null : 5, GraphShape.Incomplete);
+            uncertain = uncertain with { SelectedPlayers = selectedPlayer ? [2] : [] };
+            check(await Evaluate(staged, uncertain) is CompleteSelection,
+                $"An engine-completable damage bundle stops after a selected {(selectedPlayer ? "player" : "card")} when further combined consequences are {uncertainty}; positive single-target exploration cannot authorize unlimited additions");
+            var requiredMore = staged with { Decision = staged.Decision! with {
+                Payload = ((TargetSelectionPayload)staged.Decision.Payload) with { Complete = new("Done", false) }
+            } };
+            var requiredMoreAnswer = await Evaluate(requiredMore, uncertain);
+            check(requiredMoreAnswer is SelectCard or SelectPlayer
+                    && new AiDecisionFrame(requiredMore, semantics: uncertain).Allows(requiredMoreAnswer),
+                $"Uncertain damage bundles still satisfy a required next recipient using exact current authority ({uncertainty}, selected player {selectedPlayer})");
+        }
+
+        var knownBundle = State(optional: true);
+        knownBundle = knownBundle with { Players = knownBundle.Players.Select(player => player.Id != 1 ? player : player with {
+            Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Select(card =>
+                card.VisualId == BodyId ? card with { Highlighted = true } : card).ToImmutableArray() }).ToImmutableArray()
+        }).ToImmutableArray(), Decision = knownBundle.Decision! with {
+            Payload = ((TargetSelectionPayload)knownBundle.Decision.Payload) with { Range = new(0, 2) }
+        } };
+        var knownBundleSemantics = Semantics(knownBundle, 5, GraphShape.Known);
+        knownBundleSemantics = knownBundleSemantics with { OperationGraph = knownBundleSemantics.OperationGraph with {
+            Operations = knownBundleSemantics.OperationGraph.Operations.Select(node => node with {
+                Targets = node.Targets! with { Max = 2 }
+            }).ToImmutableArray()
+        } };
+        check(await Evaluate(knownBundle, knownBundleSemantics) is SelectCard { Card: CommanderId + ":current" },
+            "A fully modeled fixed recipient damage effect can still add a productive optional target rather than disabling all multi-target damage");
     }
 
     private static async Task<DecisionCommand?> Evaluate(GameSnapshot state, DecisionSemantics semantics, long seed = 17)

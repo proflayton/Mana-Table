@@ -51,7 +51,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         bool limited = false;
         foreach (var offer in offers.Where(offer => !offer.Semantics.ManaAbility && offer.Semantics.Affordability != ActionAffordability.Unavailable
                 && offer.Semantics.TargetsAvailable != false
-                && !request.History.AttemptedRoutes.Contains(new(state.Turn, offer.Set.SourceCardId, offer.Semantics.StableId)))
+                && !request.History.HasAttemptedRoute(state.Turn, offer.Set.SourceCardId, offer.Semantics.StableId))
             .OrderBy(offer => offer.Semantics.Effect == ActionEffectKind.Land || offer.Action.Kind == "play" ? 0 : 1)
             .ThenBy(offer => offer.Semantics.StableId, StringComparer.Ordinal).ThenBy(offer => offer.Source.VisualId, StringComparer.Ordinal)) {
             if (request.Work.Remaining <= 4) { limited = true; break; }
@@ -73,7 +73,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             // A cast which reaches payment and is cancelled must not be tried
             // forever. Activated routes receive the same conservative guard;
             // repetitive combo planning needs an explicit bounded plan later.
-            if (request.History.AttemptedRoutes.Contains(new(state.Turn, offer.Set.SourceCardId, offer.Semantics.StableId))) continue;
+            if (request.History.HasAttemptedRoute(state.Turn, offer.Set.SourceCardId, offer.Semantics.StableId)) continue;
             bool response = reservation != null && AiTurnPlanner.Matches(reservation, offer.Set.SourceCardId, offer.Semantics);
             var nextReservation = candidate.Preserve ? reservation : null;
             if (reservation == null && offer.Action.Kind == "cast") {
@@ -294,6 +294,12 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             .Where(item => !cost || !AiTurnPlanner.ConflictsWithPendingSourceCosts(request, CardViews.Identity(item.Card))).ToArray();
         int selectedCards = CardViews.InZones(state).Where(item => item.Card.Selectable && item.Card.Highlighted)
             .Select(item => item.Card.Key).Distinct(StringComparer.Ordinal).Count();
+        // A local damage estimate can compare the first recipient without
+        // knowing a divided total, coupled follow-up or extra-target bill. It
+        // cannot justify growing an already legal bundle. Keep required target
+        // answers legal; optional additions require a complete nominal estimate.
+        bool stagedDamage = damage && !cost && complete.Enabled
+            && (selectedCards > 0 || !request.Frame.Semantics.SelectedPlayers.IsEmpty);
         int retained = (int)Math.Min(int.MaxValue, Math.Max(64L,
             Math.Max(0L, (long)(range?.Min ?? 0) - selectedCards - request.Frame.Semantics.SelectedPlayers.Length) + 1));
         // Complete a staged selection as soon as the engine permits it. This
@@ -318,13 +324,15 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 : damage ? (own ? -100 : DamageThreat(occurrence.PlayerId))
                 : IsHarm(intent) ? (own ? -100 : 20 + value + CasualTableAssessment.OpponentScore(request, occurrence.PlayerId))
                 : 1 + CasualTableAssessment.Tie(request.Seed, identity);
+            if (stagedDamage) score = double.NegativeInfinity;
             if (!cost && request.Frame.Semantics.OperationId is { } operation) {
                 var assessment = CasualActionAssessment.Target(state, request.Frame.Semantics.OperationGraph, operation,
                     new(identity, SemanticEntityKind.Card, identity, ControllerId: occurrence.PlayerId), localWork,
                     CardViews.Source(state, state.Decision!));
                 if (assessment.Status == CasualAssessmentStatus.BudgetExceeded) return Missing("work-budget");
                 if (assessment.Status == CasualAssessmentStatus.SearchLimited) { score = double.NegativeInfinity; limited = true; }
-                if (assessment.Status is CasualAssessmentStatus.Estimated or CasualAssessmentStatus.EstimatedPartial) score = assessment.Value
+                if (assessment.Status == CasualAssessmentStatus.Estimated
+                    || !stagedDamage && assessment.Status == CasualAssessmentStatus.EstimatedPartial) score = assessment.Value
                     + (assessment.Value > 0 && !own ? Math.Clamp(CasualTableAssessment.OpponentScore(request, occurrence.PlayerId) * .01, 0, .25) : 0);
             }
             bool preservesFunding = cost && AiTurnPlanner.PreservesCurrentCostFunding(request with { Work = localWork }, identity);
@@ -340,13 +348,15 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 : damage ? (player == state.ViewerId ? -100 : DamageThreat(player))
                 : IsHarm(intent) ? CasualTableAssessment.OpponentScore(request, player)
                 : CasualTableAssessment.Tie(request.Seed, player.ToString(CultureInfo.InvariantCulture));
+            if (stagedDamage) score = double.NegativeInfinity;
             if (!cost && request.Frame.Semantics.OperationId is { } operation) {
                 var assessment = CasualActionAssessment.Target(state, request.Frame.Semantics.OperationGraph, operation,
                     new("player:" + player, SemanticEntityKind.Player, PlayerId: player), localWork,
                     CardViews.Source(state, state.Decision!));
                 if (assessment.Status == CasualAssessmentStatus.BudgetExceeded) return Missing("work-budget");
                 if (assessment.Status == CasualAssessmentStatus.SearchLimited) { score = double.NegativeInfinity; limited = true; }
-                if (assessment.Status is CasualAssessmentStatus.Estimated or CasualAssessmentStatus.EstimatedPartial) score = assessment.Value
+                if (assessment.Status == CasualAssessmentStatus.Estimated
+                    || !stagedDamage && assessment.Status == CasualAssessmentStatus.EstimatedPartial) score = assessment.Value
                     + (assessment.Value > 0 && player != state.ViewerId ? Math.Clamp(CasualTableAssessment.OpponentScore(request, player) * .01, 0, .25) : 0);
             }
             options.Add((new SelectPlayer(state.Id, state.Decision!.Id, player), score,

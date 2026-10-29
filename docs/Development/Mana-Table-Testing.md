@@ -171,6 +171,13 @@ graphs, candidate/seat order and seeds, marked damage, indestructible, zero
 damage, and unknown or distributed recipient amounts. These compare production
 policy commands against exact current target permissions. They establish
 nominal recipient choice, not prevention coverage or a guaranteed resolution.
+Thirteen staged-bundle checks distinguish optional unassessed damage expansion
+from required targets and fully modeled fixed damage. `AiRouteRetryRegression`
+adds eight lifecycle checks for accepted start, unfunded cancellation, renewed
+source disclosure, distinct provider routes/copies, new turns, diagnostic
+eviction and absent stable identity. Both run in the same graphics-free suite.
+These guard the retained first integrated Fireball loop; they do not claim to
+price additional-target costs or replace the packaged whole-seat game gate.
 
 `AiDecisionQualityRegression`, `AiActionOutcomeRegression` and
 `AiCombatContextRegression` add 91 bounded policy checks for complete known

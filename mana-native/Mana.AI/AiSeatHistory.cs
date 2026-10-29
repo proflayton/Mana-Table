@@ -57,6 +57,15 @@ public sealed record AiSeatHistory(ImmutableArray<AiDecisionRecord> Decisions, I
     // a log entry cannot authorize repeating a cancelled/accepted activation.
     public ImmutableHashSet<AiTurnRoute> AttemptedRoutes { get; init; } = [];
     public bool RouteLimitReached { get; init; }
+
+    public bool HasAttemptedRoute(int turn, string sourceCardId, string stableRouteId)
+        // StableId belongs to the provider's rules occurrence and equivalent
+        // route (Forge ActionSemantics.stableId includes host ID and timestamp).
+        // A cancelled cast can renew its disclosed SourceCardId without renewing
+        // that route. Missing stable identity retains the exact-source fallback.
+        => stableRouteId.Length > 0
+            ? AttemptedRoutes.Any(route => route.Turn == turn && route.StableRouteId == stableRouteId)
+            : AttemptedRoutes.Contains(new(turn, sourceCardId, stableRouteId));
 }
 
 internal sealed class AiHistoryBuffer(int capacity)

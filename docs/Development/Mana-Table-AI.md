@@ -51,6 +51,29 @@ Ninety-one bounded regression checks cover the failures, controls, order/seed
 variations and current command authority. They do not establish human acceptance
 or full-game outcomes. The earlier short campaign cutoffs remain inconclusive.
 
+The integrated candidate's first packaged-engine run exposed an additional
+failure: a Fireball announced X=1, selected six targets, cancelled its unaffordable
+bill, then repeated the same route 123 times before the unchanged canonical-game
+deadline. All ten controlled goldens passed; public projections agreed, but that
+did not establish useful whole-game progress. The original failure artifact and
+first cutoff remain retained; this is a source correction, not a timeout waiver.
+
+Retry equivalence now uses the provider's stable rules-occurrence route and turn,
+rather than also requiring the renewed UI source disclosure. Distinct physical
+copies and genuinely different routes retain distinct stable identities. The
+original source identity remains in evidence and planning; missing stable route
+identity retains only the prior exact-source fallback. Evicting diagnostic
+records cannot reopen a guarded route.
+
+Optional staged damage additions require a complete nominal recipient estimate.
+Partial local damage and unknown/divided amounts can still compare an initial
+recipient, and required next recipients remain legal, but those estimates cannot
+justify growing an already engine-completable bundle. Fixed, fully modeled
+damage can still add productive optional recipients. This is conservative
+behavior under missing facts, not a claim to price target-dependent costs:
+incremental target funding and composed target-set consequences still need
+explicit provider data and a bounded bundle assessment.
+
 Three next abstractions need separate work. An optional confirmation needs an
 explicit affirmative/decline consequence: current provider graphs intentionally
 mark some optional operations conditional, so this audit does not reinterpret

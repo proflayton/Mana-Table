@@ -170,6 +170,7 @@ await AiHostRegression.RunAsync(Check);
 await AiObservationSupersededRegression.RunAsync(Check);
 await AiPolicyRegression.RunAsync(Check);
 await AiDamageTargetRegression.RunAsync(Check);
+await AiRouteRetryRegression.RunAsync(Check);
 await AiDecisionQualityRegression.RunAsync(Check);
 await AiActionOutcomeRegression.RunAsync(Check);
 await AiCombatContextRegression.RunAsync(Check);
