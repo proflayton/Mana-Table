@@ -210,7 +210,8 @@ internal sealed partial class TableApplication
         canvas.Text(journey.Advice, x + 9, adviceY, Muted, .66f, width - 18, 1);
         if (journey.Payment && match.Decision?.Payload is PaymentPayload payment) {
             int controlY = area.Bottom - 31 - (declineBatch != null ? batchHeight + 11 : 0) - policyHeight;
-            if (payment.Pay.Enabled) Button("mana-auto", payLabel, x + 8, controlY, payWidth,
+            if (payment.Pay.Enabled && CurrentOptionalPayment?.Availability != OptionalManaPaymentAvailability.Unpayable)
+                Button("mana-auto", payLabel, x + 8, controlY, payWidth,
                 new MatchIntent.ConfirmDecision(), !busy, height: 27);
             if (payment.Cancel.Enabled) Button("mana-cancel", declineOnceLabel, x + width - declineWidth - 8, controlY, declineWidth,
                 new MatchIntent.CancelDecision(), !busy, height: 27);

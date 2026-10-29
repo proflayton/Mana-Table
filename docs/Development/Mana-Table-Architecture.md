@@ -9,7 +9,7 @@ Use the package's `SOURCE.txt`/`build.json` and release notes to identify its be
 The [native development guide](../../mana-native/README.md) is the build/run entry
 point for the Windows client.
 
-## AI policy boundary
+## Optional payment consent
 
 Optional human payment preferences belong to `Mana.Client/ClientSession`, not
 the renderer, AI policy or Forge's strategic controller. The rules provider
@@ -23,6 +23,8 @@ source/ability consent, accepted-snapshot lifecycle and interruption. Its existi
 serialized finite runner owns dispatch and reconciliation. Source preferences do
 not grant priority yields, persist across matches or authorize arbitrary choices.
 The game projects those preferences onto the actual source and reader controls.
+
+## AI policy boundary
 
 AI seats use `Mana.AI` through the same scoped decisions as human players;
 Forge supplies the rules and current legal choices. The lobby offers bundled

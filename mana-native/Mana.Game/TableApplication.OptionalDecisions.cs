@@ -20,7 +20,8 @@ internal sealed partial class TableApplication
             case PaymentPayload payment when RepeatedDeclineOffer != null || CurrentOptionalPayment != null:
                 var card = CardViews.Source(state, decision);
                 DrawDecisionAlternatives(state, decision,
-                    CurrentOptionalPayment == null ? payment.Pay : payment.Pay with { Label = "Pay once" },
+                    CurrentOptionalPayment == null ? payment.Pay : payment.Pay with { Label = "Pay once",
+                        Enabled = payment.Pay.Enabled && CurrentOptionalPayment.Availability != OptionalManaPaymentAvailability.Unpayable },
                     CurrentOptionalPayment == null ? payment.Cancel : payment.Cancel with { Label = "Decline once" },
                     card is { FaceDown: false } ? card.Name : decision.Context.Title, decision.Context.Message, false, true);
                 return true;

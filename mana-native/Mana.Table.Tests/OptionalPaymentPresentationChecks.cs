@@ -104,7 +104,7 @@ internal static class OptionalPaymentPresentationChecks
                 run.Observe(Checkpoint(revision: 2, availability: OptionalManaPaymentAvailability.Unpayable));
                 run.Move(new(20, 60));
                 for (int tick = 0; tick < 90; tick++) run.Tick();
-                check(run.View.Held && run.Port.Commands.IsEmpty && run.Has("mana-cancel"),
+                check(run.View.Held && run.Port.Commands.IsEmpty && run.Has("mana-cancel") && !run.Has("mana-auto"),
                     "An unpayable optional offer arriving after Hold keeps its actual decline reachable instead of hiding an unanswered decision at " + viewport);
                 run.Capture("held-unpayable-decline");
                 run.Click("mana-cancel");
@@ -121,7 +121,7 @@ internal static class OptionalPaymentPresentationChecks
                     "Reading an ordinary source can pause a default optional answer without any saved policy at " + viewport);
                 run.Observe(Checkpoint(revision: 2, availability: OptionalManaPaymentAvailability.Unpayable));
                 for (int tick = 0; tick < 90; tick++) run.Tick();
-                check(run.Port.Commands.IsEmpty && run.View.OptionalPaymentsPaused && run.Has("mana-cancel"),
+                check(run.Port.Commands.IsEmpty && run.View.OptionalPaymentsPaused && run.Has("mana-cancel") && !run.Has("mana-auto"),
                     "Reading keeps a newly unpayable current decision explicit and unanswered until reading ends at " + viewport);
                 run.Capture("reading-unpayable-decline");
                 run.CloseReader(); run.Move(new(20, 60));

@@ -282,7 +282,7 @@ internal sealed partial class TableApplication : IDisposable
     {
         if (command == null || fixture != null || session.NeedsRecovery || match?.Id != command.GameId || match.Decision?.Id != command.DecisionId) return false;
         if (AwaitingFinitePublication) return false;
-        if (QuietUnpayableOptionalPayment && command is not CancelPayment) return false;
+        if (CurrentOptionalPayment?.Availability == OptionalManaPaymentAvailability.Unpayable && command is not CancelPayment) return false;
         if (command is UndoLastAction) return false;
         if (match.FiniteStackYield is { Status: FiniteStackYieldStatus.Active }) {
             TakePriorityControl(); ClearReaderActions();
