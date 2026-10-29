@@ -222,7 +222,8 @@ public class ExecutionJourneyTest {
             var payment = payment(game);
             assertFalse(execution(payment).isEmpty());
             game.table.seat(0).concede(request(payment, Map.of()));
-            var departed = game.state(0);
+            assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(payment, Map.of("action", "ok"))));
+            var departed = awaitConcession(game.table, game.table.seat(0));
             assertTrue(viewer(departed).get("eliminated").getAsBoolean());
             assertTrue(departed.get("prompt").isJsonNull());
             assertNotNull(departed.getAsJsonObject("executions"));

@@ -96,6 +96,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private Input displayedInput;
     private CardView promptSource;
     private boolean conceded;
+    private boolean concessionTimedOut;
+    private Pending concedingInput;
+    private final CompletableFuture<Void> concessionCompletion = new CompletableFuture<>();
     private final List<java.util.function.Consumer<PlaytestFrame>> playtestObservers = new ArrayList<>();
 
     public record PlaytestFrame(String gameId, String status, String result, Map<String, Integer> observations) { }
@@ -252,6 +255,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         notifyPlaytest();
         if (pending != null) pending.response.completeExceptionally(new CancellationException("Match closed"));
         pending = null;
+        if (concedingInput != null) concedingInput.response.completeExceptionally(new CancellationException("Match closed"));
+        concedingInput = null;
+        concessionCompletion.complete(null);
     }
     void releaseInput() { human.getInputQueue().onGameOver(true); }
     boolean eliminated() { return viewer.getHasLost(); }
@@ -385,7 +391,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
     private void publishInputInState() {
         synchronized (gate) {
-            if (closed || error != null) return;
+            if (closed || error != null || conceded && !viewer.getHasLost()) return;
             if (game.isGameOver()) { releaseInput(); return; }
             if (inputActionQueued) return;
             if (pending != null && !pending.kind.equals("input")) return;
@@ -782,7 +788,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private boolean sourceInputCurrent(Pending current) {
-        return !closed && error == null && !viewer.getHasLost() && !game.isGameOver() && !inputActionQueued
+        return !closed && error == null && !conceded && !viewer.getHasLost() && !game.isGameOver() && !inputActionQueued
                 && current.kind.equals("input") && sourceInputActive(current.input)
                 && human.getInputQueue().getInput() == current.input && human.getInputProxy().getInput() == current.input;
     }
@@ -862,7 +868,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         // inputActionQueued is expected after acceptance, so recheck the exact
         // owned input directly rather than using sourceInputCurrent here.
         Card source = sourceCard(current.cards.containsKey(catalog.key()) ? current.cards.get(catalog.key()) : current.additionalCards.get(catalog.key()));
-        return !closed && error == null && !viewer.getHasLost() && !game.isGameOver()
+        return !closed && error == null && !conceded && !viewer.getHasLost() && !game.isGameOver()
                 && sourceInputActive(current.input)
                 && human.getInputQueue().getInput() == current.input && human.getInputProxy().getInput() == current.input
                 && catalog.matches(source, sourceActionVersion.get()) && actionHostVisible(source)
@@ -1068,7 +1074,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             HeadlessPlatform.later(() -> {
                 boolean restorePriority = false;
                 try {
-                    if (closed || viewer.getHasLost() || game.isGameOver() || human.getInputQueue().getInput() != next.input
+                    if (closed || conceded || viewer.getHasLost() || game.isGameOver() || human.getInputQueue().getInput() != next.input
                             || human.getInputProxy().getInput() != next.input) return;
                     switch (action) {
                         case "autoPayOptionalPayment" -> {
@@ -1144,7 +1150,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         inputActionQueued = false;
                         // A late engine recheck may revoke this exact option. Keep
                         // the unanswered input usable; never choose a replacement.
-                        if (restorePriority && !closed && !viewer.getHasLost() && !game.isGameOver()
+                        if (restorePriority && !closed && !conceded && !viewer.getHasLost() && !game.isGameOver()
                                 && human.getInputQueue().getInput() == next.input && human.getInputProxy().getInput() == next.input) {
                             pending = next;
                             notices.add(action.equals("passUntilPublicAction")
@@ -1259,7 +1265,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     /** Priority preferences never consume an input, activate an ability, or traverse a running board. */
     private Map<String, Object> setAbilityAutoPass(JsonObject request) {
-        if (closed || viewer.getHasLost() || game.isGameOver()) throw new IllegalArgumentException("This match has ended");
+        if (closed || conceded || viewer.getHasLost() || game.isGameOver()) throw new IllegalArgumentException("This match has ended");
         var value = request.get("ignored");
         if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isBoolean())
             throw new IllegalArgumentException("Choose whether to pass for this ability");
@@ -1313,18 +1319,44 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private Map<String, Object> concedeInState(JsonObject request) {
         synchronized (gate) {
             requireSession(request);
-            if (game.isGameOver()) return latest;
-            Pending old = pending;
+            if (game.isGameOver() || conceded) return latest;
+            concedingInput = pending;
             pending = null;
             conceded = true;
-            human.concede();
-            // Publish the loss before releasing a dialog's waiter: pregame
-            // orchestration must observe the departure when it handles cancellation.
-            if (old != null) old.response.completeExceptionally(new CancellationException("Match conceded"));
-            table.stopIfNoHumans();
-            human.getInputQueue().onGameOver(true);
-            publish(null);
+            finiteStackYield.revoke("conceded");
+            markBusy(concedingInput);
+            // Always enqueue, even when admission runs on a Game thread. The
+            // transport/pipe receipt must return before any survivor's reveal
+            // acknowledgement or required choice can be requested.
+            forge.util.ThreadUtil.invokeInGameThread(() -> game.getAction().withState(this::completeConcession));
             return latest;
+        }
+    }
+
+    private void completeConcession() {
+        try {
+            synchronized (gate) { if (closed || error != null || game.isGameOver()) return; }
+            // Rules cleanup can wait for another controller. No table gate or
+            // transport monitor belongs to this detached rules continuation.
+            human.concede();
+            synchronized (gate) {
+                if (concessionTimedOut && viewer.getHasLost()) table.tempo.lost(viewer.getId());
+                table.stopIfNoHumans();
+                releaseInput();
+            }
+            table.publishInput();
+            table.publish();
+        } catch (Throwable failure) {
+            if (!closed && !game.isGameOver()) table.fail(failure);
+        } finally {
+            synchronized (gate) {
+                // A cancelled old dialog must see the actual rules departure,
+                // or an explicit table stop, before its waiter resumes.
+                if (concedingInput != null)
+                    concedingInput.response.completeExceptionally(new CancellationException("Match conceded"));
+                concedingInput = null;
+                concessionCompletion.complete(null);
+            }
         }
     }
 
@@ -1338,6 +1370,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         next.put("revision", ++revision); next.put("prompt", null); next.put("status", "resolving");
         next.put("players", resolvingPlayers(consumed));
         next.put("playAccesses", PlayAccessProjection.withoutCurrentOffers(next.get("playAccesses")));
+        next.put("finiteStackYield", finiteStackYield.frame(table.stackInterruption.actionVersion(), resolutionChoiceVersion));
         latest = Collections.unmodifiableMap(next);
         table.refreshDecisionState();
     }
@@ -1414,8 +1447,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var request = new JsonObject(); request.addProperty("sessionId", id);
         if (expiry.outcome() == DecisionTempo.Outcome.LOSS) {
             notices.add("Decision time expired.");
+            concessionTimedOut = true;
             concede(request);
-            if (viewer.getHasLost()) table.tempo.lost(viewer.getId());
         } else {
             request.addProperty("promptId", pending.id); request.addProperty("action", "passPriority");
             action(request, false);
@@ -1424,7 +1457,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     PublicDecision publicDecision() {
         Pending current = pending;
-        if (current == null || closed || error != null || viewer.getHasLost()) return null;
+        if (current == null || closed || error != null || conceded || viewer.getHasLost()) return null;
         String actionClass = current.kind;
         if (current.input != null) {
             Input input = current.input;
@@ -1438,7 +1471,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     Object requiredChoiceEpisode() {
         Pending current = pending;
-        if (current == null || closed || error != null || viewer.getHasLost() || current.input instanceof InputPassPriority) return null;
+        if (current == null || closed || error != null || conceded || viewer.getHasLost() || current.input instanceof InputPassPriority) return null;
         return current.input == null ? current : current.input;
     }
 
@@ -2046,6 +2079,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     private void revealDelayed(DelayedReveal reveal) { if (reveal != null) reveal(reveal.getMessagePrefix(), reveal.getCards()); }
     private void reveal(String title, List<?> choices) {
+        if (conceded || viewer.getHasLost() || game.isGameOver()) return;
         try {
             if (!libraryCards(choices)) { dialog("reveal", title, choices, 0, 0, false, null); return; }
             var next = choicePrompt("reveal", title, List.of(), 0, 0, false, null);
@@ -2346,11 +2380,28 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private JsonObject await(Pending next) {
-        game.getAction().withState(() -> { synchronized (gate) {
-            if (closed) throw new CancellationException("Match closed");
-            pending = next;
-            publish(next);
-        } });
+        while (true) {
+            CompletableFuture<?> previous = game.getAction().readState(() -> { synchronized (gate) {
+                if (closed) throw new CancellationException("Match closed");
+                if (conceded) {
+                    if (viewer.getHasLost() || game.isGameOver()) throw new CancellationException("Match conceded");
+                    return concessionCompletion;
+                }
+                // A detached loss disclosure cannot replace a foreign dialog's
+                // response future. Finish the current owner before presenting
+                // the next required/read-only dialog on this seat.
+                if (pending != null && !pending.kind.equals("input") && !pending.response.isDone())
+                    return pending.response;
+                pending = next;
+                publish(next);
+                return null;
+            } });
+            if (previous == null) break;
+            try { game.getAction().awaitState(previous); }
+            catch (InterruptedException error) { Thread.currentThread().interrupt(); throw new CancellationException("Match interrupted"); }
+            catch (ExecutionException error) { if (closed || conceded || viewer.getHasLost() || game.isGameOver()) throw new CancellationException("Match ended"); }
+            if (conceded) throw new CancellationException("Match conceded");
+        }
         try { return game.getAction().awaitState(next.response); }
         catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new CancellationException("Match interrupted"); }
         catch (ExecutionException e) { throw new CancellationException(e.getCause().getMessage()); }

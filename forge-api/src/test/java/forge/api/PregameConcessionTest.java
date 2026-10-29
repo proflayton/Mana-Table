@@ -49,7 +49,7 @@ public class PregameConcessionTest {
             concede.addProperty("sessionId", text(departure.state(), "id"));
             scenario.table.seat(departed).concede(concede);
 
-            var after = scenario.state(departed);
+            var after = awaitConcession(scenario.table, scenario.table.seat(departed));
             assertTrue(viewer(after).get("eliminated").getAsBoolean());
             assertTrue(after.get("prompt").isJsonNull(), "A departed player cannot retain a decision");
             var stale = new JsonObject();
@@ -86,6 +86,7 @@ public class PregameConcessionTest {
             var concede = new JsonObject();
             concede.addProperty("sessionId", text(reveal.state(), "id"));
             scenario.table.seat(reveal.seat()).concede(concede);
+            awaitConcession(scenario.table, scenario.table.seat(reveal.seat()));
 
             RulesScenario.Input main;
             while (true) {
@@ -120,6 +121,9 @@ public class PregameConcessionTest {
                     scenario.table.seat(seat).concede(concede);
                 }
                 assertTrue(finished.await(5, TimeUnit.SECONDS), "The cancelled dialog must release the game thread");
+                for (int seat = 0; seat < 4; seat++) {
+                    if (seat != choice.seat()) awaitConcession(scenario.table, scenario.table.seat(seat));
+                }
                 for (int seat = 0; seat < 4; seat++) {
                     var state = scenario.table.seat(seat).state();
                     assertEquals(state.get("status"), "finished");

@@ -45,12 +45,12 @@ public class FlashbackRefreshConcessionTest {
                         if (departed.compareAndSet(false, true)) {
                             // Runs synchronously inside the first refresh event, after
                             // the old live-list iterator has already yielded a player.
-                            // The ordinary concession removes another player before
-                            // that iterator asks for its next element: no sleep or race.
+                            // Admission cannot run cleanup while this real traversal
+                            // owns rules state: no sleep or scheduling race.
                             assertEquals(scenario.table.game.getPlayers().size(), 4);
                             concede(scenario, 2, sessionId);
-                            assertEquals(scenario.table.game.getPlayers().size(), 3);
-                            assertFalse(scenario.table.game.getPlayers().stream()
+                            assertEquals(scenario.table.game.getPlayers().size(), 4);
+                            assertTrue(scenario.table.game.getPlayers().stream()
                                     .anyMatch(player -> player.getId() == departedId));
                         }
                         if (refreshed.size() == initialPlayers.size()) capturedRefresh.set(true);
@@ -66,9 +66,9 @@ public class FlashbackRefreshConcessionTest {
             scenario.table.game.subscribeToEvents(listener);
             try {
                 assertTrue(scenario.answer(opening, Map.of("action", "player", "playerId", initialPlayers.get(0))));
-                var main = scenario.until(input -> input.seat() == 0
-                        && text(input.state(), "phaseKey").equals("MAIN1")
-                        && text(input.prompt(), "inputType").equals("InputPassPriority"));
+                main(scenario);
+                awaitConcession(scenario.table, scenario.table.seat(2));
+                var main = main(scenario);
                 assertNull(callbackFailure.get(), "The deterministic concession callback must succeed");
                 assertTrue(departed.get(), "The real PhaseHandler Flashback refresh must invoke the concession hook");
                 assertTrue(capturedRefresh.get(), "The interrupted refresh must still visit every original player");
@@ -97,6 +97,7 @@ public class FlashbackRefreshConcessionTest {
                 for (int seat = 0; seat < 4; seat++) assertPrivateZones(scenario.state(seat));
 
                 concede(scenario, 1, sessionId);
+                awaitConcession(scenario.table, scenario.table.seat(1));
                 concede(scenario, 3, sessionId);
                 assertTrue(finished.await(5, TimeUnit.SECONDS), "The surviving game must finish and release its game thread");
                 for (int seat = 0; seat < 4; seat++) {
@@ -118,6 +119,12 @@ public class FlashbackRefreshConcessionTest {
     private static boolean insidePhaseRefresh() {
         return StackWalker.getInstance().walk(frames -> frames.anyMatch(frame ->
                 frame.getClassName().equals(PhaseHandler.class.getName()) && frame.getMethodName().equals("checkStateBasedEffects")));
+    }
+
+    private static RulesScenario.Input main(RulesScenario scenario) throws Exception {
+        return scenario.until(input -> input.seat() == 0
+                && text(input.state(), "phaseKey").equals("MAIN1")
+                && text(input.prompt(), "inputType").equals("InputPassPriority"));
     }
 
     private static void concede(RulesScenario scenario, int seat, String sessionId) {

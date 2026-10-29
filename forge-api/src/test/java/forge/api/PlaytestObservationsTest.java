@@ -105,6 +105,9 @@ public class PlaytestObservationsTest {
             var request = new JsonObject();
             request.addProperty("sessionId", text(input.state(), "id"));
             scenario.table.seat(0).concede(request);
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+            while (!store.get("deck", test.id()).status().equals("conceded") && System.nanoTime() < deadline)
+                Thread.sleep(5);
             assertEquals(store.get("deck", test.id()).status(), "conceded");
             var restarted = new DeckPlaytests(directory);
             assertEquals(restarted.get("deck", test.id()).status(), "conceded");

@@ -57,9 +57,12 @@ public class TriggerWaitingConcessionTest {
                     concession.start();
                     StateBoundaryContention.await(concession.thread, -1);
                     queue.contenderBoundary = "blocked-on-game-state-boundary";
+                    assertEquals(scenario.table.game.getPlayers().stream().map(player -> player.getId()).toList(), ids,
+                            "Neither admission nor cleanup can change the held trigger batch's participants");
                     queue.release.countDown();
                     concession.finish();
                     queue.facts.put("concessionWorkerExited", !concession.thread.isAlive());
+                    awaitConcession(scenario.table, scenario.table.seat(2));
                     assertFalse(queue.hasDuplicateWork(), "Each waiting trigger must belong to exactly one drain batch");
                     var afterLand = scenario.until(input -> input.seat() == 0
                             && text(input.state(), "phaseKey").equals("MAIN1")
@@ -349,6 +352,7 @@ public class TriggerWaitingConcessionTest {
         scenario.table.game.subscribeToEvents(listener);
         try {
             concede(scenario, 1, session);
+            awaitConcession(scenario.table, scenario.table.seat(1));
             concede(scenario, 3, session);
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
             assertTrue(announced.await(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS));

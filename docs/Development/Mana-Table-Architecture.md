@@ -812,6 +812,15 @@ complete seat-filtered snapshots from the authority. Networking contains no card
 combat or decision interpretation. `SyncLobby` manages deck selection, readiness
 and seat ownership. `PortForwarding` is an independent reachability service.
 
+Concession admission revokes only the departing seat's current authority and
+returns before rules-driven disclosure acknowledgements. Loss cleanup runs as
+rules work, outside transport and adapter monitors. Read-only revelations retain
+their captured faces and wait for their own acknowledgements without replacing
+another outstanding dialog. Loss membership and ownership cleanup finish before
+those revelations wait. The host's eliminated seat can keep observing while its
+server and automated-seat driver serve the surviving human players; leaving or
+closing that hosted table retains its separate lifetime operation.
+
 Concession cleanup can remove a player-control override while the game thread
 reads it. `Player` keeps those overrides in timestamp order in a concurrent map
 and reads one entry snapshot, falling back to the base controller when empty.
