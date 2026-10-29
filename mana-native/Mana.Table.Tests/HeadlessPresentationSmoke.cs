@@ -58,6 +58,7 @@ internal static partial class HeadlessPresentationSmoke
             CheckRulesReader(profile, Check, trace, performance);
             CheckHandSourceAlternatives(profile, Check, trace, performance);
             CheckMatchFailure(profile, Check, trace, performance);
+            ConcessionLifetimeChecks.Run(profile, Check);
             CheckDepartedDefender(profile, Check, trace, performance);
             CheckStackArrival(profile, Check, trace, performance);
             DrawTriggersSmoke.RunHeadless(profile, Check);

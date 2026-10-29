@@ -356,7 +356,13 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
                 Check(peerConversations.All(c => c.Messages.Any(m => m.Text == "Does anyone have removal?")) && view.Match!.Players.Any(p => p.Name == "Jebb"), "In-game chat reaches all four seats and the game uses lobby display names");
                 Capture("11-game-chat"); Click("chat-close", 335); break;
             case 335:
-                background = Task.Run(async () => { foreach (var guest in guests) { var match = await guest.ObserveAsync(); await guest.ConcedeAsync(match!.Id); } }); stage = 30; break;
+                background = Task.Run(async () => {
+                    foreach (var guest in guests) {
+                        var match = await guest.ObserveAsync() ?? throw new InvalidOperationException("The guest's match disappeared before concession.");
+                        await guest.ConcedeAsync(match.Id);
+                        await MatchDepartureObservation.WaitAsync(guest, match, MatchDepartureObservation.Remaining(deadline));
+                    }
+                }); stage = 30; break;
             case 30:
                 if (view.Match?.Status != "finished") break;
                 Click("return", 31); break;

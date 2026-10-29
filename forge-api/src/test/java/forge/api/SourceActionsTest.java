@@ -654,6 +654,7 @@ public class SourceActionsTest {
                 assertTrue(game.answer(input, invocation));
                 var concede = new JsonObject(); concede.addProperty("sessionId", text(input.state(), "id"));
                 game.table.seat(1).concede(concede);
+                awaitConcession(game.table, game.table.seat(1));
                 release.countDown();
                 HeadlessPlatform.query(() -> null);
                 var restored = game.state(0);

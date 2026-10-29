@@ -222,6 +222,23 @@ final class RulesScenario implements AutoCloseable {
     static int count(JsonObject player, String zone) { return zone(player, zone).get("count").getAsInt(); }
     static String text(JsonObject object, String key) { var value = object.get(key); return value == null || value.isJsonNull() ? "" : value.getAsString(); }
 
+    /** A concession receipt admits a departure; its rules cleanup completes later. */
+    static JsonObject awaitConcession(MatchTable table, MatchSession session) throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+        JsonObject latest;
+        do {
+            latest = JSON.toJsonTree(session.state()).getAsJsonObject();
+            int playerId = latest.get("viewerId").getAsInt();
+            assertNotEquals(text(latest, "status"), "error", latest.toString());
+            if (!latest.getAsJsonArray("players").isEmpty() && viewer(latest).get("eliminated").getAsBoolean()
+                    && !text(latest, "status").equals("resolving")
+                    && table.game.getAction().readState(() -> table.game.getPlayers().stream()
+                    .noneMatch(player -> player.getId() == playerId))) return latest;
+            Thread.sleep(5);
+        } while (System.nanoTime() < deadline);
+        throw new AssertionError("The admitted concession did not complete its actual departure: " + latest);
+    }
+
     private void remember(Input input) {
         if (traceMode != TraceMode.SCALE || currentInput == input) return;
         if (firstInput == null) firstInput = input;

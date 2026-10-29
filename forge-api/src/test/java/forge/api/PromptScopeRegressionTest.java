@@ -121,6 +121,7 @@ public class PromptScopeRegressionTest {
             var concede = new JsonObject();
             concede.addProperty("sessionId", text(input.state(), "id"));
             game.table.seat(0).concede(concede);
+            awaitConcession(game.table, game.table.seat(0));
             flushGui();
             var after = game.state(1);
             assertEquals(text(after.getAsJsonObject("prompt"), "id"), originalId);

@@ -3890,10 +3890,13 @@ public class Player extends GameEntity implements Comparable<Player> {
     }
 
     public void revealFaceDownCards() {
-        final List<List<ZoneType>> revealZones = Arrays.asList(Arrays.asList(ZoneType.Battlefield, ZoneType.Merged), Arrays.asList(ZoneType.Exile));
-        final PlayerCollection otherPlayers = new PlayerCollection(game.getRegisteredPlayers());
-        otherPlayers.remove(this);
+        revealFaceDownCards(captureFaceDownCards());
+    }
 
+    /** Copy the original faces before loss cleanup makes their live cards cease to exist. */
+    public List<CardCollectionView> captureFaceDownCards() {
+        final List<List<ZoneType>> revealZones = Arrays.asList(Arrays.asList(ZoneType.Battlefield, ZoneType.Merged), Arrays.asList(ZoneType.Exile));
+        final List<CardCollectionView> captured = new ArrayList<>();
         for (List<ZoneType> z : revealZones) {
             CardCollection revealCards = new CardCollection();
             for (Card c : game.getCardsInOwnedBy(z, this)) {
@@ -3904,8 +3907,16 @@ public class Player extends GameEntity implements Comparable<Player> {
                 lki.setZone(c.getZone());
                 revealCards.add(lki);
             }
-            game.getAction().revealTo(revealCards, otherPlayers, Localizer.getInstance().getMessage("lblRevealFaceDownCards"), true);
+            captured.add(revealCards);
         }
+        return List.copyOf(captured);
+    }
+
+    public void revealFaceDownCards(List<CardCollectionView> captured) {
+        final PlayerCollection otherPlayers = new PlayerCollection(game.getRegisteredPlayers());
+        otherPlayers.remove(this);
+        for (CardCollectionView cards : captured)
+            game.getAction().revealTo(cards, otherPlayers, Localizer.getInstance().getMessage("lblRevealFaceDownCards"), true);
     }
 
     public void learnLesson(SpellAbility sa, Map<AbilityKey, Object> params) {

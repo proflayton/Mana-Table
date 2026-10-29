@@ -79,6 +79,7 @@ public class AutomatedSeatBoundaryTest {
             var request = new JsonObject();
             request.addProperty("sessionId", table.id);
             table.seat(0).concede(request);
+            RulesScenario.awaitConcession(table, table.seat(0));
             assertTrue(table.game.isGameOver(), "Living policy seats cannot keep a departed human's table running");
             assertFalse(table.automatedSeats().stream().anyMatch(MatchSession::eliminated),
                     "The match ends because the real human left, not because policies were eliminated");
@@ -125,6 +126,10 @@ public class AutomatedSeatBoundaryTest {
             var first = table.game.getPlayers().get(0);
             var request = new JsonObject(); request.addProperty("sessionId", table.id);
             table.automatedSeat(first.getId()).concede(request);
+            var departed = RulesScenario.awaitConcession(table, table.automatedSeat(first.getId()));
+            assertTrue(RulesScenario.viewer(departed).get("eliminated").getAsBoolean(),
+                    "Admission is followed by the actual policy seat's rules departure");
+            assertEquals(table.game.getPlayers().size(), 3);
             assertFalse(table.game.isGameOver(), "Three remaining policies continue after a real elimination");
             assertFalse(table.finishIfNoHumans());
         }

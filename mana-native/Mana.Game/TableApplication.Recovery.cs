@@ -1,3 +1,4 @@
+using Mana.Client;
 using Mana.Contracts;
 using Microsoft.Xna.Framework;
 
@@ -39,9 +40,10 @@ internal sealed partial class TableApplication
         if (localMatch) {
             overlay = "";
             if (IsWorkshopMatch || match?.Status is "finished" or "error") { ReturnFromMatch(); return; }
-            string id = match!.Id;
+            var ending = match!;
             Work(async () => {
-                await matchConnection.ConcedeAsync(id);
+                await matchConnection.ConcedeAsync(ending.Id);
+                await MatchCompletion.WaitAsync(matchConnection, ending, clock: clock);
                 updates.Enqueue(FinishLocalMatchReturn);
             }, "Ending your game", "Conceding this local game before returning to setup.", true, changesMatch: true);
             return;

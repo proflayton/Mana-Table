@@ -833,7 +833,7 @@ and avoid source-creature printing metadata in artwork requests.
 | `matchStart` | `{opponents: [...], commanderId?, deckId?, revision?}`; validates a detached match deck and rejects stale setup; legacy `opponent` accepts one deck ID |
 | `matchState` | Cached snapshot with session `id`, `revision`, `boardRevision`, `status`, `players`, `stack`, `prompt`, `activity`, and `result` |
 | `matchAction` | `{sessionId, promptId, ...answer}`; replies once to the current prompt |
-| `matchConcede` | `{sessionId}`; concedes this seat without editing the deck; other human seats continue |
+| `matchConcede` | `{sessionId}`; accepts this seat's concession without editing the deck; subsequent snapshots report rules cleanup and other human seats continue |
 | `multiplayerReconnect` | Resumes an interrupted TCP connection to its existing seat while the host remains alive |
 | `multiplayerSetSeat` | `{tableId, seat, type: "AI" / "OPEN", opponentId?}`; host-only setup operation on an open/AI slot |
 | `multiplayerConfigure` | `{tableId, format, playerCount}`; host-only setup changes, preserving occupied human seats and rejecting stale table IDs |
@@ -846,6 +846,12 @@ still validate their supplied document/revision and never select an unrelated
 target. Setup responses report the actual selected ID rather than echoing a
 requested association. This additive IPC-2 capability changes no saved-data or
 multiplayer synchronization format.
+
+A concession receipt does not wait for surviving players to acknowledge loss
+revelations. The departing seat's action scope is revoked at admission; normal
+rules work performs the loss, and subsequent observations report its result.
+Conceding the host's seat keeps the server and automated seats running while
+another human remains. Closing the hosted table is a separate operation.
 
 Input answers use `action: ok/cancel/attackAll/card/player`, with `key` for a
 visible card or `playerId` for a player. Dialog answers use `choices` (indices in

@@ -928,11 +928,12 @@ public class Game {
         // CR 702.142f & 707.9
         // If a player leaves the game, all face-down cards that player owns must be revealed to all players.
         // At the end of each game, all face-down cards must be revealed to all players.
+        final Map<Player, List<CardCollectionView>> lossDisclosures = new LinkedHashMap<>();
         if (isMultiplayer) {
-            p.revealFaceDownCards();
+            lossDisclosures.put(p, p.captureFaceDownCards());
         } else {
             for (Player pl : getPlayers().threadSafeIterable()) {
-                pl.revealFaceDownCards();
+                lossDisclosures.put(pl, pl.captureFaceDownCards());
             }
         }
 
@@ -1073,6 +1074,12 @@ public class Game {
         getTriggerHandler().runTrigger(TriggerType.LosesGame, runParams, false);
 
         getTriggerHandler().onPlayerLost(p);
+
+        // Read-only disclosure can wait for a surviving controller. Complete
+        // ownership and membership cleanup first, so an existing foreign
+        // choice cannot resume against a half-removed losing player.
+        for (var disclosure : lossDisclosures.entrySet())
+            disclosure.getKey().revealFaceDownCards(disclosure.getValue());
     }
 
     /**

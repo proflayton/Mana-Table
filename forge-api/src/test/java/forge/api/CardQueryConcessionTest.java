@@ -45,7 +45,8 @@ public class CardQueryConcessionTest {
             var participants = new ArrayList<>(game.getPlayers());
             int departedId = participants.get(2).getId();
             String sessionId = text(main.state(), "id");
-            List<Integer> expected = ids(read(query, game, participants.get(0))).stream()
+            List<Integer> original = ids(read(query, game, participants.get(0)));
+            List<Integer> expected = original.stream()
                     .filter(id -> game.findById(id).getOwner().getId() != departedId).toList();
             var finished = new CountDownLatch(1);
             var listener = new Object() {
@@ -53,15 +54,21 @@ public class CardQueryConcessionTest {
             };
             game.subscribeToEvents(listener);
             try {
-                List<Read> observed;
-                try (var hook = new ZoneReads(participants, zones(query), () -> concede(scenario, 2, sessionId))) {
-                    assertEquals(ids(read(query, game, participants.get(0))), expected,
-                            "The query keeps its original ordering and returns the surviving cards after cleanup");
-                    assertTrue(hook.conceded, "The query must execute the real one-shot concession callback");
-                    observed = List.copyOf(hook.reads);
-                }
+                List<Read> observed = game.getAction().callState(() -> {
+                    try (var hook = new ZoneReads(participants, zones(query), () -> concede(scenario, 2, sessionId))) {
+                        assertEquals(ids(read(query, game, participants.get(0))), original,
+                                "Admitting concession cannot change the query's protected card traversal");
+                        assertTrue(hook.conceded, "The query must execute the real one-shot concession callback");
+                        assertEquals(game.getPlayers().size(), 4, "Actual cleanup waits until the query releases rules state");
+                        assertFalse(participants.get(2).hasLost());
+                        return List.copyOf(hook.reads);
+                    }
+                });
                 assertEquals(observed, expectedReads(query, participants),
-                        "Every original participant is read once per requested zone, including the now-empty departed player");
+                        "Every original participant is read once per requested zone before deferred cleanup");
+                awaitConcession(scenario.table, scenario.table.seat(2));
+                assertEquals(ids(read(query, game, participants.get(0))), expected,
+                        "A later query returns only surviving cards, in the original ordering");
                 assertEquals(game.getPlayers().size(), 3);
                 assertFalse(game.getPlayers().contains(participants.get(2)));
                 assertSame(game.getCardsIn(ZoneType.Stack), game.getStackZone().getCards(),
@@ -91,6 +98,7 @@ public class CardQueryConcessionTest {
                 assertEquals(visited.size(), 1);
 
                 concede(scenario, 1, sessionId);
+                awaitConcession(scenario.table, scenario.table.seat(1));
                 concede(scenario, 3, sessionId);
                 assertTrue(finished.await(5, TimeUnit.SECONDS), "The surviving game must release its game thread");
                 for (int seat = 0; seat < 4; seat++) {

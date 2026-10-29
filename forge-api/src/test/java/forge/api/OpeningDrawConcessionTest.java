@@ -53,6 +53,7 @@ public class OpeningDrawConcessionTest {
                         && text(input.state(), "phaseKey").equals("MAIN1")
                         && text(input.prompt(), "inputType").equals("InputPassPriority"));
                 hook.awaitConcession();
+                awaitConcession(scenario.table, scenario.table.seat(2));
                 assertTrue(hook.fired.get(), "Concede during the real opening-draw replacement scan, after its first iterator element");
                 assertEquals(hook.iterated, cards.size(), "The opening scan finishes once before the queued concession clears its cards");
                 assertTrue(departed.hasLost());
@@ -157,7 +158,7 @@ public class OpeningDrawConcessionTest {
         void awaitConcession() throws InterruptedException {
             assertNotNull(concession, "The real scan must start the concurrent concession");
             concession.join(5000);
-            assertFalse(concession.isAlive(), "The ordinary API concession completes after the scan reaches an input boundary");
+            assertFalse(concession.isAlive(), "The ordinary API concession is admitted after the scan releases rules state");
             if (failure.get() != null) throw new AssertionError("The real concession failed", failure.get());
         }
 

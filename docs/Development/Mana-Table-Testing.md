@@ -1249,6 +1249,21 @@ not flicker controls or retarget a held press or armed intent. Check cold and
 warm image caches when image loading affects the journey. Use the relevant
 existing harness and record human feedback separately from these assertions.
 
+`HostConcessionTest` exercises a real mixed human/policy table and TCP guest
+continuation after the host concedes. Its controlled loss-revelation cases require
+the concession receipt before acknowledging any survivor's disclosure, preserve
+an already waiting survivor choice, and check continued current-scope decisions.
+The existing headless presentation lane separately runs
+`ConcessionLifetimeChecks`: actual confirmation clicks and ordinary session polls
+keep both host and guest watching the active table, with private hands filtered
+and table departure still explicit. These checks do not establish human UX
+acceptance or reproduce an unrecorded player's exact match.
+`MatchCompletionRegression` runs in the existing client suite and uses a
+controlled clock to verify the dependent local-return barrier, exact game/viewer
+scope, stale publications, cancellation and both delayed and hung observations.
+Real native journeys retain their original watchdogs while waiting for actual
+departure or completion, including conformance-to-rematch and workshop returns.
+
 ## Profiles and artifacts
 
 The normal app profile is `%LOCALAPPDATA%\ManaTableNative`. Development and test

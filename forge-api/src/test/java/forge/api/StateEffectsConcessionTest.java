@@ -160,11 +160,9 @@ public class StateEffectsConcessionTest {
                                 .map(card -> card.getAsJsonObject()).filter(card -> text(card, "name").equals("Forest")
                                         && card.get("selectable").getAsBoolean()).findFirst().orElseThrow();
                         assertTrue(scenario.answer(main, Map.of("action", "card", "key", text(forest, "key"))));
-                        afterLand = scenario.until(input -> input.seat() == 0
-                                && text(input.state(), "phaseKey").equals("MAIN1")
-                                && text(input.prompt(), "inputType").equals("InputPassPriority")
-                                && zone(viewer(input.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
-                                .map(card -> card.getAsJsonObject()).anyMatch(card -> text(card, "name").equals("Forest")));
+                        afterLand(scenario);
+                        awaitConcession(scenario.table, scenario.table.seat(2));
+                        afterLand = afterLand(scenario);
                         assertTrue(hook.conceded, "The production participant traversal must execute the real concession");
                         assertEquals(hook.visited, initialIds,
                                 "The selected traversal must visit every original participant in order, including the departed player");
@@ -204,6 +202,7 @@ public class StateEffectsConcessionTest {
                 for (int seat = 0; seat < 4; seat++) assertPrivateZones(scenario.state(seat));
 
                 concede(scenario, 1, sessionId);
+                awaitConcession(scenario.table, scenario.table.seat(1));
                 concede(scenario, 3, sessionId);
                 long terminalDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
                 boolean announced = finished.await(Math.max(0, terminalDeadline - System.nanoTime()), TimeUnit.NANOSECONDS);
@@ -240,16 +239,15 @@ public class StateEffectsConcessionTest {
                     .map(card -> card.getAsJsonObject()).filter(card -> text(card, "name").equals("Forest")
                             && card.get("selectable").getAsBoolean()).findFirst().orElseThrow();
             assertTrue(scenario.answer(main, Map.of("action", "card", "key", text(forest, "key"))));
-            var afterLand = scenario.until(input -> input.seat() == 0
-                    && text(input.state(), "phaseKey").equals("MAIN1")
-                    && text(input.prompt(), "inputType").equals("InputPassPriority")
-                    && zone(viewer(input.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
-                    .map(card -> card.getAsJsonObject()).anyMatch(card -> text(card, "name").equals("Forest")));
+            var afterLand = afterLand(scenario);
 
             concede(scenario, 2, sessionId);
+            awaitConcession(scenario.table, scenario.table.seat(2));
             concede(scenario, 1, sessionId);
+            awaitConcession(scenario.table, scenario.table.seat(1));
             assertEquals(scenario.table.game.getPlayers().stream().map(Player::getId).toList(),
                     List.of(originalIds.get(0), originalIds.get(3)));
+            afterLand = afterLand(scenario);
             assertTrue(scenario.answer(afterLand, Map.of("action", "ok")));
             var remainingOpponent = scenario.until(input -> input.seat() == 3
                     && text(input.state(), "phaseKey").equals("MAIN1")
@@ -275,7 +273,8 @@ public class StateEffectsConcessionTest {
             };
             scenario.table.game.subscribeToEvents(listener);
             try (var hook = new LossRevealRead(participants.get(0), scenario.table.game, () -> {
-                assertTrue(Thread.holdsLock(scenario.table.gate), "The callback must occur during the real synchronous session concession");
+                assertFalse(Thread.holdsLock(scenario.table.gate), "Real concession cleanup must not retain the shared publication gate");
+                assertSame(GameAction.currentGame(), scenario.table.game, "The callback remains in the genuine rules continuation");
                 assertFalse(scenario.table.game.isGameOver(), "The repeated request must arrive while the first cleanup is still in flight");
                 var request = new JsonObject();
                 request.addProperty("sessionId", sessionId);
@@ -285,14 +284,15 @@ public class StateEffectsConcessionTest {
             })) {
                 try {
                     concede(scenario, 3, sessionId);
-                    assertTrue(hook.fired, "The production reveal cleanup must execute the restoring zone hook");
-                    assertEquals(hook.reads, 2, "Remove the departing player only after the outer iterator yielded its second participant");
-                    assertTrue(hook.exactRevealPath, "The query must come directly from Game.onPlayerLost to Player.revealFaceDownCards");
-                    assertEquals(hook.before, List.of(originalIds.get(0), originalIds.get(3)));
-                    assertEquals(hook.after, List.of(originalIds.get(0)), "The repeated real concession must remove the departing participant inside the paused traversal");
                     long terminalDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
                     boolean announced = finished.await(Math.max(0, terminalDeadline - System.nanoTime()), TimeUnit.NANOSECONDS);
                     var finalViews = terminalViews(scenario, terminalDeadline, announced, originalIds.get(0));
+                    assertTrue(hook.fired, "The production disclosure capture must execute the restoring zone hook");
+                    assertEquals(hook.reads, 2, "Capture both original participants before the first cleanup removes the departed player");
+                    assertTrue(hook.exactRevealPath, "The query must come directly from Game.onPlayerLost to Player.captureFaceDownCards");
+                    assertEquals(hook.before, List.of(originalIds.get(0), originalIds.get(3)));
+                    assertEquals(hook.after, hook.before,
+                            "Repeated admission cannot re-enter cleanup or mutate the disclosure capture's participants");
                     for (int seat = 0; seat < 4; seat++) {
                         var snapshot = finalViews.get(seat);
                         assertNull(snapshot.get("error"));
@@ -337,12 +337,12 @@ public class StateEffectsConcessionTest {
                 @Override public CardCollectionView getCards(boolean filter) {
                     boolean matching = StackWalker.getInstance().walk(frames -> frames
                             .dropWhile(frame -> !frame.getClassName().equals(Player.class.getName())
-                                    || !frame.getMethodName().equals("revealFaceDownCards"))
+                                    || !frame.getMethodName().equals("captureFaceDownCards"))
                             .skip(1).findFirst().map(frame -> frame.getClassName().equals(Game.class.getName())
                                     && frame.getMethodName().equals("onPlayerLost")).orElse(false));
-                    // Each outer participant's reveal queries observer0's Exile
-                    // once. Remove after the second participant was yielded:
-                    // the live iterator cursor2 must then see the smaller list.
+                    // Each captured participant queries observer0's Exile once.
+                    // Admit the duplicate after the second participant is yielded;
+                    // the original capture must finish without nested cleanup.
                     if (fired || !matching || ++reads != 2) return original.getCards(filter);
                     fired = true;
                     exactRevealPath = matching;
@@ -441,13 +441,14 @@ public class StateEffectsConcessionTest {
                         if (!conceded) {
                             conceded = true;
                             // The original outer iterator has already yielded this player.
-                            // Restore actual zones before normal concession removes another
-                            // participant; no rules or zone-cleanup behavior is substituted.
+                            // Restore actual zones before admission queues normal cleanup;
+                            // no rules or zone-cleanup behavior is substituted.
                             slots.forEach(Slot::restore);
                             try {
                                 assertEquals(player.getGame().getPlayers().size(), 4);
                                 concede.run();
-                                assertEquals(player.getGame().getPlayers().size(), 3);
+                                assertEquals(player.getGame().getPlayers().size(), 4,
+                                        "Admission cannot remove a participant while the traversal owns rules state");
                             } finally {
                                 slots.stream().filter(slot -> !slot.consumed).forEach(Slot::install);
                             }
@@ -487,6 +488,14 @@ public class StateEffectsConcessionTest {
         var request = new JsonObject();
         request.addProperty("sessionId", sessionId);
         scenario.table.seat(seat).concede(request);
+    }
+
+    private static RulesScenario.Input afterLand(RulesScenario scenario) throws Exception {
+        return scenario.until(input -> input.seat() == 0
+                && text(input.state(), "phaseKey").equals("MAIN1")
+                && text(input.prompt(), "inputType").equals("InputPassPriority")
+                && zone(viewer(input.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
+                .map(card -> card.getAsJsonObject()).anyMatch(card -> text(card, "name").equals("Forest")));
     }
 
     private static void assertPrivateZones(JsonObject state) {

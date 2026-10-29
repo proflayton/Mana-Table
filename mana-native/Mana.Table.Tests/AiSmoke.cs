@@ -34,7 +34,8 @@ internal static class AiSmoke
         catch (ArgumentException) { rejectedCount = true; }
         Check(rejectedCount, "Four-seat table rejects fewer than three AI opponents");
         await engine.StartSoloAsync(precon.Id, preconOpponents);
-        var opening = await WaitForDecision(engine);
+        var openingDeadline = DateTime.UtcNow.AddSeconds(40);
+        var opening = await WaitForDecision(engine, openingDeadline);
         Check(opening.Players.Length == 4 && opening.Players.All(p => p.Life == 40), "Four-player precon table starts at 40 life");
         Check(opening.Viewer!.Zone("Command").Cards.All(c => c.Name != "Rograkh, Son of Rohgahh") && opening.Viewer.Zone("Command").Count > 0,
             "Solo start uses the selected deck even after another import");
@@ -42,7 +43,8 @@ internal static class AiSmoke
         Check(opening.Players.Where(p => p.Id != opening.ViewerId).All(p => p.Zone("Hand").Cards.Length == 0), "Opening AI hands stay hidden");
         var oldReply = new KeepOpeningHand(opening.Id, opening.Decision!.Id);
         await engine.ConcedeAsync(opening.Id);
-        Check((await engine.ObserveAsync()) is { Status: "finished", Result: "Defeat" }, "Conceding ends the solo table");
+        Check(await MatchCompletion.WaitAsync(engine, opening, MatchDepartureObservation.Remaining(openingDeadline))
+            is { Status: "finished", Result: "Defeat" }, "Conceding ends the solo table before starting its replacement");
 
         var benchmark = await engine.PrepareSoloAsync(testDeck.Id);
         string green = benchmark.Opponents.Single(o => o.Id == "green").Id;
@@ -52,7 +54,8 @@ internal static class AiSmoke
         Check(state.Id != opening.Id, "A second solo game starts in the same engine process");
         bool rejectedSession = false;
         try { await engine.ExecuteAsync(oldReply); }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("no longer active")) { rejectedSession = true; }
+        catch (EngineCommandRejectedException ex) when (ex.Message.Contains("no longer active")
+            || ex.Message == "That command does not answer the currently observed decision. Observe the table again.") { rejectedSession = true; }
         Check(rejectedSession, "Previous game's decision cannot affect the rematch");
 
         var deadline = DateTime.UtcNow.AddMinutes(5);
@@ -124,19 +127,21 @@ internal static class AiSmoke
             "Commander damage includes every owner's commander, including your own under another player's control");
         bool rejectedDecision = false;
         try { await engine.ExecuteAsync(stale!); }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("choice has changed")) { rejectedDecision = true; }
+        catch (EngineCommandRejectedException ex) when (ex.Message.Contains("choice has changed")
+            || ex.Message == "That command does not answer the currently observed decision. Observe the table again.") { rejectedDecision = true; }
         Check(rejectedDecision, "Stale decisions are rejected in a local game");
         await File.WriteAllTextAsync(Path.Combine(paths.Profile, "table-fixture.json"), JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true }));
         await engine.ConcedeAsync(state.Id);
-        Check((await engine.ObserveAsync())?.Status == "finished", "AI game stops cleanly after several rounds and combat");
+        Check((await MatchCompletion.WaitAsync(engine, state, MatchDepartureObservation.Remaining(deadline))).Status == "finished",
+            "AI game stops cleanly after several rounds and combat before hosting a new table");
         var lobby = await engine.HostAsync(4, false);
         Check(lobby.Mode == "hosting" && !lobby.MatchActive, "Can switch from solo play to a friends lobby");
         await engine.LeaveAsync();
         await File.WriteAllTextAsync(Path.Combine(paths.Profile, "smoke-results.json"), JsonSerializer.Serialize(new { results, decisions, automaticPasses, turn = state.Turn }, new JsonSerializerOptions { WriteIndented = true }));
     }
-    private static async Task<GameSnapshot> WaitForDecision(ICardEngine engine)
+    private static async Task<GameSnapshot> WaitForDecision(ICardEngine engine, DateTime? until = null)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(40);
+        var deadline = until ?? DateTime.UtcNow.AddSeconds(40);
         while (DateTime.UtcNow < deadline) {
             var state = await engine.ObserveAsync();
             if (state?.Status == "error") throw new InvalidOperationException(state.Error);
