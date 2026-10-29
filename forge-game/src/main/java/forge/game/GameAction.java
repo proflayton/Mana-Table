@@ -102,29 +102,32 @@ public class GameAction {
 
     public void withState(Runnable action) {
         Game previous = executingGame.get();
+        Runnable randomObserver = forge.util.MyRandom.exchangeUseObserver(() -> game.getReversibleManaAction().invalidate("random-use"));
         executingGame.set(game);
         boolean lock = stateBoundaryEnabled;
         if (lock) stateBoundary.lock();
         try { action.run(); }
-        finally { if (lock) stateBoundary.unlock(); restoreGame(previous); }
+        finally { if (lock) stateBoundary.unlock(); restoreGame(previous); forge.util.MyRandom.exchangeUseObserver(randomObserver); }
     }
 
     public <T> T readState(Supplier<T> action) {
         Game previous = executingGame.get();
+        Runnable randomObserver = forge.util.MyRandom.exchangeUseObserver(() -> game.getReversibleManaAction().invalidate("random-use"));
         executingGame.set(game);
         boolean lock = stateBoundaryEnabled;
         if (lock) stateBoundary.lock();
         try { return action.get(); }
-        finally { if (lock) stateBoundary.unlock(); restoreGame(previous); }
+        finally { if (lock) stateBoundary.unlock(); restoreGame(previous); forge.util.MyRandom.exchangeUseObserver(randomObserver); }
     }
 
     public <T> T callState(Callable<T> action) throws Exception {
         Game previous = executingGame.get();
+        Runnable randomObserver = forge.util.MyRandom.exchangeUseObserver(() -> game.getReversibleManaAction().invalidate("random-use"));
         executingGame.set(game);
         boolean lock = stateBoundaryEnabled;
         if (lock) stateBoundary.lock();
         try { return action.call(); }
-        finally { if (lock) stateBoundary.unlock(); restoreGame(previous); }
+        finally { if (lock) stateBoundary.unlock(); restoreGame(previous); forge.util.MyRandom.exchangeUseObserver(randomObserver); }
     }
 
     /** A waiting controller yields all nested ownership, then restores it on this same thread. */
@@ -1168,6 +1171,7 @@ public class GameAction {
         if (game.isGameOver()) {
             return;
         }
+        try (var permissionRefresh = game.getReversibleManaAction().permissionRefresh()) {
         game.getTracker().freeze(); //prevent views flickering during while updating for state-based effects
 
         final Map<StaticAbilityLayer, Set<Card>> affectedPerLayer = Maps.newHashMap();
@@ -1356,6 +1360,7 @@ public class GameAction {
             game.fireEvent(new GameEventCardStatsChanged(affectedCards));
         }
         game.getTracker().unfreeze();
+        }
     }
 
     private StaticAbility findStaticAbilityToApply(StaticAbilityLayer layer, List<StaticAbility> staticsForLayer, CardCollectionView preList, Map<StaticAbility, CardCollectionView> affectedPerAbility,
@@ -1488,6 +1493,7 @@ public class GameAction {
     public boolean checkStateEffects(final boolean runEvents, final Set<Card> affectedCards) {
         try (var execution = game.getExecutions().enterStateBased()) {
             boolean changed = checkStateEffectsOwned(runEvents, affectedCards);
+            if (changed) game.getReversibleManaAction().invalidate("state-based-action");
             execution.complete(ExecutionTracker.Outcome.RESOLVED, null);
             return changed;
         }
@@ -2674,6 +2680,7 @@ public class GameAction {
 
     // Invokes given runnable in Game thread pool - used to start game and perform actions from UI (when game-0 waits for input)
     public void invoke(final Runnable proc) {
+        game.getReversibleManaAction().invalidate("rules-task");
         if (ThreadUtil.isGameThread()) {
             withState(proc);
         } else {

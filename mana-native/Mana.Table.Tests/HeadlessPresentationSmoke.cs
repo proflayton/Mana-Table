@@ -38,6 +38,7 @@ internal static partial class HeadlessPresentationSmoke
             AutomatedWireFailureChecks.Run(profile, Check);
             CostOrderingWireChecks.Run(Check);
             ExecutionWireChecks.Run(Check);
+            GameplayUndoWireChecks.Run(Check);
             FiniteResolutionWireChecks.Run(Check);
             FiniteStackYieldWireChecks.Run(Check);
             ProjectionRecordingChecks.Run(profile, Check);
@@ -59,6 +60,7 @@ internal static partial class HeadlessPresentationSmoke
             CheckHandSourceAlternatives(profile, Check, trace, performance);
             CheckMatchFailure(profile, Check, trace, performance);
             ConcessionLifetimeChecks.Run(profile, Check);
+            GameplayUndoPresentationChecks.Run(profile, Check);
             CheckDepartedDefender(profile, Check, trace, performance);
             CheckStackArrival(profile, Check, trace, performance);
             DrawTriggersSmoke.RunHeadless(profile, Check);

@@ -25,7 +25,7 @@ internal sealed partial class TableApplication
             return DecisionDockPauseReason.Inspection;
         if (OverlayOpen) return DecisionDockPauseReason.Overlay;
         if (chatFocus) return DecisionDockPauseReason.Chat;
-        if (AbilityActionPending || dragging || boardPanning || boardKeyboardPanning || pressed != null || selectedCombat != null || AwaitingReleasedPlay) return DecisionDockPauseReason.Interaction;
+        if (AbilityActionPending || dragging || boardPanning || boardKeyboardPanning || pendingHoldModifier || pressed != null || selectedCombat != null || AwaitingReleasedPlay) return DecisionDockPauseReason.Interaction;
         return DecisionDockPauseReason.None;
     }
 

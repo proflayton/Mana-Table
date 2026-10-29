@@ -1629,6 +1629,22 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         player.getView().setHasAvailableActions(priorityAbilityPass.hasNonIgnoredActions(player));
     }
 
+    private boolean hasCertifiedManualCorrection() {
+        if (isExternallyAutomated()) return false;
+        var offer = getGame().getReversibleManaAction().current();
+        return offer != null && offer.actorId() == player.getId();
+    }
+
+    /** Recompute rules-owned availability after administrative restoration,
+     * retaining the same waiting input, clock and explicit ability preferences. */
+    public boolean refreshRestoredPriority(InputPassPriority input) {
+        if (cachedPriorityInput != input || !isCurrentPriorityInput()) return false;
+        scanPriorityActions();
+        if (cachedPriorityInput != input || !isCurrentPriorityInput()) return false;
+        input.setAvailabilityVerified(true);
+        return true;
+    }
+
     /** Push the actionable-card set to the GUI. Payment mode falls back to the
      *  "playable mana ability" predicate; non-payment reuses {@link #cachedActionableCards}. */
     public void pushActionableCards(boolean paymentMode) {
@@ -1743,26 +1759,34 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
                 player.getName(), getGame().getPhaseHandler().getPhase(), getGame().isGameOver());
         final MagicStack stack = getGame().getStack();
 
+        // A certified manual tap retains this player's explicit correction cut.
+        // AvailableActions currently borrows/refunds live pool mana while testing
+        // affordability. Defer that planner until the player continues; do not
+        // certify its transient writes as harmless or claim verified availability.
+        boolean correctingManualTap = hasCertifiedManualCorrection();
+
         // Skip when already yielding — yield proceeds regardless of available-actions.
         // shouldAutoYield, not isYieldActive: it clears yields that have run their course, so an expiring one no longer skips the scan
         // Compute the actionable set when APINA / suggestions / highlights need it.
         boolean highlightsEnabled = yieldController.getBoolPref(FPref.UI_SHOW_ACTIONABLE_HIGHLIGHTS);
         boolean availabilityVerified = false;
-        if (!isExternallyAutomated() && !yieldController.shouldAutoYield() && (needsAvailableActions() || highlightsEnabled)) {
+        if (!correctingManualTap && !isExternallyAutomated() && !yieldController.shouldAutoYield() && (needsAvailableActions() || highlightsEnabled)) {
             // Keep highlighting all legal cards, while independently deciding which
             // activated abilities the player currently wants Auto to stop for.
             scanPriorityActions();
             availabilityVerified = true;
         } else {
-            cachedActionableCards = null;
+            // An empty explicit set also prevents pushActionableCards' fallback
+            // scan while this voluntary correction window remains open.
+            cachedActionableCards = correctingManualTap ? Set.of() : null;
             priorityAbilityPass.clearScan();
         }
 
         // yieldJustEndedFlag is read from the EDT (didYieldJustEnd); synchronized writer/reader pair handles visibility.
         // Only a real yield counts here: this tracks when one ends, and skipped phases happen every turn
-        boolean autoPassing = !isExternallyAutomated() && mayAutoPass();
+        boolean autoPassing = !correctingManualTap && !isExternallyAutomated() && mayAutoPass();
         yieldController.noteMayAutoPassResult(autoPassing);
-        boolean nowMayAutoPass = !isExternallyAutomated() && (autoPassing || skipsPromptForStackOrPhase());
+        boolean nowMayAutoPass = !correctingManualTap && !isExternallyAutomated() && (autoPassing || skipsPromptForStackOrPhase());
 
         if (nowMayAutoPass) {
             // A skipped phase has no priority input to record its implicit pass.
@@ -1807,7 +1831,13 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
 
     @Override
     public boolean playChosenSpellAbility(final SpellAbility chosenSa) {
-        return PlaySpellAbility.playSpellAbility(this, player, chosenSa);
+        var reversal = player.getGame().getReversibleManaAction();
+        var capture = reversal.begin(player, chosenSa);
+        try {
+            return PlaySpellAbility.playSpellAbility(this, player, chosenSa);
+        } finally {
+            reversal.settle(capture);
+        }
     }
 
     @Override
@@ -4016,6 +4046,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     /** Holds the input it tested so a replacement cannot be answered in its place. isFinished narrows that
      *  window but does not close it: the flag is set on the EDT, after the input has already been removed. */
     private void tryAutoPassNow() {
+        if (hasCertifiedManualCorrection()) return;
         if (inputProxy.getInput() instanceof InputPassPriority inp
                 && (mayAutoPass() || skipsPromptForStackOrPhase())) {
             inp.passPriority();
@@ -4025,7 +4056,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     /** This sweep mutates the game graph, so it runs only when a preference that reads its result changes.
      *  Otherwise the value computed when the prompt was built still stands. */
     private void refreshAvailableActionsForPrompt() {
-        if (isExternallyAutomated()) return;
+        if (isExternallyAutomated() || hasCertifiedManualCorrection()) return;
         if (yieldController.isYieldActive() || !needsAvailableActions()) return;
         if (!(inputProxy.getInput() instanceof InputPassPriority priority)) return;
         scanPriorityActions();

@@ -316,6 +316,7 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
     public ImmutableArray<PublicState> States { get; init; } = [];
     public long Revision { get; init; }
     public long BoardRevision { get; init; }
+    public UndoState? Undo { get; init; }
     // Monotonic provider fence for explicit, finite current-stack yielding.
     // Omitted by older providers: clients must not arm that continuation.
     public long? StackInterruptionVersion { get; init; }

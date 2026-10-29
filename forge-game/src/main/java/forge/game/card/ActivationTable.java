@@ -15,6 +15,28 @@ import java.util.Optional;
 public class ActivationTable extends ForwardingTable<SpellAbility, Optional<StaticAbility>, Multiset<Player>> {
     Table<SpellAbility, Optional<StaticAbility>, Multiset<Player>> dataTable = HashBasedTable.create();
 
+    /** Bounded before a private reversal copies values or increments a counter. */
+    public boolean reversibleWithin(int limit) {
+        long count = 0;
+        for (var cell : cellSet()) {
+            count += cell.getValue().size();
+            if (count > limit) return false;
+        }
+        return size() <= limit;
+    }
+
+    /** Detached values, retaining the exact rules keys and player identities. */
+    public ActivationTable copy() {
+        ActivationTable result = new ActivationTable();
+        for (var cell : cellSet()) result.put(cell.getRowKey(), cell.getColumnKey(), HashMultiset.create(cell.getValue()));
+        return result;
+    }
+
+    public void restore(ActivationTable state) {
+        clear();
+        for (var cell : state.cellSet()) put(cell.getRowKey(), cell.getColumnKey(), HashMultiset.create(cell.getValue()));
+    }
+
     @Override
     protected Table<SpellAbility, Optional<StaticAbility>, Multiset<Player>> delegate() {
         return dataTable;

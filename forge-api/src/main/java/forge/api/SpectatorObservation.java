@@ -96,7 +96,8 @@ final class SpectatorObservation {
                 "decisionOwnerId", null, "actionClass", game.isGameOver() ? "finished" : "observing",
                 "players", List.copyOf(players), "stack", List.copyOf(stack), "combat", combat(table), "prompt", null,
                 "states", PublicStates.of(forge.game.PublicTableStates.snapshot(game)), "activity", List.of(), "notices", List.of(),
-                "playAccesses", List.of(), "ignoredPriorityAbilities", List.of()));
+                "playAccesses", List.of(), "ignoredPriorityAbilities", List.of(),
+                "undo", MatchUndo.project(game, null, null, ignored -> "")));
     }
 
     private static boolean publicCard(CardView card) {

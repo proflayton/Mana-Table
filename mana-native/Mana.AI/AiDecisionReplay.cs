@@ -40,13 +40,19 @@ public static class AiDecisionReplay
             || recorded.PlanVersion < 0 || recorded.PlanVersion == long.MaxValue)
             throw new ArgumentException("A replay requires versioned private decision evidence.", nameof(recorded));
         var frame = new AiDecisionFrame(recorded.State, domain: recorded.Domain, semantics: recorded.Semantics);
+        if (history.ReversedExecutionIds == null || history.ReversedExecutionIds.Count > 8192
+            || history.ReversedExecutionIds.Any(id => !UndoFacts.Identifier(id)) || history.SocialBaselineEventId < -1
+            || history.RestorationVersion < 0 || history.RestorationVersion != (frame.State.Undo?.RestorationVersion ?? 0))
+            throw new ArgumentException("A replay requires bounded restoration-aware historical projections.", nameof(recorded));
         if (history.Decisions.Any(entry => entry == null || entry.Stamp.GameId != frame.State.Id || entry.Stamp.SeatId != frame.State.ViewerId
                 || entry.Stamp.Revision < 0 || entry.Stamp.Revision > frame.State.Revision
                 || entry.Stamp.BoardRevision < 0 || entry.Stamp.BoardRevision > frame.State.BoardRevision || entry.Stamp.OfferVersion < 0
+                || entry.Stamp.RestorationVersion < 0 || entry.Stamp.RestorationVersion > (frame.State.Undo?.RestorationVersion ?? 0)
                 || entry.PlanVersion < 0 || entry.RetainedPlan is { } retained && (retained.GameId != frame.State.Id
                     || retained.SeatId != frame.State.ViewerId || retained.Version != entry.PlanVersion)
                 || entry.ProposedPlanTransition?.Next is { } proposed && (proposed.GameId != frame.State.Id || proposed.SeatId != frame.State.ViewerId))
-            || history.Events.Any(entry => entry == null || entry.Turn > frame.State.Turn)
+            || history.Events.Any(entry => entry == null || entry.Turn > frame.State.Turn || entry.ExecutionId == null
+                || entry.ExecutionId.Length > 0 && !UndoFacts.Identifier(entry.ExecutionId))
             || history.AttemptedRoutes.Any(route => route == null || route.Turn != frame.State.Turn))
             throw new ArgumentException("A replay cannot mix another seat, future event or turn's private history.", nameof(recorded));
         if (history.ImpactEvents is { } impacts) AiImpactHistory.ValidateRecorded(impacts, frame.State);

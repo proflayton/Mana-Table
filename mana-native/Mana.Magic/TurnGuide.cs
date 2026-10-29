@@ -36,6 +36,9 @@ public static class TurnGuide
     };
     public static bool CanAutoPass(GameSnapshot state, bool automatic, bool held, IReadOnlySet<string> stops, bool overlayOpen) => automatic && !held && !overlayOpen
         && state.Status == "playing" && state.Turn > 0
+        // A deliberate manual mana activation keeps its one-step correction
+        // window until the player explicitly passes or takes another action.
+        && !UndoFacts.CanUndo(state)
         && state.Decision is { Payload: PriorityPayload { CanAutoPass: true, Pass.Enabled: true } }
         && !(state.ActivePlayerId == state.ViewerId && stops.Contains(state.PhaseKey));
 }

@@ -29,6 +29,7 @@ internal sealed partial class TableApplication
         ClearCardDrag();
         boardPanning = spreadPanning = boardKeyboardPanning = spreadKeyboardPanning = false;
         boardPointerActivity = false;
+        pendingHoldModifier = false;
         pointer = new(-10000, -10000);
     }
 
@@ -77,7 +78,8 @@ internal sealed partial class TableApplication
             if (!blockedInput && chatOpen && !ChatBounds.Contains(pointer)) chatFocus = false;
             if (!blockedInput && match == null && deckEditor && pressed?.Intent is not DeckIntent.FocusText) { deckTextFocus = ""; textFocus = false; }
             dragSource = (!OverlayOpen || ZoneReadingOpen) && !AbilityActionPending && pressed is { Card: { } source } sourceHit
-                && IsCardActionable(source) && CanStartSourceDrag(sourceHit) ? pressed : null; dragging = false;
+                && (IsCardActionable(source) || CanQueryCertifiedPlay(source, sourceHit.Zone))
+                && CanStartSourceDrag(sourceHit) ? pressed : null; dragging = false;
             BeginCardDrag(dragSource);
         }
         if (mouse.LeftButton == ButtonState.Pressed && dragSource != null && dragSource.Scope == Scope && LeftCollectionDragOrigin
@@ -127,7 +129,7 @@ internal sealed partial class TableApplication
         if (!chatKeys && !textFocus && !blockedInput && !OverlayOpen && keys.IsKeyDown(Keys.R) && previousKeys.IsKeyUp(Keys.R)
             && readingId is { } reader) FlipReaderText(reader);
         if (match != null && !chatKeys && !textFocus && keys.IsKeyDown(Keys.F) && previousKeys.IsKeyUp(Keys.F)) UseAutomaticControl(!automatic);
-        if (match != null && !chatKeys && !textFocus && keys.IsKeyDown(Keys.LeftControl) && previousKeys.IsKeyUp(Keys.LeftControl)) ToggleHoldControl();
+        UpdateMatchControlKeys(keys, !blockedInput && !chatKeys && !textFocus && !OverlayOpen && !dragging);
         if (!blockedInput && !chatKeys && !textFocus && keys.IsKeyDown(Keys.F1) && previousKeys.IsKeyUp(Keys.F1)) OpenTableGuide();
         int wheel = mouse.ScrollWheelValue - previousMouse.ScrollWheelValue;
         if (!blockedInput && wheel != 0) Scroll(Math.Sign(wheel));

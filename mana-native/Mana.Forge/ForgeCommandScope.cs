@@ -23,13 +23,14 @@ internal sealed class ForgeCommandScope
             // backward either and revive a prompt it has already replaced.
             if (state != null && observed is { } previous && state.Id == previous.Id
                 && state.Revision < previous.Revision) return;
+            UndoFacts.ValidateProgress(observed, state);
             Volatile.Write(ref observed, state);
         }
     }
-    internal GameSnapshot? ObserveRaw(JsonElement raw)
+    internal GameSnapshot? ObserveRaw(JsonElement raw, bool certifiedUndo = false)
     {
         try {
-            var state = ForgeSnapshotDecoder.Decode(raw);
+            var state = ForgeSnapshotDecoder.Decode(raw, certifiedUndo: certifiedUndo);
             Observe(state);
             return state;
         } catch {
@@ -59,6 +60,9 @@ internal sealed class ForgeCommandScope
         void Action(string name) => args["action"] = name;
         void Card(string key) { Action("card"); args["key"] = key; }
         switch (command) {
+            case UndoAction value:
+                Action("undoCertifiedAction"); args["offerId"] = value.OfferId; args["actionId"] = value.ActionId;
+                args["undoBarrierVersion"] = value.BarrierVersion; break;
             case GrantFiniteStackYield value:
                 Action("grantFiniteStackYield"); args["grantId"] = value.GrantId; args["executionIds"] = value.ExecutionIds;
                 args["stackActionVersion"] = value.StackActionVersion; args["resolutionChoiceVersion"] = value.ResolutionChoiceVersion;

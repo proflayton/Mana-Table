@@ -60,6 +60,7 @@ internal static class InteractionContractMatrix
         // recovery journeys; they are not ordinary prompt-reply fixture rows.
         check(Cases.Select(row => row.CommandType).Concat(RejectedLegacyCommands).Concat(FiniteYieldLifecycleRegression.CommandTypes)
                 .Concat(OptionalPaymentRegression.CommandTypes)
+                .Concat(GameplayUndoRegression.CommandTypes)
                 .Distinct().OrderBy(type => type.FullName).SequenceEqual(commandTypes)
                 && Cases.Select(row => row.PayloadType).Distinct().OrderBy(type => type.FullName).SequenceEqual(
                     typeof(DecisionPayload).Assembly.GetTypes().Where(type => type.IsSealed && typeof(DecisionPayload).IsAssignableFrom(type)).OrderBy(type => type.FullName)),

@@ -199,6 +199,8 @@ await InteractionContractMatrix.RunAsync(Check);
 AllocationRegression.Run(Check);
 await RecoveryRegression.RunAsync(Check);
 await MatchCompletionRegression.RunAsync(Check);
+await GameplayUndoRegression.RunAsync(Check);
+await AiRestorationRegression.RunAsync(Check);
 GameplayClarityChecks.Run(Check);
 ImmutableStateChecks.Run(Check);
 CardIdentityBoundaryRegression.Run(Check);

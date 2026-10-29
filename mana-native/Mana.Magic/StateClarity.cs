@@ -105,6 +105,7 @@ public static class StateClarity
             ChooseOptions or OrderOptions => "Submitted selection.",
             ChooseNumber or EnterText => "Submitted answer.",
             AutoPayOptionalPayment => "Submitted a mana payment step.",
+            UndoAction => "Undoing tap " + state.Undo?.Offer?.SourceName + ".",
             CancelPayment or CancelSelection or DeclineConfirmation or MulliganOpeningHand or UndoLastAction
                 => "Submitted " + CancelLabel(state.Decision?.Payload) + ".",
             PassPriority or AutoPassPriority or KeepOpeningHand or PayMana or CompleteAttackers or CompleteBlockers

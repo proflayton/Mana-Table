@@ -26,6 +26,7 @@ public static class CasualTableAssessment
                 + player.Mana.Values.Sum(value => Math.Max(0d, value)) * .25;
             double pressure = 0, focus = 0;
             foreach (var entry in history.ImpactEvents ?? history.Events) {
+                if (entry.Id <= history.SocialBaselineEventId || history.ReversedExecutionIds.Contains(entry.ExecutionId)) continue;
                 int age = state.Turn - entry.Turn;
                 if (age < 0 || age > round * 2 || entry.Impact is not { } impact) continue;
                 // PlayerId on ordinary activity is often the affected seat. It

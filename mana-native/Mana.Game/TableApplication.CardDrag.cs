@@ -21,10 +21,24 @@ internal sealed partial class TableApplication
     private SourceAction[] OfferedPlayOptions(Card card) => ReaderActionsMatch(card)
         ? sourceActions.View.Actions.Where(action => action.Kind is "cast" or "play").ToArray() : [];
 
+    // The certified window intentionally omits bulk playability guesses. A
+    // known play-source drag can still ask for its exact current action; it
+    // does not make the face actionable or claim that its cost can be paid.
+    private bool CanQueryCertifiedPlay(Card card, string? zone) => SourceActionsSupported && CurrentUndoAction != null
+        && card is { FaceDown: false, Key.Length: > 0, VisualId.Length: > 0 }
+        && zone is not (null or "Battlefield" or "Stack")
+        && (zone is "Hand" or "Command"
+            ? match!.Viewer!.Zone(zone).Cards.Any(current => !current.FaceDown
+                && current.VisualId == card.VisualId && current.Key == card.Key)
+            : match!.PlayAccesses.Any(access => access.Zone == zone && access.CardId == card.VisualId && access.Routes.Length > 0
+                && match.Players.FirstOrDefault(player => player.Id == access.PlayerId)?.Zone(zone).Cards.Any(current => !current.FaceDown
+                    && current.VisualId == card.VisualId && current.Key == card.Key) == true));
+
     private bool CanStartSourceDrag(Hit source) => match?.Decision?.Payload is AttackPayload or BlockPayload
         || match?.Decision?.Payload is PriorityPayload && source.Zone is not ("Battlefield" or "Stack")
             && (source.Zone is "Hand" or "Command" || source.Card is { } card
-                && (OfferedPlayOptions(card).Length > 0 || CurrentPlayAccess(card) is { } access && CanStartPlayAccess(access)));
+                && (OfferedPlayOptions(card).Length > 0 || CanQueryCertifiedPlay(card, source.Zone)
+                    || CurrentPlayAccess(card) is { } access && CanStartPlayAccess(access)));
 
     private Card? CurrentDragCard(Hit source) => source.Scope == Scope && source.Zone is { } zone && source.Card is { } held
         && CardContext.CurrentOccurrence(zone, held) is { FaceDown: false } current && current.Key == held.Key
@@ -40,6 +54,7 @@ internal sealed partial class TableApplication
         var placements = zone == "Hand" ? HandPlacements.Options(state, card) : [];
         if (placements.Length > 0)
             return placements.Length == 1 ? HandPlacements.Start(state, card, placements[0].Id) : null;
+        if (CanQueryCertifiedPlay(card, zone)) return null;
         return !ReaderActionsMatch(card) && zone is ("Hand" or "Command")
             ? InteractionController.Play(state, card, zone) : null;
     }
@@ -89,8 +104,9 @@ internal sealed partial class TableApplication
         if (!SourceActionsSupported || busy || session.NeedsRecovery || commandFailure || intent.Scope != Scope
             || state?.Decision?.Payload is not PriorityPayload || location?.Zone != intent.Zone
             || card is not { FaceDown: false } || ReaderActionContext(card) != intent.Context
-            || !state.PlayAccesses.Any(access => access.PlayerId == location.Value.PlayerId && access.Zone == intent.Zone
-                && access.CardId == intent.Context.SourceCardId && access.Routes.Any(route => route.CanStart))) {
+            || !CanQueryCertifiedPlay(card, intent.Zone)
+                && !state.PlayAccesses.Any(access => access.PlayerId == location.Value.PlayerId && access.Zone == intent.Zone
+                    && access.CardId == intent.Context.SourceCardId && access.Routes.Any(route => route.CanStart))) {
             releasedCardPlay = null;
             return null;
         }
@@ -126,8 +142,10 @@ internal sealed partial class TableApplication
 
     private bool RetainReleasedPlay()
     {
-        if (!SourceActionsSupported || dragSource is not { Zone: not ("Hand" or "Command" or "Battlefield" or "Stack") } source
-            || CurrentDragCard(source) is not { } card || CurrentPlayAccess(card) is not { } access || !CanStartPlayAccess(access)
+        if (!SourceActionsSupported || dragSource is not { Zone: not ("Battlefield" or "Stack") } source
+            || CurrentDragCard(source) is not { } card
+            || !CanQueryCertifiedPlay(card, source.Zone)
+                && (CurrentPlayAccess(card) is not { } access || !CanStartPlayAccess(access))
             || ReaderActionContext(card) is not { } context) return false;
         releasedCardPlay = new(Scope, context, source.Zone!,
             new(pointer.ToVector2() + new Vector2(0, -72), new(132, 185), -.025f, Elevation: 18), false);
@@ -139,6 +157,7 @@ internal sealed partial class TableApplication
     // remains alive until its exact current offer can be revalidated.
     private void ContinueReleasedPlay()
     {
+        if (!InputReady || OverlayOpen) { CancelReleasedPlayIntent(); return; }
         ReconcileReleasedPlay();
         if (!AwaitingReleasedPlay || ReleasedPlaySource() is not { } card || releasedCardPlay is not { } intent) return;
         if (sourceActions.View.Context != intent.Context || sourceActions.View.Status is SourceActionStatus.Idle or SourceActionStatus.Loading) return;

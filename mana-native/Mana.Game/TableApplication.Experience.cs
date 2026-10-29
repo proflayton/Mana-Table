@@ -38,6 +38,7 @@ internal sealed partial class TableApplication
 
     private void ClearExperienceInput(bool cancelAdvance = true)
     {
+        CancelReleasedPlayIntent();
         if (cancelAdvance) session.CancelAdvance();
         pressed = dragSource = null; dragging = false;
         hovered = null; matchPresentation.Cards.Collapse();

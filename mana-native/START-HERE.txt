@@ -443,7 +443,8 @@ Click a player's life header to inspect public counters and commander damage
 when it is not a target. Poison and other public counters stay beside the seat;
 an extra-types indicator leads to the complete paged totals in that inspection.
 Space confirms an enabled input decision. Escape closes a panel or cancels a drag.
-F switches Auto/full control, Ctrl holds priority for this turn, F11 is fullscreen.
+F switches Auto/full control, releasing a bare Ctrl holds priority for this turn,
+and F11 is fullscreen. Ctrl+Z uses an available certified Undo without toggling Hold.
 Auto starts enabled. In this source candidate it also waits through quiet
 opponent windows while you hold an instant. A new spell, ability, public action
 or combat declaration stops when you have a response available. Pass once or
@@ -526,8 +527,14 @@ Results and exact counter increments appear beside their recipients. Public
 departures move toward the actual pile; Recent changes retains further details.
 Resolution feedback distinguishes resolved and did not resolve. Draw and shuffle
 cues report actual public events, without revealing hidden card identities.
-In-game action Undo is unavailable. A completed mana activation or other game
-action stays committed; choose and pay for your plays deliberately.
+Source candidate: a supported manual mana-source tap at priority offers Undo tap
+with the source's full name beside your current action. Click it or press Ctrl+Z
+to restore that whole activation once, including the mana it produced. Auto keeps
+this deliberate correction window open until you make another play or explicitly
+pass. Reading and moving the camera keep the offer; they never grant a new one.
+Payment steps, triggers, hidden information and other unsupported actions do not
+offer Undo. There is no general game-action rollback or Redo. Human UX review of
+this source candidate is pending.
 Inspecting a card, opening a panel or dragging suspends Auto. Use Full control to
 inspect every priority window. Settings persist between sessions.
 Settings > Text size offers 100%, 115% and 130% for larger labels and decisions.

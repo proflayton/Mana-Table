@@ -179,9 +179,11 @@ internal sealed partial class TableApplication : IDisposable
         => projectionCapture?.ObserveEnvironment(updateTime, ProjectionSettings(updateViewport), match);
     private void AcceptPresentation(GameSnapshot? previous, GameSnapshot? state)
     {
+        bool restored = session.RestorationChanged;
+        if (restored) ReconcileRestoredInteraction();
         if (state != null) finiteProgressProjection?.Observe(state);
         var transition = matchPresentation.Observe(previous, state, now, boardView, session.ExecutionChanges,
-            finiteResolutionIntent is { } finite && FiniteProgress(finite, repeatedPresentationExecutions, previous, state));
+            finiteResolutionIntent is { } finite && FiniteProgress(finite, repeatedPresentationExecutions, previous, state), restored);
         if (transition.ScopeChanged) { ResetTableView(); tableGuideOpen = false; sceneRevealAt = now; }
         if (transition.ScopeChanged) { manualBoardView = null; boardPanning = false; }
         ReconcileReleasedPlay();
@@ -284,6 +286,7 @@ internal sealed partial class TableApplication : IDisposable
         if (AwaitingFinitePublication) return false;
         if (CurrentOptionalPayment?.Availability == OptionalManaPaymentAvailability.Unpayable && command is not CancelPayment) return false;
         if (command is UndoLastAction) return false;
+        if (command is UndoAction undo && (!InputReady || UndoFacts.Command(match) != undo)) return false;
         if (match.FiniteStackYield is { Status: FiniteStackYieldStatus.Active }) {
             TakePriorityControl(); ClearReaderActions();
             notice = "Taking control \u2014 choose your action once priority returns.";

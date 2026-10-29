@@ -58,8 +58,32 @@ cannot substitute for that gate.
 
 ### Proposed gameplay Undo gates
 
-**Planned checks; no gameplay Undo implementation or passing gate is claimed.**
-The [one-step design](Mana-Table-Architecture.md#proposed-one-step-gameplay-undo)
+**Implementation candidate; human review pending.** `ReversibleManaActionTest`
+checks the closed rules footprint, exact mana provenance, silent mutation and
+cached/random stream barriers, permission restoration and unsupported routes.
+`CertifiedUndoTest`, `CertifiedUndoTransportTest` and `CertifiedUndoFaultTest`
+exercise normal Commander actions, actual local/TCP seats, stale offers, source
+queries, clocks, competing departures and post-inverse publication failure.
+Shared client/AI regressions cover restoration chronology and lost receipts;
+native `GameplayUndoWireChecks` and `GameplayUndoPresentationChecks` cover the
+negotiated protocol, pointer/keyboard/focus, Auto and one-time scene reconciliation.
+The existing real-engine and four-client native smokes include manual tap/Undo.
+The real source-query journey also refreshes the availability preference during
+the retained manual window; neither that refresh nor a funding preview may
+borrow live mana, consume the offer or pass the waiting input.
+
+The four-seat capacity diagnostic uses 400 cards with 40 battlefield permanents.
+On the initial local Java 17 run, capture took 29 ms and allocated 5,321,192 bytes
+on its thread; restoration took 6 ms and allocated 2,973,200 bytes. Those counts
+include temporary validation work and are not a retained-heap measurement or a
+portable latency promise. The record rejects more than 1,024 cards, 1,024 mana
+units per pool or entries per recorded history table, 16,384 guard entries, or
+1,048,576 characters of guard text; individual strings are limited to 8,192
+characters. The test reports timing
+without a flaky machine-speed assertion and checks oversized records fail closed.
+
+These are focused conformance checks, not a claim of complete Forge rollback.
+The [one-step boundary](Mana-Table-Architecture.md#proposed-one-step-gameplay-undo)
 requires a private rules-state oracle separate from viewer snapshots. Inventory
 authoritative state owners, logical continuations, ordered hidden zones and RNG
 before claiming exact restoration. A digest that omits the same fields as the

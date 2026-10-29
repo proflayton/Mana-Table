@@ -95,7 +95,24 @@ even with an instant available. A new spell, ability, public action or combat
 declaration returns an available response to the player. A refreshed prompt or
 replacement quiet token cannot acknowledge that action; explicitly acting or
 choosing Pass once allows routine Auto to resume. Your own main-phase plays and
-required choices remain explicit. F enables full control; Ctrl holds this turn.
+required choices remain explicit. F enables full control; a bare Ctrl toggles Hold
+on release. Pressing Ctrl pauses Auto while a chord is pending; Ctrl+Z does not
+change Hold or optional-payment preferences.
+
+Source-only certified Undo adapts [MTGO's Ctrl+Z](https://www.mtgo.com/getting-started/getting-started-tips-tricks)
+and [Arena's contextual arrow](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-january-2021-01-21) to
+one supported manual mana-source tap at priority, outside payment. **Undo tap
+<full source name>** sits beside the current priority action. The provider must
+certify restoration of the whole activation; the client never infers it from an
+untapped card. Clicking the control or pressing Ctrl+Z consumes that exact offer
+once. Auto preserves this voluntary correction window until an explicit pass or
+another action; there is no timed delay, modal or generic rollback. Reading and
+camera movement preserve the offer. While bulk playability is unverified, dragging
+an own hand/command-zone card or an already granted public-zone play source asks
+for that exact current source action. Release waits for the answer; it never
+claims affordability or submits a guessed cast. Restored projections discard obsolete readers,
+motion and cues while keeping the camera and earlier history. Human review is
+pending; the source does not enable the legacy game-action Undo or Redo.
 
 Wait for action offers the same bounded continuation explicitly on either
 player's empty-stack turn. It stops at a required attacker/blocker decision or

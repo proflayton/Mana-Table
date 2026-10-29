@@ -876,8 +876,8 @@ Legacy protocol-2 callers may omit this discriminator; the new native client
 requires the `semantic-priority-actions` capability and validates its immutable
 last observation before encoding any command.
 
-Priority prompts project `priorityAlternative: "passTurn" / "none"`; in-game
-action Undo is not offered. Legacy `priorityUndo` and generic priority `cancel`
+Priority prompts project `priorityAlternative: "passTurn" / "none"`; certified
+Undo has its own optional snapshot field and command. Legacy `priorityUndo` and generic priority `cancel`
 requests are rejected before queuing or changing any rules state. Native
 permission checks also reject the retained legacy Undo command, even when an
 older provider advertises it. This does not change deck editing Undo, payment
@@ -885,6 +885,32 @@ cancellation or internal cost rollback. `passPriority` invokes the pass operatio
 directly, independently of a pending Forge yield suggestion; the legacy
 `priorityPassTurn` operation retains its distinct owned-input recheck.
 These changes do not alter saved decks, profiles or the seat-sync protocol.
+
+The optional protocol-2 capability `certified-one-step-undo` adds snapshot `undo`:
+`{barrierVersion, restorationVersion, offer, lastRestoration}`. Its one-use actor
+offer contains `{id, actionId, executionId, decisionId, playerId, sourceCardId,
+sourceName, barrierVersion}` and names a current disclosed battlefield occurrence,
+never a historical portrait or source action key. Other seats and spectators
+receive no offer. `lastRestoration` is null at version zero, otherwise retains
+`{version, actionId, executionId, playerId}` after bounded history expires.
+
+`undoCertifiedAction` takes `{promptId, expectedTask:"priority", offerId, actionId,
+undoBarrierVersion}` in the existing session-scoped action lane. Admission consumes
+the prompt and returns resolving state with `offer:null`; that receipt is not an
+applied inverse. Both admission and queued execution check current ownership and
+the exact rules record. A successful restore publishes a newer shared board and
+fresh decision/source handles with a higher restoration version. Every audience
+gets that public marker. An expired queued offer performs no inverse; uncertain
+receipts require observation, never replay. A publication fault interrupts with
+the last committed consistent board/marker rather than exposing partial state.
+
+The first supported operation is a manually selected fixed unrestricted `{T}`
+mana activation at retained priority, outside another payment. All costs, exact
+mana units/provenance and activation/tap ledgers restore together. Pending triggers,
+unsupported effects/choices/costs, new information, randomness or subsequent
+accepted actions close or prevent the offer. The record and engine-specific state
+never cross IPC. Older providers may omit the capability and `undo`; no data
+migration or new top-level connection API is needed, and legacy Undo stays denied.
 
 An input prompt's `inputType` uses its nearest named input class, including for
 anonymous subclasses such as cleanup discards (`InputSelectCardsFromList`).

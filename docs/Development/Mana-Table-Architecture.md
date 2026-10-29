@@ -743,11 +743,13 @@ execution projection described above.
 
 ## Proposed one-step gameplay Undo
 
-**Design proposal, 29 October 2026; not implemented or enabled.** The player wants
-one immediate correction while no other rules work has followed. This replaces
-the earlier request to remove gameplay Undo, but does not make the existing
-partial inverse safe. Deck-history Undo and cancellation of an unfinished choice
-remain separate operations.
+**Implementation candidate, 29 October 2026; human review pending.** The first
+slice supports one certified manual, fixed, unrestricted tap-for-mana activation
+at retained priority, outside another payment. The generic rules below also
+constrain future extensions; they do not claim a complete Forge checkpoint.
+This supersedes the earlier request to remove gameplay Undo while retaining
+its partial-artifact regression. Deck-history Undo and cancellation of an
+unfinished choice remain separate operations.
 
 ### Player journey and game precedent
 
@@ -763,7 +765,7 @@ These are documented behaviors, not a new direct playtest. Paper Magic's
 also requires no information gained; it is discretionary judge policy, not an
 automatic software rollback specification.
 
-Our proposed first journey is: manually tap a fixed, unrestricted mana source
+Our first journey is: manually tap a fixed, unrestricted mana source
 while retaining priority, outside an in-progress payment, see its tap and exact
 produced mana, then choose the contextual
 `Undo tap <full source name>` or Ctrl+Z. The complete activation is restored:
@@ -774,11 +776,22 @@ The control disappears when authority expires, and an already captured gesture
 is revalidated. No peer confirmation, redo, turn rewind or automatic replay.
 This gesture and one-step limit are our adaptation, not claims about Arena.
 
-Undo does not introduce a confirmation or delay for every play. It exists only
-while the actor naturally retains the current decision; ordinary Auto/passes
-still close the window. If a later journey needs a deliberate opportunity to
-hold priority, specify and review that separately rather than secretly delaying
-the table or making a restored action available after another seat can respond.
+Undo does not introduce a confirmation or timed delay for every play. A voluntary
+manual activation retains its certified correction window even when ordinary
+Auto could pass; an explicit pass or next game action closes it. Automated seats
+never receive an Undo offer. This is continuation of the player's manual control,
+not a pause before every cast or an opportunity after another seat can respond.
+Bare Ctrl commits the existing Hold toggle on release; Ctrl+Z consumes the chord
+without toggling Hold or clearing unrelated consent. Focus/overlay/text fences
+still apply, and only the offer actually drawn can authorize a captured gesture.
+
+The human runner retains an explicit priority input during that correction
+window and leaves bulk availability unverified. Forge's existing availability
+planner temporarily borrows real pool mana while testing affordability; it is
+deferred, rather than allowing those writes through the reversal barrier.
+Individual source actions and the neutral funding preview remain available.
+After restoration, the offer is consumed and the same waiting input receives a
+fresh ordinary availability scan and new action handles.
 
 ### One action, one private checkpoint, one current offer
 
@@ -874,7 +887,7 @@ object must not create a fresh clock. Old queued expiry still needs its exact
 authority check. Local audio/camera preferences and chat/history are not rolled
 back.
 
-### Current gaps and implementation order
+### Current implementation and limits
 
 The current [experimental Forge snapshot](../../forge-game/src/main/java/forge/game/GameSnapshot.java)
 is not a certified checkpoint: it omits state, retains aliases, and restores
@@ -884,18 +897,42 @@ the required full-action proof. The existing game-state boundary, immutable
 snapshots and execution/activity streams are useful foundations, not a complete
 mutation ledger or atomic restoration facility.
 
-First inventory state owners and add the rules action/barrier boundary with
-private capture/restore conformance tests. Prove one closed mana-activation path
-before offering it: a bounded reversible journal must include tapped-this-turn
-history, per-card activation/resolution counters, stack activation history,
-the ability's last produced mana and exact pool provenance as well as tap costs.
-Current affordability stability checks are not a complete Undo certificate.
-Support depends on complete state coverage, not card names.
-Nested payment, sacrifice/counter/life costs and land drops remain unsupported
-until their full footprints and logical continuations pass the same proof.
-Then add neutral offers, local/TCP admission, history reconciliation and the
-contextual gesture. Keep current gameplay Undo disabled until the positive and
-adversarial [Undo gates](Mana-Table-Testing.md#proposed-gameplay-undo-gates) pass.
+`ReversibleManaAction` is an opt-in rules owner with one bounded private record.
+Its closed mana path captures/restores tap history, card activation/resolution
+tables, stack activation/legacy refund history, exact mana unit identities and
+ability provenance, the player's land-mana flag, ability bookkeeping and LKI.
+Pure command-zone casting permission is audited separately through the actual
+static-effect and card-permission owners. Unrelated active traits, unsupported
+costs or script parameters, pending/deferred work and unknown mutation paths
+mean no offer; normal play is unaffected. This is deliberately more conservative
+than granting Undo merely because no trigger was observed.
+Advanced upstream controller choice flags also exclude the route at capture and
+validation, because their availability planner can open further required choices.
+Those flags are separate from the native client's ordinary Auto/full-control policy.
+
+The normal human rules runner owns capture and settlement. Actual mutation and
+random-consumption fences retire stale records, including changed-then-restored
+source state and cached RNG references used under the game boundary. Existing
+affordability stability checks and filtered activity are not certificates.
+`MatchUndo` projects the optional `certified-one-step-undo` capability into neutral
+`UndoState`; `UndoAction` uses the existing command lane and exact offer/decision
+fences. Legacy Undo stays rejected. Core restoration emits no inverse game
+events. The adapter holds the rules/table boundary through fresh legal-action
+scanning and all-audience publication, retaining the actual waiting input and
+clock. A publication fault restores the last committed immutable audience copies
+and interrupts, rather than exposing a new marker with an old board or retrying
+the inverse. Fault finalization cannot publish partially restored live rules.
+
+Client acceptance revokes abandoned work before notifying consumers. The native
+scene rebases once without replaying entrances or stale readers, while camera,
+chat and immutable history remain. AI keeps receipt/event evidence and reconciles
+only affected derived plans, resources and social contributions. Missing ancestry
+forces a conservative derived baseline. These mechanisms do not serialize or
+rewind arbitrary threads, private knowledge, RNG, timers or the whole Forge game.
+
+Nested payment, sacrifice/counter/life costs, land drops and general spell/ability
+reversal remain unsupported until their complete footprints pass the same
+positive and adversarial [Undo gates](Mana-Table-Testing.md#proposed-gameplay-undo-gates).
 
 ## Deck and pregame journey ownership
 

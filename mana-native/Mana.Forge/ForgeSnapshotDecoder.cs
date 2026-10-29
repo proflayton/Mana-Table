@@ -14,12 +14,13 @@ internal static class ForgeSnapshotDecoder
     private static readonly JsonSerializerOptions OperationJson = new() { PropertyNameCaseInsensitive = true,
         Converters = { new JsonStringEnumConverter(allowIntegerValues: false) } };
 
-    internal static GameSnapshot? Decode(JsonElement raw, bool spectator = false)
+    internal static GameSnapshot? Decode(JsonElement raw, bool spectator = false, bool certifiedUndo = false)
     {
         if (raw.ValueKind == JsonValueKind.Null) return null;
         try {
             if (raw.ValueKind != JsonValueKind.Object) throw Invalid();
             var wire = raw.Deserialize<Snapshot>(Json) ?? throw Invalid();
+            if (wire.Undo != null && !certifiedUndo) throw Invalid();
             if (string.IsNullOrWhiteSpace(wire.Id) || wire.Status is not ("starting" or "playing" or "resolving" or "finished" or "error")
                 || !raw.TryGetProperty("viewerId", out var viewer) || !viewer.TryGetInt32(out _)
                 || wire.Players.IsDefault || wire.Stack.IsDefault || wire.Players.Any(player => player == null) || wire.Stack.Any(item => item == null)
@@ -53,8 +54,9 @@ internal static class ForgeSnapshotDecoder
                 ActionClass = wire.ActionClass, States = wire.States, Activity = wire.Activity,
                 Notices = wire.Notices, IgnoredPriorityAbilities = wire.IgnoredPriorityAbilities,
                 PlayAccesses = wire.PlayAccesses, Tempo = wire.Tempo, ActionSources = wire.ActionSources,
-                Executions = wire.Executions
+                Executions = wire.Executions, Undo = wire.Undo
             };
+            UndoFacts.Validate(snapshot);
             ExecutionFrames.Validate(snapshot);
             PublicActivityFacts.Validate(snapshot);
             BlockingCapacityFacts.Validate(snapshot);
@@ -161,6 +163,7 @@ internal static class ForgeSnapshotDecoder
         public ImmutableArray<ActionSourceOccurrence> ActionSources { get; init; } = [];
         public DecisionTempoFrame? Tempo { get; init; }
         public ExecutionFrame? Executions { get; init; }
+        public UndoState? Undo { get; init; }
     }
 
     private sealed record WireStackItem(string Name, string Text, bool Ability, Card? Card)

@@ -58,17 +58,19 @@ internal sealed class MatchPresentationLifecycle
     internal IReadOnlyList<ManaPoolCue> ManaCues(int player, double now) => mana.ForPlayer(player, now);
 
     internal Transition Observe(GameSnapshot? previous, GameSnapshot? current, double now, BoardView view, ExecutionBatch? execution = null,
-        bool finiteProgress = false)
+        bool finiteProgress = false, bool restored = false)
     {
         var nextScope = current == null ? ((string Game, int Viewer)?)null : (current.Id, current.ViewerId);
         bool changed = scope != nextScope;
         if (changed || current == null) Reset();
+        else if (restored) ClearTransientFeedback(rebase: true);
         scope = nextScope;
         if (current == null) return new(changed, false, 0, false, false, null);
 
         // No consumer may compare against another viewer's historical snapshot,
         // even when the engine's game identity has not changed.
-        var before = changed ? null : previous;
+        var before = changed || restored ? null : previous;
+        if (restored) execution = null;
         var batch = activity.Observe(before, current, execution?.Transitions ?? [], execution?.Baseline ?? false, execution?.Gap ?? false);
         effects.Observe(batch, now); presence.Observe(batch, now);
         actions.Observe(batch, now); changes.Observe(batch, now); impacts.Observe(batch, now);
@@ -91,11 +93,17 @@ internal sealed class MatchPresentationLifecycle
 
     internal void Reset()
     {
-        scope = null; activity.Clear(); effects.Clear(); presence.Clear(); pacing.Reset();
+        scope = null;
+        ClearTransientFeedback();
+    }
+
+    private void ClearTransientFeedback(bool rebase = false)
+    {
+        activity.Clear(); effects.Clear(); presence.Clear(); pacing.Reset();
         actions.Clear(); changes.Clear(); impacts.Clear(); mana.Clear(); priority.Clear();
         stackArrival.Clear();
         finiteBeatUntil = 0;
-        departures.Clear(); Cards.Reset();
+        departures.Clear(); Cards.Reset(rebase);
     }
 
     private void ObserveDepartures(PublicActivityBatch batch, double now, BoardView view)

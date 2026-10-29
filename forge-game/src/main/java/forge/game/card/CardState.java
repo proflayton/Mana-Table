@@ -61,6 +61,9 @@ import java.util.Set;
 import java.util.function.Predicate;
 
 public class CardState implements GameObject, IHasSVars, ITranslatable {
+    private void changing(String operation) {
+        if (card != null && card.getGame() != null) card.getGame().getReversibleManaAction().observeCardMutation(card, operation);
+    }
     private String name = "";
     private CardType type = new CardType(false);
     private CardTypeView changedType = null;
@@ -137,6 +140,7 @@ public class CardState implements GameObject, IHasSVars, ITranslatable {
         return name;
     }
     public final void setName(final String name0) {
+        if (!name.equals(name0)) changing("name");
         name = name0;
         view.updateName(this);
     }
@@ -177,6 +181,7 @@ public class CardState implements GameObject, IHasSVars, ITranslatable {
         }
     }
     public final void setType(final CardType type0) {
+        if (!type.equals(type0)) changing("type");
         if (type0 == type) {
             // Logic below would incorrectly clear the type if it's the same object.
             return;
@@ -320,6 +325,7 @@ public class CardState implements GameObject, IHasSVars, ITranslatable {
         return basePower;
     }
     public final void setBasePower(final int basePower0) {
+        if (basePower != basePower0) changing("power");
         if (basePower == basePower0) { return; }
         basePower = basePower0;
         view.updatePower(this);
@@ -329,6 +335,7 @@ public class CardState implements GameObject, IHasSVars, ITranslatable {
         return baseToughness;
     }
     public final void setBaseToughness(final int baseToughness0) {
+        if (baseToughness != baseToughness0) changing("toughness");
         if (baseToughness == baseToughness0) { return; }
         baseToughness = baseToughness0;
         view.updateToughness(this);
@@ -682,6 +689,7 @@ public class CardState implements GameObject, IHasSVars, ITranslatable {
     }
 
     public final boolean addSpellAbility(final SpellAbility a) {
+        if (!abilities.contains(a)) changing("ability");
         return abilities.add(a);
     }
 
@@ -711,6 +719,7 @@ public class CardState implements GameObject, IHasSVars, ITranslatable {
     }
 
     public final boolean addTrigger(final Trigger t) {
+        if (!triggers.contains(t)) changing("trigger-trait");
         return triggers.add(t);
     }
 
@@ -726,9 +735,11 @@ public class CardState implements GameObject, IHasSVars, ITranslatable {
         return result;
     }
     public final boolean addStaticAbility(StaticAbility stab) {
+        if (!staticAbilities.contains(stab)) changing("static-trait");
         return staticAbilities.add(stab);
     }
     public final boolean removeStaticAbility(StaticAbility stab) {
+        if (staticAbilities.contains(stab)) changing("static-trait");
         return staticAbilities.remove(stab);
     }
 
@@ -768,6 +779,7 @@ public class CardState implements GameObject, IHasSVars, ITranslatable {
         return result;
     }
     public boolean addReplacementEffect(final ReplacementEffect replacementEffect) {
+        if (!replacementEffects.contains(replacementEffect)) changing("replacement-trait");
         return replacementEffects.add(replacementEffect);
     }
 
@@ -829,12 +841,14 @@ public class CardState implements GameObject, IHasSVars, ITranslatable {
 
     @Override
     public final void setSVar(final String var, final String str) {
+        if (!Objects.equals(sVars.get(var), str)) changing("variable");
         sVars.put(var, str);
         view.updateFoilIndex(card.getState(CardStateName.Original));
     }
 
     @Override
     public final void setSVars(final Map<String, String> newSVars) {
+        if (!sVars.equals(newSVars)) changing("variables");
         sVars = Maps.newTreeMap();
         sVars.putAll(newSVars);
         view.updateFoilIndex(card.getState(CardStateName.Original));
@@ -842,6 +856,7 @@ public class CardState implements GameObject, IHasSVars, ITranslatable {
 
     @Override
     public final void removeSVar(final String var) {
+        if (sVars.containsKey(var)) changing("variable");
         sVars.remove(var);
     }
 

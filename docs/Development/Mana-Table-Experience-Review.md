@@ -442,7 +442,7 @@ command. The regression checks retain the actual Sol Ring tap and produced mana
 across rejected requests. Deck editing/deletion recovery remains its own lifecycle.
 ## Proposed one-step Undo: 29 October 2026
 
-**Design only; not implemented; human review pending.** The player now requests
+**Implementation candidate; human review pending.** The player now requests
 one immediate correction while nothing else has triggered. This supersedes
 their earlier request to remove Undo; the partial artifact inverse above remains
 a regression to prevent. [Magic Online's documented Ctrl+Z gesture](https://www.mtgo.com/getting-started/getting-started-tips-tricks)
@@ -451,12 +451,14 @@ adaptation is one contextual `Undo tap <full source name>` beside the current
 priority/payment interaction, plus Ctrl+Z, while the rules provider retains
 the exact offer. Restore the entire activation, including produced mana and
 costs; expire on downstream rules work or new information. No modal or peer
-confirmation, and no extra wait imposed on every play. Reading stays separate.
+confirmation, and no extra timed wait imposed on every play. The current
+voluntary manual correction keeps Auto from immediately consuming its priority;
+an explicit pass or next action closes the offer. Reading stays separate.
 
 The [architecture proposal](Mana-Table-Architecture.md#proposed-one-step-gameplay-undo)
-records missing checkpoint/event coverage and the required atomic restoration
-boundary. Game precedent informs the gesture; it does not certify Forge's
-partial inverse or establish human approval of this proposed journey.
+records the bounded engine-owned footprint, remaining coverage limits and atomic
+restoration boundary. Game precedent informs the gesture; it does not certify
+Forge's legacy partial inverse or establish human approval of this journey.
 
 ## Master volume and mixer boundary: 27 October 2026
 

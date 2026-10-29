@@ -83,6 +83,7 @@ internal static class AiPlanValidation
             || created.GameId != state.Id || created.SeatId != state.ViewerId || !Identifier(created.DecisionId)
             || created.Revision < 0 || created.Revision > state.Revision
             || created.BoardRevision < 0 || created.BoardRevision > state.BoardRevision || created.OfferVersion < 0
+            || created.RestorationVersion != frame.Stamp.RestorationVersion
             || created.Revision == frame.Stamp.Revision && created.OfferVersion > frame.Stamp.OfferVersion
             || plan.Reservations.IsDefault || plan.Reservations.Length > MaxReservations
             || plan.RetainedBlockerIds.IsDefault || plan.RetainedBlockerIds.Length > MaxBlockers

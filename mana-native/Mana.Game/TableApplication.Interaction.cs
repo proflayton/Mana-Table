@@ -10,6 +10,7 @@ internal sealed partial class TableApplication
 {
     private bool ActivateHit(Hit hit)
     {
+        if (!InputReady && hit.Intent is MatchIntent.SubmitCommand { Command: UndoAction }) return false;
         if (!CurrentHit(hit) || !hits.Published.Any(current => current.Id == hit.Id
             && current.Scope == hit.Scope && Equals(current.Intent, hit.Intent))) return false;
         if (CardCollectionOpen && hit.Card is { } outside && !SpreadContains(CardViews.Identity(outside))) FoldCardCollection();

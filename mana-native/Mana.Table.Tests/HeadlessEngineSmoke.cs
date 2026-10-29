@@ -27,6 +27,7 @@ internal static class HeadlessEngineSmoke
         var elapsed = Stopwatch.StartNew();
         var json = new JsonSerializerOptions { WriteIndented = true };
         string? error = null;
+        GameSnapshot? lastObserved = null;
         int preparedUpdates = 0;
         double updateMilliseconds = 0;
         void Check(bool value, string description)
@@ -102,7 +103,12 @@ internal static class HeadlessEngineSmoke
             Check((await engine.PrepareSoloAsync(deck.Id)).DeckId == deck.Id,
                 "Explicit setup can return to the requested original deck before the real match starts");
             await AiFrameworkEngineCheck.RunAsync(engine, deck.Id, Check);
-            await engine.StartSoloAsync(deck.Id, ["green", "red", "green"]);
+            // This walkthrough proves a deliberately quiet inverse, not AI
+            // strategy. Mixed deck/trait coverage remains in the campaign below.
+            var quietOpponent = await engine.ImportAsync("Quiet certified-mana walkthrough",
+                "Deck\n99 Forest\nCommander\n1 Jasmine Boreal");
+            string quietOpponentId = "deck:" + quietOpponent.Id;
+            await engine.StartSoloAsync(deck.Id, [quietOpponentId, quietOpponentId, quietOpponentId]);
             GameSnapshot? initial = null;
             while (initial?.Players.Length != 4 || initial.Decision == null) {
                 Guard();
@@ -111,6 +117,7 @@ internal static class HeadlessEngineSmoke
                 if (initial?.Decision == null) await Task.Delay(10);
             }
             Check(initial.Players.All(player => player.Life == 40), "A real four-player Commander game reaches its opening decision");
+            lastObserved = initial;
             new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f }.Save(paths.Profile);
             using var app = new TableApplication(TestTableServices.For(engine), paths.Profile, initialState: initial);
             app.Automated = true; app.Initialize();
@@ -123,6 +130,7 @@ internal static class HeadlessEngineSmoke
             Save("opening");
             string? landId = null, commanderId = null;
             bool landSaved = false, commanderSaved = false, openingHandRead = false, bottomHandRead = false, commanderPayment = false, paidWithForest = false;
+            bool certifiedUndo = false;
             int decisions = 0, mulligans = 0;
             bool freeMulliganObserved = false;
 
@@ -174,6 +182,7 @@ internal static class HeadlessEngineSmoke
                     Save("forest-payment-observed");
                     Check(view.Match!.Viewer!.Zone("Battlefield").Cards.Any(card => card.VisualId == source.VisualId && card.Tapped),
                         "The actual Forest mana action taps its source while paying for the commander");
+                    Check(!UndoFacts.CanUndo(view.Match), "Mana generated inside the actual commander payment never exposes certified priority Undo");
                     paidWithForest = true;
                     continue;
                 }
@@ -232,6 +241,42 @@ internal static class HeadlessEngineSmoke
                 }
                 if (decision is { Payload: PriorityPayload }
                     && view.Match.ActivePlayerId == view.Match.ViewerId && view.Match.PhaseKey is "MAIN1" or "MAIN2") {
+                    if (landSaved && !certifiedUndo) {
+                        var beforeTap = view.Match;
+                        Check(beforeTap.Players.All(player => player.Zone("Battlefield").Cards.All(card => card.Name == "Forest")),
+                            "The certified native Undo walkthrough has only ordinary Forests on the battlefield before the manual activation");
+                        var source = beforeTap.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == landId);
+                        await PlayCard(source, "Battlefield");
+                        Save("manual-mana-receipt");
+                        while (UndoFacts.Command(view.Match!) == null) {
+                            Guard(); await Task.Delay(5); await Refresh("await-certified-forest-undo");
+                        }
+                        var tapped = view.Match!;
+                        var undo = UndoFacts.Command(tapped)!;
+                        Check(tapped.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == landId).Tapped
+                            && tapped.Viewer.Mana.GetValueOrDefault("G") == beforeTap.Viewer.Mana.GetValueOrDefault("G") + 1
+                            && tapped.Undo!.Offer!.SourceCardId == landId && tapped.Undo.Offer.SourceName == "Forest"
+                            && frame.Hits.Any(hit => hit.Id == "undo-certified-action:" + undo.OfferId),
+                            "A real manual Forest activation at priority exposes its authoritative mana, tapped source and current contextual Undo");
+                        Save("certified-undo-offered");
+                        Click("undo-certified-action:" + undo.OfferId); await Idle();
+                        while (view.Match!.Undo?.RestorationVersion <= tapped.Undo!.RestorationVersion) {
+                            Guard(); await Task.Delay(5); await Refresh("await-certified-forest-restoration");
+                        }
+                        var restored = view.Match!;
+                        Check(restored.Id == beforeTap.Id && restored.ViewerId == beforeTap.ViewerId
+                            && !restored.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == landId).Tapped
+                            && restored.Viewer.Mana.OrderBy(pair => pair.Key).SequenceEqual(beforeTap.Viewer.Mana.OrderBy(pair => pair.Key))
+                            && restored.Undo is { Offer: null, LastRestoration: { } marker } && marker.ActionId == undo.ActionId
+                            && restored.BoardRevision > tapped.BoardRevision && !frame.Hits.Any(hit => hit.Id.StartsWith("undo-certified-action:", StringComparison.Ordinal)),
+                            "Production pointer Undo restores the complete real Forest activation and consumes its one-step authority");
+                        bool undoReplayRejected = false;
+                        try { await engine.ExecuteAsync(undo); }
+                        catch (EngineCommandRejectedException) { undoReplayRejected = true; }
+                        Check(undoReplayRejected, "The actual native adapter rejects the consumed Forest Undo instead of restoring an older action");
+                        Save("certified-undo-restored"); certifiedUndo = true;
+                        continue;
+                    }
                     Card? playable = !landSaved ? view.Match.Viewer!.Zone("Hand").Cards.FirstOrDefault(card => card.Selectable && card.Type.Contains("Land", StringComparison.Ordinal))
                         : !commanderSaved ? view.Match.Viewer!.Zone("Command").Cards.FirstOrDefault(card => card.Selectable) : null;
                     if (playable != null) {
@@ -269,6 +314,7 @@ internal static class HeadlessEngineSmoke
                 && landId != null && commanderId != null,
                 "The real land reader drag, command-zone commander drag and Forest payment action all use production pointer controls");
             Check(openingHandRead, "The real Forge walkthrough exercised opening-hand browsing before explicitly keeping");
+            Check(certifiedUndo, "The same real Forge walkthrough used certified manual-mana Undo before successfully paying for its commander");
             Check(freeMulliganObserved && mulligans == 2 && bottomHandRead, "The same real Forge walkthrough exercised the free multiplayer redraw, inspection, explicit bottom-card selection and confirmation after Commander mulligans");
             Check(frame.Stamp.GameId == view.Match!.Id && frame.Stamp.Revision == view.Match.Revision
                 && frame.Stamp.DecisionId == view.Match.Decision?.Id,
@@ -309,7 +355,7 @@ internal static class HeadlessEngineSmoke
             }
             async Task Refresh(string stage)
             {
-                if (await engine.ObserveAsync() is { } next) view.Accept(next);
+                if (await engine.ObserveAsync() is { } next) { lastObserved = next; view.Accept(next); }
                 frame = Tick(stage);
             }
             async Task Idle()
@@ -459,6 +505,7 @@ internal static class HeadlessEngineSmoke
         } catch (Exception exception) {
             error = exception.ToString(); throw;
         } finally {
+            File.WriteAllText(Path.Combine(paths.Profile, "headless-engine-last-observed.json"), JsonSerializer.Serialize(lastObserved, json));
             File.WriteAllText(Path.Combine(paths.Profile, "headless-engine-trace.json"), JsonSerializer.Serialize(new { frames, actions }, json));
             File.WriteAllText(Path.Combine(paths.Profile, "headless-engine-results.json"), JsonSerializer.Serialize(new {
                 passed = error == null, checks, error, elapsedSeconds = elapsed.Elapsed.TotalSeconds,

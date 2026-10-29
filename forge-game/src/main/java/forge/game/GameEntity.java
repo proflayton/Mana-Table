@@ -206,10 +206,12 @@ public abstract class GameEntity implements GameObject, IIdentifiable {
     }
 
     public final void addAttachedCard(final Card c) {
+        if (this instanceof Card card && getGame() != null) getGame().getReversibleManaAction().observeCardMutation(card, "attachment");
         attachedCards = getView().addCard(attachedCards, c, TrackableProperty.AttachedCards);
     }
 
     public final void removeAttachedCard(final Card c) {
+        if (this instanceof Card card && getGame() != null) getGame().getReversibleManaAction().observeCardMutation(card, "attachment");
         attachedCards = getView().removeCard(attachedCards, c, TrackableProperty.AttachedCards);
     }
 

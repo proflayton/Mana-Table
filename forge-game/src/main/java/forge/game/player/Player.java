@@ -314,8 +314,10 @@ public class Player extends GameEntity implements Comparable<Player> {
     }
 
     public void updateFlashbackForView() {
+        try (var refresh = game.getReversibleManaAction().flashbackViewRefresh(this)) {
         view.updateFlashback(this);
         game.fireEvent(new GameEventZone(ZoneType.Flashback, this, EventValueChangeType.Added, null));
+        }
     }
 
     //get single opponent for player if only one, otherwise returns null
@@ -1834,6 +1836,8 @@ public class Player extends GameEntity implements Comparable<Player> {
         return tappedLandForManaThisTurn;
     }
     public void setTappedLandForManaThisTurn(boolean tappedLandForManaThisTurn) {
+        if (this.tappedLandForManaThisTurn != tappedLandForManaThisTurn)
+            game.getReversibleManaAction().observeLandManaFlag(this,tappedLandForManaThisTurn);
         this.tappedLandForManaThisTurn = tappedLandForManaThisTurn;
     }
 

@@ -25,6 +25,7 @@ internal sealed class AiImpactHistory(int capacity)
         long previous = -1;
         foreach (var entry in recorded) {
             if (entry == null || entry.Id <= previous || entry.Turn < 0 || entry.Turn > state.Turn || !Evidence(entry)
+                || entry.ExecutionId == null || entry.ExecutionId.Length > 0 && !UndoFacts.Identifier(entry.ExecutionId)
                 || !Known(entry.ActorId) || !Known(entry.CauseControllerId)
                 || !Known(entry.Impact!.PlayerId) || !Known(entry.Impact.SourceControllerId)
                 || !Known(entry.Impact.RecipientControllerId)) throw Invalid();
