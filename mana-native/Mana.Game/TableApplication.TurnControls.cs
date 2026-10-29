@@ -99,6 +99,8 @@ internal sealed partial class TableApplication
             int extra = Math.Max(0, 26 + sourceHeight + progressHeight + 48 - area.Height);
             area.Y -= extra; area.Height += extra;
         }
+        int undoHeight = UndoControlHeight(area.Width);
+        if (undoHeight > 0) { area.Y -= undoHeight + 8; area.Height += undoHeight + 8; }
         // Resource values keep their measured width. The quiet portrait action
         // can grow into the former decision area without covering mana.
         int resourceRight = manaPoolBadges.GetValueOrDefault(state.ViewerId)?.Bounds.Right ?? 0;
@@ -122,6 +124,7 @@ internal sealed partial class TableApplication
             : view.Status == DecisionDockStatus.Priority && automatic && priorityAttention.NeedsResponse && state.Stack.Length > 0
                 ? "Your response · Auto paused" : view.Headline;
         canvas.Text(heading, area.X + 28, area.Y - 2, accent, .62f, stopped ? area.Width - 62 : area.Width - 28, 1, true);
+        if (undoHeight > 0) DrawUndoControl(new(area.X, area.Y + 22, area.Width, undoHeight));
         if (finiteProgress.Length > 0) {
             int progressY = area.Y + 22;
             if (finiteSource.Length > 0) {

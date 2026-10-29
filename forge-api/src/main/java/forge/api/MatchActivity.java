@@ -131,6 +131,15 @@ public final class MatchActivity {
     }
     public synchronized Frame frame() { return new Frame(revision, turn, phase, phaseName, activePlayerId, snapshot()); }
 
+    synchronized void restored(PlayerView actor, String executionId) {
+        var previous = eventExecution;
+        try {
+            eventExecution = executionId == null ? null : new ExecutionTracker.Reference(executionId, "complete");
+            add("restoration", actor, (actor != null && actor.equals(viewer) ? "You" : actor == null ? "A player" : actor.getName())
+                    + " undid a mana activation", null);
+        } finally { eventExecution = previous; }
+    }
+
     record Publication(Frame activity, MatchExecutions.Frame executions) { }
 
     /** A terminal rules transition follows its synchronous committed events.

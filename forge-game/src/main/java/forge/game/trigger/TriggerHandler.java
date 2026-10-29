@@ -51,6 +51,13 @@ public class TriggerHandler {
     // Concessions can drain from another thread. Lock only queue operations;
     // callbacks run outside the monitor to avoid input-gate lock inversion.
     private final List<TriggerWaiting> waitingTriggers = new ArrayList<>();
+
+    public boolean reversibleManaIsQuiescent() {
+        synchronized (waitingTriggers) {
+            return activeTriggers.isEmpty() && delayedTriggers.isEmpty() && thisTurnDelayedTriggers.isEmpty()
+                    && playerDefinedDelayedTriggers.isEmpty() && waitingTriggers.isEmpty();
+        }
+    }
     private final Game game;
 
     public TriggerHandler(final Game gameState) {
@@ -58,6 +65,7 @@ public class TriggerHandler {
     }
 
     public final void registerDelayedTrigger(final Trigger trig) {
+        game.getReversibleManaAction().invalidate("delayed-trigger");
         delayedTriggers.add(trig);
     }
 
@@ -66,6 +74,7 @@ public class TriggerHandler {
     }
 
     public final void registerThisTurnDelayedTrigger(final Trigger trig) {
+        game.getReversibleManaAction().invalidate("delayed-trigger");
         thisTurnDelayedTriggers.add(trig);
         delayedTriggers.add(trig);
     }
@@ -86,6 +95,7 @@ public class TriggerHandler {
     }
 
     public final void registerPlayerDefinedDelayedTrigger(final Player player, final Trigger trig) {
+        game.getReversibleManaAction().invalidate("delayed-trigger");
         playerDefinedDelayedTriggers.put(player, trig);
     }
 
@@ -476,6 +486,7 @@ public class TriggerHandler {
     // runs it if so.
     // Return true if the trigger went off, false otherwise.
     private void runSingleTriggerInternal(final Trigger regtrig, final Map<AbilityKey, Object> runParams, Player controller) {
+        game.getReversibleManaAction().invalidate("trigger");
         // All tests passed, execute ability.
 
         adjustUndoStack(regtrig, runParams);

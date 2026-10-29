@@ -38,6 +38,70 @@ import forge.game.staticability.StaticAbilityLayer;
  */
 public class StaticEffects {
 
+    /** The fixed permission changes no battlefield resource or characteristic. */
+    public static boolean isReversibleCommandPermission(Map<String, String> params) {
+        return params.equals(Map.of("Mode", "Continuous", "EffectZone", "Command", "MayPlay", "True",
+                "Affected", "Card.IsCommander+YouOwn", "AffectedZone", "Command"));
+    }
+
+    private record EffectShape(Card source, long timestamp, Map<String, String> params,
+                               java.util.List<Card> cards, java.util.List<forge.game.player.Player> players) { }
+    private record PermissionShape(forge.game.player.Player player, StaticAbility ability, Object payment,
+                                   Object alternate, boolean flash, boolean zones) { }
+
+    public static final class ReversiblePermissions {
+        private final Map<StaticAbility, StaticEffect> effects;
+        private final Map<StaticAbility, EffectShape> shapes;
+        private final Map<Card, Map<StaticAbility, forge.game.card.CardPlayOption>> permissions;
+        private final Map<Card, Map<StaticAbility, PermissionShape>> permissionShapes;
+        private ReversiblePermissions(Map<StaticAbility, StaticEffect> effects,
+                Map<StaticAbility, EffectShape> shapes,
+                Map<Card, Map<StaticAbility, forge.game.card.CardPlayOption>> permissions,
+                Map<Card, Map<StaticAbility, PermissionShape>> permissionShapes) {
+            this.effects=effects; this.shapes=shapes; this.permissions=permissions; this.permissionShapes=permissionShapes;
+        }
+        public boolean sameFootprint(ReversiblePermissions other) {
+            return shapes.equals(other.shapes) && permissionShapes.equals(other.permissionShapes);
+        }
+        public boolean containsRecipient(forge.game.card.CardView card) {
+            for (var shape : shapes.values()) for (Card affected : shape.cards())
+                if (affected.getView() == card && affected.isInZone(forge.game.zone.ZoneType.Command)) return true;
+            return false;
+        }
+    }
+
+    public ReversiblePermissions captureReversiblePermissions(Game game) {
+        var effects = Map.copyOf(staticEffects);
+        var shapes = new java.util.HashMap<StaticAbility, EffectShape>();
+        for (var item : staticEffects.entrySet()) {
+            StaticEffect effect = item.getValue();
+            var cards = new java.util.ArrayList<Card>(); for (Card card : effect.getAffectedCards()) cards.add(card);
+            shapes.put(item.getKey(), new EffectShape(effect.getSource(), effect.getTimestamp(), Map.copyOf(effect.getParams()),
+                    java.util.List.copyOf(cards), java.util.List.copyOf(effect.getAffectedPlayers())));
+        }
+        var permissions = new java.util.HashMap<Card, Map<StaticAbility, forge.game.card.CardPlayOption>>();
+        var permissionShapes = new java.util.HashMap<Card, Map<StaticAbility, PermissionShape>>();
+        for (Card card : game.getCardsInGame()) {
+            var original = card.getMayPlay();
+            if (original.isEmpty()) continue;
+            permissions.put(card, Map.copyOf(original));
+            var values = new java.util.HashMap<StaticAbility, PermissionShape>();
+            for (var item : original.entrySet()) {
+                var value = item.getValue();
+                values.put(item.getKey(), new PermissionShape(value.getPlayer(), value.getAbility(), value.getPayManaCost(),
+                        value.getAltManaCost(), value.isWithFlash(), value.grantsZonePermissions()));
+            }
+            permissionShapes.put(card, Map.copyOf(values));
+        }
+        return new ReversiblePermissions(effects, Map.copyOf(shapes), Map.copyOf(permissions), Map.copyOf(permissionShapes));
+    }
+
+    /** Restore permission objects and effect ownership without running Continuous again. */
+    public void restoreReversiblePermissions(Game game, ReversiblePermissions state) {
+        staticEffects.clear(); staticEffects.putAll(state.effects);
+        for (Card card : game.getCardsInGame()) card.setMayPlay(new java.util.HashMap<>(state.permissions.getOrDefault(card, Map.of())));
+    }
+
     // **************** StaticAbility system **************************
     private final Map<StaticAbility, StaticEffect> staticEffects = Maps.newHashMap();
 

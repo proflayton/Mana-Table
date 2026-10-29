@@ -270,8 +270,9 @@ public class Zone implements java.io.Serializable, Iterable<Card> {
 
     public Zone getLKICopy(Map<Integer, Card> cachedMap) {
         Zone result = new Zone(zoneType, game);
-
+        try (var copy = game.getReversibleManaAction().lkiZoneCopy(result)) {
         result.setCards(CardCopyService.getLKICopyList(getCards(), cachedMap));
+        }
 
         return result;
     }

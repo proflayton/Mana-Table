@@ -575,6 +575,13 @@ public class AbilityManaPart implements java.io.Serializable {
         return this.lastManaProduced;
     }
 
+    public List<Mana> captureReversibleProduction() { return List.copyOf(lastManaProduced); }
+
+    public void restoreReversibleProduction(List<Mana> units) {
+        lastManaProduced.clear();
+        lastManaProduced.addAll(units);
+    }
+
     public final boolean isSnow() {
         return this.getSourceCard().isSnow();
     }

@@ -6,7 +6,7 @@ namespace Mana.AI;
 
 public enum AiActionCoverage { NotApplicable, Partial, Complete, Unsupported }
 public readonly record struct AiDecisionStamp(string GameId, int SeatId, string DecisionId,
-    long Revision, long BoardRevision, long OfferVersion);
+    long Revision, long BoardRevision, long OfferVersion, long RestorationVersion = 0);
 
 /// <summary>
 /// One authorized seat observation and its offered actions. Completeness is an
@@ -39,6 +39,7 @@ public sealed class AiDecisionFrame
         if (!Enum.IsDefined(actionCoverage)) throw new ArgumentOutOfRangeException(nameof(actionCoverage));
         State = state; Task = AiTasks.From(decision.Payload);
         ExecutionFrames.Validate(state);
+        UndoFacts.Validate(state);
         PublicActivityFacts.Validate(state);
         BlockingCapacityFacts.Validate(state);
         Domain = domain ?? DecisionActionDomain.None;
@@ -92,7 +93,7 @@ public sealed class AiDecisionFrame
                 || combat.AttackRepair.Select(assignment => assignment.CardId).Distinct().Count() != combat.AttackRepair.Length))
             throw new ArgumentException("Attack repairs must be complete, current legal candidate assignments.", nameof(state));
         CombatRepairFacts.Validate(state);
-        Stamp = new(state.Id, state.ViewerId, decision.Id, state.Revision, state.BoardRevision, offerVersion);
+        Stamp = new(state.Id, state.ViewerId, decision.Id, state.Revision, state.BoardRevision, offerVersion, state.Undo?.RestorationVersion ?? 0);
         bool usesSources = decision.Payload is PriorityPayload or PaymentPayload;
         SourceActions = sourceActions.IsDefault ? [] : sourceActions;
         if (!usesSources && (!SourceActions.IsEmpty || actionCoverage is AiActionCoverage.Complete or AiActionCoverage.Unsupported)

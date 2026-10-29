@@ -19,6 +19,7 @@ internal sealed class CardPresentationController
     private readonly HashSet<string> pendingCollapses = [];
     private readonly HashSet<string> playFlights = [];
     private bool reduced;
+    private bool rebaseNextFrame, rebaseFrame;
     internal const float PlayRevealSeconds = .72f;
     internal static Pose PlayRevealPose => new(new(800, 390), new(220, 308), Elevation: 24);
     private readonly Dictionary<string, int> compositionCounts = [];
@@ -41,7 +42,9 @@ internal sealed class CardPresentationController
     public void BeginFrame(CardPresentationContext current, string? hoveredHitId,
         float elapsedSeconds, bool reducedMotion, BoardView view = default)
     {
-        if (context.State?.Id != current.State?.Id) Reset();
+        if (context.State?.Id != current.State?.Id) Reset(rebaseNextFrame);
+        rebaseFrame = rebaseNextFrame;
+        rebaseNextFrame = false;
         bool leavingOpeningHand = context.OpeningHandDecision && !current.OpeningHandDecision;
         context = current;
         reduced = reducedMotion;
@@ -103,7 +106,8 @@ internal sealed class CardPresentationController
         }
         var target = focused ? readerTarget!.Value : revealPlay ? PlayRevealPose : request.Rest;
         Vector2? entrance = request.Entrance is { } start && useBoardMotion ? view.Inverse(start) : request.Entrance;
-        var pose = request.DirectPlacement ? motion.Hold(request.Id, request.Rest)
+        var pose = rebaseFrame ? motion.Hold(request.Id, target)
+            : request.DirectPlacement ? motion.Hold(request.Id, request.Rest)
             : collapse ? motion.Hold(request.Id, focused ? rest : request.Rest)
             : motion.Place(request.Id, target, entrance, request.EntranceDelay);
         if (useBoardMotion) pose = view.Apply(pose);
@@ -197,6 +201,7 @@ internal sealed class CardPresentationController
         pendingCollapses.RemoveWhere(id => !displayedPoses.ContainsKey(id));
         previousDisplayedPoses.Clear();
         motion.End();
+        rebaseFrame = false;
     }
     public Pose Hold(string id, Pose pose)
     {
@@ -217,13 +222,14 @@ internal sealed class CardPresentationController
     {
         bool found = previousDisplayedPoses.TryGetValue(id, out var previous); pose = previous.Display; return found;
     }
-    public void Reset()
+    public void Reset(bool rebase = false)
     {
         ClearComposition(); transitions.Clear(); pendingCollapses.Clear(); playFlights.Clear(); compositionCounts.Clear();
         displayedPoses.Clear(); previousDisplayedPoses.Clear();
         pinnedId = pinnedZone = null; readerTarget = null; hoveredId = hoveredHit = ""; ReaderBounds = null;
         context = new(null, "", false, false, false, false);
         boardView = BoardView.Identity; motion.Clear();
+        rebaseNextFrame = rebase; rebaseFrame = false;
     }
 
     public static Pose ReaderPose(Pose rest, string zone)

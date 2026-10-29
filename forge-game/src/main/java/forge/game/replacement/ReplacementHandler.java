@@ -56,6 +56,8 @@ public class ReplacementHandler {
 
     private Set<ReplacementEffect> hasRun = Sets.newHashSet();
 
+    public boolean reversibleManaIsQuiescent() { return hasRun.isEmpty() && replaceDamageList.isEmpty(); }
+
     // List of all replacement effect candidates for DamageDone event, in APNAP order
     private final List<Map<ReplacementEffect, List<Map<AbilityKey, Object>>>> replaceDamageList = new ArrayList<>();
 
@@ -201,6 +203,7 @@ public class ReplacementHandler {
         for (ReplacementLayer layer : ReplacementLayer.values()) {
             ReplacementResult res = run(event, runParams, layer, decider);
             if (res != ReplacementResult.NotReplaced) {
+                game.getReversibleManaAction().invalidate("replacement");
                 return res;
             }
         }

@@ -16,6 +16,7 @@ public abstract record GameCommand
             GrantFiniteStackYield value => FiniteStackYieldFacts.Id(value.GrantId) && FiniteStackYieldFacts.Members(value.ExecutionIds)
                 && value.StackActionVersion >= 0 && value.ResolutionChoiceVersion >= 0,
             RevokeFiniteStackYield value => FiniteStackYieldFacts.Id(value.GrantId),
+            UndoAction value => UndoFacts.Identifier(value.OfferId) && UndoFacts.Identifier(value.ActionId) && value.BarrierVersion >= 0,
             SelectCard value => Present(value.Card), PlayCard value => Present(value.Card),
             ActivateCard value => Present(value.Card), UseManaSource value => Present(value.Card),
             SpendPoolMana value => value.Color is "W" or "U" or "B" or "R" or "G" or "C",
@@ -139,6 +140,8 @@ public static class GameCommandPermissions
             AcknowledgeDecision => payload is ConfirmationPayload { Accept.Enabled: true, Decline: null },
             AcknowledgeReveal => payload is RevealPayload,
             UndoLastAction => false,
+            UndoAction value => UndoFacts.CanUndo(state) && state.Undo?.Offer is { } undo
+                && value.OfferId == undo.Id && value.ActionId == undo.ActionId && value.BarrierVersion == undo.BarrierVersion,
             PassTurn => payload is PriorityPayload { Alternative: { Kind: PriorityAlternative.PassTurn, Reply.Enabled: true } },
             SelectCard value => payload is TargetSelectionPayload or EntitySelectionPayload && Selectable(value.Card),
             PlayCard value => payload is PriorityPayload && Selectable(value.Card) && Located(value.Card, "Hand", "Command"),

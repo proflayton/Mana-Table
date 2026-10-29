@@ -33,6 +33,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     private Map<String, Object> spectatorState;
     private String spectatorError;
     private boolean closed;
+    private boolean faulted;
     final DecisionTempo tempo;
     private ScheduledExecutorService tempoWorker;
 
@@ -65,6 +66,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         match = new Match(rules, players, "Mana Table");
         game = match.createGame();
         game.getAction().enableStateBoundary();
+        game.getReversibleManaAction().enable();
         game.subscribeToEvents(identities);
         game.subscribeToEvents(stackInterruption);
         for (int i = 0; i < game.getPlayers().size(); i++) {
@@ -151,7 +153,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
             }
             finally {
                 stopTempo();
-                synchronized (gate) { for (var seat : seats.values()) seat.clearDecision(); publish(); }
+                synchronized (gate) { for (var seat : seats.values()) seat.clearDecision(); if (!faulted) publish(); }
                 game.unsubscribeFromEvents(identities);
                 game.unsubscribeFromEvents(stackInterruption);
                 for (var seat : seats.values()) seat.detach();
@@ -162,6 +164,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     // Only called at controller input boundaries, while the game is waiting.
     void publish() {
         game.getAction().withState(() -> { synchronized (gate) {
+            if (faulted) return;
             observeStackChoices();
             long revision = ++boardRevision;
             // Rules rollback can restore a card directly to a hidden zone
@@ -187,9 +190,38 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         }
     }
 
+    /** Admission revokes a reversal before queued work can create a new event.
+     * Copies update authority only; the last committed board stays immutable. */
+    void invalidateUndo(String reason) {
+        game.getReversibleManaAction().invalidate(reason);
+        for (var seat : seats.values()) seat.refreshUndoProjection();
+    }
+
+    void restoredUndo(forge.game.ReversibleManaAction.Restoration restored) {
+        stackInterruption.action();
+        for (var seat : seats.values()) seat.reconcileUndo(restored);
+    }
+
+    /** Both admission and every audience publication share the state/table
+     * boundary. Failed publication retains complete immutable prior views,
+     * then interrupts before any observer can receive a partial cohort. */
+    void publishUndo(Runnable restoreAndPublish) {
+        var previous = new LinkedHashMap<MatchSession, Map<String, Object>>();
+        for (var seat : seats.values()) previous.put(seat, seat.committedView());
+        var publicPrevious = spectatorState;
+        try { restoreAndPublish.run(); }
+        catch (Throwable failure) {
+            previous.forEach(MatchSession::retainCommittedView);
+            spectatorState = publicPrevious;
+            fail(failure);
+        }
+    }
+
     private void observeStackChoices() {
-        stackInterruption.observeChoices(seats.values().stream().map(MatchSession::requiredChoiceEpisode)
-                .filter(Objects::nonNull).toList());
+        var choices = seats.values().stream().map(MatchSession::requiredChoiceEpisode)
+                .filter(Objects::nonNull).toList();
+        stackInterruption.observeChoices(choices);
+        if (!choices.isEmpty()) game.getReversibleManaAction().invalidate("required-choice");
     }
 
     void tickTempo() {
@@ -237,6 +269,8 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         game.getAction().withState(() -> { synchronized (gate) {
             if (closed) return;
             closed = true;
+            faulted = true;
+            game.getReversibleManaAction().invalidate("table-failed");
             stopTempo();
             // A rules failure can contain a bot's private card or choice. Keep
             // the original in host diagnostics, outside every seat projection.
@@ -247,7 +281,10 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
                         "The rules engine could not continue this game. See the host diagnostics.");
             }
             String failure = publicError.getMessage() == null ? publicError.getClass().getSimpleName() : publicError.getMessage();
-            for (var seat : seats.values()) seat.fail(failure);
+            for (var seat : seats.values()) {
+                try { seat.fail(failure); }
+                catch (Throwable observerFailure) { observerFailure.printStackTrace(System.err); }
+            }
             // A host interruption is not a rules concession. Conceding a player
             // can reveal their face-down cards to surviving seats and wait for
             // new acknowledgements while this fault request owns the table.
@@ -268,6 +305,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         game.getAction().withState(() -> { synchronized (gate) {
             if (closed) return;
             closed = true;
+            invalidateUndo("table-closed");
             stopTempo();
             for (var seat : seats.values()) seat.cancelDecision();
             if (!game.isGameOver()) game.setGameOver(GameEndReason.AllHumansLost);

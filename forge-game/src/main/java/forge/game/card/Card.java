@@ -3833,15 +3833,18 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
         return result;
     }
     public final void setMayPlay(final Player player, final boolean withoutManaCost, final Cost altManaCost, final boolean withFlash, final boolean grantZonePermissions, final StaticAbility sta) {
+        if (game != null) game.getReversibleManaAction().observePermissionMutation(this, sta);
         this.mayPlay.put(sta, new CardPlayOption(player, sta, withoutManaCost, altManaCost, withFlash, grantZonePermissions));
     }
     public final void removeMayPlay(final StaticAbility sta) {
+        if (game != null && mayPlay.containsKey(sta)) game.getReversibleManaAction().observePermissionMutation(this, sta);
         this.mayPlay.remove(sta);
     }
     public final Map<StaticAbility, CardPlayOption> getMayPlay() {
         return Maps.newHashMap(mayPlay);
     }
     public final Map<StaticAbility, CardPlayOption> setMayPlay(Map<StaticAbility, CardPlayOption> mp) {
+        if (game != null && !mayPlay.equals(mp)) game.getReversibleManaAction().observeCardMutation(this, "play-permissions");
         return mayPlay = mp;
     }
 
@@ -3893,6 +3896,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
     }
     public final void setEntityAttachedTo(final GameEntity e) {
         if (entityAttachedTo == e) { return; }
+        if (game != null) game.getReversibleManaAction().observeCardMutation(this, "attachment");
         entityAttachedTo = e;
         view.updateAttachedTo(this);
     }
@@ -4654,8 +4658,35 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
     public final boolean isTapped() {
         return tapped;
     }
+
+    /** Private-provider state for the certified tap-for-mana path; never a network DTO. */
+    public record ManaActivationState(boolean tapped, int tappedThisTurn, ActivationTable turn,
+                                      ActivationTable game, ActivationTable resolved) { }
+
+    public boolean reversibleManaStateWithin(int limit) {
+        return tappedThisTurn >= 0 && tappedThisTurn < Integer.MAX_VALUE
+                && numberTurnActivations.reversibleWithin(limit)
+                && numberGameActivations.reversibleWithin(limit)
+                && numberAbilityResolved.reversibleWithin(limit);
+    }
+
+    public ManaActivationState captureManaActivationState() {
+        return new ManaActivationState(tapped, tappedThisTurn, numberTurnActivations.copy(),
+                numberGameActivations.copy(), numberAbilityResolved.copy());
+    }
+
+    /** Administrative restoration: no tap/untap rules action or trigger is generated. */
+    public void restoreManaActivationState(ManaActivationState state) {
+        tappedThisTurn = state.tappedThisTurn();
+        numberTurnActivations.restore(state.turn());
+        numberGameActivations.restore(state.game());
+        numberAbilityResolved.restore(state.resolved());
+        setTapped(state.tapped());
+        view.updateNeedsTapAnimation(false);
+    }
     public final void setTapped(boolean tapped0) {
         if (tapped == tapped0) { return; }
+        if (game != null) game.getReversibleManaAction().observeCardMutation(this, tapped0 ? "tap" : "untap");
         tapped = tapped0;
         view.updateTapped(this);
     }
@@ -7764,6 +7795,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
     }
 
     public void addAbilityActivated(SpellAbility ability) {
+        game.getReversibleManaAction().observeAbilityLedgerMutation(this,ability);
         numberTurnActivations.add(ability);
         numberGameActivations.add(ability);
 
@@ -7793,6 +7825,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
     }
 
     public void addAbilityResolved(SpellAbility ability) {
+        game.getReversibleManaAction().observeAbilityLedgerMutation(this,ability);
         numberAbilityResolved.add(ability);
     }
     public Multiset<Player> getAbilityResolvedThisTurnActivators(SpellAbility ability) {
@@ -7800,6 +7833,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
     }
 
     public void resetAbilityResolvedThisTurn() {
+        if (!numberAbilityResolved.isEmpty()) game.getReversibleManaAction().observeCardMutation(this,"ability-ledger-reset");
         numberAbilityResolved.clear();
     }
 

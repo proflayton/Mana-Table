@@ -51,7 +51,8 @@ public static class DecisionDockPresentation
         var source = decision == null ? null : CardViews.Source(state, decision);
         string sourceId = source == null ? decision?.Context.Source?.CardId ?? "" : CardViews.Identity(source);
         var pause = Pause(state, controls);
-        bool normalPass = controls.Automatic && decision is { Payload: PriorityPayload { CanAutoPass: true } };
+        bool normalPass = controls.Automatic && !UndoFacts.CanUndo(state)
+            && decision is { Payload: PriorityPayload { CanAutoPass: true } };
         bool quietPass = controls.QuietArmed && controls.QuietCanPass && decision is { Payload: PriorityPayload { QuietYieldToken.Length: > 0 } }
             && state.Stack.Length == 0;
         bool routinePriority = state.Status == "playing" && state.Turn > 0 && priority.CanPass && (normalPass || quietPass);

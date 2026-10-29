@@ -34,6 +34,7 @@ public sealed class DecisionAdvance(IMatchConnection connection)
         int passes = 0;
         try {
             while (!cancellation.IsCancellationRequested) {
+                if (UndoFacts.RestoredSince(initial, state)) { intent.Stop(); return state; }
                 if (intent.IsPaused || !intent.CanContinue(state) || shouldPresent(initial, state)) return state;
                 var command = intent.NextCommand(state);
                 if (!intent.IsActive) return state;
@@ -48,6 +49,7 @@ public sealed class DecisionAdvance(IMatchConnection connection)
                 if (next == null) { intent.Stop(); return null; }
                 if (next.Id != state.Id) { intent.Stop(); observed?.Invoke(next); return next; }
                 if (next.Revision >= state.Revision) {
+                    UndoFacts.ValidateProgress(state, next);
                     bool changed = next.Revision > state.Revision || next.ViewerId != state.ViewerId || next.Decision?.Id != state.Decision?.Id;
                     state = next;
                     if (changed) observed?.Invoke(state);
@@ -55,6 +57,7 @@ public sealed class DecisionAdvance(IMatchConnection connection)
                 // The caller owns visible checkpoints. Ordinary stack passing
                 // keeps every effect beat; explicit finite presentation can
                 // aggregate only its captured work while observing every result.
+                if (UndoFacts.RestoredSince(initial, state)) { intent.Stop(); return state; }
                 if (intent.IsPaused || !intent.CanContinue(state) || shouldPresent(initial, state)) return state;
                 if (clock.ElapsedMilliseconds >= 350 || passes >= 32) return state;
                 if (command == null || state.Decision == null) {
@@ -74,6 +77,7 @@ public sealed class DecisionAdvance(IMatchConnection connection)
         int passes = 0;
         long activity = quietToken == null ? 0 : initial.Activity.Select(entry => entry.Id).DefaultIfEmpty().Max();
         while (!cancellation.IsCancellationRequested) {
+            if (UndoFacts.RestoredSince(initial, state)) return state;
             if (quietToken == null) {
                 if (state.Id != initial.Id || state.Status is "finished" or "error" || shouldPresent(initial, state)) return state;
             } else if (!QuietPriorityPolicy.CanWait(state, initial.Id, initial.Turn, initial.ActivePlayerId, quietToken)
@@ -97,7 +101,7 @@ public sealed class DecisionAdvance(IMatchConnection connection)
             var next = await connection.ObserveAsync();
             if (next == null) return null;
             if (next.Id != state.Id) return next;
-            if (next.Revision >= state.Revision) state = next;
+            if (next.Revision >= state.Revision) { UndoFacts.ValidateProgress(state, next); state = next; }
             // Yield periodically to present progress and avoid owning the connection indefinitely.
             if (clock.ElapsedMilliseconds >= 350 || passes >= 32) return state;
             if (state.Decision == null || submitted == state.Id + ":" + state.Decision.Id) {

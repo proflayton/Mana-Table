@@ -46,6 +46,7 @@ public sealed record AiObservedEvent(long Id, int Turn, string Kind, int? ActorI
     PublicCardChange? Change, AiObservedImpact? Impact, int? CauseControllerId, string? CauseId)
 {
     public ExecutionStep? ExecutionStep { get; init; }
+    public string ExecutionId { get; init; } = "";
 }
 public sealed record AiObservedImpact(string Kind, long Amount, int? PlayerId, string? CardId,
     string? SourceCardId, int? Before, int? After, bool? Combat,
@@ -57,6 +58,9 @@ public sealed record AiSeatHistory(ImmutableArray<AiDecisionRecord> Decisions, I
     // bounded lifetime. Draw/counter announcements cannot evict social evidence.
     // Null identifies an older private replay whose only history is Events.
     public ImmutableArray<AiObservedEvent>? ImpactEvents { get; init; }
+    public long RestorationVersion { get; init; }
+    public long SocialBaselineEventId { get; init; } = -1;
+    public ImmutableHashSet<string> ReversedExecutionIds { get; init; } = [];
 
     // Retry guards have a different lifetime from the diagnostic ring. Evicting
     // a log entry cannot authorize repeating a cancelled/accepted activation.
@@ -82,8 +86,35 @@ internal sealed class AiHistoryBuffer(int capacity)
     private int turn = -1;
     internal bool RouteLimitReached { get; private set; }
     private long lastEvent = -1;
+    private long restorationVersion, socialBaseline = -1;
+    private readonly HashSet<string> reversedExecutions = new(StringComparer.Ordinal);
     internal AiSeatHistory Snapshot => new(decisions.ToImmutableArray(), events.ToImmutableArray()) {
-        ImpactEvents = impacts.Snapshot, AttemptedRoutes = routes.ToImmutableHashSet(), RouteLimitReached = RouteLimitReached };
+        ImpactEvents = impacts.Snapshot, AttemptedRoutes = routes.ToImmutableHashSet(), RouteLimitReached = RouteLimitReached,
+        RestorationVersion = restorationVersion, SocialBaselineEventId = socialBaseline,
+        ReversedExecutionIds = reversedExecutions.ToImmutableHashSet(StringComparer.Ordinal) };
+
+    internal void Restore(GameSnapshot state)
+    {
+        if (state.Undo is not { LastRestoration: { } restored } undo || undo.RestorationVersion <= restorationVersion) return;
+        var root = ExecutionFrames.Find(state, restored.ExecutionId);
+        if (undo.RestorationVersion != restorationVersion + 1 || root == null) {
+            // Missing intermediate ancestry cannot justify an invented inverse.
+            // Keep the evidence; rebase only its derived social contribution.
+            socialBaseline = Math.Max(socialBaseline, lastEvent);
+        } else {
+            reversedExecutions.Add(restored.ExecutionId);
+            foreach (var occurrence in state.Executions!.Occurrences) {
+                var current = occurrence;
+                while (current.ParentId is { } parent) {
+                    if (parent == restored.ExecutionId) { reversedExecutions.Add(occurrence.Id); break; }
+                    current = ExecutionFrames.Find(state, parent)!;
+                }
+            }
+        }
+        restorationVersion = undo.RestorationVersion;
+        var retained = events.Concat(impacts.Snapshot).Select(entry => entry.ExecutionId).ToHashSet(StringComparer.Ordinal);
+        reversedExecutions.RemoveWhere(id => !retained.Contains(id));
+    }
     internal void ObserveTurn(int current)
     {
         ValidateTurn(current);
@@ -115,7 +146,7 @@ internal sealed class AiHistoryBuffer(int capacity)
                 impact == null ? null : new(impact.Kind, impact.Amount, impact.PlayerId, impact.CardId,
                     impact.SourceCardId, impact.Before, impact.After, impact.Combat, impact.SourceControllerId,
                     impact.RecipientControllerId, impact.FromZone, impact.ToZone), entry.Cause?.ControllerId, entry.Cause?.Id) {
-                ExecutionStep = entry.ExecutionStep };
+                ExecutionStep = entry.ExecutionStep, ExecutionId = entry.ExecutionId };
             impacts.Observe(observed);
             events.Enqueue(observed);
             while (events.Count > capacity) events.Dequeue();

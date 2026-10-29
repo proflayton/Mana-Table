@@ -90,6 +90,7 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                     await FaultAsync(state.Id, item.SeatId, "policy-configuration", error).ConfigureAwait(false);
                     continue;
                 }
+                if (!session.ObserveRestoration(state)) continue;
                 if (state.Status != "playing" || state.Decision == null || state.Viewer?.Eliminated != false) {
                     session.Observe(null); continue;
                 }

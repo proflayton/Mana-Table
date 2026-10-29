@@ -41,6 +41,7 @@ public sealed partial class ClientSession
     public GameSnapshot? State => replica.Current;
     public Lobby? Lobby => lobbyReplica.Current;
     public ExecutionBatch ExecutionChanges { get; private set; } = ExecutionBatch.Empty;
+    public bool RestorationChanged { get; private set; }
     public string Scope => (State?.Id ?? "lobby") + ":" + (State?.Decision?.Id ?? "");
     public bool Busy { get; private set; }
     public bool IsAdvancing => advancing is { IsCancellationRequested: false };
@@ -161,15 +162,33 @@ public sealed partial class ClientSession
     private bool Accept(GameSnapshot? state, long epoch, ObservationIngress? ingress = null)
     {
         GameSnapshot? previous;
-        bool recovered;
+        bool recovered, restored;
         try { lock (observationGate) {
             previous = State;
             if (Closed || ingress != null && !ingress.Active || epoch != replica.Epoch
                 || state != null && previous != null && state.Id == previous.Id && state.Revision < previous.Revision) return false;
+            UndoFacts.ValidateProgress(previous, state);
+            restored = state != null && UndoFacts.RestoredSince(previous, state);
+            if (restored && state!.FiniteStackYield is { Status: FiniteStackYieldStatus.Active } restoringGrant
+                && finiteRevocations.Values.Any(item => item.Command.GameId == state.Id && item.ViewerId == state.ViewerId
+                    && item.Command.GrantId == restoringGrant.GrantId)) throw new FiniteYieldOwnershipException();
             executions.Validate(state);
             if (state != null) { FiniteResolutionFacts.Validate(state); FiniteStackYieldFacts.Validate(state); }
             ValidateFiniteAcknowledgement(state);
             if (!replica.Accept(state, epoch)) return false;
+            RestorationChanged = restored;
+            if (RestorationChanged) {
+                // Restore is a new authoritative publication in this same game.
+                // Revoke old work before Changed, without retiring its identity.
+                finiteIntent?.Stop(); finiteIntent = null;
+                advancing?.Cancel(); SourceActions.Clear(); pendingSettings.Clear(); activeSetting = null;
+                ClearAllOptionalPaymentPolicies(); optionalSubmissions.Clear(); optionalPaymentsPaused = false;
+                foreach (var item in finiteRevocations.Where(item => item.Key.Game == state!.Id
+                    && item.Value.ViewerId == state.ViewerId).ToArray()) {
+                    finiteRevocations.Remove(item.Key);
+                }
+                BeginCommand();
+            }
             if (observationIngress != null && !observationIngress.Matches(state))
                 RevokeObservationIngress();
             if (finiteIntent != null && (state == null || NeedsRecovery || !finiteIntent.CanContinue(state))) StopFiniteIntent();
@@ -178,8 +197,8 @@ public sealed partial class ClientSession
             recovered = NeedsRecovery;
             ReconcileFiniteYield(state, recovered);
             PruneFiniteAcknowledgement(state);
-            ExecutionChanges = executions.Observe(state, baseline: recovered);
-            ObserveOptionalPayments(previous, state, recovered);
+            ExecutionChanges = executions.Observe(state, baseline: recovered || RestorationChanged);
+            ObserveOptionalPayments(previous, state, recovered || RestorationChanged);
             LastSynchronizedAt = time.GetUtcNow();
             recoveryRequired = UncertainCommand = false; LastConnectionError = "";
         } } catch (FiniteYieldOwnershipException error) { ReportFailure(error, true); return false; }

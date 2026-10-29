@@ -42,6 +42,8 @@ public sealed class AiSeatSession : IDisposable
     private readonly TimeProvider time;
     private readonly AiHistoryBuffer history;
     private AiDecisionFrame? frame;
+    private GameSnapshot? lastObservation;
+    private bool preserveAllowance;
     private AiDecisionStamp? watermark;
     private AiSeatView view = new(null, AiSeatStatus.Idle);
     private CancellationTokenSource? evaluationCancellation;
@@ -85,6 +87,7 @@ public sealed class AiSeatSession : IDisposable
 
     public bool Observe(AiDecisionFrame? next)
     {
+        if (next != null && !ObserveRestoration(next.State)) return false;
         CancellationTokenSource? cancel;
         lock (gate) {
             if (closed) return false;
@@ -119,13 +122,16 @@ public sealed class AiSeatSession : IDisposable
                 history.Observe(next.State.Activity);
                 if (episode != next.EpisodeId) {
                     episode = next.EpisodeId;
-                    if (next.ExecutionBudgetRootId.Length > 0) {
+                    if (preserveAllowance && allowance != null) {
+                        // A restored input is fresh authority, not fresh thinking time.
+                    } else if (next.ExecutionBudgetRootId.Length > 0) {
                         if (!executionAllowances.TryGetValue(next.ExecutionBudgetRootId, out allowance)) {
                             allowance = NewAllowance(); executionAllowances.Add(next.ExecutionBudgetRootId, allowance);
                         }
                     } else allowance = NewAllowance();
                     episodeSeed = allowance.Seed; work = allowance.Work;
                 }
+                preserveAllowance = false;
                 // A producing occurrence can finish before a copied ability.
                 // The authoritative frame retains every active occurrence and
                 // its root, even after its completed history leaves the window.
@@ -138,6 +144,38 @@ public sealed class AiSeatSession : IDisposable
             frame = next; ready = null;
             if (view.Status != AiSeatStatus.NeedsRecovery && submitted == null)
                 view = new(next?.Stamp, AiSeatStatus.Idle);
+        }
+        Cancel(cancel);
+        return true;
+    }
+
+    // Called even when this seat has no decision or is waiting for presentation.
+    // A restored board must revoke ready/in-flight policy work immediately.
+    public bool ObserveRestoration(GameSnapshot state)
+    {
+        CancellationTokenSource? cancel = null;
+        lock (gate) {
+            if (closed) return false;
+            if (state.Id != gameId || state.ViewerId != seatId) throw new ArgumentException("A restoration observation belongs to this exact game and seat.");
+            if (lastObservation is { } previous && (state.Revision < previous.Revision || state.BoardRevision < previous.BoardRevision)) return false;
+            UndoFacts.ValidateProgress(lastObservation, state);
+            history.ValidateTurn(state.Turn);
+            bool restored = UndoFacts.RestoredSince(lastObservation, state);
+            bool sameTurn = lastObservation?.Turn == state.Turn;
+            if (restored) ExecutionFrames.Validate(state);
+            lastObservation = state;
+            if (!restored) return true;
+            FinishActiveTime();
+            if (frame != null && view.Status is AiSeatStatus.Thinking or AiSeatStatus.Ready)
+                Record(frame, AiDecisionOutcome.Cancelled, ready?.Command, "action-restored");
+            cancel = evaluationCancellation; evaluationCancellation = null;
+            ready = null; frame = null; completedStamp = null;
+            submittedPlanRevoked = true;
+            bool hadPlan = plan != null || planVersion > 0 || submitted != null;
+            plan = null; if (hadPlan && planVersion < long.MaxValue) planVersion++;
+            preserveAllowance = sameTurn;
+            history.Observe(state.Activity); history.Restore(state);
+            if (view.Status != AiSeatStatus.NeedsRecovery && submitted == null) view = new(null, AiSeatStatus.Idle);
         }
         Cancel(cancel);
         return true;

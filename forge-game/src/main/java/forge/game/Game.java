@@ -105,6 +105,22 @@ public class Game {
     public final List<GameCommand> sbaCheckedCommandList;
     public final MagicStack stack;
     private final ExecutionTracker executions = new ExecutionTracker(this);
+    private final ReversibleManaAction reversibleManaAction = new ReversibleManaAction(this);
+
+    public ReversibleManaAction getReversibleManaAction() { return reversibleManaAction; }
+
+    record ManaLkiState(CardCollection battlefield, CardCollection graveyard) { }
+
+    ManaLkiState captureManaLkiState() {
+        return new ManaLkiState(new CardCollection(lastStateBattlefield), new CardCollection(lastStateGraveyard));
+    }
+
+    void restoreManaLkiState(ManaLkiState state) {
+        lastStateBattlefield = new CardCollection(state.battlefield());
+        lastStateGraveyard = new CardCollection(state.graveyard());
+    }
+
+    boolean hasUnfinishedManaPreparation() { return !topLibsCast.isEmpty() || !facedownWhileCasting.isEmpty(); }
 
     public ExecutionTracker getExecutions() { return executions; }
     public final CostPaymentStack costPaymentStack = new CostPaymentStack();
@@ -472,6 +488,7 @@ public class Game {
     }
 
     public void addSBACheckedCommand(final GameCommand c) {
+        reversibleManaAction.invalidate("deferred-rules-work");
         sbaCheckedCommandList.add(c);
     }
     public final void runSBACheckedCommands() {
@@ -1087,6 +1104,7 @@ public class Game {
      * The events are sent to UI, log and sound system. Network listeners are under development.
      */
     public void fireEvent(final Event event) {
+        reversibleManaAction.observeEvent(event);
         if (event instanceof forge.game.event.GameEvent committed)
             events.post(new ExecutionTracker.Committed(committed, executions.committed(committed)));
         events.post(event);

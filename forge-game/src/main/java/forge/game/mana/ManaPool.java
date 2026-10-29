@@ -61,7 +61,25 @@ public class ManaPool extends ManaConversionMatrix implements Iterable<Mana> {
     }
 
     public void addManaNoEvent(final Mana mana) {
+        owner.getGame().getReversibleManaAction().observeManaPoolMutation(owner, "add-without-event");
         floatingMana.put(mana.getColor(), mana);
+    }
+
+    /** Exact units and lane order, not aggregate color counts. */
+    public List<Mana> captureReversibleUnits() { return List.copyOf(floatingMana.values()); }
+
+    public boolean hasExactReversibleUnits(List<Mana> units) {
+        var actual = floatingMana.values().iterator();
+        for (Mana unit : units) if (!actual.hasNext() || actual.next() != unit) return false;
+        return !actual.hasNext();
+    }
+
+    /** No mana-added/spent event: this is restoration, not production or payment. */
+    public void restoreReversibleUnits(List<Mana> units) {
+        if (!hasExactReversibleUnits(units)) owner.getGame().getReversibleManaAction().observeManaPoolMutation(owner, "restore");
+        floatingMana.clear();
+        for (Mana mana : units) floatingMana.put(mana.getColor(), mana);
+        owner.updateManaForView();
     }
 
     public final void addMana(final Mana... manaList) {
@@ -70,6 +88,7 @@ public class ManaPool extends ManaConversionMatrix implements Iterable<Mana> {
     public final void addMana(final Iterable<Mana> manaList) {
         Set<MagicColor.Color> colors = EnumSet.noneOf(MagicColor.Color.class);
         for (final Mana m : manaList) {
+            if (colors.isEmpty()) owner.getGame().getReversibleManaAction().observeManaPoolMutation(owner, "produce");
             floatingMana.put(m.getColor(), m);
             colors.add(MagicColor.Color.fromByte(m.getColor()));
         }
@@ -113,6 +132,7 @@ public class ManaPool extends ManaConversionMatrix implements Iterable<Mana> {
 
     public final void resetPool() {
         // This should only be used to reset the pool to empty by things like restores.
+        if (!floatingMana.isEmpty()) owner.getGame().getReversibleManaAction().observeManaPoolMutation(owner, "reset");
         floatingMana.clear();
     }
 
@@ -186,6 +206,7 @@ public class ManaPool extends ManaConversionMatrix implements Iterable<Mana> {
     }
 
     public boolean removeManaNoEvent(final Mana mana) {
+        if (floatingMana.containsEntry(mana.getColor(), mana)) owner.getGame().getReversibleManaAction().observeManaPoolMutation(owner, "remove-without-event");
         return floatingMana.remove(mana.getColor(), mana);
     }
 
@@ -364,7 +385,15 @@ public class ManaPool extends ManaConversionMatrix implements Iterable<Mana> {
 
     @Override
     public Iterator<Mana> iterator() {
-        return floatingMana.values().iterator();
+        var values = floatingMana.values().iterator();
+        return new Iterator<>() {
+            public boolean hasNext() { return values.hasNext(); }
+            public Mana next() { return values.next(); }
+            public void remove() {
+                owner.getGame().getReversibleManaAction().observeManaPoolMutation(owner,"iterator-remove");
+                values.remove();
+            }
+        };
     }
 
 }

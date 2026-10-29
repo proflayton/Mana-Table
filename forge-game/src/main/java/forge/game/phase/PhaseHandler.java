@@ -1171,7 +1171,9 @@ public class PhaseHandler implements java.io.Serializable, IHasForgeLog {
         } while (game.getStack().addAllTriggeredAbilitiesToStack()); //loop so long as something was added to stack
 
         if (!allAffectedCards.isEmpty()) {
+            try (var refresh = game.getReversibleManaAction().permissionRefresh()) {
             game.fireEvent(new GameEventCardStatsChanged(allAffectedCards));
+            }
             allAffectedCards.clear();
             // Update flashback views after static abilities have been recalculated,
             // so play-from-zone abilities (e.g. Bolas's Citadel) are reflected

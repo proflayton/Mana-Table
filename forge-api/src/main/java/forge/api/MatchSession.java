@@ -243,7 +243,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "turn", 0, "phase", "Pregame", "phaseKey", "PREGAME", "activePlayerId", null,
                 "priorityPlayerId", null, "decisionOwnerId", null, "actionClass", "starting",
                 "prompt", null, "combat", null, "result", null, "error", null, "activity", List.of(), "notices", List.of(),
-                "stackInterruptionVersion", table.stackInterruption.version()));
+                "stackInterruptionVersion", table.stackInterruption.version(), "undo", undoProjection(null)));
     }
 
     void detach() { game.unsubscribeFromEvents(activity); game.unsubscribeFromEvents(executions); game.unsubscribeFromEvents(combatIds); game.unsubscribeFromEvents(this); }
@@ -911,6 +911,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 throw new IllegalArgumentException("That command does not answer the current decision.");
             if ((next.input instanceof InputAttack || next.input instanceof InputBlock) && currentCombatChoices(next) == null)
                 throw new IllegalArgumentException("Combat choices changed. Wait for the current offers.");
+            if (action.equals("undoCertifiedAction")) return undoAction(next, request, playerDriven);
             if (finiteStackYield.active() && !action.equals("passPriority")) {
                 @SuppressWarnings("unchecked") var offer = next.prompt.get("optionalDecline") instanceof Map<?, ?> value
                         ? (Map<String, Object>) value : null;
@@ -944,6 +945,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 throw new IllegalArgumentException("The table has changed. Review the current decision before passing for now.");
             if (!next.kind.equals("input")) {
                 validateDialog(next, request);
+                table.invalidateUndo("accepted-choice");
                 if (playerDriven) table.tempo.activity(viewer.getId());
                 pending = null;
                 markBusy(next);
@@ -1064,6 +1066,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             String chosenFiniteGrant = automaticGrant;
             Long chosenCombatVersion = next.input instanceof InputAttack || next.input instanceof InputBlock ? sourceActionVersion.get() : null;
             Long chosenPaymentVersion = action.equals("autoPayOptionalPayment") ? sourceActionVersion.get() : null;
+            table.invalidateUndo("accepted-action");
             if (next.input instanceof InputPassPriority && Set.of("card", "useSourceAction", "useHandPlacement").contains(action))
                 table.stackInterruption.action();
             if (playerDriven) table.tempo.activity(viewer.getId());
@@ -1180,6 +1183,86 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private boolean currentTargetCard(InputSelectTargets input, CardView view) {
         Card card = sourceCard(view);
         return card != null && card.getView() == view && input.canSelectCard(card);
+    }
+
+    private Map<String, Object> undoProjection(Pending prompt) {
+        boolean current = !human.isExternallyAutomated() && prompt != null
+                && prompt.input instanceof InputPassPriority && sourceInputCurrent(prompt);
+        return MatchUndo.project(game, viewer.getId(), current ? prompt.id : null, card -> semanticCardId(card.getView()));
+    }
+
+    void refreshUndoProjection() {
+        var undo = undoProjection(pending);
+        if (Objects.equals(latest.get("undo"), undo)) return;
+        var next = new LinkedHashMap<>(latest);
+        next.put("revision", ++revision); next.put("undo", undo);
+        latest = Collections.unmodifiableMap(next);
+    }
+
+    Map<String, Object> committedView() { return latest; }
+    void retainCommittedView(Map<String, Object> previous) { latest = previous; }
+
+    void reconcileUndo(ReversibleManaAction.Restoration restored) {
+        sourceActionVersion.incrementAndGet();
+        quietYield.invalidate();
+        finiteStackYield.revoke("action-restored");
+        if (pending != null) {
+            pending.sourceActions.clear(); pending.additionalCards.clear(); pending.additionalSources.clear();
+            if (viewer.getId() == restored.actorId()) pending = null;
+        }
+        Player actor = game.getRegisteredPlayers().stream().filter(player -> player.getId() == restored.actorId()).findFirst().orElse(null);
+        activity.restored(actor == null ? null : actor.getView(), restored.executionId());
+    }
+
+    private Map<String, Object> undoAction(Pending next, JsonObject request, boolean playerDriven) {
+        var reversal = game.getReversibleManaAction();
+        String offer = string(request, "offerId"), action = string(request, "actionId");
+        long version;
+        try {
+            var supplied = request.get("undoBarrierVersion");
+            if (supplied == null || !supplied.isJsonPrimitive() || !supplied.getAsJsonPrimitive().isNumber())
+                throw new ArithmeticException();
+            version = supplied.getAsBigDecimal().longValueExact();
+            if (version < 0) throw new ArithmeticException();
+        } catch (ArithmeticException | NumberFormatException invalid) {
+            throw new IllegalArgumentException("That Undo offer is no longer current.");
+        }
+        if (!playerDriven || !(next.input instanceof InputPassPriority) || !sourceInputCurrent(next)
+                || !reversal.validate(offer, action, version, human.getPlayer()))
+            throw new IllegalArgumentException("That Undo offer is no longer current.");
+        pending = null; inputActionQueued = true; markBusy(next);
+        HeadlessPlatform.later(() -> restoreUndo(next, offer, action, version));
+        return latest;
+    }
+
+    private void restoreUndo(Pending next, String offer, String action, long version) {
+        synchronized (gate) {
+            table.publishUndo(() -> {
+            boolean completed = false;
+            try {
+                boolean current = !closed && !conceded && !viewer.getHasLost() && !game.isGameOver()
+                        && human.getInputQueue().getInput() == next.input && human.getInputProxy().getInput() == next.input
+                        && ((InputPassPriority) next.input).isPriorityActive();
+                var reversal = game.getReversibleManaAction();
+                if (current && reversal.restore(offer, action, version, human.getPlayer()) == ReversibleManaAction.Result.APPLIED)
+                    table.restoredUndo(reversal.lastRestoration());
+                else if (!closed && !conceded) notices.add("Undo expired. The game has moved on; no action was reversed.");
+                completed = true;
+            } finally {
+                inputActionQueued = false;
+                if (completed && !closed && !conceded && !viewer.getHasLost() && !game.isGameOver()
+                        && human.getInputQueue().getInput() == next.input && human.getInputProxy().getInput() == next.input) {
+                    // Keep the waiting input/tempo episode, but allocate a fresh
+                    // decision and source handles for the restored live board.
+                    pending = null;
+                    if (!human.refreshRestoredPriority((InputPassPriority) next.input))
+                        throw new IllegalStateException("The restored priority input changed before publication");
+                    next.input.showMessageInitial();
+                    publishInput();
+                }
+            }
+            });
+        }
     }
 
     private boolean currentOptionalPayment(Pending current, String offerId) {
@@ -1320,6 +1403,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         synchronized (gate) {
             requireSession(request);
             if (game.isGameOver() || conceded) return latest;
+            table.invalidateUndo("concession");
             concedingInput = pending;
             pending = null;
             conceded = true;
@@ -1368,6 +1452,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private void markBusy(Pending consumed) {
         var next = new LinkedHashMap<>(latest);
         next.put("revision", ++revision); next.put("prompt", null); next.put("status", "resolving");
+        next.put("undo", undoProjection(null));
         next.put("players", resolvingPlayers(consumed));
         next.put("playAccesses", PlayAccessProjection.withoutCurrentOffers(next.get("playAccesses")));
         next.put("finiteStackYield", finiteStackYield.frame(table.stackInterruption.actionVersion(), resolutionChoiceVersion));
@@ -1503,10 +1588,13 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         String status = (String) latest.get("status");
         if (status.equals("finished") || status.equals("error") || status.equals("starting")) { owner = null; actionClass = status; }
         boolean clearPriority = actionClass.equals("resolving") || actionClass.equals("finished") || actionClass.equals("error");
+        var undo = undoProjection(actionClass.equals("priority") && Objects.equals(owner, viewer.getId()) ? pending : null);
         if (Objects.equals(latest.get("decisionOwnerId"), owner) && Objects.equals(latest.get("actionClass"), actionClass)
                 && Objects.equals(latest.get("stackInterruptionVersion"), table.stackInterruption.version())
+                && Objects.equals(latest.get("undo"), undo)
                 && (!clearPriority || latest.get("priorityPlayerId") == null)) return;
         var next = new LinkedHashMap<>(latest);
+        next.put("undo", undo);
         next.put("revision", ++revision); next.put("decisionOwnerId", owner); next.put("actionClass", actionClass);
         next.put("stackInterruptionVersion", table.stackInterruption.version());
         next.put("stackActionVersion", table.stackInterruption.actionVersion());
@@ -1699,6 +1787,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "priorityPlayerId", allPlayers.stream().filter(p -> !p.getHasLost() && p.getHasPriority()).map(PlayerView::getId).findFirst().orElse(null),
                 "decisionOwnerId", null, "actionClass", "resolving",
                 "stack", stack, "combat", combatState(prompt), "prompt", prompt == null ? null : prompt.prompt,
+                "undo", undoProjection(prompt),
                 "states", PublicStates.of(forge.game.PublicTableStates.snapshot(game)),
                 "playAccesses", playAccess.project(human.getPlayer(), allPlayers,
                         prompt != null && prompt.input instanceof InputPassPriority && sourceInputCurrent(prompt) ? prompt.input : null,
@@ -1989,6 +2078,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             pending = null;
             var next = new LinkedHashMap<>(latest);
             next.put("revision", ++revision); next.put("status", "error"); next.put("error", failure); next.put("prompt", null);
+            next.put("undo", MatchUndo.faultFrame(latest.get("undo"), game.getReversibleManaAction().barrierVersion()));
             next.put("result", null);
             next.put("finiteStackYield", finiteStackYield.frame(table.stackInterruption.actionVersion(), resolutionChoiceVersion));
             next.put("priorityPlayerId", null); next.put("decisionOwnerId", null); next.put("actionClass", "error");
@@ -2392,6 +2482,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 // the next required/read-only dialog on this seat.
                 if (pending != null && !pending.kind.equals("input") && !pending.response.isDone())
                     return pending.response;
+                table.invalidateUndo("required-dialog");
                 pending = next;
                 publish(next);
                 return null;

@@ -27,11 +27,17 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         if (deckIds.IsDefault || deckIds.Length != 4 || deckIds.Any(string.IsNullOrWhiteSpace))
             throw new ArgumentException("Choose four Commander decks.", nameof(deckIds));
         lock (automatedScopes) automatedScopes.Clear();
-        return ForgeSnapshotDecoder.Decode(await Request("automatedSimulationStart", new { decks = deckIds }), spectator: true)
+        var owner = current ?? throw new IOException("The engine is not running");
+        return ForgeSnapshotDecoder.Decode(await Request("automatedSimulationStart", new { decks = deckIds }), spectator: true,
+                certifiedUndo: owner.CertifiedUndoAvailable)
             ?? throw new IOException("The simulation did not start.");
     }
-    public async Task<GameSnapshot?> ObserveSimulationAsync() =>
-        ForgeSnapshotDecoder.Decode(await Request("automatedSimulationState"), spectator: true);
+    public async Task<GameSnapshot?> ObserveSimulationAsync()
+    {
+        var owner = current ?? throw new IOException("The engine is not running");
+        return ForgeSnapshotDecoder.Decode(await Request("automatedSimulationState"), spectator: true,
+            certifiedUndo: owner.CertifiedUndoAvailable);
+    }
     public async Task StopSimulationAsync(string gameId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(gameId);
@@ -51,7 +57,7 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         }
         if (current != owner || owner.Failure != null) throw new IOException("The engine changed during automated observation.");
         ImmutableArray<AutomatedSeatObservation> result;
-        try { result = DecodeAutomatedObservations(raw); }
+        try { result = DecodeAutomatedObservations(raw, owner.CertifiedUndoAvailable); }
         catch (Exception error) {
             lock (automatedScopes) automatedScopes.Clear();
             PreserveRejectedAutomatedObservation(paths.Profile, raw, error);
@@ -84,13 +90,13 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         } catch (Exception) { /* Preserve the original failure even if diagnostic storage is unavailable. */ }
     }
 
-    internal static ImmutableArray<AutomatedSeatObservation> DecodeAutomatedObservations(JsonElement raw)
+    internal static ImmutableArray<AutomatedSeatObservation> DecodeAutomatedObservations(JsonElement raw, bool certifiedUndo = false)
     {
         try {
             var result = ImmutableArray.CreateBuilder<AutomatedSeatObservation>();
             foreach (var item in raw.EnumerateArray()) {
                 int seat = item.GetProperty("seatId").GetInt32();
-                var state = ForgeSnapshotDecoder.Decode(item.GetProperty("state")) ?? throw new IOException("Missing automated seat state.");
+                var state = ForgeSnapshotDecoder.Decode(item.GetProperty("state"), certifiedUndo: certifiedUndo) ?? throw new IOException("Missing automated seat state.");
                 var domain = item.GetProperty("domain").Deserialize<DecisionActionDomain>(AutomationJson) ?? throw new IOException("Missing action domain.");
                 var semantics = item.GetProperty("semantics").Deserialize<DecisionSemantics>(AutomationJson) ?? throw new IOException("Missing decision semantics.");
                 if (seat < 0 || seat != state.ViewerId || domain.Version < 0 || domain.Sources.IsDefault || domain.Actions.IsDefault
@@ -112,6 +118,8 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
     {
         Dictionary<string, object?> args;
         lock (automatedScopes) {
+            if (command is UndoAction && current?.CertifiedUndoAvailable != true)
+                throw new EngineCommandRejectedException("This engine does not support certified gameplay Undo.");
             if (!automatedScopes.TryGetValue((command.GameId, seatId), out var currentScope))
                 throw new EngineCommandRejectedException("Observe this automated seat before answering it.");
             args = currentScope.Scope.Encode(command);

@@ -1008,6 +1008,17 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
         return thisTurnActivated;
     }
 
+    public record ManaActivationHistory(List<SpellAbility> activated, List<SpellAbility> undo, Player undoOwner) { }
+
+    public ManaActivationHistory captureManaActivationHistory() {
+        return new ManaActivationHistory(List.copyOf(thisTurnActivated), List.copyOf(undoStack), undoStackOwner);
+    }
+
+    public void restoreManaActivationHistory(ManaActivationHistory state) {
+        thisTurnActivated.clear(); thisTurnActivated.addAll(state.activated());
+        undoStack.clear(); undoStack.addAll(state.undo()); undoStackOwner = state.undoOwner();
+    }
+
     public final boolean hasSourceOnStack(final Card source, final Predicate<SpellAbility> pred) {
         if (source == null) {
             return false;

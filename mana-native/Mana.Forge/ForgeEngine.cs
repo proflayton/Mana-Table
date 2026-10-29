@@ -27,6 +27,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         public bool DeckTokensAvailable { get; set; }
         public bool TempoAvailable { get; set; }
         public bool AutomationAvailable { get; set; }
+        public bool CertifiedUndoAvailable { get; set; }
         public ForgeCommandScope Commands { get; } = new();
         public volatile Exception? Failure;
     }
@@ -67,6 +68,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                             owner.DeckTokensAvailable = capabilities.Contains("deck-tokens");
                             owner.TempoAvailable = capabilities.Contains("decision-tempo");
                             owner.AutomationAvailable = capabilities.Contains("automated-seats");
+                            owner.CertifiedUndoAvailable = capabilities.Contains("certified-one-step-undo");
                             owner.Ready.TrySetResult();
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
@@ -281,12 +283,14 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         var owner = current ?? throw new IOException("The engine is not running");
         var raw = await Request("matchState");
         if (current != owner || owner.Failure != null) throw new IOException("The engine is not running");
-        return owner.Commands.ObserveRaw(raw);
+        return owner.Commands.ObserveRaw(raw, owner.CertifiedUndoAvailable);
     }
     public async Task ExecuteAsync(GameCommand command)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         var owner = current ?? throw new IOException("The engine is not running");
+        if (command is UndoAction && !owner.CertifiedUndoAvailable)
+            throw new EngineCommandRejectedException("This engine does not support certified gameplay Undo.");
         var args = owner.Commands.Encode(command);
         if (current != owner || owner.Failure != null) throw new IOException("The engine is not running");
         await Request("matchAction", args);

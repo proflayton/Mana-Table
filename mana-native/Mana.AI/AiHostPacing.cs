@@ -8,10 +8,12 @@ public sealed record AiTableProgress(string GameId, int SeatId, int Turn, int? A
     ImmutableArray<string> StackIds, long PublicActionId)
 {
     public AiResolutionProgress? Resolution { get; init; }
+    public long RestorationVersion { get; init; }
     internal static AiTableProgress From(GameSnapshot state) => new(state.Id, state.ViewerId, state.Turn, state.ActivePlayerId,
         state.Stack.Select(item => item.Id).ToImmutableArray(),
         state.Activity.Where(entry => entry.Kind is "cast" or "ability" or "resolved" or "land" or "combat")
-            .Select(entry => entry.Id).DefaultIfEmpty().Max()) { Resolution = AiResolutionProgress.From(state) };
+            .Select(entry => entry.Id).DefaultIfEmpty().Max()) { Resolution = AiResolutionProgress.From(state),
+                RestorationVersion = state.Undo?.RestorationVersion ?? 0 };
 }
 
 /// <summary>Host cadence, independent of strategy, legality, and headless evaluation speed.</summary>
@@ -41,8 +43,9 @@ public sealed class TimedAiHostPacing(TimeSpan duration, TimeProvider? clock = n
             bool changed = baseline ? !item.StackIds.IsEmpty : before!.Progress.Turn != item.Turn
                 || before.Progress.ActivePlayerId != item.ActivePlayerId || before.Progress.PublicActionId != item.PublicActionId
                 || !before.Progress.StackIds.SequenceEqual(item.StackIds)
+                || before.Progress.RestorationVersion != item.RestorationVersion
                 || AiResolutionCadence.Changed(before.Progress.Resolution, item.Resolution);
-            bool capturedProgress = changed && !baseline && before!.Progress.Turn == item.Turn
+            bool capturedProgress = changed && !baseline && before!.Progress.RestorationVersion == item.RestorationVersion && before.Progress.Turn == item.Turn
                 && before.Progress.ActivePlayerId == item.ActivePlayerId && before.Cohort?.Continue(item.Resolution) == true;
             var cohort = capturedProgress || !changed ? before?.Cohort : AiResolutionCadence.Capture(item.Resolution);
             beats[(item.GameId, item.SeatId)] = new(item, changed && !capturedProgress ? time.GetTimestamp() : before?.Started ?? 0,

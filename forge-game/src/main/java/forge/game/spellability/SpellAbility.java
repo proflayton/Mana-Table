@@ -1023,6 +1023,36 @@ public abstract class SpellAbility extends CardTraitBase implements ISpellAbilit
         }
     }
 
+    public record ManaActivationState(List<Mana> mana, List<SpellAbility> paidAbilities,
+            Integer x, TreeBasedTable<String, Boolean, CardCollection> paid,
+            EnumMap<AbilityKey, Object> triggering, int life, boolean undoable) { }
+
+    public boolean reversibleManaStateWithin(int limit) {
+        if (payingMana.size() > limit || paidAbilities.size() > limit || paidLists.size() > limit
+                || triggeringObjects.size() > limit) return false;
+        long count = 0;
+        for (var cell : paidLists.cellSet()) {
+            count += cell.getValue().size();
+            if (count > limit || cell.getRowKey().length() > limit) return false;
+        }
+        return true;
+    }
+
+    public ManaActivationState captureManaActivationState() {
+        var paid = TreeBasedTable.<String, Boolean, CardCollection>create();
+        for (var cell : paidLists.cellSet()) paid.put(cell.getRowKey(), cell.getColumnKey(), new CardCollection(cell.getValue()));
+        return new ManaActivationState(List.copyOf(payingMana), List.copyOf(paidAbilities), xManaCostPaid,
+                paid, AbilityKey.newMap(triggeringObjects), getAmountLifePaid(), undoable);
+    }
+
+    public void restoreManaActivationState(ManaActivationState state) {
+        payingMana.clear(); payingMana.addAll(state.mana());
+        paidAbilities.clear(); paidAbilities.addAll(state.paidAbilities());
+        xManaCostPaid = state.x(); paidLists = state.paid();
+        triggeringObjects = AbilityKey.newMap(state.triggering());
+        setPaidLife(state.life()); undoable = state.undoable();
+    }
+
     // key for autoyield - the card description (including number) (if there is a card) plus the effect description
     public String yieldKey() {
         if (getHostCard() != null) {
