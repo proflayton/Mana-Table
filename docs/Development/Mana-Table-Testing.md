@@ -144,8 +144,19 @@ remain diagnostic observations. Failure artifacts retain its public JSONL trace
 separately from private seat evidence.
 
 The same JVM then runs four complete `CasualCommanderPolicy`
-seats against different Commander decks, including a saved Toothy/Pir partner
-deck. No scripted driver answers a bot. A separate public spectator records
+seats in a bounded contract prefix against different legal commander/basic-land
+decks: Goreclaw, Torbran, Rhys and Toothy/Pir. All four seats must resolve an
+actual commander, develop lands and reach paid Rhys token creation and combat,
+through turn 20 or an earlier natural outcome, within the unchanged 60 seconds.
+Deck contents are controlled; Forge's rules RNG is not. This prefix does not
+cover competing ordinary spells or normal deck resource ratios. The previous
+mixed-preset prefix's first 60-second cutoff remains retained: it progressed to
+turn 27 with tokens/combat, but green was mana-starved and red chose other spells
+at its first funded commander window. Retrying that shuffle would not establish
+the contract. Normal singleton spell and resource coverage stays in the separate
+unchanged diverse campaign and release rotations below; the focused Fireball
+regressions and ten real-provider goldens also remain mandatory.
+No scripted driver answers a bot. A separate public spectator records
 the changing board and stack in `whole-seat-ai-public.jsonl`; private decision
 histories live separately in `whole-seat-ai.json`. The focused standalone option
 is `--smoke-whole-seat-ai` with the same engine and disposable-profile arguments.
