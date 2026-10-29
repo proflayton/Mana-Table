@@ -97,7 +97,8 @@ public sealed class TableScene
     public static TableScene Build(GameSnapshot state,
         Point pointer, string? previouslyRaised, string? dragged, bool allowHover, Func<Card, bool> isResource,
         bool allowInlineOrdering = true,
-        bool sharedTableStudy = false, CardSpreadRequest? spread = null, Func<CardSpreadPacket, int, int>? spreadMeasure = null)
+        bool sharedTableStudy = false, CardSpreadRequest? spread = null, Func<CardSpreadPacket, int, int>? spreadMeasure = null,
+        bool groupCombatCandidates = false)
     {
         var geometry = SeatGeometry.Build(state, sharedTableStudy);
         var hand = HandLayout.Build(state, pointer, previouslyRaised, dragged, allowHover);
@@ -124,14 +125,19 @@ public sealed class TableScene
             var choices = required switch { OptionsPayload options => options.Selection.Choices, OrderingPayload ordering => ordering.Selection.Choices,
                 AbilityChoicePayload ability => ability.Selection.Choices, _ => [] };
             var disclosed = required is RevealPayload reveal ? reveal.Cards : [];
+            // Only an explicit group-review context admits combat cohorts. The
+            // pure partition refines intrinsic state by actual relationship
+            // counts; individual identities and command permissions stay intact.
+            bool groupedBlocks = groupCombatCandidates && required is BlockPayload;
             foreach (var card in state.Players.SelectMany(player => player.Zone("Battlefield").Cards)
-                .Where(card => required is AttackPayload or BlockPayload || card.Selectable
+                .Where(card => required is AttackPayload or BlockPayload ? !groupedBlocks : card.Selectable
                     || choices.Any(choice => choice.CardId == CardViews.Identity(card) || choice.Card != null && CardViews.Same(choice.Card, card))
                     || disclosed.Any(face => face.CardId == CardViews.Identity(card) || CardViews.Same(face.Card, card)))) studySeparate.Add(CardViews.Identity(card));
         }
         var layout = sharedTableStudy ? null : BattlefieldLayoutContext.Build(state, orderedChoices, geometry, isResource);
         var attachments = sharedTableStudy ? BattlefieldAttachments.Build(state,
             geometry.Where(seat => seat.Index is >= 0 and <= 3).Select(seat => seat.PlayerId).ToHashSet()) : null;
+        var combatCohorts = sharedTableStudy && groupCombatCandidates && state.Combat != null ? CombatCohortProjection.Build(state) : null;
         var seats = new List<SceneSeat>();
         for (int index = 0; index < state.Players.Length; index++) {
             var player = state.Players[index];
@@ -140,7 +146,7 @@ public sealed class TableScene
             var clusters = sharedTableStudy
                 ? SharedTableStudy.Arrange(seat.Index, player.Id, player.Zone("Battlefield").Cards.Where(card => !attachments!.IsTucked(card)).ToArray(), isResource, studySeparate,
                         duel ? role => DuelTableStudy.MatchLane(seat.Index, role) : null, duel ? 1.35f : 1,
-                        horizontalRows: duel, centerRows: duel, attachments: attachments, seatFacing: !duel)
+                        horizontalRows: duel, centerRows: duel, attachments: attachments, seatFacing: !duel, combatCohorts: combatCohorts)
                 : BattlefieldLayout.Arrange(layout!, seat.Index, player.Id,
                     player.Zone("Battlefield").Cards, isResource, orderedChoices);
             seats.Add(new(seat, clusters));

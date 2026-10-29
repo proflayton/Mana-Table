@@ -1403,3 +1403,85 @@ same API. The native Analyze tab sits beside Build, Test and Results and uses
 their existing workspace. Review decisions are saved through the engine instead
 of implementing analysis logic in the renderer. The original `deckInsights` API
 remains compatible.
+
+### Finite resolution consent and combat domains
+
+Current stack entries can add `repetition: {groupKey, sourceCardId}`. The provider
+derives equivalence from the actual rules ability, source incarnation, controller
+and committed targets; names, descriptions and matching budget roots do not prove
+equivalence. An owned optional mana payment can add `optionalDecline` containing
+`groupKey`, `paymentKey`, `producingTriggerExecutionId`, `sourceCardId`, `purpose`,
+`payerId`, `mandatory: false`, `offerId` and `previousOfferId`. The producing
+trigger must be linked through disclosed execution parents. `paymentKey` binds
+the actual remaining counted bill and literal mana-only cost terms. Mixed,
+variable, mandatory, private or unsupported commitments omit these facts. Offer
+lineage follows actual owned input episodes, including other groups; it cannot
+reset to skip a payment. These facts never authorize a positive payment or a
+future answer. `InputConfirm` repetition is not certified here.
+Certification follows the actual cancellable payment and producing trigger;
+it does not require an `OptionalDecider` parameter in the card's script.
+
+Snapshots add `stackActionVersion` and viewer-local `resolutionChoiceVersion`.
+Actual nonpass priority actions, including mana, advance the former. New owned
+nonpriority inputs advance the latter unless the provider certifies the current
+cancellable trigger payment. Other seats' private choices are not disclosed.
+The existing `stackInterruptionVersion` keeps its full choice/action behavior;
+ordinary finite passing does not silently refresh that older fence.
+
+An optional `finiteStackYield` snapshot advertises server support and retains
+`grantId`, `status` (`Idle`, `Active`, `Completed`, `Revoked`), original
+`executionIds`, `remainingExecutionIds`, original action/choice versions,
+`reasonCode` and `automaticPasses`. Absence means unsupported. Remaining IDs
+include a resolving occurrence which has left the stack; completion requires
+actual terminal execution receipts, never disappearance. Declining an optional
+payment can leave its trigger `resolved`: negative answers and execution outcomes
+are separate evidence.
+
+The existing `matchAction` endpoint accepts two additional typed operations:
+
+- `grantFiniteStackYield` requires `sessionId`, current owned priority `promptId`,
+  fresh `grantId`, exact **entire** current known stack `executionIds` (maximum
+  256), `stackActionVersion` and `resolutionChoiceVersion`.
+- `revokeFiniteStackYield` requires matching `sessionId` and `grantId`, and remains
+  available while another seat owns input. Exact repeated consent and revocation
+  receipts are idempotent; an old ID cannot restart revoked consent.
+
+Each seat consents independently. Every automatic pass rechecks the live owned
+`InputPassPriority` on its input thread. The internal queue witness keeps relative
+order, controller, kind, source occurrence, target occurrences and their
+controllers/divided allocations, plus supported repetition facts. Normal removal
+of resolved members is allowed; retargeting, reordering, changed source/controller,
+new stack executions, outside actions, unsupported owned choices, changed phase/turn,
+match closure and connection replacement stop the grant. Mutable power, counters
+and ordinary resource values are not queue identity. Certified owned payments
+pause yielding; only the exact manually/client-authorized negative cancellation
+may resume it. The server never answers payment, targets, confirmation, or another
+seat's choice. The seat's positive payment/source use stops its consent. Connection loss and
+reattachment clear seat consent; delayed cleanup from an old socket cannot revoke
+a newer connection's grant. Local guest closure also clears consent. Read/pause
+requires acknowledged revocation; resume needs a fresh grant.
+
+While one grant is advertised, each audience pins its original executions and
+proven parent descendants, plus their event-time activity. The added pin sets
+are bounded at 4096 occurrences/entries. Overflow exposes `history-overflow` and
+stops later automatic passes without throwing into the current rules resolution.
+A single resolution can exceed the bound; this is explicit incomplete history,
+not a claim that every event was retained. The ordinary feed's existing whole
+latest counter-effect retention can independently exceed its normal 120-entry
+tail. No private source or same-root guess is admitted by these pins.
+
+Combat adds `declarationId`, stable for the actual turn/combat/phase/viewer episode;
+missing identity disables finite staging. Offered attack/block domains come only
+from the engine's `CombatInputState` publication, bound to exact input, owner,
+input sequence and rules version. Every accepted gesture invalidates the old
+domain; only a new real input callback restores it. Missing/stale facts withhold
+the entire executable decision while refreshing, rather than invent an empty
+legal domain or fault the AI. A certified empty domain remains distinct and may
+allow normal completion. Typed pair commands use existing sequence-checked
+`InputProxy.assignAttack`/`assignBlock` primitives and live rules validation.
+The adapter does not recompute legal pairs or auto-confirm the declaration.
+One block-domain build memoizes read-only blocker and attacker/defender facts
+inside its private factory; no query context survives a rules change or input
+gesture, and assignment commands still evaluate the ordinary live predicates.
+These additions preserve protocol-2/seat-sync compatibility and require no
+saved-deck or player-profile migration.

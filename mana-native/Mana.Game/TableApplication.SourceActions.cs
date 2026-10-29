@@ -44,7 +44,8 @@ internal sealed partial class TableApplication
             || sourceActions.TryCreateCommand(context, action.Id) is not { } reply) return;
         var source = matchPresentation.Cards.Pinned;
         if (zoneName != "Battlefield") zoneName = null;
-        if (Send(reply) && (action.Kind is "cast" or "play") && source is { Zone: not ("Battlefield" or "Stack") })
+        if (!Send(reply)) return;
+        if ((action.Kind is "cast" or "play") && source is { Zone: not ("Battlefield" or "Stack") })
             releasedCardPlay = new(Scope, context, source.Zone, source.Display, true);
         CollapseCardReading(); ClearReaderActions();
     }
@@ -55,8 +56,8 @@ internal sealed partial class TableApplication
         if (card == null || !ReaderActionsMatch(card) || match is not { } state
             || !HandPlacements.Options(state, card).Any(current => current.Id == placement.Id)
             || HandPlacements.Start(state, card, placement.Id) is not { } reply) return;
+        if (!Send(reply)) return;
         CollapseCardReading(); ClearReaderActions();
         if (zoneName != "Battlefield") zoneName = null;
-        Send(reply);
     }
 }

@@ -403,6 +403,13 @@ Remove to undo its assignment; the review panel can also recall attackers.
 Review blockers opens a paged gallery for each attack, with individual removal
 controls while you are assigning blocks.
 An invalid blocking arrangement keeps confirmation disabled and explains why.
+Source-only group blocking: select Group blocks, then your physical creature
+group and the incoming attacker group. All blockers / All incoming select across
+several groups. Review the proposed count and unpaired attackers, then Assign N
+blocks. This stages at most one blocker per uncovered attacker using the current
+published eligibility; it does not choose a combat strategy or satisfy every
+joint restriction. Review the actual assignments and Confirm blocks separately.
+Take control stops further assignments; already sent assignments stay committed.
 Damage, tapping and zone changes have brief visual feedback; Reduced motion
 disables the added effects. Combat arrows end at card and life-counter edges.
 Choice lists are paged. For ordered choices, clear and select in the desired order.
@@ -497,6 +504,13 @@ In the next source build, Resolve these passes priority for the entries already
 on the stack. Take control stops it. A new action or required choice stops it
 automatically; it never chooses targets or pays costs. Hovering to read pauses
 your continuation while the table's configured decision clock keeps running.
+Source-only repeated optional costs: when the engine identifies equivalent costs,
+Decline N + resolve queue declines only those captured source costs and yields
+priority for the current whole queue. Source-effect and total-queue progress remain
+visible. A different cost or required choice stops it. It never pays a cost or
+answers future triggers. Take control and reading withdraw any live server yield;
+resume uses the current queue. A manual action during a live yield first takes
+control; choose your action again once priority returns. No old action is replayed.
 Repeated trigger sources appear as card piles with pending counts. NEXT marks
 the actual next entry; the piles do not change resolution order or predict how
 many counters will be added. Read the ability or its source for complete details.

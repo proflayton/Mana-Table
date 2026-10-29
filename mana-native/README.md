@@ -104,6 +104,18 @@ same position and holds Auto for the current turn, including while an already
 sent pass reconciles. The first-land warning also protects deliberate waiting
 on your own turn. These controls never enable Forge's separate end-turn yield.
 
+Source-only bulk decisions extend that explicit consent: **Decline N + resolve
+queue** declines the engine-certified equivalent optional costs while yielding
+priority for the whole captured queue, including interleaved sources. It shows
+source-effect and queue progress separately and stops for another choice or new
+response. Supported providers may circulate only the captured priority windows
+on the server; reading and **Take control** withdraw that seat's exact grant.
+Manual actions first take control and require a fresh action after priority
+returns. **Group blocks** selects actual creature/attacker groups, previews
+one-to-one assignments through current eligibility, then stages those exact
+pairs. **Confirm blocks** remains a separate gesture after review; the engine
+retains authority over joint blocking restrictions. Human review is pending.
+
 The next source iteration places turn and passing controls beside your portrait.
 Six compact phase markers show recurring stops on your own turn; the current
 phase light and a saved pause mark remain visually distinct. Hover describes the

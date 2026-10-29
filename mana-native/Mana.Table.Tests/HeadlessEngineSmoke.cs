@@ -280,6 +280,7 @@ internal static class HeadlessEngineSmoke
             Save("finished");
             if (productionJar != null) {
                 await ExecutionEngineJourney.RunAsync(engine, paths.Profile, Check, sourceRevision);
+                await AiRepeatedCadenceEngineJourney.RunAsync(engine, paths.Profile, Check);
                 await AiReleaseGoldens.RunAsync(engine, paths.Profile, Check);
             }
             await AiWholeSeatEngineCheck.RunAsync(engine, paths.Profile, Check);

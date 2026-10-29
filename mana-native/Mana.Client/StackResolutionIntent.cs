@@ -5,7 +5,7 @@ namespace Mana.Client;
 
 /// <summary>A player's finite intent to pass priority for the currently observed stack.
 /// Each pass still needs a fresh ordinary priority offer and the provider's unchanged interruption fence.</summary>
-public sealed class StackResolutionIntent
+public sealed class StackResolutionIntent : IFiniteDecisionPolicy
 {
     private readonly object gate = new();
     private readonly string game, phase;
@@ -112,4 +112,7 @@ public sealed class StackResolutionIntent
             submittedRemaining = state.Stack.Length;
         }
     }
+
+    DecisionCommand? IFiniteDecisionPolicy.NextCommand(GameSnapshot state) => NextPass(state);
+    void IFiniteDecisionPolicy.Submitted(GameSnapshot state, DecisionCommand command) => Submitted(state);
 }

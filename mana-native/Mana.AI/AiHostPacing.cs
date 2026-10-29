@@ -7,10 +7,11 @@ namespace Mana.AI;
 public sealed record AiTableProgress(string GameId, int SeatId, int Turn, int? ActivePlayerId,
     ImmutableArray<string> StackIds, long PublicActionId)
 {
+    public AiResolutionProgress? Resolution { get; init; }
     internal static AiTableProgress From(GameSnapshot state) => new(state.Id, state.ViewerId, state.Turn, state.ActivePlayerId,
         state.Stack.Select(item => item.Id).ToImmutableArray(),
         state.Activity.Where(entry => entry.Kind is "cast" or "ability" or "resolved" or "land" or "combat")
-            .Select(entry => entry.Id).DefaultIfEmpty().Max());
+            .Select(entry => entry.Id).DefaultIfEmpty().Max()) { Resolution = AiResolutionProgress.From(state) };
 }
 
 /// <summary>Host cadence, independent of strategy, legality, and headless evaluation speed.</summary>
@@ -25,7 +26,7 @@ public interface IAiHostPacing
 public sealed class TimedAiHostPacing(TimeSpan duration, TimeProvider? clock = null) : IAiHostPacing
 {
     private readonly TimeProvider time = clock ?? TimeProvider.System;
-    private sealed record Beat(AiTableProgress Progress, long Started, bool Waiting);
+    private sealed record Beat(AiTableProgress Progress, long Started, bool Waiting, AiResolutionCadence? Cohort);
     private readonly Dictionary<(string Game, int Seat), Beat> beats = [];
 
     public void Observe(ImmutableArray<AiTableProgress> progress)
@@ -39,9 +40,13 @@ public sealed class TimedAiHostPacing(TimeSpan duration, TimeProvider? clock = n
             // for each audience, even while only one of them has a prompt.
             bool changed = baseline ? !item.StackIds.IsEmpty : before!.Progress.Turn != item.Turn
                 || before.Progress.ActivePlayerId != item.ActivePlayerId || before.Progress.PublicActionId != item.PublicActionId
-                || !before.Progress.StackIds.SequenceEqual(item.StackIds);
-            beats[(item.GameId, item.SeatId)] = new(item, changed ? time.GetTimestamp() : before?.Started ?? 0,
-                changed || before?.Waiting == true);
+                || !before.Progress.StackIds.SequenceEqual(item.StackIds)
+                || AiResolutionCadence.Changed(before.Progress.Resolution, item.Resolution);
+            bool capturedProgress = changed && !baseline && before!.Progress.Turn == item.Turn
+                && before.Progress.ActivePlayerId == item.ActivePlayerId && before.Cohort?.Continue(item.Resolution) == true;
+            var cohort = capturedProgress || !changed ? before?.Cohort : AiResolutionCadence.Capture(item.Resolution);
+            beats[(item.GameId, item.SeatId)] = new(item, changed && !capturedProgress ? time.GetTimestamp() : before?.Started ?? 0,
+                changed || before?.Waiting == true, cohort);
         }
     }
 

@@ -19,6 +19,7 @@ final class SyncLobby {
     private SyncTransport.Connection connection;
     private final List<Slot> slots = new ArrayList<>();
     private MatchTable table;
+    private long transportEpoch;
     private final boolean automated;
     private TableConversation conversation = new TableConversation();
     private String format = "Constructed";
@@ -62,7 +63,8 @@ final class SyncLobby {
             configureSeats(format, count); slots.get(0).occupied = true;
             conversation = new TableConversation(); conversation.join(0, slots.get(0).name);
             revision = 1;
-            server = new SyncTransport.Server(this::dispatch, this::joinSeat); connection = server.local(0);
+            long epoch = ++transportEpoch;
+            server = new SyncTransport.Server(this::dispatch, this::joinSeat, seat -> disconnected(epoch, seat)); connection = server.local(0);
             try { port = transport.equals("local") ? 0 : server.listen(); } catch (java.io.IOException e) { close(); throw new IllegalStateException("Could not host the table", e); }
             if (port != 0) external = CompletableFuture.supplyAsync(FServerManager::getExternalAddress).exceptionally(ignored -> null);
             forwarding = new PortForwarding(port, port != 0 && autoForward);
@@ -131,12 +133,21 @@ final class SyncLobby {
     }
     boolean hasMatch() { return connection != null && Boolean.TRUE.equals(((Map<?, ?>)state()).get("matchActive")); }
     Object close() {
+        synchronized (this) { transportEpoch++; }
         var current = connection; connection = null;
         if (current != null) { if (server == null) try { current.request("leave", new JsonObject()); } catch (Exception ignored) { } current.close(); }
         if (server != null) { server.close(); server = null; }
         if (forwarding != null) { forwarding.close(); forwarding = null; }
         synchronized (this) { if (table != null) { table.close(); table = null; } slots.clear(); external = CompletableFuture.completedFuture(null); }
         return idle();
+    }
+
+    private void disconnected(long epoch, int seat) {
+        MatchTable owner;
+        synchronized (this) { owner = epoch == transportEpoch ? table : null; }
+        // Do not hold the lobby monitor while entering the rules state boundary.
+        // An old transport epoch cannot revoke a newly hosted table's consent.
+        if (owner != null) owner.seat(seat).revokeFiniteYieldForConnection();
     }
     private synchronized Object dispatch(int seat, String method, JsonObject p) {
         if (seat < 0 || seat >= slots.size() || !slots.get(seat).occupied) throw new IllegalStateException("This seat is no longer active");

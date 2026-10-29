@@ -23,13 +23,17 @@ public final class SyncTransport {
     public static final class Server implements AutoCloseable {
         private final Handler handler;
         private final java.util.function.IntSupplier join;
+        private final java.util.function.IntConsumer disconnectSeat;
         private final Map<String, SeatChannel> channels = new ConcurrentHashMap<>();
         private final Set<SeatChannel> seatChannels = ConcurrentHashMap.newKeySet();
         private final Set<Socket> sockets = ConcurrentHashMap.newKeySet();
         private final ExecutorService workers = Executors.newCachedThreadPool(r -> { var t = new Thread(r, "Mana sync"); t.setDaemon(true); return t; });
         private ServerSocket listener;
         private volatile boolean closed;
-        public Server(Handler handler, java.util.function.IntSupplier join) { this.handler = handler; this.join = join; }
+        public Server(Handler handler, java.util.function.IntSupplier join) { this(handler, join, ignored -> { }); }
+        public Server(Handler handler, java.util.function.IntSupplier join, java.util.function.IntConsumer disconnectSeat) {
+            this.handler = handler; this.join = join; this.disconnectSeat = disconnectSeat;
+        }
         public synchronized int listen() throws IOException {
             if (listener != null) return listener.getLocalPort();
             listener = new ServerSocket(0);
@@ -56,10 +60,20 @@ public final class SyncTransport {
         private final class SeatChannel {
             final int seat;
             long lastSequence;
+            long connectionGeneration;
             volatile boolean revoked;
             JsonObject lastRequest, lastReceipt;
             SeatChannel(int seat) { this.seat = seat; seatChannels.add(this); }
-            synchronized JsonObject apply(JsonObject request) {
+            synchronized long attach() {
+                connectionGeneration++; disconnectSeat.accept(seat); return connectionGeneration;
+            }
+            synchronized void detach(long generation) {
+                if (connectionGeneration != generation) return;
+                connectionGeneration++; disconnectSeat.accept(seat);
+            }
+            JsonObject apply(JsonObject request) { return apply(request, 0); }
+            synchronized JsonObject apply(JsonObject request, long generation) {
+                if (generation != connectionGeneration) throw new IllegalStateException("This connection has been replaced");
                 if (revoked || closed) throw new IllegalStateException("This seat is no longer active");
                 long sequence = request.get("sequence").getAsLong();
                 if (sequence == lastSequence && lastRequest != null && lastRequest.equals(request)) return lastReceipt.deepCopy();
@@ -72,12 +86,13 @@ public final class SyncTransport {
             }
         }
         private void serve(Socket socket) {
+            SeatChannel channel = null;
+            long generation = 0;
             try (socket; var input = reader(socket); var output = writer(socket)) {
                 var hello = read(input);
                 if (!hello.has("version") || hello.get("version").getAsInt() != VERSION) {
                     write(output, JSON.toJsonTree(Map.of("error", "Incompatible sync protocol. All players need the same build."))); return;
                 }
-                SeatChannel channel;
                 String token = hello.has("resume") ? hello.get("resume").getAsString() : "";
                 {
                     if (!token.isEmpty()) {
@@ -88,18 +103,24 @@ public final class SyncTransport {
                         token = UUID.randomUUID().toString() + UUID.randomUUID(); channels.put(token, channel);
                     }
                 }
+                generation = channel.attach();
                 write(output, JSON.toJsonTree(Map.of("version", VERSION, "resume", token, "seat", channel.seat)));
-                while (!closed) write(output, channel.apply(read(input)));
+                while (!closed) write(output, channel.apply(read(input), generation));
             } catch (Exception failure) {
                 // A dropped connection retains its seat and receipt. Reconnection never replays a mutation.
-            } finally { sockets.remove(socket); }
+            } finally { if (channel != null && generation != 0) channel.detach(generation); sockets.remove(socket); }
         }
         private final class Local implements Connection {
             private final SeatChannel channel;
+            private final long generation;
             private long sequence;
-            Local(SeatChannel channel) { this.channel = channel; }
-            @Override public synchronized Object request(String method, JsonObject args) { return result(channel.apply(envelope(++sequence, method, args)), sequence); }
-            @Override public void close() { }
+            private boolean ended;
+            Local(SeatChannel channel) { this.channel = channel; generation = channel.attach(); }
+            @Override public synchronized Object request(String method, JsonObject args) {
+                if (ended) throw new IllegalStateException("This connection has closed");
+                return result(channel.apply(envelope(++sequence, method, args), generation), sequence);
+            }
+            @Override public synchronized void close() { if (!ended) { ended = true; channel.detach(generation); } }
         }
         @Override public synchronized void close() {
             if (closed) return;

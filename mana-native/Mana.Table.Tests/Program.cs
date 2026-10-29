@@ -28,6 +28,7 @@ internal static class Program
         testRun |= args.Contains("--replay-ai-decision");
         testRun |= args.Contains("--replay-projection");
         testRun |= args.Contains("--smoke-execution-journey");
+        testRun |= args.Contains("--smoke-ai-repeated-cadence");
         testRun |= args.Contains("--smoke-ai-campaign");
         testRun |= args.Contains("--evaluate-ai-release");
         testRun |= args.Contains("--smoke-mana-payment");
@@ -135,6 +136,11 @@ internal static class Program
             if (args.Contains("--smoke-execution-journey")) {
                 ExecutionEngineJourney.RunStandaloneAsync(paths, Arg("--production-engine-jar")
                     ?? throw new ArgumentException("The execution journey requires its real production engine dependency.")).GetAwaiter().GetResult();
+                return 0;
+            }
+            if (args.Contains("--smoke-ai-repeated-cadence")) {
+                AiRepeatedCadenceEngineJourney.RunStandaloneAsync(paths, Arg("--production-engine-jar")
+                    ?? throw new ArgumentException("The cadence journey requires its real production engine dependency.")).GetAwaiter().GetResult();
                 return 0;
             }
             if (args.Contains("--smoke-deck-import")) { DeckImportSmoke.Run(paths, Arg("--import-file") ?? Path.Combine(AppContext.BaseDirectory, "Fixtures", "annotated-toph.txt"), size); return 0; }

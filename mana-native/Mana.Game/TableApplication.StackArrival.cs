@@ -52,6 +52,7 @@ internal sealed partial class TableApplication
         if (announcement.EventKind is not ("resolved" or "cancelled" or "declined" or "countered" or "failed" or "completed")
             && announcement.Kind == StackActionKind.TriggeredAbility && announcement.StackId != match!.Stack.FirstOrDefault()?.Id)
             verb = match.Stack.Any(item => item.Id == announcement.StackId) ? "Pending trigger" : "Earlier trigger";
+        if (announcement.CapturedCount > 1) verb = announcement.CapturedCount + " captured \u00b7 " + verb;
         canvas.Text(verb + " · " + actor + " · " + announcement.Name, heading.X, heading.Y, Gold, .65f, heading.Width, 2, true);
         var detail = new Rectangle(heading.X, heading.Bottom + 3, heading.Width, 48);
         canvas.Text(announcement.Text, detail.X, detail.Y, Ink, .62f, detail.Width, 3, true);

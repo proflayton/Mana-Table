@@ -47,6 +47,8 @@ internal static class ForgeSnapshotDecoder
                 wire.Stack.Select(item => item.Native()).ToImmutableArray(), wire.Combat?.Native(), decision) {
                 Revision = wire.Revision, BoardRevision = wire.BoardRevision,
                 StackInterruptionVersion = wire.StackInterruptionVersion,
+                StackActionVersion = wire.StackActionVersion, ResolutionChoiceVersion = wire.ResolutionChoiceVersion,
+                FiniteStackYield = wire.FiniteStackYield,
                 PriorityPlayerId = wire.PriorityPlayerId, DecisionOwnerId = wire.DecisionOwnerId,
                 ActionClass = wire.ActionClass, States = wire.States, Activity = wire.Activity,
                 Notices = wire.Notices, IgnoredPriorityAbilities = wire.IgnoredPriorityAbilities,
@@ -57,6 +59,8 @@ internal static class ForgeSnapshotDecoder
             PublicActivityFacts.Validate(snapshot);
             BlockingCapacityFacts.Validate(snapshot);
             CombatRepairFacts.Validate(snapshot);
+            FiniteResolutionFacts.Validate(snapshot);
+            FiniteStackYieldFacts.Validate(snapshot);
             var operations = new ActionOperationValidation(snapshot);
             foreach (var item in snapshot.Stack) operations.ValidateCommitted(item);
             if (snapshot.Decision?.Payload is PaymentPayload payment) {
@@ -143,6 +147,9 @@ internal static class ForgeSnapshotDecoder
         public long Revision { get; init; }
         public long BoardRevision { get; init; }
         public long? StackInterruptionVersion { get; init; }
+        public long? StackActionVersion { get; init; }
+        public long? ResolutionChoiceVersion { get; init; }
+        public FiniteStackYieldState? FiniteStackYield { get; init; }
         public int? PriorityPlayerId { get; init; }
         public int? DecisionOwnerId { get; init; }
         public string ActionClass { get; init; } = "";
@@ -165,6 +172,7 @@ internal static class ForgeSnapshotDecoder
         public PendingEffect? Effect { get; init; }
         public JsonElement OperationGraph { get; init; }
         public string ExecutionId { get; init; } = "";
+        public StackRepetition? Repetition { get; init; }
         private StackActionKind ActionKind() => (Kind, Ability) switch {
             ("spell" or "", false) => StackActionKind.Spell,
             ("activated", true) => StackActionKind.ActivatedAbility,
@@ -173,7 +181,7 @@ internal static class ForgeSnapshotDecoder
             _ => throw Invalid()
         };
         public StackItem Native() => new(Name, Text, ActionKind(), Card) {
-            Id = Identifier(Id), ControllerId = ControllerId,
+            Id = Identifier(Id), ControllerId = ControllerId, Repetition = Repetition,
             Targets = Targets.IsDefault ? throw Invalid() : Targets, Effect = Effect, ExecutionId = ExecutionId ?? "",
             OperationGraph = OperationGraph.ValueKind == JsonValueKind.Undefined ? ActionOperationGraph.Unknown
                 : OperationGraph.Deserialize<ActionOperationGraph>(OperationJson) ?? throw Invalid()
@@ -203,10 +211,11 @@ internal static class ForgeSnapshotDecoder
         public bool AttackValid { get; init; } = true;
         public ImmutableArray<WireAttackAssignment> AttackRepair { get; init; } = [];
         public ImmutableArray<WireBlockAssignment>? BlockRepair { get; init; }
+        public string DeclarationId { get; init; } = "";
         public Combat Native() => Attackers.IsDefault || AttackOptions.IsDefault ? throw Invalid() : new(
             Attackers.Select(attack => attack?.Native() ?? throw Invalid()).ToImmutableArray(),
             AttackOptions.Select(option => option?.Native() ?? throw Invalid()).ToImmutableArray(), BlockProblem) {
-                AttackValid = AttackValid,
+                AttackValid = AttackValid, DeclarationId = DeclarationId ?? throw Invalid(),
                 AttackRepair = AttackRepair.IsDefault ? throw Invalid() : AttackRepair.Select(assignment => assignment?.Native() ?? throw Invalid()).ToImmutableArray(),
                 BlockRepair = BlockRepair is { } repair ? repair.IsDefault ? throw Invalid()
                     : repair.Select(assignment => assignment?.Native() ?? throw Invalid()).ToImmutableArray() : null

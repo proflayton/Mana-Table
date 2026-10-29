@@ -59,6 +59,12 @@ internal sealed class ForgeCommandScope
         void Action(string name) => args["action"] = name;
         void Card(string key) { Action("card"); args["key"] = key; }
         switch (command) {
+            case GrantFiniteStackYield value:
+                Action("grantFiniteStackYield"); args["grantId"] = value.GrantId; args["executionIds"] = value.ExecutionIds;
+                args["stackActionVersion"] = value.StackActionVersion; args["resolutionChoiceVersion"] = value.ResolutionChoiceVersion;
+                break;
+            case RevokeFiniteStackYield value:
+                Action("revokeFiniteStackYield"); args["grantId"] = value.GrantId; break;
             case PassPriority value:
                 Action("passPriority");
                 if (value.StackInterruptionVersion is { } version) args["stackInterruptionVersion"] = version;

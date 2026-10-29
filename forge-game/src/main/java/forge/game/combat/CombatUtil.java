@@ -42,6 +42,8 @@ import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -752,11 +754,14 @@ public class CombatUtil {
         final CardCollection requirementCards = new CardCollection();
         final Player defender = blocker.getController();
         for (final Card attacker : attackers) {
-            if (getBlockCost(blocker.getGame(), blocker, attacker) != null) {
+            // Most attackers impose no outstanding requirement. Testing that
+            // read-only predicate first avoids a whole-board static-cost scan
+            // for every irrelevant pair in a large declaration.
+            if (attackerLureSatisfied(attacker, blocker, combat.getBlockers(attacker))) {
                 continue;
             }
 
-            if (attackerLureSatisfied(attacker, blocker, combat.getBlockers(attacker))) {
+            if (getBlockCost(blocker.getGame(), blocker, attacker) != null) {
                 continue;
             }
 
@@ -903,14 +908,52 @@ public class CombatUtil {
      * @return a boolean.
      */
     public static boolean canBlock(final Card attacker, final Card blocker, final Combat combat) {
+        return canBlock(attacker, blocker, combat, null);
+    }
+
+    /** Build the immutable offered domain in one read-only rules query. The
+     * memoized context cannot escape this factory or survive an assignment. */
+    static Map<Integer, List<Integer>> blockOptions(final Combat combat, final Player player) {
+        final var query = new BlockQuery(combat);
+        final var options = new LinkedHashMap<Integer, List<Integer>>();
+        final var candidates = player.getCreaturesInPlay();
+        for (Card attacker : combat.getAttackers()) {
+            final var blockers = Lists.<Integer>newArrayList();
+            for (Card blocker : candidates) {
+                if (combat.isBlocking(blocker, attacker) || query.permits(attacker, blocker)) {
+                    blockers.add(blocker.getId());
+                }
+            }
+            options.put(attacker.getId(), List.copyOf(blockers));
+        }
+        return Map.copyOf(options);
+    }
+
+    /** One coherent domain build only; command assignments use live predicates. */
+    private static final class BlockQuery {
+        private final Combat combat;
+        private final Map<Card, Boolean> ready = new IdentityHashMap<>(), basic = new IdentityHashMap<>(), required = new IdentityHashMap<>();
+        private final Map<Card, Map<Player, Boolean>> defend = new IdentityHashMap<>();
+        BlockQuery(Combat combat) { this.combat = combat; }
+        boolean permits(Card attacker, Card blocker) { return canBlock(attacker, blocker, combat, this); }
+        boolean ready(Card blocker) { return ready.computeIfAbsent(blocker, card -> canBlock(card, combat)); }
+        boolean basic(Card blocker) { return basic.computeIfAbsent(blocker, card -> canBlock(card, false)); }
+        boolean required(Card blocker) { return required.computeIfAbsent(blocker, card -> mustBlockAnAttacker(card, combat, null)); }
+        boolean defend(Card attacker, Player player) {
+            return defend.computeIfAbsent(attacker, ignored -> new IdentityHashMap<>())
+                    .computeIfAbsent(player, actor -> canBeBlocked(attacker, combat, actor));
+        }
+    }
+
+    private static boolean canBlock(final Card attacker, final Card blocker, final Combat combat, final BlockQuery query) {
         if (attacker == null || blocker == null) {
             return false;
         }
 
-        if (!canBlock(blocker, combat)) {
+        if (!(query == null ? canBlock(blocker, combat) : query.ready(blocker))) {
             return false;
         }
-        if (!canBeBlocked(attacker, combat, blocker.getController())) {
+        if (!(query == null ? canBeBlocked(attacker, combat, blocker.getController()) : query.defend(attacker, blocker.getController()))) {
             return false;
         }
         if (combat != null && combat.isBlocking(blocker, attacker)) { // Can't block if already blocking the attacker
@@ -948,11 +991,11 @@ public class CombatUtil {
                 && !(attacker.hasKeyword("CARDNAME must be blocked by two or more creatures if able.") && combat.getBlockers(attacker).size() < 2)
                 && !blocker.getMustBlockCards().contains(attacker)
                 && !mustBeBlockedBy
-                && mustBlockAnAttacker(blocker, combat, null)) {
+                && (query == null ? mustBlockAnAttacker(blocker, combat, null) : query.required(blocker))) {
             return false;
         }
 
-        return canBlock(attacker, blocker);
+        return canBlockWithReadiness(attacker, blocker, false, query == null ? null : query.basic(blocker));
     }
 
     // can the blocker block the attacker?
@@ -984,11 +1027,15 @@ public class CombatUtil {
      * @return a boolean.
      */
     public static boolean canBlock(final Card attacker, final Card blocker, final boolean nextTurn) {
+        return canBlockWithReadiness(attacker, blocker, nextTurn, null);
+    }
+
+    private static boolean canBlockWithReadiness(final Card attacker, final Card blocker, final boolean nextTurn, final Boolean ready) {
         if (attacker == null || blocker == null || !blocker.isCreature()) {
             return false;
         }
 
-        if (!canBlock(blocker, nextTurn)) {
+        if (!(ready == null ? canBlock(blocker, nextTurn) : ready)) {
             return false;
         }
 

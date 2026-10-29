@@ -28,6 +28,7 @@ internal sealed class MatchPresentationLifecycle
     private readonly StackArrivalPresentation stackArrival = new();
     private readonly List<Departure> departures = [];
     private (string Game, int Viewer)? scope;
+    private double finiteBeatUntil;
 
     internal CardPresentationController Cards { get; } = new();
     internal IReadOnlyList<CardCue> CardCues => effects.Cards;
@@ -40,6 +41,13 @@ internal sealed class MatchPresentationLifecycle
     internal IReadOnlyList<Departure> Departures => departures;
     internal bool Ready(double now) => pacing.Ready(now) && stackArrival.Ready(now);
     internal bool ReadyForStack(double now) => pacing.Ready(now) && stackArrival.ProgressReady(now);
+    internal bool ReadyForFinite(double now) => now >= finiteBeatUntil && stackArrival.ProgressReady(now);
+    internal void BeginFinite(IEnumerable<(string Execution, string Group)> captured, double now)
+    {
+        stackArrival.BeginFinite(captured, now);
+        finiteBeatUntil = now + 1.2;
+    }
+    internal void EndFinite() => stackArrival.EndFinite();
     internal float StackArrivalStrength(string id, double now) => stackArrival.Strength(id, now);
     internal StackArrivalPresentation.Announcement? Announcement(double now) => stackArrival.Current(now);
     internal int AnnouncementCount => stackArrival.PendingCount;
@@ -49,7 +57,8 @@ internal sealed class MatchPresentationLifecycle
     internal ManaPoolCue? ManaCue(int player, string symbol, double now) => mana.For(player, symbol, now);
     internal IReadOnlyList<ManaPoolCue> ManaCues(int player, double now) => mana.ForPlayer(player, now);
 
-    internal Transition Observe(GameSnapshot? previous, GameSnapshot? current, double now, BoardView view, ExecutionBatch? execution = null)
+    internal Transition Observe(GameSnapshot? previous, GameSnapshot? current, double now, BoardView view, ExecutionBatch? execution = null,
+        bool finiteProgress = false)
     {
         var nextScope = current == null ? ((string Game, int Viewer)?)null : (current.Id, current.ViewerId);
         bool changed = scope != nextScope;
@@ -64,6 +73,9 @@ internal sealed class MatchPresentationLifecycle
         effects.Observe(batch, now); presence.Observe(batch, now);
         actions.Observe(batch, now); changes.Observe(batch, now); impacts.Observe(batch, now);
         pacing.Observe(before, current, now); mana.Observe(before, current, now); priority.Observe(before, current, now);
+        if (finiteProgress) finiteBeatUntil = Math.Max(finiteBeatUntil, now + .16);
+        else if (before != null && PresentationPacing.ShouldPresent(before, current))
+            finiteBeatUntil = Math.Max(finiteBeatUntil, now + 2.6);
         stackArrival.Observe(before, current, now, batch.Entries, batch.HasHistoryGap,
             batch.Executions, batch.ExecutionBaseline, batch.ExecutionGap);
         ObserveDepartures(batch, now, view);
@@ -82,6 +94,7 @@ internal sealed class MatchPresentationLifecycle
         scope = null; activity.Clear(); effects.Clear(); presence.Clear(); pacing.Reset();
         actions.Clear(); changes.Clear(); impacts.Clear(); mana.Clear(); priority.Clear();
         stackArrival.Clear();
+        finiteBeatUntil = 0;
         departures.Clear(); Cards.Reset();
     }
 

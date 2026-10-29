@@ -85,6 +85,20 @@ internal sealed partial class TableApplication
             int labelWidth = Math.Max(canvas.TextWidth("Keep playing", .76f, true), canvas.TextWidth("Pass anyway", .76f));
             area.Width = Math.Max(area.Width, (labelWidth + 24) * 2 + 8);
         }
+        string finiteSource = finiteResolutionIntent?.SourceName ?? "";
+        if (finiteResolutionIntent is { DeclinesOptionalPayments: false } resolving)
+            finiteSource = state.Executions?.Occurrences.FirstOrDefault(item => resolving.CapturedExecutionIds.Contains(item.Id)
+                    && item.Step is ExecutionStep.Choice or ExecutionStep.Cost or ExecutionStep.Resolution)?.SourceName
+                ?? state.Stack.FirstOrDefault(item => resolving.CapturedExecutionIds.Contains(item.ExecutionId))?.Name ?? finiteSource;
+        string finiteProgress = finiteResolutionIntent != null && finiteProgressProjection is { } finite
+            ? (finite.DeclineProgress is { } declined ? $"Source: {declined.CompletedCount} / {declined.CapturedCount} completed\nQueue: " : "")
+                + $"{finite.Progress.CompletedCount} / {finite.Progress.CapturedCount} completed \u00b7 {finite.Progress.RemainingCount} remaining" : "";
+        if (finiteProgress.Length > 0) {
+            int sourceHeight = finiteSource.Length == 0 ? 0 : canvas.TextSize(finiteSource, .62f, area.Width - 28, 80, true).Y + 5;
+            int progressHeight = canvas.TextSize(finiteProgress, .6f, area.Width - 28, 80).Y;
+            int extra = Math.Max(0, 26 + sourceHeight + progressHeight + 48 - area.Height);
+            area.Y -= extra; area.Height += extra;
+        }
         // Resource values keep their measured width. The quiet portrait action
         // can grow into the former decision area without covering mana.
         int resourceRight = manaPoolBadges.GetValueOrDefault(state.ViewerId)?.Bounds.Right ?? 0;
@@ -101,12 +115,21 @@ internal sealed partial class TableApplication
         var statusPoint = new Vector2(area.X + 8, area.Y + 10);
         if (QuietPriorityArmed || ResolvingCapturedStack) PaintTurnAdvance(statusPoint, accent);
         else DrawDecisionRole(view, statusPoint, accent);
-        string heading = ResolvingCapturedStack ? "Resolving · " + stackResolutionIntent!.Remaining + " remaining"
+        string heading = finiteResolutionIntent is { } batch ? batch.DeclinesOptionalPayments ? "Decline costs \u00b7 resolve queue" : "Resolving captured effects"
+            : ResolvingCapturedStack ? "Resolving · " + CapturedStackRemaining + " remaining"
             : QuietPriorityArmed ? automatic ? "Auto · Waiting for action" : "Waiting for action"
             : stopped ? view.Caption : held ? "Your control · This turn"
             : view.Status == DecisionDockStatus.Priority && automatic && priorityAttention.NeedsResponse && state.Stack.Length > 0
                 ? "Your response · Auto paused" : view.Headline;
         canvas.Text(heading, area.X + 28, area.Y - 2, accent, .62f, stopped ? area.Width - 62 : area.Width - 28, 1, true);
+        if (finiteProgress.Length > 0) {
+            int progressY = area.Y + 22;
+            if (finiteSource.Length > 0) {
+                canvas.Text(finiteSource, area.X + 28, progressY, Ink, .62f, area.Width - 28, 80, true);
+                progressY += canvas.TextSize(finiteSource, .62f, area.Width - 28, 80, true).Y + 5;
+            }
+            canvas.Text(finiteProgress, area.X + 28, progressY, Muted, .6f, area.Width - 28, 80);
+        }
         if (Vector2.DistanceSquared(pointer.ToVector2(), statusPoint) <= 16 * 16)
             DrawTurnHint(QuietPriorityArmed ? "Waiting this turn · Stops for new actions · Take control to stop now"
                 : view.Headline + (view.Caption.Length > 0 ? " · " + view.Caption : ""), statusPoint);

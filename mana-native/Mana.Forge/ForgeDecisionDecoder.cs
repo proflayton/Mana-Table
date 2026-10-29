@@ -11,6 +11,8 @@ internal static class ForgeDecisionDecoder
 {
     private static readonly JsonSerializerOptions FundingJson = new() { PropertyNameCaseInsensitive = true,
         Converters = { new JsonStringEnumConverter() } };
+    private static readonly JsonSerializerOptions DeclineJson = new() { PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter(allowIntegerValues: false) } };
     internal static Decision Decode(JsonElement prompt, IReadOnlySet<int>? players = null)
     {
         try {
@@ -45,6 +47,7 @@ internal static class ForgeDecisionDecoder
                 || task != "priority" && (alternative is "undo" or "passTurn" || quiet.Length != 0 || Flag(prompt, "canAutoPass"))) throw Invalid();
             if (task != "priority" && Array(prompt, "priorityAbilities").Length != 0) throw Invalid();
             var context = SourceContext(prompt);
+            if (task != "mana" && Present(prompt, "optionalDecline")) throw Invalid();
             DecisionReply Ok() => new(Text(prompt, "ok", fallback: "Confirm"), Flag(prompt, "okEnabled"));
             DecisionReply Cancel() => new(Text(prompt, "cancel", fallback: "Cancel"), Flag(prompt, "cancelEnabled"));
             DecisionPayload payload = task switch {
@@ -59,7 +62,9 @@ internal static class ForgeDecisionDecoder
                     FundingContext = Present(prompt, "fundingContext")
                         ? Field(prompt, "fundingContext").Deserialize<ManaFundingContext>(FundingJson) ?? throw Invalid() : null,
                     UsablePoolManaColors = Present(prompt, "usablePoolManaColors") ? PaymentColors(prompt) : null,
-                    PayerId = NullableInteger(prompt, "payerId")
+                    PayerId = NullableInteger(prompt, "payerId"),
+                    OptionalDecline = Present(prompt, "optionalDecline")
+                        ? Field(prompt, "optionalDecline").Deserialize<OptionalDeclineOffer>(DeclineJson) ?? throw Invalid() : null
                 },
                 "attack" => new AttackPayload(Ok()), "block" => new BlockPayload(Ok()),
                 "selection" when purpose == "targets" => new TargetSelectionPayload(Ok(), Cancel(), Range(prompt),

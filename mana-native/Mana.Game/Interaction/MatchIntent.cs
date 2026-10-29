@@ -69,6 +69,10 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record RemoveCombatAssignment(string Id, string? Attacker = null) : MatchIntent;
     internal sealed record OpenCombat(bool Candidates = false) : MatchIntent;
     internal sealed record ReviewBlockers(string Attacker) : MatchIntent;
+    internal sealed record BeginGroupBlocks : MatchIntent;
+    internal sealed record SelectAllGroupBlocks(bool Incoming) : MatchIntent;
+    internal sealed record ApplyGroupBlocks(System.Collections.Immutable.ImmutableArray<BlockAssignment> Assignments) : MatchIntent;
+    internal sealed record StopGroupBlocks : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record ReturnFromMatch : MatchIntent;
     internal sealed record ReturnToWorkshop(bool Again = false) : MatchIntent;
     internal sealed record Concede : MatchIntent;
@@ -112,6 +116,7 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record SetStackResolution(bool Armed) : MatchIntent {
         internal override InteractionScopeKind ScopeKind => Armed ? InteractionScopeKind.Current : InteractionScopeKind.Playback;
     }
+    internal sealed record DeclineRepeatedPayments : MatchIntent;
     internal sealed record ToggleReducedMotion : MatchIntent;
     internal sealed record ToggleSounds : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Settings; }
     internal sealed record SetMasterVolume(float Volume) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Settings; }

@@ -103,6 +103,10 @@ public class CostPartMana extends CostPart {
         return isEnchantedCreatureCost;
     }
 
+    public boolean isCostPayAnyNumberOfTimes() {
+        return isCostPayAnyNumberOfTimes;
+    }
+
     @Override
     public boolean isReusable() { return true; }
 

@@ -39,15 +39,7 @@ public record CombatInputState(boolean attacking, List<Target> defenders, Target
     }
 
     public static CombatInputState blockers(Combat combat, Player player) {
-        var options = new LinkedHashMap<Integer, List<Integer>>();
-        for (Card attacker : combat.getAttackers()) {
-            var blockers = new ArrayList<Integer>();
-            for (Card blocker : player.getCreaturesInPlay()) {
-                if (combat.isBlocking(blocker, attacker) || CombatUtil.canBlock(attacker, blocker, combat)) blockers.add(blocker.getId());
-            }
-            options.put(attacker.getId(), List.copyOf(blockers));
-        }
         return new CombatInputState(false, List.of(), null, Map.of(),
-                player.getCreaturesInPlay().stream().map(Card::getId).toList(), Map.copyOf(options), CombatUtil.validateBlocks(combat, player));
+                player.getCreaturesInPlay().stream().map(Card::getId).toList(), CombatUtil.blockOptions(combat, player), CombatUtil.validateBlocks(combat, player));
     }
 }

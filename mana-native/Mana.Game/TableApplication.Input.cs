@@ -121,7 +121,7 @@ internal sealed partial class TableApplication
         }
         if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.Space) && previousKeys.IsKeyUp(Keys.Space) && !OverlayOpen && !CardCollectionOpen && !AbilityActionPending && turnPassRequest == null && !busy && match != null) {
             if (TableChoice && TableChoices.CanConfirm(match, decisions.Selections)) Send(DecisionCommands.Choose(match, decisions.Selections));
-            else if (!TableChoice && CombatGuide.CanConfirm(match)) Send(DecisionCommands.Confirm(match));
+            else if (!TableChoice && CanConfirmCombatNow && CombatGuide.CanConfirm(match)) Send(DecisionCommands.Confirm(match));
         }
         if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.C) && previousKeys.IsKeyUp(Keys.C) && HasCombat && (overlay.Length == 0 || overlay == "combat")) { if (overlay == "combat") overlay = ""; else OpenCombat(); }
         if (!chatKeys && !textFocus && !blockedInput && !OverlayOpen && keys.IsKeyDown(Keys.R) && previousKeys.IsKeyUp(Keys.R)

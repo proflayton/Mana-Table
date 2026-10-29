@@ -91,6 +91,7 @@ internal sealed partial class TableApplication
     {
         if (match == null || busy) return;
         if (session.NeedsRecovery || AbilityActionPending) { Inspect(card); return; }
+        if (SelectGroupBlocks(card)) return;
         var result = interaction.CardClick(match, card);
         if (result.ChoiceIndex is { } index) ToggleChoice(match.Decision!, index);
         else if (result.Reply != null) {

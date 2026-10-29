@@ -17,6 +17,7 @@ internal sealed partial class TableApplication
     {
         internal Mana.Table.Presentation.PresentationFrame? Frame => game.Frame;
         internal bool Activate(Hit hit) => game.ActivateHit(hit);
+        internal bool SubmitCurrent(DecisionCommand command) => game.Send(command);
         internal Mana.Renderer.BoardView BoardView => game.boardView;
         internal bool FollowTurnEnabled => game.followTurnEnabled;
         internal bool BoardViewLimitedByLayout => game.boardViewMotion.LimitedByLayout;
@@ -33,7 +34,9 @@ internal sealed partial class TableApplication
         internal IReadOnlyList<StackRowPaint> StackRows => game.stackRows;
         internal IReadOnlyList<StackWorkloadPaint> StackWorkloads => game.stackWorkloadPaint;
         internal bool ResolvingCapturedStack => game.ResolvingCapturedStack;
-        internal int StackResolutionRemaining => game.stackResolutionIntent?.Remaining ?? 0;
+        internal int StackResolutionRemaining => game.CapturedStackRemaining;
+        internal Mana.Client.FiniteResolutionIntent? FiniteResolution => game.finiteResolutionIntent;
+        internal Mana.Client.FiniteResolutionProgress? FiniteResolutionProgress => game.finiteProgressProjection?.Progress ?? game.lastFiniteProgress;
         internal int AnnouncementCount => game.matchPresentation.AnnouncementCount;
         internal string? AnnouncementId => game.matchPresentation.Announcement(game.now)?.Id;
         internal ManaJourneyPaint? ManaJourney => game.manaJourneyPaint;
@@ -172,6 +175,8 @@ internal sealed partial class TableApplication
         internal string HelpPageText => game.helpPageText;
         internal IReadOnlyList<BattlefieldLabelPaint> BattlefieldLabels(string id) => game.battlefieldLabels.TryGetValue(id, out var labels) ? labels : [];
         internal Mana.Renderer.TableScene? TableScene => game.tableScene;
+        internal IReadOnlyList<CombatRelationPaint> CombatRelations => game.combatRelations;
+        internal bool GroupedCombatReview => game.GroupedCombatReview;
         internal Mana.Renderer.BoardView CardSpreadView => game.spreadView;
         internal void ImportFilePath(string path) => game.ImportFilePath(path);
         internal void SetConnectedTable(Lobby state) { game.localMatch = false; game.session.BindLobby(state); }

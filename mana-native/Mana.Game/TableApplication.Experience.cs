@@ -36,9 +36,9 @@ internal sealed partial class TableApplication
         if (ExperienceLabOpen) labGalleryPage = Math.Clamp(labGalleryPage, 0, Math.Max(0, (Mana.Scenarios.ExperienceScenarios.All.Count - 1) / 6));
     }
 
-    private void ClearExperienceInput()
+    private void ClearExperienceInput(bool cancelAdvance = true)
     {
-        session.CancelAdvance();
+        if (cancelAdvance) session.CancelAdvance();
         pressed = dragSource = null; dragging = false;
         hovered = null; matchPresentation.Cards.Collapse();
     }

@@ -179,7 +179,9 @@ internal sealed partial class TableApplication : IDisposable
         => projectionCapture?.ObserveEnvironment(updateTime, ProjectionSettings(updateViewport), match);
     private void AcceptPresentation(GameSnapshot? previous, GameSnapshot? state)
     {
-        var transition = matchPresentation.Observe(previous, state, now, boardView, session.ExecutionChanges);
+        if (state != null) finiteProgressProjection?.Observe(state);
+        var transition = matchPresentation.Observe(previous, state, now, boardView, session.ExecutionChanges,
+            finiteResolutionIntent is { } finite && FiniteProgress(finite, repeatedPresentationExecutions, previous, state));
         if (transition.ScopeChanged) { ResetTableView(); tableGuideOpen = false; sceneRevealAt = now; }
         if (transition.ScopeChanged) { manualBoardView = null; boardPanning = false; }
         ReconcileReleasedPlay();
@@ -253,7 +255,8 @@ internal sealed partial class TableApplication : IDisposable
         // update's pointer position so entering a card pauses Auto before Draw.
         bool autoBlocked = AutomaticInteractionPause() != DecisionDockPauseReason.None;
         ArmAutomaticQuietPriority(autoBlocked);
-        bool stackReserved = UpdateStackResolution(autoBlocked);
+        bool combatReserved = UpdateGroupBlocks(autoBlocked);
+        bool stackReserved = combatReserved || UpdateStackResolution(autoBlocked);
         bool quietReserved = stackReserved || UpdateQuietPriority(autoBlocked);
         if (!quietReserved && (!automatic || held || autoBlocked)) session.CancelAdvance();
         if (!quietReserved && !ExperienceLabOpen && !session.NeedsRecovery && fixture == null && matchPresentation.Ready(now) && !busy && !polling
@@ -273,11 +276,18 @@ internal sealed partial class TableApplication : IDisposable
         ObserveProjectionEnvironment();
     }
     private void SetAutomatic(bool value) { automatic = value; preferences = preferences with { Automatic = value }; SavePreferences(); }
-    private void SavePreferences() { StopQuietPriority(); StopStackResolution(); session.CancelAdvance(); try { preferences.Save(profile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Could not save settings: " + ex.Message; } }
+    private void SavePreferences() { StopQuietPriority(); StopStackResolution(); StopGroupBlocks(); session.CancelAdvance(); try { preferences.Save(profile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Could not save settings: " + ex.Message; } }
     private bool Send(DecisionCommand? command, bool confirmedTurnPass = false)
     {
         if (command == null || fixture != null || session.NeedsRecovery || match?.Id != command.GameId || match.Decision?.Id != command.DecisionId) return false;
+        if (AwaitingFinitePublication) return false;
         if (command is UndoLastAction) return false;
+        if (match.FiniteStackYield is { Status: FiniteStackYieldStatus.Active }) {
+            TakePriorityControl(); ClearReaderActions();
+            notice = "Taking control \u2014 choose your action once priority returns.";
+            noticeUntil = now + 4;
+            return false;
+        }
         // Legacy providers may still offer Forge's uninterruptible end-turn
         // latch. The native player always uses current, bounded passes instead.
         if (command is PassTurn) { ArmQuietPriority(confirmedTurnPass); return false; }
@@ -311,7 +321,7 @@ internal sealed partial class TableApplication : IDisposable
         float frameElapsed = (float)(time.TotalGameTime.TotalSeconds - lastPresentationTime);
         lastPresentationTime = time.TotalGameTime.TotalSeconds;
         canvas.TextScale = preferences.TextScale;
-        matchPresentation.HoldAnnouncements(now, expandedStackWorkload.Length > 0 || match?.Decision is { Payload: not PriorityPayload }
+        matchPresentation.HoldAnnouncements(now, expandedStackWorkload.Length > 0 || match?.Decision is { Payload: not PriorityPayload } && !AutomatedCapturedPayment
             || AutomaticInteractionPause() is DecisionDockPauseReason.Inspection or DecisionDockPauseReason.Overlay);
         PrepareShellPresentation();
         PrepareDeckInteraction();
@@ -321,7 +331,8 @@ internal sealed partial class TableApplication : IDisposable
         tableScene = match == null ? null : TableScene.Build(match, pointer, null,
             dragging && dragSource?.Card is { } held ? CardViews.Identity(held) : null, false, CardPresentation.IsResource,
             allowInlineOrdering: TableChoices.IsDirect(match), sharedTableStudy: TableStudyEnabled,
-            spread: spreadCollection == null ? null : new(spreadCollection, spreadTarget, spreadAreaTop), spreadMeasure: MeasureSpreadPacketHeader);
+            spread: spreadCollection == null ? null : new(spreadCollection, spreadTarget, spreadAreaTop), spreadMeasure: MeasureSpreadPacketHeader,
+            groupCombatCandidates: GroupedCombatReview);
         PrepareCardCollection();
         UpdateBoardView();
         PrepareMatchPresentation();

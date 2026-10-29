@@ -26,8 +26,8 @@ import forge.game.event.GameEventSnapshotRestored;
 import forge.game.card.CardView;
 import forge.game.card.Card;
 import forge.game.card.CounterType;
-import forge.game.combat.CombatUtil;
 import forge.game.combat.BlockRemovalRepair;
+import forge.game.combat.CombatInputState;
 import forge.game.player.*;
 import forge.game.spellability.SpellAbilityView;
 import forge.game.spellability.SpellAbility;
@@ -79,6 +79,14 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private final AtomicLong sourceActionVersion = new AtomicLong();
     private long publishedSourceActionVersion = -1;
     private final Map<Input, String> inputEpisodes = new WeakHashMap<>();
+    private final Map<Object, Boolean> resolutionEpisodes = new WeakHashMap<>();
+    private final Map<Object, DeclineLineage> declineEpisodes = new WeakHashMap<>();
+    private record DeclineLineage(String id, String previousId) { }
+    private long resolutionChoiceVersion;
+    private String lastDeclineOfferId = "";
+    private final FiniteStackYield finiteStackYield = new FiniteStackYield();
+    private final CombatChoiceScope combatChoices = new CombatChoiceScope();
+    private Input combatRefreshQueued;
     private volatile boolean closed;
     private volatile String error;
     private long revision;
@@ -136,6 +144,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         String announcedSymbol = "";
         Map<String, Object> cachedDomain;
         long cachedDomainVersion = -1;
+        long combatSequence = -1;
         int nextCardKey;
         final Set<Integer> players = new HashSet<>();
         final Set<String> blockPairs = new HashSet<>();
@@ -145,6 +154,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         int size, min, max;
         int amount;
         boolean atLeastOne, numeric, maySkip;
+        boolean finiteYieldQueued;
         List<Integer> limits = List.of();
         java.util.function.Consumer<List<Integer>> validateOrder;
         int defenderIndex = -1;
@@ -188,6 +198,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         activity = new MatchActivity(viewer, table.identities, this::currentCardView, this::currentCardOccurrence);
         executions = new MatchExecutions(game.getExecutions(), viewer, activity);
         activity.executionFilter(executions::reference);
+        activity.finiteAncestry(executions::finiteDescendant);
         combatIds = new CombatCardIds(viewer, activity, table.identities);
         game.subscribeToEvents(executions);
         game.subscribeToEvents(activity);
@@ -195,6 +206,23 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         game.subscribeToEvents(this);
         gui = (IGuiGame) Proxy.newProxyInstance(IGuiGame.class.getClassLoader(), new Class<?>[]{IGuiGame.class}, (proxy, method, args) -> {
             table.enter(this);
+            if (method.getName().equals("setInputState")) {
+                Input current = human.getInputProxy().getInput();
+                long sequence = (long) args[2];
+                if (sequence != human.getInputProxy().getInputSequence() || current != human.getInputQueue().getInput()) return null;
+                if (viewer.equals(args[0]) && Boolean.TRUE.equals(args[3])) combatChoices.bind(current, viewer.getId(), sequence);
+                else combatChoices.clear();
+                return null;
+            }
+            if (method.getName().equals("setCombatChoices")) {
+                Input current = human.getInputProxy().getInput(); long sequence = (long) args[1];
+                var choices = (CombatInputState) args[2];
+                if (choices != null && viewer.equals(args[0]) && sequence == human.getInputProxy().getInputSequence()
+                        && current == human.getInputQueue().getInput()
+                        && (current instanceof InputAttack && choices.attacking() || current instanceof InputBlock && !choices.attacking()))
+                    combatChoices.publish(current, viewer.getId(), sequence, sourceActionVersion.get(), choices);
+                return null;
+            }
             if (method.getName().equals("chooseColor")) return chooseColor((String) args[0], (CardView) args[1], (List<MagicColor.Color>) args[2]);
             if (method.getName().equals("getIntegerForAnnouncement")) return announcedNumber((String) args[0],
                     (SpellAbilityView) args[1], (String) args[2], (int) args[3], (int) args[4]);
@@ -218,6 +246,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     void detach() { game.unsubscribeFromEvents(activity); game.unsubscribeFromEvents(executions); game.unsubscribeFromEvents(combatIds); game.unsubscribeFromEvents(this); }
     void clearDecision() { pending = null; }
     void cancelDecision() {
+        combatChoices.clear();
+        finiteStackYield.revoke("connection-ended");
         closed = true;
         notifyPlaytest();
         if (pending != null) pending.response.completeExceptionally(new CancellationException("Match closed"));
@@ -388,6 +418,12 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             // Unrelated GUI callbacks may refresh every seat. An unanswered
             // controller input keeps its scope and card handles through refreshes.
             Pending next = pending != null && pending.input == current ? pending : new Pending("input", current);
+            if (current instanceof InputAttack || current instanceof InputBlock) {
+                next.combatSequence = human.getInputProxy().getInputSequence();
+                if (currentCombatChoices(next) == null) {
+                    pending = null; markBusy(next); queueCombatRefresh(current); return;
+                }
+            }
             next.contextProjections.clear();
             // Cleanup's discard input (among others) is an anonymous subclass.
             // Preserve its actual input kind instead of publishing an empty name.
@@ -493,6 +529,57 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 && !closed && error == null && !viewer.getHasLost() && !game.isGameOver()
                 && human.getInputQueue().getInput() == prompt.input && human.getInputProxy().getInput() == prompt.input
                 && !game.getStack().isEmpty() && table.stackInterruption.version() == version;
+    }
+
+    private List<FiniteStackWitness.Member> liveStackWitness() {
+        var ids = new HashSet<String>();
+        var members = new ArrayList<FiniteStackWitness.Member>();
+        for (var instance : game.getStack()) {
+            var ability = instance.getSpellAbility();
+            var reference = executions.reference(ability.getExecutionId());
+            if (reference == null || !ids.add(reference.id())) return null;
+            var member = FiniteStackWitness.capture(ability, reference.id(), human.getPlayer(), this::semanticCardId);
+            if (member == null) return null;
+            members.add(member);
+        }
+        return List.copyOf(members);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void refreshFiniteStackYield() {
+        if (activity.finiteOverflow() || executions.finiteOverflow()) finiteStackYield.revoke("history-overflow");
+        if (!finiteStackYield.active()) return;
+        Map<String, Object> optional = pending != null && pending.prompt.get("optionalDecline") instanceof Map<?, ?> offer
+                ? (Map<String, Object>) offer : null;
+        var phase = game.getPhaseHandler().getPhase();
+        finiteStackYield.update(table.stackInterruption.actionVersion(), resolutionChoiceVersion, game.getPhaseHandler().getTurn(),
+                phase == null ? "" : phase.name(), closed || error != null || viewer.getHasLost() || game.isGameOver(),
+                liveStackWitness(), executions.frame(), requiredChoiceEpisode(), optional);
+    }
+
+    private void queueFiniteStackPass() {
+        Pending current = pending;
+        if (!finiteStackYield.active() || current == null || current.finiteYieldQueued
+                || !(current.input instanceof InputPassPriority) || !sourceInputCurrent(current)
+                || !Boolean.TRUE.equals(current.prompt.get("okEnabled"))) return;
+        String grantId = finiteStackYield.id();
+        current.finiteYieldQueued = true;
+        HeadlessPlatform.later(() -> game.getAction().withState(() -> { synchronized (gate) {
+            current.finiteYieldQueued = false;
+            if (pending != current || !sourceInputCurrent(current)) return;
+            refreshFiniteStackYield();
+            if (!finiteStackYield.active() || !finiteStackYield.id().equals(grantId)) return;
+            var request = new JsonObject(); request.addProperty("sessionId", id); request.addProperty("promptId", current.id);
+            request.addProperty("action", "passPriority"); request.addProperty("finiteStackYieldGrantId", grantId);
+            actionInState(request, false);
+        } }));
+    }
+
+    void revokeFiniteYieldForConnection() {
+        game.getAction().withState(() -> { synchronized (gate) {
+            finiteStackYield.revoke("connection-ended");
+            if (!closed && error == null) table.publish();
+        } });
     }
 
     @Override
@@ -678,8 +765,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (episodeOwner != null) result.put("episodeId", inputEpisodes.computeIfAbsent(episodeOwner,
                 ignored -> id + ":input:" + UUID.randomUUID()));
         if (current.input instanceof InputAttack || current.input instanceof InputBlock)
-            result.put("episodeId", id + ":combat:" + game.getPhaseHandler().getTurn() + ":"
-                    + game.getPhaseHandler().getNumCombat() + ":" + game.getPhaseHandler().getPhase().name() + ":" + viewer.getId());
+            result.put("episodeId", combatDeclarationId());
         if (current.input instanceof InputSelectTargets targeting)
             result.put("selectedPlayers", java.util.stream.StreamSupport.stream(
                     targeting.getSpellAbility().getTargets().getTargetPlayers().spliterator(), false).map(Player::getId).toList());
@@ -791,15 +877,40 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
     private Map<String, Object> actionInState(JsonObject request, boolean playerDriven) {
         synchronized (gate) {
-            requireSession(request);
             String action = string(request, "action");
+            if (action.equals("revokeFiniteStackYield")) {
+                if (!id.equals(string(request, "sessionId"))) throw new IllegalArgumentException("This match is no longer active");
+                if (!finiteStackYield.id().equals(string(request, "grantId")) || finiteStackYield.id().isEmpty())
+                    throw new IllegalArgumentException("That finite yield is no longer current");
+                finiteStackYield.revoke("explicit");
+                if (!closed && error == null) table.publish();
+                return latest;
+            }
+            requireSession(request);
+            if (action.equals("grantFiniteStackYield")) return grantFiniteStackYield(request);
+            String automaticGrant = null;
+            if (request.has("finiteStackYieldGrantId")) {
+                if (playerDriven || !action.equals("passPriority")) throw new IllegalArgumentException("A finite yield cannot answer another task");
+                automaticGrant = string(request, "finiteStackYieldGrantId");
+                refreshFiniteStackYield();
+                if (!finiteStackYield.active() || !finiteStackYield.id().equals(automaticGrant))
+                    throw new IllegalArgumentException("That finite yield has stopped");
+            }
             if (action.equals("priorityUndo") || action.equals("cancel") && pending != null && pending.input instanceof InputPassPriority)
                 throw new IllegalArgumentException("In-game action Undo is not supported. Use the current priority controls.");
-            if (action.equals("setAbilityAutoPass")) return setAbilityAutoPass(request);
+            if (action.equals("setAbilityAutoPass")) { finiteStackYield.revoke("manual-action"); return setAbilityAutoPass(request); }
             Pending next = pending;
             if (next == null || !next.id.equals(string(request, "promptId"))) throw new IllegalArgumentException("That choice has changed. Use the current prompt.");
             if (request.has("expectedTask") && !semanticTask(next).equals(string(request, "expectedTask")))
                 throw new IllegalArgumentException("That command does not answer the current decision.");
+            if ((next.input instanceof InputAttack || next.input instanceof InputBlock) && currentCombatChoices(next) == null)
+                throw new IllegalArgumentException("Combat choices changed. Wait for the current offers.");
+            if (finiteStackYield.active() && !action.equals("passPriority")) {
+                @SuppressWarnings("unchecked") var offer = next.prompt.get("optionalDecline") instanceof Map<?, ?> value
+                        ? (Map<String, Object>) value : null;
+                if (!action.equals("cancel") || !(next.input instanceof InputPayMana) || offer == null
+                        || !finiteStackYield.expectedNegative(offer)) finiteStackYield.revoke("manual-action");
+            }
             Long stackVersion = null;
             if (request.has("stackInterruptionVersion")) {
                 var supplied = request.get("stackInterruptionVersion");
@@ -937,9 +1048,12 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             SourceActions.Catalog chosenSourceCatalog = sourceCatalog;
             SourceActions.Action chosenSourceAction = sourceAction;
             Long chosenStackVersion = stackVersion;
+            String chosenFiniteGrant = automaticGrant;
+            Long chosenCombatVersion = next.input instanceof InputAttack || next.input instanceof InputBlock ? sourceActionVersion.get() : null;
             if (next.input instanceof InputPassPriority && Set.of("card", "useSourceAction", "useHandPlacement").contains(action))
                 table.stackInterruption.action();
             if (playerDriven) table.tempo.activity(viewer.getId());
+            if (next.input instanceof InputAttack || next.input instanceof InputBlock) combatChoices.invalidate();
             pending = null;
             inputActionQueued = true;
             markBusy(next);
@@ -957,8 +1071,13 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         case "ok" -> human.selectButtonOk();
                         case "passPriority" -> {
                             synchronized (gate) {
-                                restorePriority = chosenStackVersion != null && !permitsStackPass(next, chosenStackVersion);
-                                if (!restorePriority) ((InputPassPriority) next.input).passPriority();
+                                if (chosenFiniteGrant != null) refreshFiniteStackYield();
+                                restorePriority = chosenStackVersion != null && !permitsStackPass(next, chosenStackVersion)
+                                        || chosenFiniteGrant != null && (!finiteStackYield.active() || !finiteStackYield.id().equals(chosenFiniteGrant));
+                                if (!restorePriority) {
+                                    ((InputPassPriority) next.input).passPriority();
+                                    if (chosenFiniteGrant != null && !((InputPassPriority) next.input).isPriorityActive()) finiteStackYield.passed();
+                                }
                             }
                         }
                         case "passIfNoResponse" -> ((InputPassPriority) next.input).passPriority();
@@ -995,17 +1114,13 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         }
                         case "useHandPlacement" -> restorePriority = !human.useHandPlacement(chosenPlacementAbility, chosenPlacementHandId);
                         case "block" -> {
-                            // One scoped gesture: select the attacker and toggle this exact
-                            // block through the engine's normal input, then publish once.
-                            human.selectCard(chosenAttacker, null, CARD_CLICK);
-                            human.selectCard(chosenCard, null, CARD_CLICK);
+                            restorePriority = chosenCombatVersion == null || chosenCombatVersion != sourceActionVersion.get()
+                                    || !human.getInputProxy().assignBlock(next.combatSequence, chosenAttacker, chosenCard);
                         }
                         case "attack" -> {
-                            // One scoped drag chooses a defender and toggles the
-                            // attacker through the normal engine input, atomically.
-                            if (chosenPlayer != null) human.selectPlayer(chosenPlayer, null);
-                            else human.selectCard(chosenCard, null, CARD_CLICK);
-                            human.selectCard(chosenAttacker, null, CARD_CLICK);
+                            restorePriority = chosenCombatVersion == null || chosenCombatVersion != sourceActionVersion.get()
+                                    || !human.getInputProxy().assignAttack(next.combatSequence, chosenAttacker,
+                                    chosenPlayer != null ? chosenPlayer : chosenCard);
                         }
                         case "player" -> human.selectPlayer(chosenPlayer, null);
                     }
@@ -1020,6 +1135,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                             notices.add(action.equals("passUntilPublicAction")
                                     ? "The table changed. Passing for now stopped; review the current decision."
                                     : chosenStackVersion != null ? "The stack changed. Resolve these stopped; review the current effects."
+                                    : chosenFiniteGrant != null ? "Finite yielding stopped; review the current effects."
                                     : action.equals("useSourceAction") ? "That source action changed. Read the current card again."
                                     : action.equals("card") ? "That target changed. Use the current choice."
                                     : action.startsWith("priority") ? "That priority action changed. Use the current decision."
@@ -1027,7 +1143,12 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                             while (notices.size() > 12) notices.remove(0);
                         }
                     }
-                    if (restorePriority) publishInput();
+                    if (restorePriority) {
+                        if ((next.input instanceof InputAttack || next.input instanceof InputBlock)
+                                && human.getInputQueue().getInput() == next.input && human.getInputProxy().getInput() == next.input)
+                            next.input.showMessageInitial();
+                        publishInput();
+                    }
                 }
             });
             return latest;
@@ -1037,6 +1158,51 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private boolean currentTargetCard(InputSelectTargets input, CardView view) {
         Card card = sourceCard(view);
         return card != null && card.getView() == view && input.canSelectCard(card);
+    }
+
+    private Map<String, Object> grantFiniteStackYield(JsonObject request) {
+        String grantId = string(request, "grantId"), decisionId = string(request, "promptId");
+        if (grantId.isBlank() || grantId.length() > 256 || grantId.chars().anyMatch(Character::isISOControl))
+            throw new IllegalArgumentException("A finite yield needs a fresh identity");
+        var node = request.get("executionIds");
+        if (node == null || !node.isJsonArray() || node.getAsJsonArray().isEmpty() || node.getAsJsonArray().size() > FiniteStackYield.MAXIMUM_MEMBERS)
+            throw new IllegalArgumentException("A finite yield needs a bounded current queue");
+        var supplied = node.getAsJsonArray();
+        var members = new ArrayList<String>();
+        for (var value : supplied) {
+            if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString() || value.getAsString().isBlank()
+                    || value.getAsString().length() > 256 || value.getAsString().chars().anyMatch(Character::isISOControl))
+                throw new IllegalArgumentException("A finite yield needs exact current executions");
+            members.add(value.getAsString());
+        }
+        if (new HashSet<>(members).size() != members.size()) throw new IllegalArgumentException("A finite yield cannot repeat an execution");
+        long action = finiteYieldVersion(request, "stackActionVersion"), choice = finiteYieldVersion(request, "resolutionChoiceVersion");
+        if (finiteStackYield.repeated(grantId, decisionId, members, action, choice)) return latest;
+        Pending current = pending;
+        var live = liveStackWitness();
+        if (request.has("expectedTask") && !string(request, "expectedTask").equals("priority")
+                || current == null || !current.id.equals(decisionId) || !(current.input instanceof InputPassPriority)
+                || !sourceInputCurrent(current) || !Boolean.TRUE.equals(current.prompt.get("okEnabled"))
+                || live == null || live.isEmpty() || live.size() != members.size()
+                || !new HashSet<>(live.stream().map(FiniteStackWitness.Member::executionId).toList()).equals(new HashSet<>(members))
+                || action < 0 || choice < 0 || action != table.stackInterruption.actionVersion() || choice != resolutionChoiceVersion)
+            throw new IllegalArgumentException("The current stack or decision changed before finite yielding");
+        finiteStackYield.begin(grantId, decisionId, members, action, choice, game.getPhaseHandler().getTurn(), game.getPhaseHandler().getPhase().name(), live);
+        executions.finiteGrant(grantId, members);
+        activity.finiteGrant(grantId, members);
+        table.publish(); return latest;
+    }
+
+    private static long finiteYieldVersion(JsonObject request, String key) {
+        var supplied = request.get(key);
+        try {
+            if (supplied == null || !supplied.isJsonPrimitive() || !supplied.getAsJsonPrimitive().isNumber()) throw new ArithmeticException();
+            long value = supplied.getAsBigDecimal().longValueExact();
+            if (value < 0) throw new ArithmeticException();
+            return value;
+        } catch (ArithmeticException | NumberFormatException invalid) {
+            throw new IllegalArgumentException("A finite yield needs the current provider guards");
+        }
     }
 
     private static String priorityAlternative(Input input) {
@@ -1252,6 +1418,24 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return current.input == null ? current : current.input;
     }
 
+    private Map<String, Object> optionalDecline(Pending prompt, MatchExecutions.Frame frame) {
+        Object episode = requiredChoiceEpisode();
+        if (episode == null) return null;
+        Map<String, Object> offer = prompt != null && prompt.input instanceof InputPayMana payment
+                && Boolean.TRUE.equals(prompt.prompt.get("cancelEnabled")) && sourceInputCurrent(prompt)
+                ? ResolutionBatchProjection.optional(payment, viewer, this::semanticCardId, prompt.executionId, frame) : null;
+        if (offer == null && resolutionEpisodes.put(episode, true) == null) resolutionChoiceVersion++;
+        if (offer == null) return null;
+        var lineage = declineEpisodes.get(episode);
+        if (lineage == null) {
+            String offerId = inputEpisodes.computeIfAbsent(prompt.input, ignored -> id + ":input:" + UUID.randomUUID());
+            lineage = new DeclineLineage(offerId, lastDeclineOfferId);
+            declineEpisodes.put(episode, lineage); lastDeclineOfferId = offerId;
+        }
+        offer.put("offerId", lineage.id()); offer.put("previousOfferId", lineage.previousId());
+        return offer;
+    }
+
     void updatePublicDecision(Integer owner, String actionClass) {
         // Only ownership/class is public. Another seat choosing attackers is
         // observed until an attack actually exists; choosing none stays quiet.
@@ -1268,6 +1452,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var next = new LinkedHashMap<>(latest);
         next.put("revision", ++revision); next.put("decisionOwnerId", owner); next.put("actionClass", actionClass);
         next.put("stackInterruptionVersion", table.stackInterruption.version());
+        next.put("stackActionVersion", table.stackInterruption.actionVersion());
+        next.put("resolutionChoiceVersion", resolutionChoiceVersion);
+        refreshFiniteStackYield();
+        next.put("finiteStackYield", finiteStackYield.frame(table.stackInterruption.actionVersion(), resolutionChoiceVersion));
         if (!actionClass.equals("priority") || !Objects.equals(owner, viewer.getId())) {
             var current = pending;
             if (current != null && current.prompt != null && !Objects.equals(current.prompt.get("quietYieldToken"), "")) {
@@ -1313,7 +1501,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             pending = null;
             if (old != null) old.response.completeExceptionally(new CancellationException("Match ended"));
         }
-        Pending prompt = pending;
+        Pending available = pending;
+        if (available != null && (available.input instanceof InputAttack || available.input instanceof InputBlock) && currentCombatChoices(available) == null) {
+            queueCombatRefresh(available.input); pending = null; available = null;
+        }
+        final Pending prompt = available;
         if (prompt != null) { prompt.cards.clear(); prompt.attackPairs.clear(); prompt.blockPairs.clear(); }
         var view = game.getView();
         var players = new ArrayList<Object>();
@@ -1362,12 +1554,17 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var pendingOperations = new HashMap<Integer, Map<String, Object>>();
         var stackExecutions = new HashMap<Integer, String>();
         var stackKinds = new HashMap<Integer, String>();
+        var stackRepetitions = new HashMap<Integer, ResolutionBatchProjection.Group>();
         for (var instance : game.getStack()) {
             var ability = instance.getSpellAbility();
             var execution = executions.reference(ability.getExecutionId());
             if (execution != null) stackExecutions.put(instance.getId(), execution.id());
             stackKinds.put(instance.getId(), ability.isTrigger() ? "triggered" : ability.isSpell() ? "spell"
                     : ability.isActivatedAbility() ? "activated" : "ability");
+            if (execution != null) {
+                var group = ResolutionBatchProjection.group(ability, viewer, this::semanticCardId);
+                if (group != null) stackRepetitions.put(instance.getId(), group);
+            }
             var effect = pendingEffect(ability);
             if (effect != null) pendingEffects.put(instance.getId(), effect);
             pendingOperations.put(instance.getId(), ActionOperationProjection.describeCommitted(ability, human.getPlayer(), this::semanticCardId));
@@ -1383,12 +1580,14 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     "effect", visible ? pendingEffects.get(item.getId()) : null,
                     "operationGraph", visible ? pendingOperations.getOrDefault(item.getId(), ActionOperationProjection.unknown()) : ActionOperationProjection.unknown(),
                     "executionId", stackExecutions.get(item.getId()),
+                    "repetition", visible ? stackRepetitions.get(item.getId()) : null,
                     "targets", visible ? stackTargets(item) : List.of(),
                     "controller", item.getActivatingPlayer() == null ? "" : item.getActivatingPlayer().getName(),
                     "controllerId", item.getActivatingPlayer() == null ? null : item.getActivatingPlayer().getId()));
         }
         String result = gameResult();
-        executions.pinStack(stackExecutions.values());
+        var pinnedExecutions = new HashSet<>(stackExecutions.values()); pinnedExecutions.addAll(finiteStackYield.pinned());
+        executions.pinStack(pinnedExecutions);
         var publication = MatchActivity.capture(activity::frame, executions::frame);
         var activityFrame = publication.activity();
         activityRevision = activityFrame.revision();
@@ -1409,11 +1608,14 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             projectedPrompt.remove("unpaidManaParts");
             projectedPrompt.remove("fundingContext"); projectedPrompt.remove("usablePoolManaColors");
             projectedPrompt.remove("manaPaymentContext");
+            projectedPrompt.remove("optionalDecline");
             prompt.poolManaColors.clear();
             if (prompt.input instanceof InputPayMana payment && sourceInputCurrent(prompt)) {
                 projectedPrompt.putAll(ManaPaymentFacts.describe(payment, this::semanticCardId));
                 prompt.poolManaColors.addAll(payment.getUsablePoolManaColors().stream().map(MagicColor::toShortString).toList());
             }
+            var declineOffer = optionalDecline(prompt, publication.executions());
+            if (declineOffer != null) projectedPrompt.put("optionalDecline", declineOffer);
             if (prompt.colorPaymentOwner != null && prompt.kind.equals("choice")
                     && "colorChoice".equals(prompt.prompt.get("context"))
                     && human.getInputQueue().getInput() == prompt.colorPaymentOwner)
@@ -1424,8 +1626,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             }
             prompt.prompt = projectedPrompt;
         }
+        refreshFiniteStackYield();
         var snapshot = map("id", id, "revision", ++revision, "boardRevision", boardRevision, "format", format, "status", error != null ? "error" : game.isGameOver() ? "finished" : "playing",
                 "stackInterruptionVersion", table.stackInterruption.version(),
+                "stackActionVersion", table.stackInterruption.actionVersion(), "resolutionChoiceVersion", resolutionChoiceVersion,
+                "finiteStackYield", finiteStackYield.frame(table.stackInterruption.actionVersion(), resolutionChoiceVersion),
                 "error", error, "playerCount", allPlayers.size(), "viewerId", viewer.getId(), "turn", view.getTurn(), "phase", view.getPhase() == null ? "Pregame" : view.getPhase().nameForUi,
                 "phaseKey", view.getPhase() == null ? "PREGAME" : view.getPhase().name(),
                 "activePlayerId", view.getPlayerTurn() == null ? null : view.getPlayerTurn().getId(), "players", players,
@@ -1448,6 +1653,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         latest = Collections.unmodifiableMap(snapshot);
         publishedSourceActionVersion = sourceActionVersion.get();
         notifyPlaytest();
+        queueFiniteStackPass();
     }
 
     private static Map<String, Integer> publicMana(PlayerView player) {
@@ -1476,40 +1682,62 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     /** Copy combat only at a safe publish boundary, never from an IPC state read. */
+    private CombatInputState currentCombatChoices(Pending prompt) {
+        if (prompt == null || prompt.input == null || prompt.combatSequence != human.getInputProxy().getInputSequence()
+                || human.getInputProxy().getInput() != prompt.input
+                || human.getInputQueue().getInput() != prompt.input) return null;
+        return combatChoices.current(prompt.input, viewer.getId(), human.getInputProxy().getInputSequence(), sourceActionVersion.get());
+    }
+    private void queueCombatRefresh(Input input) {
+        if (input == null || combatRefreshQueued == input) return;
+        combatRefreshQueued = input;
+        HeadlessPlatform.later(() -> {
+            if (combatRefreshQueued == input) combatRefreshQueued = null;
+            if (!closed && error == null && human.getInputProxy().getInput() == input && human.getInputQueue().getInput() == input)
+                input.showMessageInitial();
+        });
+    }
     private Map<String, Object> combatState(Pending prompt) {
         var combat = game.getCombat();
         if (combat == null || game.isGameOver()) return null;
         boolean blocking = prompt != null && prompt.input instanceof InputBlock;
         boolean attacking = prompt != null && prompt.input instanceof InputAttack;
+        var offered = currentCombatChoices(prompt);
         var defenders = new ArrayList<Object>();
         GameEntity selectedDefender = null;
         for (var defender : combat.getDefenders()) {
             if (!CombatDefenders.isCurrent(defender)) continue;
             defenders.add(combatDefender(defender));
-            if (attacking && highlighted.contains(GameEntityView.get(defender))) selectedDefender = defender;
+            if (attacking && offered != null && offered.selectedDefender() != null && offered.selectedDefender().id() == defender.getId()
+                    && offered.selectedDefender().player() == (defender instanceof Player)) selectedDefender = defender;
         }
         var candidates = new ArrayList<String>();
         var attackOptions = new ArrayList<Object>();
-        if (attacking) for (Card card : human.getPlayer().getCreaturesInPlay()) {
-            if (combat.isAttacking(card) || selectedDefender != null && CombatUtil.canAttack(card, selectedDefender))
+        final var selected = selectedDefender;
+        if (attacking && offered != null) for (Card card : human.getPlayer().getCreaturesInPlay()) {
+            var choices = offered.attackOptions().getOrDefault(card.getId(), List.of());
+            if (choices.isEmpty()) continue;
+            if (combat.isAttacking(card) || selected != null && choices.stream().anyMatch(choice -> choice.id() == selected.getId()
+                    && choice.player() == (selected instanceof Player)))
                 candidates.add(combatIds.id(card.getView()));
             var legalDefenders = new ArrayList<Object>();
             for (GameEntity defender : combat.getDefenders()) {
                 if (!CombatDefenders.isCurrent(defender)) continue;
-                if (!CombatUtil.canAttack(card, defender) && !combat.isAttacking(card, defender)) continue;
+                if (choices.stream().noneMatch(choice -> choice.id() == defender.getId() && choice.player() == (defender instanceof Player))) continue;
                 legalDefenders.add(combatDefender(defender));
                 prompt.attackPairs.add(card.getId() + ":" + (defender instanceof Player ? "player:" : "card:") + defender.getId());
             }
             if (!legalDefenders.isEmpty()) attackOptions.add(map("cardId", combatIds.id(card.getView()), "defenders", legalDefenders));
         }
-        var blockers = blocking ? human.getPlayer().getCreaturesInPlay() : List.<Card>of();
+        var blockers = blocking && offered != null ? human.getPlayer().getCreaturesInPlay().stream()
+                .filter(card -> offered.blockerCandidates().contains(card.getId())).toList() : List.<Card>of();
         var attacks = new ArrayList<Object>();
         for (Card attacker : combat.getAttackers()) {
             if (!attacker.getView().canBeShownTo(viewer)) continue;
             var assigned = combat.getBlockers(attacker);
             var eligible = new ArrayList<String>();
             for (Card blocker : blockers) {
-                if (combat.isBlocking(blocker, attacker) || CombatUtil.canBlock(attacker, blocker, combat)) {
+                if (offered.blockOptions().getOrDefault(attacker.getId(), List.of()).contains(blocker.getId())) {
                     eligible.add(combatIds.id(blocker.getView()));
                     prompt.blockPairs.add(attacker.getId() + ":" + blocker.getId());
                 }
@@ -1521,12 +1749,12 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     "blockerIds", assigned.stream().filter(card -> card.getView().canBeShownTo(viewer)).map(card -> combatIds.id(card.getView())).toList(),
                     "blocked", combat.isBlocked(attacker), "eligibleBlockerIds", eligible));
         }
-        boolean attackValid = !attacking || CombatUtil.validateAttackers(combat);
+        boolean attackValid = !attacking || offered != null && okEnabled;
         var repair = new ArrayList<Object>();
         if (attacking && !attackValid) for (var entry : combat.getAttackConstraints().getLegalAttackers().getLeft().entrySet())
             if (CombatDefenders.isCurrent(entry.getValue()))
                 repair.add(map("cardId", combatIds.id(entry.getKey().getView()), "defender", combatDefender(entry.getValue())));
-        String blockProblem = blocking ? CombatUtil.validateBlocks(combat, human.getPlayer()) : null;
+        String blockProblem = blocking && offered != null ? offered.blockProblem() : null;
         List<Object> blockRepair = null;
         if (blocking && blockProblem != null) {
             var witness = BlockRemovalRepair.find(combat, human.getPlayer(), 128).assignments();
@@ -1538,6 +1766,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             }
         }
         return map("attackingPlayerId", combat.getAttackingPlayer().getId(), "attackers", attacks,
+                "declarationId", attacking || blocking ? combatDeclarationId() : "",
                 "defenders", defenders, "selectedDefender", selectedDefender == null ? null : combatDefender(selectedDefender),
                 "attackerCandidates", candidates,
                 "attackOptions", attackOptions,
@@ -1545,6 +1774,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "blockRepair", blockRepair,
                 "blockerCandidates", blockers.stream().map(card -> combatIds.id(card.getView())).toList(),
                 "blockProblem", blockProblem);
+    }
+
+    private String combatDeclarationId() {
+        return id + ":combat:" + game.getPhaseHandler().getTurn() + ":" + game.getPhaseHandler().getNumCombat()
+                + ":" + game.getPhaseHandler().getPhase().name() + ":" + viewer.getId();
     }
 
     private Map<String, Object> combatDefender(GameEntity entity) {
@@ -1686,12 +1920,15 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         synchronized (gate) {
             if (closed) return;
             error = failure;
+            combatChoices.clear();
+            finiteStackYield.revoke("match-ended");
             closed = true;
             if (pending != null) pending.response.completeExceptionally(new IllegalStateException(failure));
             pending = null;
             var next = new LinkedHashMap<>(latest);
             next.put("revision", ++revision); next.put("status", "error"); next.put("error", failure); next.put("prompt", null);
             next.put("result", null);
+            next.put("finiteStackYield", finiteStackYield.frame(table.stackInterruption.actionVersion(), resolutionChoiceVersion));
             next.put("priorityPlayerId", null); next.put("decisionOwnerId", null); next.put("actionClass", "error");
             latest = Collections.unmodifiableMap(next);
             notifyPlaytest();

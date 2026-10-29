@@ -12,6 +12,9 @@ internal sealed partial class TableApplication
     {
         StopQuietPriority();
         StopStackResolution(); expandedStackWorkload = "";
+        StopGroupBlocks();
+        RetireGroupedCombatView();
+        repeatedDeclineSnapshot = null; repeatedDeclineOffer = null; lastFiniteProgress = null; finiteProgressProjection = null;
         workloadSnapshot = stackEligibilitySnapshot = null; cachedWorkloads = []; cachedStackEligibility = false;
         workloadOrder.Clear(); workloadOrderScope = null;
         hits.RevokePublished(); Frame = null; tableScene = null; hovered = null;
@@ -32,8 +35,17 @@ internal sealed partial class TableApplication
     private void ReturnFromMatch()
     {
         if (IsWorkshopMatch) { ReturnToWorkshop(); return; }
-        if (localMatch) { localMatch = false; session.Reset(); ResetTableView(); message = "Choose your next Commander game."; }
-        else Work(async () => { await tables.ReturnToLobbyAsync(); var state = await tables.LobbyAsync(); updates.Enqueue(() => { session.AcceptLobby(state); session.Reset(); ResetTableView(); }); }, "Returning to your group", "Keeping the table together for the next game.", true);
+        if (localMatch) Work(() => {
+            updates.Enqueue(FinishLocalMatchReturn);
+            return Task.CompletedTask;
+        }, "Returning to setup", "Finishing this table before choosing your next game.", true, changesMatch: true);
+        else Work(async () => { await tables.ReturnToLobbyAsync(); var state = await tables.LobbyAsync(); updates.Enqueue(() => { session.AcceptLobby(state); session.Reset(); ResetTableView(); }); }, "Returning to your group", "Keeping the table together for the next game.", true, changesMatch: true);
+    }
+    // Also used by an already-running, revoked concession operation. Starting
+    // another Work from its completion callback would be rejected as busy.
+    private void FinishLocalMatchReturn()
+    {
+        localMatch = false; session.Reset(); ResetTableView(); message = "Choose your next Commander game.";
     }
     private void ImportFile()
     {
