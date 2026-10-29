@@ -80,8 +80,20 @@ there is no second client or Node engine test pipeline.
 
 Harness compilation and the four engine-independent presentation checks run
 before waiting for the Java artifact. Their elapsed times are logged separately.
-The real-engine headless check still waits for the completed package and uses
-its Forge resources; the harness is hashed only after these checks pass.
+The producer overlays the actual packaged policy/boundary assemblies into the
+harness, hashes it, and shares the immutable artifacts after packaging. A separate
+required `packaged-engine` job runs the unchanged real-engine headless journey
+against those bytes and the packaged Java runtime/resources. It runs alongside
+UI and installer preparation; uploading artifacts does not establish that the
+adapter check passed. The Windows aggregate and publication require its success.
+
+The adapter consumer verifies the runtime, harness, exact-source engine manifest
+and source-archive receipt. `restore-package.ps1` with
+`-RequireHarness -RequireEngineLauncher` also checks the test-only launcher's hash and size, then
+copies that launcher and the verified packaged production JAR into a fresh
+adjacent pair outside the shipping inventory. It verifies the copies before
+exporting the launch path. The adapter does not rebuild the app, download the
+full source ZIP or reuse an unrelated local engine dependency.
 
 Pinned tools have separate graphics, installer and update artifacts. UI shards
 download only Mesa, the installer protocol check only Inno, and the installed SDK
@@ -91,7 +103,7 @@ the pinned archive hash checks, and Inno retains its publisher verification.
 `tools.ps1 -DownloadOnly` accepts `-Graphics` and `-Installer` selectors; omitting
 both preserves the existing combined download behavior for local callers.
 
-Downstream UI, installer and SDK jobs check out only their required scripts and
+Downstream adapter, UI, installer and SDK jobs check out only their required scripts and
 probe projects using directory cones. Root and ancestor files remain available
 for repository configuration and native packaging helpers. The package producer
 retains a complete checkout for tracked resources and the full source archive.
@@ -163,6 +175,11 @@ a faster individual job can move that dependency to another job.
 The target is not a measured guarantee. Record cache/runner conditions where
 known and compare multiple runs before claiming a repeatable improvement. All
 required source, native, lifecycle and publication checks remain mandatory.
+
+In release 0.2.224, adapter verification delayed artifact sharing by 122 seconds,
+before the installer's 135-second source-archive transfer. The independent
+adapter job permits those stages to overlap. This motivates the scheduling
+change; it is not a measured two-minute improvement or a five-minute guarantee.
 
 ### Measuring artifact transfers
 
