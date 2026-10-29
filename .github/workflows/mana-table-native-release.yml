@@ -142,22 +142,15 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
-      # These modes use controlled snapshots and need no Forge resources.
-      # Java produces the exact-source engine while this runner prepares them.
-      - name: Build the native harness and run engine-independent checks
+      # Compile the source-bound harness while Java produces its engine.
+      # Both unchanged verification suites consume the immutable package below.
+      - name: Build the source-bound native harness
         run: |
           $elapsed = [Diagnostics.Stopwatch]::StartNew()
           dotnet build mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release -o dist/harness "-p:Version=$env:MANA_RELEASE_VERSION" "-p:InformationalVersion=$env:MANA_RELEASE_VERSION+$env:GITHUB_SHA" -p:IncludeSourceRevisionInInformationalVersion=false
           if ($LASTEXITCODE -ne 0) { throw 'Native regression harness build failed.' }
           $elapsed.Stop()
           @{ phase='harness-build'; seconds=$elapsed.Elapsed.TotalSeconds } | ConvertTo-Json -Compress
-          foreach ($mode in @('--smoke-presentation','--smoke-headless-presentation','--smoke-headless-clutter','--smoke-headless-priority-flow')) {
-            $elapsed.Restart()
-            dotnet ./dist/harness/Mana.Table.Tests.dll $mode --profile ("dist/" + $mode.Substring(8) + "-checks")
-            if ($LASTEXITCODE -ne 0) { throw "Native check failed: $mode" }
-            $elapsed.Stop()
-            @{ phase=$mode; seconds=$elapsed.Elapsed.TotalSeconds } | ConvertTo-Json -Compress
-          }
       # One bridge polls the Java producer, never each native UI consumer.
       # Its early artifact does not waive either full Java job or shared-tooling CI.
       - name: Find the exact-source shared engine
@@ -254,19 +247,24 @@ jobs:
           retention-days: 1
           overwrite: true
 
-  # The package and its byte-bound harness are immutable inputs. The real
-  # adapter journey stays mandatory while UI and installer consumers start.
-  packaged-engine:
+  # Both suites use the same immutable package and byte-bound harness. Their
+  # aggregate stays mandatory while UI and installer consumers run alongside.
+  native-verification:
     if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport) }}
-    name: Verify the packaged engine through the native adapter
+    name: Native verification (${{ matrix.suite }})
     needs: [package]
     runs-on: windows-2025
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [presentation, engine]
     defaults:
       run:
         shell: pwsh
     env:
       MANA_RELEASE_VERSION: 0.2.${{ github.run_number }}
+      MANA_VERIFICATION_SUITE: ${{ matrix.suite }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -288,17 +286,39 @@ jobs:
           path: dist/ci-inputs
           skip-decompress: true
           digest-mismatch: error
-      - name: Verify package, source receipt, central engine, launcher and harness identity
-        run: ./mana-native/ci/restore-package.ps1 -Directory dist/ci-inputs -RequireHarness -RequireEngineLauncher
-      - name: Run the unchanged real-engine native adapter journey
+      - name: Verify the package and suite-specific harness and engine identity
         run: |
-          dotnet ./dist/ci-inputs/harness/Mana.Table.Tests.dll --smoke-headless-engine --engine-jar $env:MANA_NATIVE_FIXTURE_LAUNCHER --production-engine-jar (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar') --engine-resources (Join-Path $env:MANA_NATIVE_PACKAGE 'engine') --source-revision $env:GITHUB_SHA --source-manifest dist/ci-inputs/ci-engine-manifest.json --profile dist/headless-engine-checks
-          if ($LASTEXITCODE -ne 0) { throw 'Production native adapter and packaged Forge command checks failed.' }
-      - name: Save production adapter evidence
+          $restore = @{ Directory='dist/ci-inputs'; RequireHarness=$true }
+          switch -CaseSensitive ($env:MANA_VERIFICATION_SUITE) {
+            'presentation' { }
+            'engine' { $restore.RequireEngineLauncher = $true }
+            default { throw "Unknown native verification suite: $env:MANA_VERIFICATION_SUITE" }
+          }
+          ./mana-native/ci/restore-package.ps1 @restore
+      - name: Run the selected unchanged native verification suite
+        run: |
+          switch -CaseSensitive ($env:MANA_VERIFICATION_SUITE) {
+            'presentation' {
+              $elapsed = [Diagnostics.Stopwatch]::StartNew()
+              foreach ($mode in @('--smoke-presentation','--smoke-headless-presentation','--smoke-headless-clutter','--smoke-headless-priority-flow')) {
+                $elapsed.Restart()
+                dotnet ./dist/ci-inputs/harness/Mana.Table.Tests.dll $mode --profile ("dist/" + $mode.Substring(8) + "-checks")
+                if ($LASTEXITCODE -ne 0) { throw "Native check failed: $mode" }
+                $elapsed.Stop()
+                @{ phase=$mode; seconds=$elapsed.Elapsed.TotalSeconds } | ConvertTo-Json -Compress
+              }
+            }
+            'engine' {
+              dotnet ./dist/ci-inputs/harness/Mana.Table.Tests.dll --smoke-headless-engine --engine-jar $env:MANA_NATIVE_FIXTURE_LAUNCHER --production-engine-jar (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar') --engine-resources (Join-Path $env:MANA_NATIVE_PACKAGE 'engine') --source-revision $env:GITHUB_SHA --source-manifest dist/ci-inputs/ci-engine-manifest.json --profile dist/headless-engine-checks
+              if ($LASTEXITCODE -ne 0) { throw 'Production native adapter and packaged Forge command checks failed.' }
+            }
+            default { throw "Unknown native verification suite: $env:MANA_VERIFICATION_SUITE" }
+          }
+      - name: Save native verification evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: mana-native-packaged-engine-evidence-${{ github.run_attempt }}
+          name: mana-native-verification-evidence-${{ matrix.suite }}-${{ github.run_attempt }}
           path: |
             dist/*-checks/**/*.json
             dist/*-checks/**/*.log
@@ -708,7 +728,7 @@ jobs:
   windows:
     name: ${{ github.event_name == 'workflow_dispatch' && inputs.benchmark_transport && 'Release checks not run (transport benchmark)' || 'Verify and package Windows x64' }}
     if: ${{ always() && !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport) }}
-    needs: [checks, tools, package, packaged-engine, native-ui, installer, installer-release, installer-lifecycle, update-installer, managed-updates, sdk-updates]
+    needs: [checks, tools, package, native-verification, native-ui, installer, installer-release, installer-lifecycle, update-installer, managed-updates, sdk-updates]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -719,7 +739,7 @@ jobs:
         run: |
           node <<'NODE'
           const results = JSON.parse(process.env.JOB_RESULTS);
-          const expected = ['checks', 'tools', 'package', 'packaged-engine', 'native-ui', 'installer', 'installer-release',
+          const expected = ['checks', 'tools', 'package', 'native-verification', 'native-ui', 'installer', 'installer-release',
             'installer-lifecycle', 'update-installer', 'managed-updates', 'sdk-updates'];
           if (Object.keys(results).length !== expected.length || expected.some(name => !Object.hasOwn(results, name)))
             throw new Error('Native job results must account for exactly the declared verification jobs.');

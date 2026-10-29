@@ -78,22 +78,26 @@ exercises the shipping C# adapter against that packaged engine. Repository
 documentation and CI contracts belong to the lightweight `desktop` check;
 there is no second client or Node engine test pipeline.
 
-Harness compilation and the four engine-independent presentation checks run
-before waiting for the Java artifact. Their elapsed times are logged separately.
+Harness compilation runs before waiting for the Java artifact; its elapsed time
+is logged separately.
 The producer overlays the actual packaged policy/boundary assemblies into the
-harness, hashes it, and shares the immutable artifacts after packaging. A separate
-required `packaged-engine` job runs the unchanged real-engine headless journey
-against those bytes and the packaged Java runtime/resources. It runs alongside
-UI and installer preparation; uploading artifacts does not establish that the
-adapter check passed. The Windows aggregate and publication require its success.
+harness, hashes it, and shares the immutable artifacts after packaging. The
+required `native-verification` matrix then runs two suites against those bytes:
+`presentation` executes the unchanged four controlled modes, and `engine` runs
+the unchanged real-engine headless journey with the packaged Java runtime and
+resources. Both run alongside UI and installer preparation. A failed suite does
+not cancel its sibling; each retains separate evidence. Uploading artifacts does
+not establish that either suite passed. The Windows aggregate and publication
+require both to succeed.
 
-The adapter consumer verifies the runtime, harness, exact-source engine manifest
-and source-archive receipt. `restore-package.ps1` with
+Both suites restore and verify the runtime, harness and exact-source engine
+manifest. The engine suite additionally requires the source-archive receipt and
+test-only launcher. `restore-package.ps1` with
 `-RequireHarness -RequireEngineLauncher` also checks the test-only launcher's hash and size, then
 copies that launcher and the verified packaged production JAR into a fresh
 adjacent pair outside the shipping inventory. It verifies the copies before
-exporting the launch path. The adapter does not rebuild the app, download the
-full source ZIP or reuse an unrelated local engine dependency.
+exporting the launch path. Neither suite rebuilds the app or downloads the full
+source ZIP; the engine suite never reuses an unrelated local engine dependency.
 
 Pinned tools have separate graphics, installer and update artifacts. UI shards
 download only Mesa, the installer protocol check only Inno, and the installed SDK
@@ -103,7 +107,7 @@ the pinned archive hash checks, and Inno retains its publisher verification.
 `tools.ps1 -DownloadOnly` accepts `-Graphics` and `-Installer` selectors; omitting
 both preserves the existing combined download behavior for local callers.
 
-Downstream adapter, UI, installer and SDK jobs check out only their required scripts and
+Downstream verification, UI, installer and SDK jobs check out only their required scripts and
 probe projects using directory cones. Root and ancestor files remain available
 for repository configuration and native packaging helpers. The package producer
 retains a complete checkout for tracked resources and the full source archive.
@@ -177,9 +181,18 @@ known and compare multiple runs before claiming a repeatable improvement. All
 required source, native, lifecycle and publication checks remain mandatory.
 
 In release 0.2.224, adapter verification delayed artifact sharing by 122 seconds,
-before the installer's 135-second source-archive transfer. The independent
-adapter job permits those stages to overlap. This motivates the scheduling
-change; it is not a measured two-minute improvement or a five-minute guarantee.
+before the installer's 135-second source-archive transfer. Release 0.2.227's
+source transfer took 12 seconds, so the earlier transfer cost was not steady.
+Independent verification permits those stages to overlap.
+
+The [first PR #56 native run](https://github.com/proflayton/Mana-Table/actions/runs/40943929374)
+recorded 94.6 seconds for the four controlled modes,
+including 78.1 seconds for headless presentation, after a 57.3-second harness
+build. The producer keeps that build and moves the unchanged controlled checks
+to the presentation matrix suite. This removes serial producer work; it does
+not establish an equal end-to-end saving. Java 17/21 verification can become the
+last gate. Measure the next complete source-bound release before claiming an
+improvement or the five-minute target.
 
 ### Measuring artifact transfers
 
