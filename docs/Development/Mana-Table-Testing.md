@@ -103,6 +103,17 @@ delivery boundaries, final dwell, isolation and production frames at 1000x740 an
 delivery, revocation, command-epoch fences and unchanged live receipt behavior.
 Human review remains a separate gate.
 
+The selected camera/background-input checks, general headless interaction runner
+and projection replay now share `PresentationRun` for application lifetime,
+observation delivery and a controlled session/presentation clock. Fixture scripts
+retain their exact elapsed time, pointer/key gestures, preferences and settling;
+one step is one production update, including a zero-time update. Exact queued
+publications preserve prompt IDs, card keys and disclosure changes. Provider-side
+command callbacks still obtain their normal command-receipt observation. The
+finished-table background-poll case explicitly keeps ordinary polled delivery
+and its provider-observation assertions. Separate fixtures, including the access
+zone runner, have not all migrated; input/pointer/camera journaling is future work.
+
 The existing graphics-free `Mana.Client.Tests` runner also checks the `Mana.AI`
 framework. Scripted policies exercise all fifteen typed decision families and
 the same contract permissions, plus source-offer membership, observation/offer

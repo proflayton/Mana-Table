@@ -512,6 +512,17 @@ This does not record pointer/camera input, pre-window animation progress or asse
 loading. Timed playback reproduces the observation timeline, not the full session
 experience. Captures remain viewer-private, including decision dwell information.
 
+Selected native camera, foreground-input, general interaction and recorded-replay
+checks share one test-only `PresentationRun`. It owns the application, controlled
+clock and observation ingress; callers own preferences, scripted devices, fixture
+services and settling. One driver step performs exactly one production update.
+Only the replay scheduler resamples time. The terminal background-poll regression
+explicitly selects ordinary polled delivery; other migrated fixtures queue exact
+observations before the pump. Authored audience-change tests post their explicit
+handoff through that pump without granting an old ingress a new viewer's scope.
+This consolidates test composition, not all existing test fixtures or a second
+client. It records no input journal and owns no rules-provider lifetime.
+
 The boundary is informed by inspected primary material; the mapping above is our
 design inference, not a claim about complete proprietary implementations:
 
