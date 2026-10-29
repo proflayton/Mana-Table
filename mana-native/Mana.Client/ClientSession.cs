@@ -179,6 +179,7 @@ public sealed partial class ClientSession
             ReconcileFiniteYield(state, recovered);
             PruneFiniteAcknowledgement(state);
             ExecutionChanges = executions.Observe(state, baseline: recovered);
+            ObserveOptionalPayments(previous, state, recovered);
             LastSynchronizedAt = time.GetUtcNow();
             recoveryRequired = UncertainCommand = false; LastConnectionError = "";
         } } catch (FiniteYieldOwnershipException error) { ReportFailure(error, true); return false; }
@@ -200,6 +201,7 @@ public sealed partial class ClientSession
         ArgumentNullException.ThrowIfNull(operation);
         if (Busy || Closed) return;
         StopFiniteIntent();
+        ClearAllOptionalPaymentPolicies();
         var pending = finiteRevocations.Values.ToArray();
         Run(async epoch => {
             foreach (var item in pending) {
@@ -321,6 +323,7 @@ public sealed partial class ClientSession
     private void ReportFailure(Exception error, bool command)
     {
         StopFiniteIntent();
+        ClearAllOptionalPaymentPolicies();
         LastFailureWasCommand = command;
         if (State != null || finiteRevocations.Count > 0) {
             CancelAdvance();
@@ -342,6 +345,7 @@ public sealed partial class ClientSession
     private void StopFiniteIntent() { QueueFiniteRevocation(); finiteIntent?.Stop(); finiteIntent = null; }
     public void Close()
     {
+        ClearAllOptionalPaymentPolicies();
         StopFiniteIntent(); CancelAdvance(); SourceActions.Close(); pendingSettings.Clear();
         lock (observationGate) { Closed = true; RevokeObservationIngress(); BeginCommand(); }
         commandTask = RevokeAtCloseAsync(commandTask, finiteRevocations.Values.ToArray());

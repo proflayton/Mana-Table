@@ -37,6 +37,9 @@ internal sealed partial class TableApplication
         internal int StackResolutionRemaining => game.CapturedStackRemaining;
         internal Mana.Client.FiniteResolutionIntent? FiniteResolution => game.finiteResolutionIntent;
         internal Mana.Client.FiniteResolutionProgress? FiniteResolutionProgress => game.finiteProgressProjection?.Progress ?? game.lastFiniteProgress;
+        internal System.Collections.Immutable.ImmutableArray<Mana.Client.OptionalPaymentPolicyEntry> OptionalPaymentPolicies => game.session.OptionalPaymentPolicies;
+        internal Mana.Client.OptionalPaymentOffer? CurrentOptionalPayment => game.session.CurrentOptionalPayment;
+        internal bool OptionalPaymentsPaused => game.session.OptionalPaymentsPaused;
         internal int AnnouncementCount => game.matchPresentation.AnnouncementCount;
         internal string? AnnouncementId => game.matchPresentation.Announcement(game.now)?.Id;
         internal ManaJourneyPaint? ManaJourney => game.manaJourneyPaint;
@@ -142,6 +145,23 @@ internal sealed partial class TableApplication
         internal void ConcedeWorkshop() => game.ReturnToWorkshop();
         internal Lobby? Lobby => game.lobby;
         internal bool LobbyAiSeatControlsAvailable => game.CanManageLobbySeats;
+        internal IDisposable PauseObservationScheduling()
+        {
+            double original = game.nextPoll;
+            game.nextPoll = double.MaxValue;
+            // Stop only future scheduling. An existing observation keeps its
+            // actual owner, epoch and completion; the probe must await it.
+            return new ObservationSchedulingPause(game, original);
+        }
+        private sealed class ObservationSchedulingPause(TableApplication owner, double original) : IDisposable
+        {
+            private TableApplication? current = owner;
+            public void Dispose()
+            {
+                var restore = Interlocked.Exchange(ref current, null);
+                if (restore != null) restore.nextPoll = original;
+            }
+        }
         internal void PresentLobby(Lobby state, bool pausePolling) { game.session.BindLobby(state); game.nextPoll = pausePolling ? double.MaxValue : game.now; }
         internal Mana.Table.Presentation.PresentationFrame ComposeLobbySnapshot(Lobby state)
         {

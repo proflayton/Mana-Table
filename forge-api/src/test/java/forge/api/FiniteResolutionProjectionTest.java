@@ -102,7 +102,7 @@ public class FiniteResolutionProjectionTest {
         var own = new ArrayList<String>(List.of("Toothy, Imaginary Friend", "Reliquary Tower"));
         own.addAll(Collections.nCopies(54, "Memnite")); own.addAll(Collections.nCopies(5, "Forest"));
         try (var scenario = new RulesScenario("finite-panther-idol-55", Map.of(0, own,
-                1, List.of("Mind's Eye", "Reliquary Tower"), 2, List.of("Reliquary Tower"), 3, List.of("Reliquary Tower")),
+                1, List.of("Mind's Eye"), 2, List.of("Reliquary Tower"), 3, List.of("Reliquary Tower")),
                 "Shamanic Revelation", "Progenitus")) {
             // Primary edition data maps both MSC288 and MSC447 to the same
             // Mind's Eye rules with Panther Idol as the printing's flavor name.
@@ -150,6 +150,11 @@ public class FiniteResolutionProjectionTest {
                 assertTrue(payment(input)); assertEquals(input.seat(), 1);
                 var offer = input.prompt().getAsJsonObject("optionalDecline");
                 assertNotNull(offer, "Mind's Eye's real cancellable mana input is certified without an OptionalDecider script parameter");
+                var support = input.prompt().getAsJsonObject("optionalPaymentSupport");
+                assertNotNull(support, "The reported Panther Idol printing has an authoritative current mana-only support fact");
+                assertEquals(text(support, "availability"), "Unpayable");
+                assertFalse(support.get("canAutoPay").getAsBoolean());
+                assertEquals(support.getAsJsonArray("originalManaParts"), JSON.toJsonTree(List.of(Map.of("symbol", "{1}", "count", 1))));
                 assertFalse(offer.get("mandatory").getAsBoolean());
                 assertTrue(input.prompt().get("cancelEnabled").getAsBoolean());
                 assertEquals(offer.get("payerId").getAsInt(), input.state().get("viewerId").getAsInt());

@@ -38,6 +38,7 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     protected final Player player;
     protected final Game game;
     protected ManaCostBeingPaid manaCost;
+    private ManaCostBeingPaid originalManaCost;
     protected final SpellAbility saPaidFor;
     protected boolean effect;
     protected boolean mandatory = false;
@@ -145,6 +146,16 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     /** A defensive copy of the current bill, after reductions and prior payment. */
     public ManaCostBeingPaid getRemainingManaCost() {
         return manaCost == null ? null : new ManaCostBeingPaid(manaCost);
+    }
+
+    /** The actual bill after cost modification, captured before the first gesture. */
+    protected final void captureOriginalManaCost() {
+        if (originalManaCost != null) throw new IllegalStateException("The original payment bill is immutable");
+        if (manaCost != null) originalManaCost = new ManaCostBeingPaid(manaCost);
+    }
+
+    public final ManaCostBeingPaid getOriginalManaCost() {
+        return originalManaCost == null ? null : new ManaCostBeingPaid(originalManaCost);
     }
 
     /** Rules applicability of an exact producer to this current unpaid bill. */

@@ -459,7 +459,7 @@ internal static class FiniteResolutionPresentationChecks
         };
     }
 
-    private static GameSnapshot Projection(int count, int completed = 0, bool paying = true, long revision = 1, bool certified = true)
+    internal static GameSnapshot Projection(int count, int completed = 0, bool paying = true, long revision = 1, bool certified = true)
     {
         var source = new Card { Key = "current-idol", VisualId = "idol", CombatId = "idol", Name = "Panther Idol", Type = "Artifact",
             Text = "Whenever an opponent draws a card, you may pay {1}. If you do, draw a card.", GamePieceType = "card", ManaCost = "{5}" };

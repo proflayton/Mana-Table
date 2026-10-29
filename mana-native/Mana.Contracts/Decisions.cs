@@ -108,6 +108,7 @@ public sealed record PaymentPayload(DecisionReply Pay, DecisionReply Cancel) : D
     public ImmutableArray<string>? UsablePoolManaColors { get; init; }
     public int? PayerId { get; init; }
     public OptionalDeclineOffer? OptionalDecline { get; init; }
+    public OptionalManaPaymentSupport? OptionalPaymentSupport { get; init; }
 }
 public sealed record AttackPayload(DecisionReply Complete) : DecisionPayload
 {

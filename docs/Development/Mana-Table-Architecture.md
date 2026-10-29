@@ -9,6 +9,21 @@ Use the package's `SOURCE.txt`/`build.json` and release notes to identify its be
 The [native development guide](../../mana-native/README.md) is the build/run entry
 point for the Windows client.
 
+## Optional payment consent
+
+Optional human payment preferences belong to `Mana.Client/ClientSession`, not
+the renderer, AI policy or Forge's strategic controller. The rules provider
+certifies the actual original fixed bill, current optional input provenance and
+current safe funding support; `Mana.Contracts` carries those immutable facts and
+the closed `AutoPayOptionalPayment` command. Each accepted command rechecks its
+exact offer and live resources, executes one ordinary funding gesture and then
+reobserves. Failed bounded funding searches mean unknown, never unpayable; only
+a separate absence proof permits a quiet decline. The client owns match-local
+source/ability consent, accepted-snapshot lifecycle and interruption. Its existing
+serialized finite runner owns dispatch and reconciliation. Source preferences do
+not grant priority yields, persist across matches or authorize arbitrary choices.
+The game projects those preferences onto the actual source and reader controls.
+
 ## AI policy boundary
 
 AI seats use `Mana.AI` through the same scoped decisions as human players;
@@ -245,6 +260,17 @@ payment or combat input where that route is not currently offered. The bounded
 planner and payment policy share `AiManaPlanner`, so a preservation claim has both
 a joint bill assignment and an intact witness rather than two independent
 affordability guesses. See [AI intent and limits](Mana-Table-AI.md#pending-effects-and-session-owned-intent).
+
+Committed damage and resolving battlefield departures also have a separate
+`AiSeatHistory.ImpactEvents` channel. It uses the same configured capacity as the
+diagnostic event ring, independently, so a draw/counter burst cannot erase recent
+social evidence. Both channels admit each observed event once and retain copied
+event-time attribution; neither infers an actor from current card control or
+treats an accepted command as a resolved result. Actual newer impacts can evict
+older impacts at the bound. The policy's existing two-round aging and utility
+remain unchanged. Private replay validates this channel's bounds, event order,
+known players and chronology; older captures without it use their original
+event history, without inventing evidence already lost from that capture.
 
 `AiDecisionReplayCase` captures one seat's authorized knowledge, plan/version and evaluation
 allowance. Offline `AiDecisionReplay` reuses the scoped session and exact policy

@@ -23,6 +23,7 @@ public class InputPayManaOfCostPayment extends InputPayMana {
         manaCost = cost;
         extraMatrix = matrix;
         applyMatrix();
+        captureOriginalManaCost();
 
         // CR 118.3c forced cast must use pool mana
         // TODO this introduces a small risk for illegal payments if the human "wastes" enough mana for abilities like Doubling Cube

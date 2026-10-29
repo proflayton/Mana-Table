@@ -955,6 +955,13 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (manaOutput != null && !action.equals("useSourceAction"))
                 throw new IllegalArgumentException("A mana output belongs to an exact current source action");
             switch (action) {
+                case "autoPayOptionalPayment" -> {
+                    if (!(next.input instanceof InputPayMana mana) || !sourceInputCurrent(next)
+                            || !currentOptionalPayment(next, string(request, "offerId"))
+                            || !(next.prompt.get("optionalPaymentSupport") instanceof Map<?, ?> support)
+                            || !Boolean.TRUE.equals(support.get("canAutoPay")) || OptionalManaPayment.witness(mana) == null)
+                        throw new IllegalArgumentException("Automatic payment is not available for this current optional cost");
+                }
                 case "spendPoolMana" -> {
                     if (!(next.input instanceof InputPayMana mana)) throw new IllegalArgumentException("Mana can only pay the current payment");
                     String color = string(request, "manaColor");
@@ -1050,6 +1057,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             Long chosenStackVersion = stackVersion;
             String chosenFiniteGrant = automaticGrant;
             Long chosenCombatVersion = next.input instanceof InputAttack || next.input instanceof InputBlock ? sourceActionVersion.get() : null;
+            Long chosenPaymentVersion = action.equals("autoPayOptionalPayment") ? sourceActionVersion.get() : null;
             if (next.input instanceof InputPassPriority && Set.of("card", "useSourceAction", "useHandPlacement").contains(action))
                 table.stackInterruption.action();
             if (playerDriven) table.tempo.activity(viewer.getId());
@@ -1063,6 +1071,13 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     if (closed || viewer.getHasLost() || game.isGameOver() || human.getInputQueue().getInput() != next.input
                             || human.getInputProxy().getInput() != next.input) return;
                     switch (action) {
+                        case "autoPayOptionalPayment" -> {
+                            var input = (InputPayMana) next.input;
+                            var step = Objects.equals(chosenPaymentVersion, sourceActionVersion.get())
+                                    && currentOptionalPayment(next, string(request, "offerId"))
+                                    ? OptionalManaPayment.witness(input) : null;
+                            if (step == null || !step.apply(input)) restorePriority = true;
+                        }
                         case "spendPoolMana" -> {
                             byte color = ManaAtom.fromName(string(request, "manaColor"));
                             if (((InputPayMana) next.input).getUsablePoolManaColors().contains(color)) human.useMana(color);
@@ -1137,6 +1152,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                                     : chosenStackVersion != null ? "The stack changed. Resolve these stopped; review the current effects."
                                     : chosenFiniteGrant != null ? "Finite yielding stopped; review the current effects."
                                     : action.equals("useSourceAction") ? "That source action changed. Read the current card again."
+                                    : action.equals("autoPayOptionalPayment") ? "Automatic payment stopped. Review the current cost and mana sources."
                                     : action.equals("card") ? "That target changed. Use the current choice."
                                     : action.startsWith("priority") ? "That priority action changed. Use the current decision."
                                     : "That hand-placement option is no longer available. Use the current prompt.");
@@ -1158,6 +1174,14 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private boolean currentTargetCard(InputSelectTargets input, CardView view) {
         Card card = sourceCard(view);
         return card != null && card.getView() == view && input.canSelectCard(card);
+    }
+
+    private boolean currentOptionalPayment(Pending current, String offerId) {
+        if (!(current.input instanceof InputPayMana payment) || !payment.isPaymentActive()
+                || !(current.prompt.get("optionalDecline") instanceof Map<?, ?> advertised)
+                || !Objects.equals(advertised.get("offerId"), offerId)) return false;
+        var live = ResolutionBatchProjection.optional(payment, viewer, this::semanticCardId, current.executionId, executions.frame());
+        return live != null && live.entrySet().stream().allMatch(entry -> Objects.equals(advertised.get(entry.getKey()), entry.getValue()));
     }
 
     private Map<String, Object> grantFiniteStackYield(JsonObject request) {
@@ -1609,13 +1633,18 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             projectedPrompt.remove("fundingContext"); projectedPrompt.remove("usablePoolManaColors");
             projectedPrompt.remove("manaPaymentContext");
             projectedPrompt.remove("optionalDecline");
+            projectedPrompt.remove("optionalPaymentSupport");
             prompt.poolManaColors.clear();
             if (prompt.input instanceof InputPayMana payment && sourceInputCurrent(prompt)) {
                 projectedPrompt.putAll(ManaPaymentFacts.describe(payment, this::semanticCardId));
                 prompt.poolManaColors.addAll(payment.getUsablePoolManaColors().stream().map(MagicColor::toShortString).toList());
             }
             var declineOffer = optionalDecline(prompt, publication.executions());
-            if (declineOffer != null) projectedPrompt.put("optionalDecline", declineOffer);
+            if (declineOffer != null) {
+                projectedPrompt.put("optionalDecline", declineOffer);
+                var support = OptionalManaPayment.describe((InputPayMana)prompt.input, declineOffer);
+                if (support != null) projectedPrompt.put("optionalPaymentSupport", support);
+            }
             if (prompt.colorPaymentOwner != null && prompt.kind.equals("choice")
                     && "colorChoice".equals(prompt.prompt.get("context"))
                     && human.getInputQueue().getInput() == prompt.colorPaymentOwner)

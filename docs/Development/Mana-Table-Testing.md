@@ -354,6 +354,18 @@ an offered proposal does not imply acceptance or resolution. The graphics-free
 client suite tests replay roundtrips, scope and knowledge isolation, exhaustive
 small mana assignments, and controlled tactical/effect-graph expectations.
 
+`AiImpactHistoryRegression` follows committed damage, own repeated focus and a
+resolving battlefield loss through 384 draw/counter events in a real
+`AiSeatSession`. The ordinary 128-event diagnostic ring rotates while the
+independently bounded impact channel preserves those facts. It also checks
+duplicate polls, immutable snapshots, unknown producing control, paid costs and
+nonharm exclusion, seat isolation, the unchanged two-round aging boundary, and
+eviction by genuinely newer impacts. Private JSON replay retains the separate
+facts after the diagnostic ring loses them, supports captures missing the new
+field, and rejects future, duplicate, foreign, nonimpact and oversized entries.
+These are controlled memory regressions, not evidence that a particular live
+match made tactically sound or socially engaging decisions.
+
 Numeric investment checks use typed announcement ownership and read-only
 funding facts. They cover fixed and repeated-X costs, physical-source reuse,
 partial/unsupported funding, bounded work and current source identity. Java's
@@ -562,6 +574,19 @@ revocation.
 `FiniteResolutionProgressRegression` keeps worker-ahead outcomes separate from
 accepted progress, retains confirmed receipts across accepted history eviction,
 and checks capture-revision, execution identity and atomic rejection fences.
+`OptionalPaymentRegression` covers quiet engine-certified unpayable costs,
+explicit source modes, exact offer permissions, partial funding with fresh
+decisions and the original bill, unchanged-receipt deduplication, reading,
+Take control during dispatch, unknown continuations and source/match/recovery
+lifecycle. It also composes unpayable costs with captured priority yielding;
+payable or unknown costs still stop that consent. Java `OptionalManaPaymentTest`
+checks actual Mind's Eye and Mana Vault inputs, floating/restricted mana,
+untapped/manual/hidden-zone routes, safe ordinary funding and resource changes.
+`OptionalPaymentPresentationChecks` runs in the existing headless presentation
+lane with enlarged text and reduced motion at both window sizes. It follows
+source choice through the marker and reader reset, rather than merely asserting
+button labels. Authored checkpoints establish interaction safety, not live
+rules correctness or human approval.
 `CombatAssignmentRegression` stages 100 reviewed pairs with current
 handles, bounded command chunks, constrained-edge matching and separate final
 confirmation. These tests run without starting a JVM for each case.
@@ -768,6 +793,11 @@ covers actual host/guest assignments, private-data filtering, saved-token/table
 guards and readiness legality; the native mixed-seat journey captures the same
 shared commander previews. These checks do not supply human portrait-legibility
 or gameplay acceptance.
+The native mixed-seat snapshot probe temporarily stops scheduling new polls,
+waits for the actual in-flight observation to finish, then composes the guest
+view and restores the host. It does not rebind the lobby or retire observation
+ownership to manufacture idle state; the strict snapshot guard and existing
+quiescence/journey time limits remain in force.
 
 The headless lane also reads a modal spell/land card, checks both offered-action
 orders and rejects a land offer replaced between press and release. It also

@@ -255,7 +255,8 @@ internal sealed partial class TableApplication : IDisposable
         // update's pointer position so entering a card pauses Auto before Draw.
         bool autoBlocked = AutomaticInteractionPause() != DecisionDockPauseReason.None;
         ArmAutomaticQuietPriority(autoBlocked);
-        bool combatReserved = UpdateGroupBlocks(autoBlocked);
+        bool paymentReserved = UpdateOptionalPayments(autoBlocked);
+        bool combatReserved = paymentReserved || UpdateGroupBlocks(autoBlocked);
         bool stackReserved = combatReserved || UpdateStackResolution(autoBlocked);
         bool quietReserved = stackReserved || UpdateQuietPriority(autoBlocked);
         if (!quietReserved && (!automatic || held || autoBlocked)) session.CancelAdvance();
@@ -281,6 +282,7 @@ internal sealed partial class TableApplication : IDisposable
     {
         if (command == null || fixture != null || session.NeedsRecovery || match?.Id != command.GameId || match.Decision?.Id != command.DecisionId) return false;
         if (AwaitingFinitePublication) return false;
+        if (CurrentOptionalPayment?.Availability == OptionalManaPaymentAvailability.Unpayable && command is not CancelPayment) return false;
         if (command is UndoLastAction) return false;
         if (match.FiniteStackYield is { Status: FiniteStackYieldStatus.Active }) {
             TakePriorityControl(); ClearReaderActions();

@@ -71,6 +71,8 @@ internal sealed class ForgeCommandScope
                 break;
             case KeepOpeningHand or PayMana or CompleteAttackers or CompleteBlockers
                 or CompleteSelection or AcceptConfirmation or AcknowledgeDecision: Action("ok"); break;
+            case AutoPayOptionalPayment value:
+                Action("autoPayOptionalPayment"); args["offerId"] = value.OfferId; break;
             case MulliganOpeningHand or CancelPayment or CancelSelection or DeclineConfirmation:
                 Action("cancel"); break;
             case PassTurn: Action("priorityPassTurn"); break;

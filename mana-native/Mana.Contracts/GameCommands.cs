@@ -19,6 +19,7 @@ public abstract record GameCommand
             SelectCard value => Present(value.Card), PlayCard value => Present(value.Card),
             ActivateCard value => Present(value.Card), UseManaSource value => Present(value.Card),
             SpendPoolMana value => value.Color is "W" or "U" or "B" or "R" or "G" or "C",
+            AutoPayOptionalPayment value => FiniteStackYieldFacts.Id(value.OfferId),
             ToggleAttackPlayer value => Present(value.Attacker),
             ToggleAttackPermanent value => Present(value.Attacker) && Present(value.DefenderCard),
             ToggleBlock value => Present(value.Attacker) && Present(value.Blocker),
@@ -58,6 +59,7 @@ public sealed record AutoPassPriority(string GameId, string DecisionId) : Decisi
 public sealed record KeepOpeningHand(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId);
 public sealed record MulliganOpeningHand(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId);
 public sealed record PayMana(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId);
+public sealed record AutoPayOptionalPayment(string GameId, string DecisionId, string OfferId) : DecisionCommand(GameId, DecisionId);
 public sealed record CancelPayment(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId);
 public sealed record CompleteAttackers(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId);
 public sealed record CompleteBlockers(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId);
@@ -124,6 +126,9 @@ public static class GameCommandPermissions
             KeepOpeningHand => payload is OpeningHandPayload { Keep.Enabled: true },
             MulliganOpeningHand => payload is OpeningHandPayload { Mulligan.Enabled: true },
             PayMana => payload is PaymentPayload { Pay.Enabled: true },
+            AutoPayOptionalPayment value => payload is PaymentPayload { Cancel.Enabled: true, OptionalDecline: { Mandatory: false } offer,
+                OptionalPaymentSupport: { Availability: OptionalManaPaymentAvailability.Payable, CanAutoPay: true } }
+                && offer.OfferId == value.OfferId && offer.PayerId == state.ViewerId,
             CancelPayment => payload is PaymentPayload { Cancel.Enabled: true },
             CompleteAttackers => payload is AttackPayload { Complete.Enabled: true },
             CompleteBlockers => payload is BlockPayload { Complete.Enabled: true } && string.IsNullOrEmpty(state.Combat?.BlockProblem),

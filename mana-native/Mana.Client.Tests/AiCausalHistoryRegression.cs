@@ -35,11 +35,12 @@ internal static class AiCausalHistoryRegression
         check(!JsonSerializer.Serialize(seat.History).Contains("PRIVATE-", StringComparison.Ordinal),
             "Causal seat memory retains typed historical attribution without source names, printed faces or announcement prose");
 
-        var unknown = remembered with { Events = remembered.Events.Select(entry => entry with {
+        var legacy = remembered with { ImpactEvents = null };
+        var unknown = legacy with { Events = legacy.Events.Select(entry => entry with {
             CauseControllerId = null, Impact = entry.Impact! with { SourceControllerId = null } }).ToImmutableArray() };
         check(CasualTableAssessment.Assess(state, unknown).All(value => value.Pressure == 0),
             "Legacy damage with no reported source controller remains unknown despite a current source, cause portrait and affected seat");
-        var stolenDuringResolution = remembered with { Events = remembered.Events.Select(entry => entry with {
+        var stolenDuringResolution = legacy with { Events = legacy.Events.Select(entry => entry with {
             Impact = entry.Impact! with { SourceControllerId = 2, Combat = false } }).ToImmutableArray() };
         check(CasualTableAssessment.Assess(state, stolenDuringResolution).Single(value => value.PlayerId == 1).Pressure == 6
                 && CasualTableAssessment.Assess(state, stolenDuringResolution).Single(value => value.PlayerId == 2).Pressure == 0,
@@ -48,7 +49,7 @@ internal static class AiCausalHistoryRegression
             CauseControllerId = null }).ToImmutableArray() };
         check(CasualTableAssessment.Assess(state, unknownNoncombat).All(value => value.Pressure == 0),
             "A known physical source controller cannot stand in for an unreported noncombat ability controller");
-        var ownHit = remembered with { Events = remembered.Events.Select(entry => entry with {
+        var ownHit = legacy with { Events = legacy.Events.Select(entry => entry with {
             CauseControllerId = 0, Impact = entry.Impact! with { SourceControllerId = 0, PlayerId = 1, RecipientControllerId = 1 } }).ToImmutableArray() };
         check(CasualTableAssessment.Assess(state, ownHit).Single(value => value.PlayerId == 1).RecentFocus == 6,
             "Repeated-focus memory counts the acting seat's committed damage rather than its accepted target proposals");

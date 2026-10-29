@@ -37,7 +37,7 @@ internal sealed partial class TableApplication
 
     private void DrawPublicAnnouncement()
     {
-        if (OverlayOpen || expandedStackWorkload.Length > 0 || match?.Decision is { Payload: not PriorityPayload }
+        if (OverlayOpen || readingId != null || expandedStackWorkload.Length > 0 || match?.Decision is { Payload: not PriorityPayload }
             || matchPresentation.Announcement(now) is not { } announcement) return;
         // An ordinary single-entry surface already shows its source and effect.
         // Repeated piles and off-turn actions need a readable current announcement.

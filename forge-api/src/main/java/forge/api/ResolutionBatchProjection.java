@@ -39,9 +39,7 @@ final class ResolutionBatchProjection {
         if (!input.isPaymentActive() || input.isPaymentMandatory() || input.getPayer() == null
                 || input.getPayer().getId() != viewer.getId()) return null;
         var ability = input.getPaidForAbility();
-        if (ability == null || ability.getPayCosts() == null || input.getRemainingManaCost() == null || input.getRemainingManaCost().isPaid()
-                || ability.getPayCosts().getCostParts().isEmpty()
-                || ability.getPayCosts().getCostParts().stream().anyMatch(part -> !(part instanceof CostPartMana))) return null;
+        if (!literalManaOnly(ability) || input.getRemainingManaCost() == null || input.getRemainingManaCost().isPaid()) return null;
         var group = group(ability, viewer, identity);
         if (group == null) return null;
         var indexed = new HashMap<String, MatchExecutions.Occurrence>();
@@ -56,10 +54,6 @@ final class ResolutionBatchProjection {
         var costs = new ArrayList<Object>();
         for (var part : ability.getPayCosts().getCostParts()) {
             var mana = (CostPartMana) part;
-            // These variable/external commitments need a separate equivalence
-            // proof. The first supported family is literal mana-only costs.
-            if (mana.isExiledCreatureCost() || mana.isEnchantedCreatureCost() || mana.isCostPayAnyNumberOfTimes() || mana.getAmountOfX() > 0
-                    || mana.getMaxWaterbend() != null || mana.getXMin() != 0) return null;
             costs.add(List.of(part.getClass().getName(), mana.getMana().getGenericCost(),
                     forge.card.mana.ManaCost.serialize(mana.getMana()), params(unwrap(ability).getMapParams())));
         }
@@ -69,6 +63,14 @@ final class ResolutionBatchProjection {
         return new LinkedHashMap<>(Map.of("groupKey", group.groupKey(), "paymentKey", paymentKey,
                 "producingTriggerExecutionId", current.id(), "sourceCardId", group.sourceCardId(),
                 "purpose", purpose, "payerId", input.getPayer().getId(), "mandatory", false));
+    }
+
+    static boolean literalManaOnly(SpellAbility ability) {
+        // Variable/external commitments need a separate equivalence proof.
+        return ability != null && ability.getPayCosts() != null && !ability.getPayCosts().getCostParts().isEmpty()
+                && ability.getPayCosts().getCostParts().stream().allMatch(part -> part instanceof CostPartMana mana
+                    && !mana.isExiledCreatureCost() && !mana.isEnchantedCreatureCost() && !mana.isCostPayAnyNumberOfTimes()
+                    && mana.getAmountOfX() == 0 && mana.getMaxWaterbend() == null && mana.getXMin() == 0);
     }
 
     private static SpellAbility unwrap(SpellAbility ability) {

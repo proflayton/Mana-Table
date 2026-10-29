@@ -12,9 +12,9 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private sealed record SourceReaderOption(string Text, SourceAction? Action = null,
-        PriorityAbility? Placement = null, bool Retry = false);
+        PriorityAbility? Placement = null, bool Retry = false, OptionalPaymentPolicyEntry? PaymentPolicy = null);
     private sealed record SourceReaderControl(string Id, Rectangle Bounds, SourceAction? Action = null,
-        bool Retry = false, PriorityAbility? Placement = null);
+        bool Retry = false, PriorityAbility? Placement = null, OptionalPaymentPolicyEntry? PaymentPolicy = null);
     private readonly List<SourceReaderControl> sourceReaderControls = [];
     private Rectangle sourceReaderActionsBounds;
     private string sourceReaderViewKey = "";
@@ -39,6 +39,8 @@ internal sealed partial class TableApplication
     private List<SourceReaderOption> SourceReaderOptions(Card card)
     {
         var options = new List<SourceReaderOption>();
+        options.AddRange(session.OptionalPaymentPolicies.Where(policy => policy.SourceCardId == CardViews.Identity(card))
+            .Select(policy => new SourceReaderOption(OptionalPaymentModeLabel(policy) + "\nAsk instead", PaymentPolicy: policy)));
         if (ReaderActionsMatch(card)) {
             options.AddRange(sourceActions.View.Actions.Select(action => new SourceReaderOption(
                 action.Kind == "cast" && !action.Text.StartsWith("Cast ", StringComparison.OrdinalIgnoreCase)
@@ -147,20 +149,21 @@ internal sealed partial class TableApplication
             if (!visible.IsEmpty) {
                 bool firstPlacement = option.Placement != null && sourceActions.View.Actions.Count == 0
                     && options.FindIndex(item => item.Placement != null) == index;
-                string id = option.Retry ? "source-actions-retry"
+                string id = option.PaymentPolicy != null ? "optional-payment-reset:" + option.PaymentPolicy.Id : option.Retry ? "source-actions-retry"
                     : (option.Action != null && sourceActions.View.Actions.FirstOrDefault()?.Id == option.Action.Id || firstPlacement) ? "read-card-action"
                     : option.Placement != null ? "source-placement:" + option.Placement.Id : "source-action:" + option.Action!.Id;
-                bool hover = !busy && IsControlHovered(id);
+                bool enabled = !busy || option.PaymentPolicy != null;
+                bool hover = enabled && IsControlHovered(id);
                 if (row.Secondary) {
                     if (hover) canvas.Rounded(visible, Blue * (pressed?.Id == id && CurrentHit(pressed) ? .22f : .10f), 4);
-                } else PaintControlSurface(id, visible, new(19, 34, 41), Blue * .6f, !busy);
+                } else PaintControlSurface(id, visible, new(19, 34, 41), Blue * .6f, enabled);
                 for (int line = 0; line < row.Layout.Lines.Count; line++) {
                     int lineY = y + row.Inset + line * row.Layout.LineHeight;
                     if (lineY >= top && lineY + row.Layout.LineHeight <= top + height)
                         PaintSourceActionLine(row.Layout, line, area.X + row.Inset, lineY,
                             row.Secondary ? hover ? Blue : Muted : Ink, row.Font, !row.Secondary);
                 }
-                sourceReaderControls.Add(new(id, visible, option.Action, option.Retry, option.Placement));
+                sourceReaderControls.Add(new(id, visible, option.Action, option.Retry, option.Placement, option.PaymentPolicy));
             }
             y += row.Height + gap;
         }
@@ -172,8 +175,9 @@ internal sealed partial class TableApplication
             canvas.Rounded(new(area.Right + 4, thumbY, 3, thumbHeight), Blue * .75f, 1);
         }
         foreach (var control in sourceReaderControls) {
-            if (busy) continue;
-            UiIntent intent = control.Retry ? new MatchIntent.RetrySourceActions()
+            if (busy && control.PaymentPolicy == null) continue;
+            UiIntent intent = control.PaymentPolicy != null ? new MatchIntent.ClearOptionalPaymentPolicy(control.PaymentPolicy.Id)
+                : control.Retry ? new MatchIntent.RetrySourceActions()
                 : control.Action != null ? new MatchIntent.UseSourceAction(control.Action.Id)
                 : control.Placement != null ? new MatchIntent.UseSourcePlacement(control.Placement.Id) : UiIntent.None;
             hits.Add(new(control.Id, ScopeFor(intent), control.Bounds, intent));

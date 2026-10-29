@@ -40,6 +40,7 @@ internal sealed partial class TableApplication
         manaJourney = null; manaJourneyPaint = null; manaSourcePaint.Clear();
         if (match is not { Status: "playing", Viewer: not null, Decision: { } decision } state
             || session.NeedsRecovery || OverlayOpen && !BattlefieldFocused || CardCollectionOpen) return;
+        if (QuietUnpayableOptionalPayment) return;
         if (decision.Payload is OptionsPayload { ManaPaymentContext: { Source.Card: { FaceDown: false } owningCostSource } context }
             && !context.UnpaidManaParts.IsDefaultOrEmpty) {
             // The color callback owns only its offered choice. Its parent bill
@@ -60,7 +61,8 @@ internal sealed partial class TableApplication
             var plan = PlanMana("payment:" + state.Id + ":" + state.ViewerId + ":" + decision.Id + ":" + state.Revision,
                 payment.FundingContext, parts, null);
             manaJourney = new(paying, true, parts, payment.FundingContext, plan,
-                plan?.Status != ManaFundingStatus.Funded ? "Choose mana sources"
+                payment.OptionalPaymentSupport?.Availability == OptionalManaPaymentAvailability.Unpayable ? "Cannot pay this optional cost"
+                    : plan?.Status != ManaFundingStatus.Funded ? "Choose mana sources"
                     : plan.Steps.OfType<ManaFundingStep.Source>().Any() ? "Choose the lit sources" : "Use floating mana");
             return;
         }
@@ -149,13 +151,17 @@ internal sealed partial class TableApplication
         var declineBatch = !ResolvingCapturedStack ? RepeatedDeclineOffer : null;
         string declineLabel = declineBatch == null ? "" : "Decline " + declineBatch.DeclineProgress!.CapturedCount + " + resolve queue";
         var currentPayment = journey.Payment ? match.Decision?.Payload as PaymentPayload : null;
-        int payWidth = canvas.TextWidth("Auto pay", .76f) + 24;
-        int declineWidth = currentPayment?.Cancel.Enabled == true ? canvas.TextWidth(currentPayment.Cancel.Label, .76f) + 24 : 0;
+        bool sourcePolicy = currentPayment != null && CurrentOptionalPayment != null;
+        string payLabel = sourcePolicy ? "Pay once" : "Auto pay";
+        string declineOnceLabel = sourcePolicy ? "Decline once" : currentPayment?.Cancel.Label ?? "";
+        int payWidth = canvas.TextWidth(payLabel, .76f) + 24;
+        int declineWidth = currentPayment?.Cancel.Enabled == true ? canvas.TextWidth(declineOnceLabel, .76f) + 24 : 0;
         const int symbolSide = 36, advance = 44;
         int symbolWidth = tokens.Sum(token => advance + (token.Count > 1 ? canvas.TextWidth("×" + token.Count, .66f, true) : 0));
         int width = Math.Clamp(Math.Max(symbolWidth + 20, canvas.TextWidth(journey.Advice, .66f) + 20), 220, 360);
         if (currentPayment != null) width = Math.Max(width, Math.Min(420, payWidth + declineWidth + 28));
         if (declineLabel.Length > 0) width = Math.Max(width, Math.Min(420, canvas.TextWidth(declineLabel, .76f, true) + 40));
+        if (sourcePolicy) width = Math.Max(width, 360);
         var positions = new List<(ManaBillPart Part, int X, int Row)>();
         int columnX = 12, row = 0;
         foreach (var token in tokens) {
@@ -168,8 +174,9 @@ internal sealed partial class TableApplication
         bool reducing = reductionChoice?.ManaReduction != null;
         bool paymentControls = match.Decision?.Payload is PaymentPayload || reducing;
         int batchHeight = declineLabel.Length == 0 ? 0 : Math.Max(40, canvas.TextSize(declineLabel, .76f, width - 40, 80, true).Y + 12);
+        int policyHeight = sourcePolicy ? OptionalPaymentControlsHeight(width - 16) : 0;
         int height = 31 + rows * 42 + (reducing ? 68 : paymentControls && journey.Payment ? 54 : 25)
-            + (declineBatch != null ? batchHeight + 11 : 0);
+            + (declineBatch != null ? batchHeight + 11 : 0) + policyHeight;
         // Optional metadata must not turn into an unbounded billboard or a
         // negative viewport clamp. Exceptionally complex bills keep the normal
         // exact engine instructions and current manual payment controls.
@@ -203,15 +210,17 @@ internal sealed partial class TableApplication
         int adviceY = y + 29 + rows * 42;
         canvas.Text(journey.Advice, x + 9, adviceY, Muted, .66f, width - 18, 1);
         if (journey.Payment && match.Decision?.Payload is PaymentPayload payment) {
-            int controlY = area.Bottom - 31 - (declineBatch != null ? batchHeight + 11 : 0);
-            if (payment.Pay.Enabled) Button("mana-auto", "Auto pay", x + 8, controlY, payWidth,
+            int controlY = area.Bottom - 31 - (declineBatch != null ? batchHeight + 11 : 0) - policyHeight;
+            if (payment.Pay.Enabled && CurrentOptionalPayment?.Availability != OptionalManaPaymentAvailability.Unpayable)
+                Button("mana-auto", payLabel, x + 8, controlY, payWidth,
                 new MatchIntent.ConfirmDecision(), !busy, height: 27);
-            if (payment.Cancel.Enabled) Button("mana-cancel", payment.Cancel.Label, x + width - declineWidth - 8, controlY, declineWidth,
+            if (payment.Cancel.Enabled) Button("mana-cancel", declineOnceLabel, x + width - declineWidth - 8, controlY, declineWidth,
                 new MatchIntent.CancelDecision(), !busy, height: 27);
         }
         if (journey.Payment && declineBatch != null)
             CompleteActionButton("finite-resolution-decline", declineLabel,
-                new(x + 8, area.Bottom - batchHeight - 7, width - 16, batchHeight), new MatchIntent.DeclineRepeatedPayments(), !busy);
+                new(x + 8, area.Bottom - batchHeight - 7 - policyHeight, width - 16, batchHeight), new MatchIntent.DeclineRepeatedPayments(), !busy);
+        if (sourcePolicy) DrawOptionalPaymentControls(new(x + 8, area.Bottom - policyHeight, width - 16, policyHeight));
         if (reducing && reductionChoice is { } selection) {
             int completeWidth = selection.Cancel.Enabled ? width - 110 : width - 16;
             Button("confirm", selection.Complete.Label, x + 8, area.Bottom - 48, completeWidth,

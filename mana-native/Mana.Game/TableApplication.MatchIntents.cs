@@ -157,6 +157,8 @@ internal sealed partial class TableApplication
             case MatchIntent.SetQuietPriority setting: if (setting.Armed) ArmQuietPriority(); else TakePriorityControl(); break;
             case MatchIntent.SetStackResolution setting: if (setting.Armed) ArmStackResolution(); else TakePriorityControl(); break;
             case MatchIntent.DeclineRepeatedPayments: ArmRepeatedDecline(); break;
+            case MatchIntent.SetOptionalPaymentMode setting: SetOptionalPaymentMode(setting.Mode); break;
+            case MatchIntent.ClearOptionalPaymentPolicy setting: ClearOptionalPaymentPolicy(setting.Id); break;
             case MatchIntent.ToggleReducedMotion: preferences = preferences with { ReducedMotion = !preferences.ReducedMotion }; SavePreferences(); break;
             case MatchIntent.ToggleSounds when overlay == "settings":
                 preferences = preferences with { Sounds = !preferences.Sounds }; ApplyAudioMix(); SaveAudioPreferences(); break;
