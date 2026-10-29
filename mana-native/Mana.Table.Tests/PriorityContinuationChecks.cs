@@ -275,13 +275,12 @@ internal static class PriorityContinuationChecks
 
     private sealed class Journey : IDisposable
     {
-        private readonly TableApplication app;
+        private readonly PresentationRun app;
         private readonly Point viewport;
         private readonly ConcurrentQueue<TaskCompletionSource> releases = new();
-        private double seconds;
         internal InteractionScenarioEngine Engine { get; } = new();
         internal ConcurrentQueue<GameCommand> Replies { get; } = new();
-        internal TableApplication.Probe View => app.TestPort;
+        internal TableApplication.Probe View => app.View;
         internal PresentationFrame Frame { get; private set; } = null!;
         internal IEnumerable<string> Text => Frame.Drawing.Commands.Select(command => command switch {
             DrawCommand.Text text => text.Value, DrawCommand.CenterText text => text.Value, _ => null }).OfType<string>();
@@ -310,8 +309,8 @@ internal static class PriorityContinuationChecks
                 releases.Enqueue(release); Replies.Enqueue(reply);
                 await release.Task;
             };
-            app = new(TestTableServices.For(Engine), path, initialState: Engine.State) { Automated = true };
-            app.Initialize(); app.EnableLiveTableStudy();
+            app = new(TestTableServices.For(Engine), path, Engine.State, viewport);
+            app.EnableLiveTableStudy();
             View.PresentLobby(new("local", "Bounded priority fixture", null, false, null, true, "", null, [], []), true);
             Tick();
             View.SetHeld(holdInitially);
@@ -319,15 +318,13 @@ internal static class PriorityContinuationChecks
             Settle();
         }
         internal bool Has(string id) => Frame.Hits.Any(hit => hit.Id == id);
-        internal void Present(GameSnapshot state) { Engine.Present(state); View.Accept(Engine.State); Tick(); }
+        internal void Present(GameSnapshot state) { Engine.Present(state); app.QueueObservation(Engine.State); Tick(); }
         internal void Tick(Point? at = null, ButtonState left = ButtonState.Released)
         {
-            seconds += .05; var point = at ?? new Point(10, 30);
-            app.Update(new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.05)),
+            var point = at ?? new Point(10, 30);
+            Frame = app.Tick(TimeSpan.FromSeconds(.05),
                 new(point.X, point.Y, 0, left, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released),
-                new(), viewport);
-            Frame = app.ReadPresentation();
-            if (View.Error.Length > 0) throw new InvalidOperationException(View.Error);
+                new());
         }
         internal void Settle() { for (int frame = 0; frame < 60; frame++) { Tick(); Thread.Yield(); } }
         internal void Until(Func<bool> ready, string description)

@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Text.Json;
 using Mana.Contracts;
+using Mana.Client;
 using Mana.Renderer;
 using Mana.Table.Interaction;
 using Mana.Table.Presentation;
@@ -30,6 +31,7 @@ internal static partial class HeadlessPresentationSmoke
             checks.Add(description);
         }
         try {
+            PresentationRunChecks.Run(profile, Check);
             CheckFinishedTable(profile, Check, trace, performance);
             ProviderIsolationChecks.Run(Check);
             ManaFundingWireChecks.Run(Check);
@@ -244,7 +246,7 @@ internal static partial class HeadlessPresentationSmoke
                 });
                 else {
                     var current = run.View.Match!;
-                    run.View.Accept(current with { Revision = current.Revision + 1, Players = current.Players.Select(player => player.Id != current.ViewerId ? player : player with {
+                    run.QueueExact(current with { Revision = current.Revision + 1, Players = current.Players.Select(player => player.Id != current.ViewerId ? player : player with {
                         Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with {
                             Count = zone.Count - (condition == "visibility-revoked" ? 1 : 0),
                             Cards = zone.Cards.Where(card => condition != "visibility-revoked" || card.VisualId != "hand-a")
@@ -464,49 +466,49 @@ internal static partial class HeadlessPresentationSmoke
 
     private sealed class Runner : IDisposable
     {
-        private readonly TableApplication application;
+        private readonly PresentationRun application;
         private readonly string scenario;
         private readonly List<object> trace, performance;
         private readonly List<double> updateMilliseconds = [];
         private readonly Point viewport = new(1600, 900);
-        private double seconds;
+        private double seconds => application.Elapsed.TotalSeconds;
         private Point pointer = new(20, 60);
         internal InteractionScenarioEngine Engine { get; } = new();
-        internal TableApplication.Probe View => application.TestPort;
+        internal TableApplication.Probe View => application.View;
         internal PresentationFrame Frame { get; private set; } = null!;
 
-        internal Runner(string profile, string scenario, GameSnapshot state, List<object> trace, List<object> performance)
+        internal Runner(string profile, string scenario, GameSnapshot state, List<object> trace, List<object> performance,
+            ObservationDeliveryMode delivery = ObservationDeliveryMode.External)
         {
             this.scenario = scenario; this.trace = trace; this.performance = performance;
             string directory = Path.Combine(profile, scenario); Directory.CreateDirectory(directory);
             new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f,
                 Stops = scenario == "reader-drag-over-control" ? ["MAIN1"] : [] }.Save(directory);
             Engine.Present(state);
-            application = new(TestTableServices.For(Engine), directory, initialState: Engine.State);
-            application.Automated = true; application.Initialize();
+            application = new(TestTableServices.For(Engine), directory, Engine.State, viewport, delivery);
         }
         internal PresentationFrame Tick(string label) => Input(pointer, label: label);
         internal PresentationFrame Input(Point point, ButtonState left = ButtonState.Released,
             ButtonState right = ButtonState.Released, string label = "input", KeyboardState? keys = null, ButtonState middle = ButtonState.Released)
         {
-            pointer = point; seconds += 1.0 / 60;
+            pointer = point;
             var timer = Stopwatch.StartNew();
-            application.Update(Time(), new(point.X, point.Y, 0, left, middle, right, ButtonState.Released, ButtonState.Released), keys ?? new(), viewport);
+            application.Tick(TimeSpan.FromSeconds(1.0 / 60), new(point.X, point.Y, 0, left, middle, right, ButtonState.Released, ButtonState.Released), keys ?? new());
             timer.Stop(); updateMilliseconds.Add(timer.Elapsed.TotalMilliseconds);
             return ReadFrame(label);
         }
         internal PresentationFrame ReadFrame(string label)
         {
-            Frame = application.ReadPresentation();
+            Frame = application.ReadFrame();
             trace.Add(new { scenario, label, seconds, revision = View.Match?.Revision, decision = View.Match?.Decision?.Id,
                 commands = Frame.Drawing.Commands.Count, cards = Frame.Cards.Count, hits = Frame.Hits.Count,
                 replies = Engine.Replies.Count, text = Text(Frame) });
             if (View.Error.Length > 0) throw new InvalidOperationException(View.Error);
             return Frame;
         }
-        private GameTime Time() => new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
         internal void Settle(string label) { Tick(label + "-restore"); Tick(label + "-settled"); }
-        internal void Present(GameSnapshot state) { Engine.Present(state); View.Accept(Engine.State); }
+        internal void Present(GameSnapshot state) { Engine.Present(state); QueueExact(Engine.State); }
+        internal void QueueExact(GameSnapshot state) => application.QueueObservation(state);
         internal TableHit Hit(string id) => Frame.Hits.LastOrDefault(hit => hit.Id == id)
             ?? throw new InvalidOperationException("Missing production input target: " + id);
         internal void ClickHit(string id) { var point = PointFor(Hit(id)); Input(point, left: ButtonState.Pressed, label: "press-" + id); Input(point, label: "release-" + id); }

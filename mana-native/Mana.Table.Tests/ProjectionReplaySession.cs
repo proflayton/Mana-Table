@@ -1,9 +1,7 @@
 using System.Text.Json;
-using Mana.Client;
 using Mana.Contracts;
 using Mana.Scenarios;
 using Mana.Table.Presentation;
-using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
 using Point = Microsoft.Xna.Framework.Point;
@@ -14,18 +12,16 @@ namespace Mana.Table;
 // recorded observations and a clock; its connection cannot send live commands.
 internal sealed class ProjectionReplaySession : IDisposable
 {
-    private readonly TableApplication app;
+    private readonly PresentationRun app;
     private readonly ProjectionRecording recording;
-    private readonly ReplayClock clock = new();
-    private readonly ClientSession.ObservationIngress ingress;
     private readonly List<Acceptance> accepted = [];
     private const long FrameTicks = TimeSpan.TicksPerSecond / 60;
     private Point pointer = new(20, 60);
     internal sealed record Acceptance(GameSnapshot State, TimeSpan At, ProjectionPresentationSettings Settings);
     internal IReadOnlyList<Acceptance> Accepted => accepted;
-    internal long ElapsedTicks => clock.Ticks;
+    internal long ElapsedTicks => app.ElapsedTicks;
     internal ProjectionPlayback Playback { get; }
-    internal TableApplication.Probe View => app.TestPort;
+    internal TableApplication.Probe View => app.View;
     internal PresentationFrame Frame { get; private set; } = null!;
     internal ProjectionReplaySession(ProjectionRecording recording, string profile, Point size)
     {
@@ -41,12 +37,9 @@ internal sealed class ProjectionReplaySession : IDisposable
         // These isolated metadata ports cannot load real decks or contact an
         // engine. Live source-action discovery is deliberately not composed.
         var metadata = new ExperienceLabEngine(new ExperienceLabSession());
-        app = new(new(metadata, metadata, Playback, metadata.InitializeAsync), profile, initialState: Playback.Current,
-            clock: clock, observationDelivery: ObservationDeliveryMode.External);
-        app.Automated = true; app.Initialize(); View.SetTableStudy(settings?.TableStudy ?? true);
-        app.ProjectionAccepted += OnAccepted;
-        ingress = app.OpenObservationIngress(Playback.Current.Id, Playback.Current.ViewerId);
-        QueueCurrent();
+        app = new(new(metadata, metadata, Playback, metadata.InitializeAsync), profile, Playback.Current, size);
+        View.SetTableStudy(settings?.TableStudy ?? true);
+        app.Accepted += OnAccepted;
         if (recording.Timeline != null) { QueueDue(0); TickAt(0); }
         else { Tick(); Tick(); }
     }
@@ -55,18 +48,13 @@ internal sealed class ProjectionReplaySession : IDisposable
     private Point Size { get; }
     internal PresentationFrame Tick()
         => recording.Timeline is { } timeline
-            ? TickTo(Math.Min(timeline.EndTicks, clock.Ticks + FrameTicks))
-            : TickAt(clock.Ticks + FrameTicks);
+            ? TickTo(Math.Min(timeline.EndTicks, app.ElapsedTicks + FrameTicks))
+            : TickAt(app.ElapsedTicks + FrameTicks);
     private PresentationFrame TickAt(long ticks, Point? viewport = null)
     {
-        long elapsed = ticks - clock.Ticks;
-        if (elapsed < 0) throw new ArgumentOutOfRangeException(nameof(ticks));
-        clock.Ticks = ticks;
-        app.Update(new(TimeSpan.FromTicks(ticks), TimeSpan.FromTicks(elapsed)),
+        return Frame = app.UpdateAt(TimeSpan.FromTicks(ticks),
             new(pointer.X, pointer.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released),
             new(), viewport ?? Size);
-        if (View.Error.Length > 0) throw new InvalidOperationException(View.Error);
-        return Frame = app.ReadPresentation();
     }
     internal bool Advance()
     {
@@ -78,9 +66,9 @@ internal sealed class ProjectionReplaySession : IDisposable
     internal PresentationFrame TickTo(long targetTicks)
     {
         var timeline = recording.Timeline ?? throw new InvalidOperationException("This recording has no captured timing.");
-        if (targetTicks < clock.Ticks || targetTicks > timeline.EndTicks) throw new ArgumentOutOfRangeException(nameof(targetTicks));
-        while (clock.Ticks < targetTicks) {
-            long next = Math.Min(targetTicks, clock.Ticks + FrameTicks);
+        if (targetTicks < app.ElapsedTicks || targetTicks > timeline.EndTicks) throw new ArgumentOutOfRangeException(nameof(targetTicks));
+        while (app.ElapsedTicks < targetTicks) {
+            long next = Math.Min(targetTicks, app.ElapsedTicks + FrameTicks);
             if (Playback.Position + 1 < recording.Observations.Length)
                 next = Math.Min(next, timeline.AcceptedAtTicks[Playback.Position + 1]);
             QueueDue(next); TickAt(next);
@@ -96,21 +84,13 @@ internal sealed class ProjectionReplaySession : IDisposable
     }
     private void QueueCurrent()
     {
-        if (!ingress.TryPost(Playback.Current)) throw new InvalidOperationException("The recorded observation exceeded its current ingress scope or bound.");
+        app.QueueObservation(Playback.Current);
     }
     internal PresentationFrame Finish() => recording.Timeline is { } timeline ? TickTo(timeline.EndTicks) : Frame;
-    internal void Capture(ProjectionCapture? capture) => app.CaptureProjection(capture);
-    internal PresentationFrame UpdateViewport(Point viewport) => TickAt(clock.Ticks, viewport);
+    internal void Capture(ProjectionCapture? capture) => app.Capture(capture);
+    internal PresentationFrame UpdateViewport(Point viewport) => TickAt(app.ElapsedTicks, viewport);
     internal PresentationFrame Hover(Point position) { pointer = position; Tick(); return Tick(); }
-    public void Dispose() { app.ProjectionAccepted -= OnAccepted; ingress.Dispose(); app.Dispose(); }
-
-    private sealed class ReplayClock : TimeProvider
-    {
-        internal long Ticks;
-        public override DateTimeOffset GetUtcNow() => DateTimeOffset.UnixEpoch + TimeSpan.FromTicks(Ticks);
-        public override long GetTimestamp() => Ticks;
-        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
-    }
+    public void Dispose() { app.Accepted -= OnAccepted; app.Dispose(); }
 
     internal static void RunFile(string path, string profile)
     {
