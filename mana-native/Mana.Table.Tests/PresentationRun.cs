@@ -15,12 +15,14 @@ internal sealed class PresentationRun : IDisposable
     private readonly TableApplication application;
     private readonly ControlledClock clock = new();
     private readonly ClientSession.ObservationIngress? ingress;
+    private readonly bool allowErrors;
     private PresentationFrame? frame;
     private bool disposed;
 
     internal PresentationRun(TableServices services, string profile, GameSnapshot initial, Point viewport,
-        ObservationDeliveryMode delivery = ObservationDeliveryMode.External)
+        ObservationDeliveryMode delivery = ObservationDeliveryMode.External, bool allowErrors = false)
     {
+        this.allowErrors = allowErrors;
         Viewport = viewport;
         Delivery = delivery;
         application = new(services, profile, initialState: initial, clock: clock, observationDelivery: delivery) { Automated = true };
@@ -76,7 +78,8 @@ internal sealed class PresentationRun : IDisposable
     internal PresentationFrame ReadFrame()
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        if (View.Error.Length > 0) throw new InvalidOperationException(View.Error);
+        // Failure journeys retain and assert their expected error state themselves.
+        if (!allowErrors && View.Error.Length > 0) throw new InvalidOperationException(View.Error);
         return frame = application.ReadPresentation();
     }
 

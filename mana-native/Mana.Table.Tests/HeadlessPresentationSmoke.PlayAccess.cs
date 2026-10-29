@@ -640,13 +640,12 @@ internal static partial class HeadlessPresentationSmoke
 
     private sealed class PlayAccessRun : IDisposable
     {
-        private readonly TableApplication app;
+        private readonly PresentationRun presentation;
         private readonly Point size;
-        private double seconds;
         private int wheel;
         internal PlayAccessConnection Connection { get; }
-        internal TableApplication.Probe View => app.TestPort;
-        internal PresentationFrame Frame { get; private set; } = null!;
+        internal TableApplication.Probe View => presentation.View;
+        internal PresentationFrame Frame => presentation.Frame;
 
         internal PlayAccessRun(string profile, string name, Point size, int stage = 0, bool reduced = true)
         {
@@ -655,9 +654,8 @@ internal static partial class HeadlessPresentationSmoke
             new PlayPreferences { Automatic = false, ReducedMotion = reduced, Sounds = false, TextScale = 1.3f }.Save(directory);
             Connection = new(stage);
             var setup = new InteractionScenarioEngine();
-            app = new(new(setup, setup, Connection, setup.InitializeAsync) { SourceActions = Connection },
-                directory, initialState: Connection.State) { Automated = true };
-            app.Initialize();
+            presentation = new(new(setup, setup, Connection, setup.InitializeAsync) { SourceActions = Connection },
+                directory, Connection.State, size);
             for (int n = 0; n < (reduced ? 4 : 40); n++) Tick(new(20, 60));
         }
 
@@ -669,13 +667,11 @@ internal static partial class HeadlessPresentationSmoke
         internal void Tick(Point logical = default, ButtonState left = ButtonState.Released, KeyboardState? keys = null,
             ButtonState middle = ButtonState.Released, int wheelDelta = 0, double elapsed = .05)
         {
-            seconds += elapsed; var at = Physical(logical); wheel += wheelDelta;
-            app.Update(new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(elapsed)),
-                new(at.X, at.Y, wheel, left, middle, default, default, default), keys ?? new(), size);
-            Frame = app.ReadPresentation();
-            if (View.Error.Length > 0) throw new InvalidOperationException(View.Error);
+            var at = Physical(logical); wheel += wheelDelta;
+            presentation.Tick(TimeSpan.FromSeconds(elapsed),
+                new(at.X, at.Y, wheel, left, middle, default, default, default), keys ?? new());
         }
-        internal void Publish(GameSnapshot state) { Connection.Replace(state); View.Accept(state); Tick(new(20, 60)); }
+        internal void Publish(GameSnapshot state) { Connection.Replace(state); presentation.QueueObservation(state); Tick(new(20, 60)); }
         internal void Until(Func<bool> ready, Point point = default, ButtonState left = ButtonState.Released)
         {
             var timeout = System.Diagnostics.Stopwatch.StartNew();
@@ -772,7 +768,7 @@ internal static partial class HeadlessPresentationSmoke
             return Vector2.Distance(display.Center, target.Center) < 1
                 && Vector2.Distance(display.Size, target.Size) < 1;
         }
-        public void Dispose() => app.Dispose();
+        public void Dispose() => presentation.Dispose();
     }
 
     private sealed class PlayAccessConnection : IMatchConnection, ISourceActions

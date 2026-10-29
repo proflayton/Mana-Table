@@ -33,9 +33,8 @@ internal static class DisclosedSourceInteractionChecks
             var provider = new DisclosedSourceConnection(state);
             var setup = new InteractionScenarioEngine();
             var services = new TableServices(setup, setup, provider, setup.InitializeAsync) { SourceActions = provider };
-            using var app = new TableApplication(services, directory, initialState: state) { Automated = true };
-            app.Initialize(); var view = app.TestPort;
-            double seconds = 0;
+            using var app = new PresentationRun(services, directory, state, size);
+            var view = app.View;
             Card inspectedSource = top; string inspectedZone = "Library";
             PresentationFrame frame = Tick(new(20, 60));
             Point Physical(Point logical) {
@@ -43,10 +42,8 @@ internal static class DisclosedSourceInteractionChecks
                 return new((int)MathF.Ceiling(mapped.X), (int)MathF.Ceiling(mapped.Y));
             }
             PresentationFrame Tick(Point logical, ButtonState left = ButtonState.Released, ButtonState right = ButtonState.Released) {
-                seconds += 1.0 / 60; var at = Physical(logical);
-                var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
-                app.Update(time, new(at.X, at.Y, 0, left, default, right, default, default), new(), size);
-                return app.ReadPresentation();
+                var at = Physical(logical);
+                return app.Tick(TimeSpan.FromSeconds(1.0 / 60), new(at.X, at.Y, 0, left, default, right, default, default));
             }
             Point AtHit(string id) {
                 var hit = frame.Hits.Single(hit => hit.Id == id);
@@ -79,12 +76,12 @@ internal static class DisclosedSourceInteractionChecks
                 Players = provider.State.Players.Select(player => player.Id != 0 ? player : player with {
                     Zones = player.Zones.Select(zone => zone.Name != "Library" ? zone : zone with { TopCard = null }).ToImmutableArray()
                 }).ToImmutableArray(), Decision = provider.State.Decision! with { Context = provider.State.Decision!.Context with { Source = new DecisionSource(top.VisualId, top, provider.State.Decision!.Context.Source?.ControllerId, (provider.State.Decision!.Context.Source?.Zone ?? "")) } } });
-            view.Accept(provider.State); frame = Tick(new(800, 420));
+            app.QueueObservation(provider.State); frame = Tick(new(800, 420));
             check(!app.AcceptedDrag && provider.Commands.IsEmpty && !frame.Cards.Any(card => card.Focused),
                 "Revoking the physical disclosed top cancels a held cast even while its historical decision source remains at " + size);
 
             state = state with { Revision = 3, Decision = state.Decision! with { Id = "fresh-library-prompt" } };
-            provider.Replace(state); view.Accept(state); frame = Tick(new(20, 60));
+            provider.Replace(state); app.QueueObservation(state); frame = Tick(new(20, 60));
             OpenReader();
             held = Source(); frame = Tick(held, ButtonState.Pressed); frame = Tick(new(800, 420), ButtonState.Pressed);
             frame = Tick(new(800, 420));
@@ -104,7 +101,7 @@ internal static class DisclosedSourceInteractionChecks
                     Zones = player.Zones.Select(zone => zone.Name == "Library" ? zone with { TopCard = null }
                         : zone.Name == "Graveyard" ? zone with { Cards = [grave], Count = 1 } : zone).ToImmutableArray()
                 }).ToImmutableArray() };
-            provider.Replace(state); view.Accept(state); frame = Tick(new(20, 60));
+            provider.Replace(state); app.QueueObservation(state); frame = Tick(new(20, 60));
             var pile = AtHit("zone:0:Graveyard"); frame = Tick(pile, ButtonState.Pressed); frame = Tick(pile);
             inspectedSource = grave; inspectedZone = "Graveyard";
             OpenReader(rightClick: true);
@@ -116,7 +113,7 @@ internal static class DisclosedSourceInteractionChecks
                 Players = state.Players.Select(player => player.Id != 0 ? player : player with {
                     Zones = player.Zones.Select(zone => zone.Name == "Graveyard" ? zone with { Cards = [], Count = 0 } : zone).ToImmutableArray()
                 }).ToImmutableArray() };
-            provider.Replace(revoked); view.Accept(revoked); frame = Tick(action);
+            provider.Replace(revoked); app.QueueObservation(revoked); frame = Tick(action);
             check(provider.Commands.Count == 1 && provider.Attempts == 1 && !view.Busy && !frame.Cards.Any(card => card.Focused)
                     && !frame.Hits.Any(hit => hit.Id == "read-card-action"),
                 "Removing a public-zone occurrence between press and release revokes its reader and exact offered action despite the historical source face at " + size);
