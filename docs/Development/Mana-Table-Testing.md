@@ -354,6 +354,18 @@ an offered proposal does not imply acceptance or resolution. The graphics-free
 client suite tests replay roundtrips, scope and knowledge isolation, exhaustive
 small mana assignments, and controlled tactical/effect-graph expectations.
 
+`AiImpactHistoryRegression` follows committed damage, own repeated focus and a
+resolving battlefield loss through 384 draw/counter events in a real
+`AiSeatSession`. The ordinary 128-event diagnostic ring rotates while the
+independently bounded impact channel preserves those facts. It also checks
+duplicate polls, immutable snapshots, unknown producing control, paid costs and
+nonharm exclusion, seat isolation, the unchanged two-round aging boundary, and
+eviction by genuinely newer impacts. Private JSON replay retains the separate
+facts after the diagnostic ring loses them, supports captures missing the new
+field, and rejects future, duplicate, foreign, nonimpact and oversized entries.
+These are controlled memory regressions, not evidence that a particular live
+match made tactically sound or socially engaging decisions.
+
 Numeric investment checks use typed announcement ownership and read-only
 funding facts. They cover fixed and repeated-X costs, physical-source reuse,
 partial/unsupported funding, bounded work and current source identity. Java's

@@ -184,6 +184,7 @@ await AiTargetContinuationRegression.RunAsync(Check);
 AiManaPlannerRegression.Run(Check);
 await AiNumericRegression.RunAsync(Check);
 await AiDecisionReplayRegression.RunAsync(Check);
+await AiImpactHistoryRegression.RunAsync(Check);
 await AiStrategicPlanRegression.RunAsync(Check);
 await AiIntentPolicyRegression.RunAsync(Check);
 await AiIntentPaymentRegression.RunAsync(Check);

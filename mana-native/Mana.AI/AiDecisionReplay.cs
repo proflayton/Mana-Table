@@ -49,6 +49,7 @@ public static class AiDecisionReplay
             || history.Events.Any(entry => entry == null || entry.Turn > frame.State.Turn)
             || history.AttemptedRoutes.Any(route => route == null || route.Turn != frame.State.Turn))
             throw new ArgumentException("A replay cannot mix another seat, future event or turn's private history.", nameof(recorded));
+        if (history.ImpactEvents is { } impacts) AiImpactHistory.ValidateRecorded(impacts, frame.State);
         if (history.RouteLimitReached)
             return new(recorded.Id, policy.Descriptor.Id, AiSeatStatus.BudgetExceeded, null, null);
         // Reverse the documented first-episode derivation so the existing seat

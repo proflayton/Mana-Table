@@ -53,6 +53,11 @@ public sealed record AiObservedImpact(string Kind, long Amount, int? PlayerId, s
 public sealed record AiTurnRoute(int Turn, string SourceCardId, string StableRouteId);
 public sealed record AiSeatHistory(ImmutableArray<AiDecisionRecord> Decisions, ImmutableArray<AiObservedEvent> Events)
 {
+    // Committed damage and resolving battlefield departures have their own
+    // bounded lifetime. Draw/counter announcements cannot evict social evidence.
+    // Null identifies an older private replay whose only history is Events.
+    public ImmutableArray<AiObservedEvent>? ImpactEvents { get; init; }
+
     // Retry guards have a different lifetime from the diagnostic ring. Evicting
     // a log entry cannot authorize repeating a cancelled/accepted activation.
     public ImmutableHashSet<AiTurnRoute> AttemptedRoutes { get; init; } = [];
@@ -72,12 +77,13 @@ internal sealed class AiHistoryBuffer(int capacity)
 {
     private readonly Queue<AiDecisionRecord> decisions = [];
     private readonly Queue<AiObservedEvent> events = [];
+    private readonly AiImpactHistory impacts = new(capacity);
     private readonly HashSet<AiTurnRoute> routes = [];
     private int turn = -1;
     internal bool RouteLimitReached { get; private set; }
     private long lastEvent = -1;
     internal AiSeatHistory Snapshot => new(decisions.ToImmutableArray(), events.ToImmutableArray()) {
-        AttemptedRoutes = routes.ToImmutableHashSet(), RouteLimitReached = RouteLimitReached };
+        ImpactEvents = impacts.Snapshot, AttemptedRoutes = routes.ToImmutableHashSet(), RouteLimitReached = RouteLimitReached };
     internal void ObserveTurn(int current)
     {
         ValidateTurn(current);
@@ -105,11 +111,13 @@ internal sealed class AiHistoryBuffer(int capacity)
             if (entry.Id <= lastEvent) continue;
             lastEvent = entry.Id;
             var impact = entry.Impact;
-            events.Enqueue(new(entry.Id, entry.Turn, entry.Kind, entry.PlayerId, entry.CardId, entry.Change,
+            var observed = new AiObservedEvent(entry.Id, entry.Turn, entry.Kind, entry.PlayerId, entry.CardId, entry.Change,
                 impact == null ? null : new(impact.Kind, impact.Amount, impact.PlayerId, impact.CardId,
                     impact.SourceCardId, impact.Before, impact.After, impact.Combat, impact.SourceControllerId,
                     impact.RecipientControllerId, impact.FromZone, impact.ToZone), entry.Cause?.ControllerId, entry.Cause?.Id) {
-                ExecutionStep = entry.ExecutionStep });
+                ExecutionStep = entry.ExecutionStep };
+            impacts.Observe(observed);
+            events.Enqueue(observed);
             while (events.Count > capacity) events.Dequeue();
         }
     }

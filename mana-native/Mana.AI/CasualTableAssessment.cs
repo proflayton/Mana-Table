@@ -25,7 +25,7 @@ public static class CasualTableAssessment
             double resources = player.Zone("Hand").Count * .25 + player.Zone("Battlefield").Cards.Count(IsLand) * .4
                 + player.Mana.Values.Sum(value => Math.Max(0d, value)) * .25;
             double pressure = 0, focus = 0;
-            foreach (var entry in history.Events) {
+            foreach (var entry in history.ImpactEvents ?? history.Events) {
                 int age = state.Turn - entry.Turn;
                 if (age < 0 || age > round * 2 || entry.Impact is not { } impact) continue;
                 // PlayerId on ordinary activity is often the affected seat. It

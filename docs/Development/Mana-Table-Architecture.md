@@ -246,6 +246,17 @@ planner and payment policy share `AiManaPlanner`, so a preservation claim has bo
 a joint bill assignment and an intact witness rather than two independent
 affordability guesses. See [AI intent and limits](Mana-Table-AI.md#pending-effects-and-session-owned-intent).
 
+Committed damage and resolving battlefield departures also have a separate
+`AiSeatHistory.ImpactEvents` channel. It uses the same configured capacity as the
+diagnostic event ring, independently, so a draw/counter burst cannot erase recent
+social evidence. Both channels admit each observed event once and retain copied
+event-time attribution; neither infers an actor from current card control or
+treats an accepted command as a resolved result. Actual newer impacts can evict
+older impacts at the bound. The policy's existing two-round aging and utility
+remain unchanged. Private replay validates this channel's bounds, event order,
+known players and chronology; older captures without it use their original
+event history, without inventing evidence already lost from that capture.
+
 `AiDecisionReplayCase` captures one seat's authorized knowledge, plan/version and evaluation
 allowance. Offline `AiDecisionReplay` reuses the scoped session and exact policy
 seed without receiving an engine connection. Campaign traces and replay cases
