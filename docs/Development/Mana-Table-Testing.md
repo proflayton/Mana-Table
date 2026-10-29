@@ -144,8 +144,19 @@ remain diagnostic observations. Failure artifacts retain its public JSONL trace
 separately from private seat evidence.
 
 The same JVM then runs four complete `CasualCommanderPolicy`
-seats against different Commander decks, including a saved Toothy/Pir partner
-deck. No scripted driver answers a bot. A separate public spectator records
+seats in a bounded contract prefix against different legal commander/basic-land
+decks: Goreclaw, Torbran, Rhys and Toothy/Pir. All four seats must resolve an
+actual commander, develop lands and reach paid Rhys token creation and combat,
+through turn 20 or an earlier natural outcome, within the unchanged 60 seconds.
+Deck contents are controlled; Forge's rules RNG is not. This prefix does not
+cover competing ordinary spells or normal deck resource ratios. The previous
+mixed-preset prefix's first 60-second cutoff remains retained: it progressed to
+turn 27 with tokens/combat, but green was mana-starved and red chose other spells
+at its first funded commander window. Retrying that shuffle would not establish
+the contract. Normal singleton spell and resource coverage stays in the separate
+unchanged diverse campaign and release rotations below; the focused Fireball
+regressions and ten real-provider goldens also remain mandatory.
+No scripted driver answers a bot. A separate public spectator records
 the changing board and stack in `whole-seat-ai-public.jsonl`; private decision
 histories live separately in `whole-seat-ai.json`. The focused standalone option
 is `--smoke-whole-seat-ai` with the same engine and disposable-profile arguments.
@@ -164,6 +175,39 @@ findings. Review findings are not automatically strategy errors: a forced
 own-land return is legitimate. Policy seeds do not control Forge's rules RNG.
 
 ## AI release evaluation
+
+The graphics-free client suite includes `AiDamageTargetRegression`: known five
+damage against a 40/40 and a 1/1, complete versus partially known operation
+graphs, candidate/seat order and seeds, marked damage, indestructible, zero
+damage, and unknown or distributed recipient amounts. These compare production
+policy commands against exact current target permissions. They establish
+nominal recipient choice, not prevention coverage or a guaranteed resolution.
+Thirteen staged-bundle checks distinguish optional unassessed damage expansion
+from required targets and fully modeled fixed damage. `AiRouteRetryRegression`
+adds eight lifecycle checks for accepted start, unfunded cancellation, renewed
+source disclosure, distinct provider routes/copies, new turns, diagnostic
+eviction and absent stable identity. Both run in the same graphics-free suite.
+These guard the retained first integrated Fireball loop; they do not claim to
+price additional-target costs or replace the packaged whole-seat game gate.
+
+`AiBlockRepairRegression` covers the retained packaged-game failure: an invalid
+singleton with no unassigned blockers. Twenty-six policy checks exercise fresh
+scopes, accepted versus rejected repair, episode boundaries, retained and foreign
+assignments, unknown/malformed witnesses and 64 removals in one 1,024-unit budget.
+`BlockRepairWireChecks` adds 17 decoding checks. Java `BlockRemovalRepairTest`
+covers bounded search, forced blocks, bands, foreign assignments, live-state
+purity and an actual InputBlock removal-to-completion journey. These certify a
+bounded removal witness, not every reassignment or optimal combat strategy.
+
+`AiDecisionQualityRegression`, `AiActionOutcomeRegression` and
+`AiCombatContextRegression` add 91 bounded policy checks for complete known
+optional consequences, known versus incomplete modes, physical-source versus
+cast-outcome value, staged trample blocks and player versus planeswalker attack
+incentives. Control cases preserve required choices, disabled declines,
+card/mana choices, exploration, true permanent value and legal finishing attacks.
+Seed and order permutations use the same small facts without starting a JVM for
+each probe. These regressions do not supply a conditional prompt's missing
+affirmative branch, combined mode-bundle utility or full-game release evidence.
 
 The short campaign checks progress. AI release evidence also needs completed
 games, controlled outcomes and recorded human review. Keep these gates separate:

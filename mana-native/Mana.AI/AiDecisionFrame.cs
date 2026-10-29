@@ -91,6 +91,7 @@ public sealed class AiDecisionFrame
                             && defender.Id == assignment.Defender.Id && defender.PlayerId == assignment.Defender.PlayerId)))
                 || combat.AttackRepair.Select(assignment => assignment.CardId).Distinct().Count() != combat.AttackRepair.Length))
             throw new ArgumentException("Attack repairs must be complete, current legal candidate assignments.", nameof(state));
+        CombatRepairFacts.Validate(state);
         Stamp = new(state.Id, state.ViewerId, decision.Id, state.Revision, state.BoardRevision, offerVersion);
         bool usesSources = decision.Payload is PriorityPayload or PaymentPayload;
         SourceActions = sourceActions.IsDefault ? [] : sourceActions;

@@ -118,6 +118,25 @@ public class Combat {
         attackConstraints = new AttackConstraints(this);
     }
 
+    /** A declaration-only scratch copy. Validation may read the shared cards and
+     * bands, but removing an assignment here must not update live card views,
+     * damage ordering, events or the game's current combat. */
+    Combat copyRemovingBlockAssignments(Collection<BlockRemovalRepair.Assignment> removed) {
+        Combat copy = new Combat(this);
+        for (var assignment : removed)
+            copy.blockedBands.get().remove(copy.getBandOfAttacker(assignment.attacker()), assignment.blocker());
+        return copy;
+    }
+
+    private Combat(Combat combat) {
+        playerWhoAttacks = combat.playerWhoAttacks;
+        legacyOrderCombatants = combat.legacyOrderCombatants;
+        attackConstraints = combat.attackConstraints;
+        attackableEntries.get().addAll(combat.attackableEntries.get());
+        attackedByBands.get().putAll(combat.attackedByBands.get());
+        blockedBands.get().putAll(combat.blockedBands.get());
+    }
+
     public void initConstraints() {
         attackableEntries.get().clear();
         // Create keys for all possible attack targets

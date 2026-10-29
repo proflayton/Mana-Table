@@ -56,6 +56,7 @@ internal static class ForgeSnapshotDecoder
             ExecutionFrames.Validate(snapshot);
             PublicActivityFacts.Validate(snapshot);
             BlockingCapacityFacts.Validate(snapshot);
+            CombatRepairFacts.Validate(snapshot);
             var operations = new ActionOperationValidation(snapshot);
             foreach (var item in snapshot.Stack) operations.ValidateCommitted(item);
             if (snapshot.Decision?.Payload is PaymentPayload payment) {
@@ -201,15 +202,22 @@ internal static class ForgeSnapshotDecoder
     {
         public bool AttackValid { get; init; } = true;
         public ImmutableArray<WireAttackAssignment> AttackRepair { get; init; } = [];
+        public ImmutableArray<WireBlockAssignment>? BlockRepair { get; init; }
         public Combat Native() => Attackers.IsDefault || AttackOptions.IsDefault ? throw Invalid() : new(
             Attackers.Select(attack => attack?.Native() ?? throw Invalid()).ToImmutableArray(),
             AttackOptions.Select(option => option?.Native() ?? throw Invalid()).ToImmutableArray(), BlockProblem) {
                 AttackValid = AttackValid,
-                AttackRepair = AttackRepair.IsDefault ? throw Invalid() : AttackRepair.Select(assignment => assignment?.Native() ?? throw Invalid()).ToImmutableArray()
+                AttackRepair = AttackRepair.IsDefault ? throw Invalid() : AttackRepair.Select(assignment => assignment?.Native() ?? throw Invalid()).ToImmutableArray(),
+                BlockRepair = BlockRepair is { } repair ? repair.IsDefault ? throw Invalid()
+                    : repair.Select(assignment => assignment?.Native() ?? throw Invalid()).ToImmutableArray() : null
             };
     }
     private sealed record WireAttackAssignment(string CardId, WireDefender Defender)
     {
         public AttackAssignment Native() => new(CardId, Defender?.Native() ?? throw Invalid());
+    }
+    private sealed record WireBlockAssignment(string AttackerId, string BlockerId)
+    {
+        public BlockAssignment Native() => new(AttackerId, BlockerId);
     }
 }

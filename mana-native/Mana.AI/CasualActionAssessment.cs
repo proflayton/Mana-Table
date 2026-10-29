@@ -62,10 +62,35 @@ public static class CasualActionAssessment
         var allowance = work.CreateSlice(128, 4);
         var baseline = Evaluate(state, graph, allowance, source, operationId, [], true);
         if (baseline.Status == CasualAssessmentStatus.EstimatedPartial) return new(CasualAssessmentStatus.SearchLimited, 0, "target-comparison-limit");
-        if (baseline.Status != CasualAssessmentStatus.Estimated) return baseline;
+        if (baseline.Status != CasualAssessmentStatus.Estimated)
+            return baseline.Status == CasualAssessmentStatus.Incomplete
+                ? PartialTarget(state, graph, operationId, candidate, allowance, source, baseline) : baseline;
         var added = Evaluate(state, graph, allowance, source, operationId, [candidate], true);
         if (added.Status == CasualAssessmentStatus.EstimatedPartial) return new(CasualAssessmentStatus.SearchLimited, 0, "target-comparison-limit");
         return added.Status == CasualAssessmentStatus.Estimated ? added with { Value = added.Value - baseline.Value } : added;
+    }
+
+    private static CasualActionEstimate PartialTarget(GameSnapshot state, ActionOperationGraph graph, int operationId,
+        SemanticEntity candidate, AiWorkBudget work, Card? source, CasualActionEstimate incomplete)
+    {
+        if (!work.TrySpend()) return new(CasualAssessmentStatus.BudgetExceeded, 0, "operation-budget");
+        var node = graph.Operations.FirstOrDefault(operation => operation.Id == operationId);
+        // An unrelated unmodeled follow-up must not erase a known local damage
+        // amount. This remains a partial, nominal comparison, not a forecast of
+        // the whole spell. In particular the legacy decision scalar may be a
+        // distributed total, so it cannot fill an unknown recipient amount.
+        if (graph.Knowledge == SemanticKnowledge.Unsupported
+            || node is not { Knowledge: SemanticKnowledge.Known, Effect: ActionEffectKind.Damage,
+                Conditional: false, AmountKnowledge: SemanticKnowledge.Known, Amount: >= 0,
+                Targets.Knowledge: SemanticKnowledge.Known,
+                Recipients: { Knowledge: SemanticKnowledge.Known, Binding: EffectRecipientBinding.Targets } }
+            || node.Recipients.TargetOperationId != operationId) return incomplete;
+        var recipient = node.Targets.Candidates.FirstOrDefault(entity => Identity(entity) == Identity(candidate)
+            && (candidate.Kind == SemanticEntityKind.Player || entity.ControllerId == candidate.ControllerId));
+        if (recipient == null) return incomplete;
+        var estimate = Value(state, source, [(node, [recipient])], work, 0);
+        return estimate.Status == CasualAssessmentStatus.Estimated
+            ? estimate with { Status = CasualAssessmentStatus.EstimatedPartial, Reason = "known-target-damage-only" } : estimate;
     }
 
     private static CasualActionEstimate Evaluate(GameSnapshot state, ActionOperationGraph graph, AiWorkBudget work,
@@ -306,7 +331,7 @@ public static class CasualActionAssessment
             var occurrence = CardViews.FindZoneOccurrence(state, id);
             if (occurrence == null) return Incomplete("damage-recipient");
             var card = occurrence.Value.Card;
-            double harm = !CasualTableAssessment.HasKeyword(card, "indestructible") && amount >= (long)(card.Toughness ?? int.MaxValue) - card.Damage
+            double harm = amount > 0 && !CasualTableAssessment.HasKeyword(card, "indestructible") && amount >= (long)(card.Toughness ?? int.MaxValue) - card.Damage
                 ? CasualTableAssessment.CardValue(card) : amount * .1;
             value += harm * (occurrence.Value.PlayerId == state.ViewerId ? -1 : .65);
         }

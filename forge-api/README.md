@@ -1271,6 +1271,19 @@ stale keys, non-blocking phases, and illegal pairs before making changes. Confir
 blocks still uses `action: "ok"`, including engine enforcement of menace and other
 requirements. No damage outcome is predicted by the client.
 
+During an invalid owned block declaration, additive `combat.blockRepair` may
+contain a complete desired subset of this seat's currently assigned
+`{attackerId, blockerId}` pairs. Absent/null remains unknown for older providers;
+`[]` certifies removing all of this seat's blocks. The provider validates each
+candidate against the whole declaration on detached assignment maps, preserving
+foreign blocks and live views. It tries at most 128 deterministic removal
+candidates; failure to find a witness makes no completeness claim. This is a
+removal-only legality witness, not an optimal blocking plan. Every removal still
+requires a currently offered pair and fresh keys; existing commands and
+permissions remain unchanged. Native decoding rejects malformed, unchanged,
+foreign or unoffered witnesses. Accepted repair is scoped to the existing stable
+combat episode so a renewed prompt cannot restart the invalid tactical plan.
+
 During attacker declaration, `combat.attackOptions` lists each candidate's legal
 defenders. `matchAction {action: "attack", attackerKey, defenderPlayerId, sessionId,
 promptId}` selects a player defender and toggles that attacker as one scoped action.

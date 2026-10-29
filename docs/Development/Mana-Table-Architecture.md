@@ -117,6 +117,37 @@ Unknown adjusted costs, conditions and resource dependencies cannot become
 fabricated legality. These components remain heuristic policy inputs, separate
 from the authoritative rules provider and any future forward-model port.
 
+Damage target comparisons prefer the complete operation graph. If an unrelated
+unmodeled operation makes that estimate incomplete, a known active damage node
+can supply an explicitly partial comparison using its per-recipient amount and
+current target domain. It cannot bypass an unsupported graph or an exhausted
+search. The legacy decision scalar may describe a distributed total and never
+fills an unknown recipient amount. Unknown damage earns no full-body removal
+value; card and player recipients retain the same bounded social preference.
+Current toughness, marked damage and effective indestructible inform nominal
+damage utility. Prevention, replacement and future responses remain unmodeled;
+only later engine observations establish actual damage and departures.
+
+Confirmation and mode selection consume that same bounded effect assessment.
+A completed nonpositive consequence can decline an optional confirmation;
+mandatory acknowledgments retain their own authority. Positive modeled modes
+rank before unmodeled headline fallbacks. Physical source characteristics do not
+become an outcome of every cast route: permanent outcomes price their body once.
+Combat likewise distinguishes damage to a player from damage to a planeswalker
+and retains staged single-blocker trample in nominal incoming damage. Missing
+multi-blocker knowledge remains unknown. Explicit confirmation branches,
+composed mode-bundle utility and quantified counter-cost commitment remain
+separate follow-up boundaries, not assumed consequences of these estimates.
+
+Joint combat repair belongs to the rules provider. Optional `Combat.BlockRepair`
+is a certified complete subset of this defender's current assignments, produced
+by bounded removal search against the real validator on detached assignment
+maps. Null is unknown; an empty array is a certified own clear. Shared contract
+validation runs at decoding and AI admission; the witness grants no new command
+authority. Policy reconciliation uses fresh offered block toggles and the same
+stable combat episode, then completes a valid declaration after accepted repair.
+It does not infer constraints from warning text or claim a complete block solver.
+
 Numeric announcements retain the exact callback's source and declared cost.
 `NumericDecision` distinguishes announcing X from an unrelated number. Its
 `ManaFundingContext` contains read-only physical resources and production

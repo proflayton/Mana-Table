@@ -6,6 +6,105 @@ casual policy. This is not in the published installer yet. The reported live
 games have not been replayed, so their individual decisions are not diagnosed.
 Human review of a replacement policy is pending.
 
+## Damage target uncertainty: 28 October 2026
+
+A player reported five damage being aimed at a creature with more than forty
+toughness while an opposing partner commander had one toughness. The running
+0.2.197 build retained no successful decision trace, so the exact spell and its
+legal alternatives cannot be reconstructed. A controlled regression does expose
+a matching policy failure: when an unrelated follow-up makes the operation graph
+incomplete, the old harmful-target fallback assigns the large body full removal
+value instead of comparing what five damage can accomplish.
+
+The source fix keeps complete graph estimates first. An active known damage
+operation can supply a partial nominal comparison even when another operation
+is unmodeled. That comparison requires a known per-recipient amount and a current
+target-domain member; a legacy scalar alone cannot establish either. Unknown
+amounts receive no invented removal value. The same existing public-stat damage
+model recognizes marked damage and effective indestructible, without claiming to
+simulate prevention, regeneration, shields, alternate damage sources or future
+responses. Optional zero-utility damage choices decline; required choices still
+answer with an engine-authorized target. No commander-name bonus or new control
+is involved.
+
+This change is source-only until a containing build is published. Automated
+regressions and independent inspection do not establish human acceptance of AI
+decision quality. Exact-candidate release evaluation and human gameplay review
+remain separate gates.
+
+## Decision-quality audit: 28 October 2026
+
+The follow-up audit reproduces five more source-policy gaps in small current
+decision fixtures. Each command still passes the existing engine-offer and
+visibility boundary; the failure is strategic use of the supplied facts:
+
+| Reproduced gap | Shared policy correction |
+| --- | --- |
+| An optional confirmation accepts a fully known draw/life-loss sequence that would be self-lethal | Consult the existing complete consequence estimate before accepting; preserve required acknowledgments and disabled-decline constraints |
+| An incomplete draw headline outranks a modeled favorable scry mode | Rank completed positive estimates before unmodeled fallbacks; do not manufacture effect utility from a headline |
+| A nonpermanent alternate cast borrows its physical creature source's body value, while a real permanent can count that body twice | Attribute body value to the offered permanent outcome once, preserving low-confidence exploration separately |
+| Staged blocks remove all of a trampler's damage from the remaining threat | Retain nominal player damage from the existing one-blocker exchange; multiple-blocker trample remains unknown |
+| Attacking a planeswalker counts as eliminating its controller and bypasses retaining a needed blocker | Restrict player-lethal and final-opponent win incentives to actual player defenders |
+
+These are source-only policy changes until a containing build is published.
+Ninety-one bounded regression checks cover the failures, controls, order/seed
+variations and current command authority. They do not establish human acceptance
+or full-game outcomes. The earlier short campaign cutoffs remain inconclusive.
+
+The integrated candidate's first packaged-engine run exposed an additional
+failure: a Fireball announced X=1, selected six targets, cancelled its unaffordable
+bill, then repeated the same route 123 times before the unchanged canonical-game
+deadline. All ten controlled goldens passed; public projections agreed, but that
+did not establish useful whole-game progress. The original failure artifact and
+first cutoff remain retained; this is a source correction, not a timeout waiver.
+
+Retry equivalence now uses the provider's stable rules-occurrence route and turn,
+rather than also requiring the renewed UI source disclosure. Distinct physical
+copies and genuinely different routes retain distinct stable identities. The
+original source identity remains in evidence and planning; missing stable route
+identity retains only the prior exact-source fallback. Evicting diagnostic
+records cannot reopen a guarded route.
+
+Optional staged damage additions require a complete nominal recipient estimate.
+Partial local damage and unknown/divided amounts can still compare an initial
+recipient, and required next recipients remain legal, but those estimates cannot
+justify growing an already engine-completable bundle. Fixed, fully modeled
+damage can still add productive optional recipients. This is conservative
+behavior under missing facts, not a claim to price target-dependent costs:
+incremental target funding and composed target-set consequences still need
+explicit provider data and a bounded bundle assessment.
+
+The first exact-package evaluation of the corrected cast candidate then stopped
+on an invalid block declaration at turn 46: every blocker was already assigned,
+including a singleton against menace. The policy considered only unassigned
+blockers, so it could neither repair nor complete. All ten goldens passed and
+all four stale-command probes were rejected correctly; the remaining rotations
+never ran. That first mechanical failure remains retained separately from the
+earlier cast loop, and neither run supplies release readiness.
+
+Block repair follows the existing attack-repair boundary. The rules provider may
+certify a complete subset of the current defender's assignments by validating a
+detached combat projection, preserving every other defender's blocks. Its search
+is bounded; null means no witness supplied, while an empty witness certifies
+removing all of this defender's blocks. It is a legality witness, not a tactical
+solver or permission to execute a stored identity. The policy removes only an
+extra currently offered pair, using fresh action keys, and completes a valid
+declaration after accepted repair in the same stable combat episode. Refreshed
+prompt UUIDs cannot make it rebuild the invalid plan. Required blocks remain
+governed by the engine validator; no error prose or keyword-name classifier
+stands in for those constraints. A removal-only search does not claim to find
+every legal reassignment or the strongest defense.
+
+Three next abstractions need separate work. An optional confirmation needs an
+explicit affirmative/decline consequence: current provider graphs intentionally
+mark some optional operations conditional, so this audit does not reinterpret
+those as known branches. Multiple chosen modes need a composed bundle valuation,
+including shared recipient bindings and cumulative draws, rather than adding
+independent mode scores. Optional action commitment also needs quantified cost
+utility: source-bound counter removal currently has no signed resource value.
+Unknown quantities, donors and counter purposes must remain explicit instead of
+being treated as free. None of these gaps is declared solved by this patch.
+
 ## Choosing decks for AI seats
 
 Solo opponent selection and the host's existing **Add AI / Change deck** gesture
