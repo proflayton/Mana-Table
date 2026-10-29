@@ -64,10 +64,11 @@ function add(counts, key, count) {
 function totals(counts) { return [...counts.values()].reduce((total, count) => total + count, 0); }
 function sorted(counts) { return [...counts].sort(([left], [right]) => left.localeCompare(right)); }
 
-function reports(root, mode, forkId) {
+function reports(root, mode, forkId, ownedClasses) {
   const owner = path.join(root, 'reports', mode, 'fork-' + forkId);
   directory(owner); contained(root, fs.realpathSync(owner));
-  const found = [];
+  const found = [], mirrors = path.join(owner, 'junitreports');
+  let rootReports = 0;
   let inspected = 0;
   function visit(folder, depth) {
     requireFact(depth < 32, 'Diagnostic report nesting exceeds its bound.');
@@ -79,15 +80,18 @@ function reports(root, mode, forkId) {
       else {
         requireFact(stat.isFile() && stat.nlink === 1, 'Diagnostic reports must be owned regular files.');
         if (/^TEST-.*\.xml$/.test(name)) {
-          requireFact(folder === owner && stat.size > 0 && stat.size <= 32 * 1024 * 1024,
+          const direct = folder === owner;
+          const mirror = folder === mirrors && ownedClasses.has(name.slice(5, -4));
+          requireFact((direct || mirror) && stat.size > 0 && stat.size <= 32 * 1024 * 1024,
             'Foreign, duplicate or empty TEST XML report.');
+          if (direct) rootReports++;
           found.push(path.relative(root, file).split(path.sep).join('/'));
         }
       }
     }
   }
   visit(owner, 0);
-  requireFact(found.length > 0, 'Each actual fork requires its own TEST XML diagnostic report.');
+  requireFact(rootReports > 0, 'Each actual fork requires its own root Surefire TEST XML diagnostic report.');
   return found.sort();
 }
 
@@ -181,7 +185,7 @@ function readFork(root, manifest, mode, forkId, knownPids, knownNonces) {
   return { counts, classes, metrics: { forkId, pid: receipt.pid, workspace,
     startedAtEpochMs: receipt.startedAtEpochMs, completedAtEpochMs: receipt.completedAtEpochMs,
     elapsedNanos: receipt.elapsedNanos, bootstrapNanos: receipt.bootstrapNanos,
-    heapPoolPeakUsedBytes: receipt.heapPoolPeakUsedBytes, reports: reports(root, mode, forkId) } };
+    heapPoolPeakUsedBytes: receipt.heapPoolPeakUsedBytes, reports: reports(root, mode, forkId, classes) } };
 }
 
 function compareTrial({ root, manifestPath = path.join(root, 'manifest.json') }) {

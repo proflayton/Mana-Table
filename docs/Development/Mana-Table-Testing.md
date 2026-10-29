@@ -1290,7 +1290,8 @@ The manual [Java workflow](../../.github/workflows/test-build.yaml) offers
 fresh targets, skips the separate early engine build for the experiment, and
 uses a separate concurrency group and check names. It cannot cancel or substitute
 for normal required source CI. Push and PR verification keep their existing full
-reactor checks and engine producer. Trial evidence is uploaded even on failure.
+reactor checks and engine producer. A failed trial does not cancel its sibling
+JDK; evidence from both is uploaded even on failure.
 
 Evidence lives below `forge-api/target/api-test-trials/<trialId>`: an exact-source
 manifest, mode timing boundaries, separate mode/fork reports and process
@@ -1302,6 +1303,9 @@ failures, skips, configuration failures, stale or linked workspaces, unbound
 journals and test processes outside their measured window. Two nonempty trial
 processes must actually overlap while executing classes. The serial run at the
 same source defines the expected cases; the case count is not a permanent golden.
+Each fork requires root Surefire TEST XML reports. Direct `junitreports/` mirrors
+for that fork's owned classes are recognized TestNG diagnostics; they do not
+count as additional invocations or replace the root reports and journals.
 
 The output records wall time, bootstrap time and per-pool peak heap usage. Heap
 pool peaks are diagnostics, not process RSS or a simultaneous total. Equivalence

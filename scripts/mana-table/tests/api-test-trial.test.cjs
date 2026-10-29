@@ -103,6 +103,11 @@ test('manual trials cannot cancel or impersonate the required normal Java run', 
   assert.match(workflow, /format\('API isolation trial \(Java \{0\}\)'/);
   assert.match(workflow, /if: always\(\) && github.event_name == 'workflow_dispatch' && inputs.api_test_trial/);
   assert.match(workflow, /path: forge-api\/target\/api-test-trials\//);
+  const failFast = workflow.match(/^      fail-fast: \$\{\{ (.+) \}\}$/m)[1];
+  const selected = (event, trial) => vm.runInNewContext(failFast, { github: { event_name: event }, inputs: { api_test_trial: trial } });
+  assert.equal(selected('push', false), true);
+  assert.equal(selected('pull_request', true), true);
+  assert.equal(selected('workflow_dispatch', true), false, 'A failed trial must retain its sibling JDK evidence.');
 });
 test('the actual workflow runs one complete reactor and fails closed on invalid order or Maven failure', () => {
   const run = workflow.match(/      - name: Run tests in virtual framebuffer[\s\S]*?        run: \|\n((?:          [^\n]*\n|\n)+)/)[1].replace(/^          /gm, '');

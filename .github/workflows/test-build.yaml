@@ -32,6 +32,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: ${{ !(github.event_name == 'workflow_dispatch' && inputs.api_test_trial) }}
       matrix:
         java: ['17', '21']
     name: ${{ github.event_name == 'workflow_dispatch' && inputs.api_test_trial && format('API isolation trial (Java {0})', matrix.java) || format('Test with Java {0}', matrix.java) }}

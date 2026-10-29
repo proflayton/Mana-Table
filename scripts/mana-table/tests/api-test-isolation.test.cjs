@@ -73,6 +73,14 @@ function fixture(t) {
 }
 function rewriteReceipt(record) { write(path.join(record.workspace, 'receipt.json'), record.receipt); }
 
+function addTestNgMirrors(record) {
+  const mirrors = path.join(record.report, 'junitreports');
+  fs.mkdirSync(mirrors);
+  for (const owner of record.receipt.executedClasses)
+    fs.writeFileSync(path.join(mirrors, 'TEST-' + owner.name + '.xml'), '<testsuite name="' + owner.name + '"/>');
+  return mirrors;
+}
+
 test('matches exact dynamic invocation multisets and independently owned overlapping processes', t => {
   const f = fixture(t), result = f.compare();
   assert.equal(result.equivalent, true); assert.equal(result.invocations, 5); assert.equal(result.classes, 3);
@@ -98,6 +106,25 @@ test('each JDK trial binds its own compiled bytes rather than requiring Java 17 
     persist(record);
   }
   assert.equal(f.compare().jdk.runtimeVersion, '21.0.1+1');
+});
+
+test('retains real Surefire root reports and owned one-level TestNG junitreports mirrors as separate diagnostics', t => {
+  const f = fixture(t);
+  for (const record of f.records) {
+    if (record.receipt.mode === 'parallel') {
+      fs.unlinkSync(path.join(record.report, 'TEST-TestSuite.xml'));
+      for (const owner of record.receipt.executedClasses)
+        fs.writeFileSync(path.join(record.report, 'TEST-' + owner.name + '.xml'), '<testsuite><testcase/></testsuite>');
+    }
+    addTestNgMirrors(record);
+    fs.mkdirSync(path.join(record.report, 'Surefire suite'));
+    fs.writeFileSync(path.join(record.report, 'Surefire suite', 'Surefire test.xml'), '<suite/>');
+  }
+  const result = f.compare();
+  assert.equal(result.invocations, 5, 'Report mirrors do not add authoritative invocations.');
+  assert.deepEqual(result.serial.forks[0].reports, ['reports/serial/fork-1/TEST-TestSuite.xml',
+    ...f.serial.receipt.executedClasses.map(owner => 'reports/serial/fork-1/junitreports/TEST-' + owner.name + '.xml')].sort());
+  assert.equal(result.parallel.forks[0].reports.length, f.left.receipt.executedClasses.length * 2);
 });
 
 const mutations = [
@@ -136,6 +163,10 @@ const mutations = [
   ['empty per-fork XML diagnostics', f => { fs.writeFileSync(path.join(f.right.report, 'TEST-TestSuite.xml'), ''); }],
   ['a foreign report fork', f => { fs.mkdirSync(path.join(f.root, 'reports', 'parallel', 'fork-3')); }],
   ['nested duplicate TEST reports', f => { fs.mkdirSync(path.join(f.right.report, 'foreign')); fs.copyFileSync(path.join(f.right.report, 'TEST-TestSuite.xml'), path.join(f.right.report, 'foreign', 'TEST-TestSuite.xml')); }],
+  ['TestNG mirrors without a root Surefire report', f => { addTestNgMirrors(f.right); fs.unlinkSync(path.join(f.right.report, 'TEST-TestSuite.xml')); }],
+  ['empty TestNG mirrors', f => { const mirrors = addTestNgMirrors(f.right); fs.writeFileSync(path.join(mirrors, 'TEST-' + f.right.receipt.executedClasses[0].name + '.xml'), ''); }],
+  ['a TestNG mirror owned by another fork', f => { const mirrors = addTestNgMirrors(f.right); fs.writeFileSync(path.join(mirrors, 'TEST-' + f.left.receipt.executedClasses[0].name + '.xml'), '<testsuite/>'); }],
+  ['duplicate TestNG reports below the permitted mirror level', f => { const mirrors = addTestNgMirrors(f.right), nested = path.join(mirrors, 'nested'); fs.mkdirSync(nested); fs.copyFileSync(path.join(mirrors, 'TEST-' + f.right.receipt.executedClasses[0].name + '.xml'), path.join(nested, 'TEST-' + f.right.receipt.executedClasses[0].name + '.xml')); }],
   ['an orphan second process in one fork', f => { fs.mkdirSync(path.join(path.dirname(f.right.workspace), 'process-999-orphan-nonce')); }],
   ['a foreign execution mode', f => { fs.mkdirSync(path.join(f.root, 'default')); }],
   ['a foreign fork workspace', f => { fs.mkdirSync(path.join(f.root, 'parallel', 'fork-3')); }],
