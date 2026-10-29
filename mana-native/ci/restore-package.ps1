@@ -1,8 +1,9 @@
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][string]$Directory, [switch]$RequireHarness)
+param([Parameter(Mandatory=$true)][string]$Directory, [switch]$RequireHarness, [switch]$RequireEngineLauncher)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $Directory = [IO.Path]::GetFullPath($Directory)
+if ($RequireEngineLauncher -and -not $RequireHarness) { throw 'Packaged engine verification requires its source-bound native harness.' }
 $archive = Join-Path $Directory 'package-windows-x64.zip'
 $expected = ([IO.File]::ReadAllText($archive + '.sha256')).Trim()
 if ($expected -notmatch '^[a-fA-F0-9]{64}$' -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ine $expected) { throw 'Native package archive hash mismatch.' }
@@ -29,7 +30,8 @@ if (Test-Path -LiteralPath $source) {
 $receipt = Join-Path $Directory 'ci-source-receipt.json'
 if (Test-Path -LiteralPath $receipt) {
     & (Join-Path $PSScriptRoot 'source-receipt.ps1') -InputPackageDirectory $package -Version $env:MANA_RELEASE_VERSION -PortableArchive $archive -ReceiptPath $receipt | Out-Null
-} else { $receipt = '' }
+} elseif ($RequireEngineLauncher) { throw 'Packaged engine verification requires the actual source-archive validation receipt.' }
+else { $receipt = '' }
 if ($RequireHarness) {
     $harnessRoot = Join-Path $Directory 'harness'
     $harness = [IO.File]::ReadAllText((Join-Path $Directory 'ci-harness-manifest.json')) | ConvertFrom-Json
@@ -39,6 +41,29 @@ if ($RequireHarness) {
         if ((Get-FileHash -LiteralPath (Join-Path $harnessRoot $file.path) -Algorithm SHA256).Hash -ine $file.sha256) { throw "Native harness hash mismatch: $($file.path)" }
     }
     if (-not (Test-Path -LiteralPath (Join-Path $harnessRoot 'Mana.Table.Tests.exe'))) { throw 'Native harness executable is missing.' }
+}
+if ($RequireEngineLauncher) {
+    $fixture = Get-Item -LiteralPath (Join-Path $Directory 'forge-engine-fixtures.jar')
+    if ($fixture.PSIsContainer -or $fixture.Length -ne $launcher.Value.bytes -or
+        (Get-FileHash -LiteralPath $fixture.FullName -Algorithm SHA256).Hash -ine $launcher.Value.sha256) {
+        throw 'Fixture launcher differs from the exact-source shared engine verification manifest.'
+    }
+    # Its Class-Path is relative to the launcher. Keep the copied pair outside
+    # the extracted shipping inventory and never reuse an earlier dependency.
+    $launchDirectory = Join-Path $Directory 'engine-launch'
+    if (Test-Path -LiteralPath $launchDirectory) { throw 'Packaged engine launch requires a fresh directory.' }
+    New-Item -ItemType Directory -Path $launchDirectory | Out-Null
+    $fixtureCopy = Join-Path $launchDirectory 'forge-engine-fixtures.jar'
+    $productionCopy = Join-Path $launchDirectory 'forge-engine.jar'
+    Copy-Item -LiteralPath $fixture.FullName -Destination $fixtureCopy
+    Copy-Item -LiteralPath $jar -Destination $productionCopy
+    if ((Get-Item -LiteralPath $fixtureCopy).Length -ne $launcher.Value.bytes -or
+        (Get-FileHash -LiteralPath $fixtureCopy -Algorithm SHA256).Hash -ine $launcher.Value.sha256 -or
+        (Get-Item -LiteralPath $productionCopy).Length -ne $engine.engine.bytes -or
+        (Get-FileHash -LiteralPath $productionCopy -Algorithm SHA256).Hash -ine $jarHash) {
+        throw 'Packaged engine launch copies differ from the verified launcher or production dependency.'
+    }
+    "MANA_NATIVE_FIXTURE_LAUNCHER=$fixtureCopy" >> $env:GITHUB_ENV
 }
 "MANA_NATIVE_PACKAGE=$package" >> $env:GITHUB_ENV
 "MANA_NATIVE_ARCHIVE=$archive" >> $env:GITHUB_ENV

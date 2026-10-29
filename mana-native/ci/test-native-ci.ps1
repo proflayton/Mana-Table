@@ -10,7 +10,7 @@ $saved = @{ SHA=$env:GITHUB_SHA; Version=$env:MANA_RELEASE_VERSION; Environment=
 $utf8 = New-Object Text.UTF8Encoding($false)
 $checks = 0
 function Write-Json([string]$Path, $Value) { [IO.File]::WriteAllText($Path, ($Value | ConvertTo-Json -Depth 8), $utf8) }
-function New-PackageFixture([string]$Name, [string]$Mutation) {
+function New-PackageFixture([string]$Name, [string]$Mutation, [switch]$EngineLauncher) {
     $directory = Join-Path $TestDirectory $Name
     $package = Join-Path $directory 'input/package'
     New-Item -ItemType Directory -Path (Join-Path $package 'engine'), (Join-Path $directory 'harness') -Force | Out-Null
@@ -26,8 +26,36 @@ function New-PackageFixture([string]$Name, [string]$Mutation) {
     if ($Mutation -eq 'unbound-game') { $hashes.Remove('Mana.Game.dll') }
     if ($Mutation -eq 'unbound-audio') { $hashes.Remove('Mana.Audio.dll') }
     $source = if ($Mutation -eq 'source') { 'b' * 40 } else { $env:GITHUB_SHA }
-    Write-Json (Join-Path $package 'build.json') @{sourceRevision=$source; engineBaseRevision=$env:GITHUB_SHA; version=$env:MANA_RELEASE_VERSION; release=$true; engineSha256=$jarHash; clientFilesSha256=$hashes}
+    $build = @{sourceRevision=$source; engineBaseRevision=$env:GITHUB_SHA; version=$env:MANA_RELEASE_VERSION; release=$true; engineSha256=$jarHash; clientFilesSha256=$hashes}
+    if ($EngineLauncher) {
+        $sourceInput = Join-Path $directory 'source-input'
+        New-Item -ItemType Directory -Path $sourceInput | Out-Null
+        [IO.File]::WriteAllText((Join-Path $sourceInput 'fixture.txt'), 'Corresponding source fixture', $utf8)
+        $sourceArchive = Join-Path $directory 'fixture-source.zip'
+        [IO.Compression.ZipFile]::CreateFromDirectory($sourceInput, $sourceArchive)
+        $build.sourceArchive = 'fixture-source.zip'
+        $build.sourceArchiveSha256 = (Get-FileHash -LiteralPath $sourceArchive -Algorithm SHA256).Hash
+        $build.sourceArchiveBytes = (Get-Item -LiteralPath $sourceArchive).Length
+    }
+    Write-Json (Join-Path $package 'build.json') $build
     $engineManifest = @{schemaVersion=2; sourceRevision=$env:GITHUB_SHA; engine=@{sha256=$jarHash; bytes=(Get-Item -LiteralPath $jar).Length}; fixtureLauncher=@{sha256=('f' * 64); bytes=1}}
+    if ($EngineLauncher) {
+        $fixtureLauncher = Join-Path $directory 'forge-engine-fixtures.jar'
+        [IO.File]::WriteAllText($fixtureLauncher, 'verified test-only launcher', $utf8)
+        $engineManifest.fixtureLauncher = @{sha256=(Get-FileHash -LiteralPath $fixtureLauncher -Algorithm SHA256).Hash; bytes=(Get-Item -LiteralPath $fixtureLauncher).Length}
+        if ($Mutation -eq 'launcher-length') { $engineManifest.fixtureLauncher.bytes++ }
+        if ($Mutation -eq 'launcher-content') {
+            [IO.File]::WriteAllText($fixtureLauncher, 'Verified test-only launcher', $utf8)
+        }
+        if ($Mutation -eq 'missing-launcher') { Remove-Item -LiteralPath $fixtureLauncher }
+        if ($Mutation -eq 'stale-launch-directory') {
+            New-Item -ItemType Directory -Path (Join-Path $directory 'engine-launch') | Out-Null
+            [IO.File]::WriteAllText((Join-Path $directory 'engine-launch/forge-engine.jar'), 'stale dependency', $utf8)
+        }
+        if ($Mutation -eq 'unrelated-root-engine') {
+            [IO.File]::WriteAllText((Join-Path $directory 'forge-engine.jar'), 'unverified unrelated dependency', $utf8)
+        }
+    }
     if ($Mutation -eq 'legacy-engine-manifest') { $engineManifest.schemaVersion = 1 }
     if ($Mutation -eq 'missing-fixture-binding') { $engineManifest.Remove('fixtureLauncher') }
     Write-Json (Join-Path $directory 'ci-engine-manifest.json') $engineManifest
@@ -47,6 +75,16 @@ function New-PackageFixture([string]$Name, [string]$Mutation) {
     [IO.Compression.ZipFile]::CreateFromDirectory($package, $archive, [IO.Compression.CompressionLevel]::Fastest, $true)
     $checksum = if ($Mutation -eq 'archive') { '0' * 64 } else { (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash }
     [IO.File]::WriteAllText(($archive + '.sha256'), $checksum, $utf8)
+    if ($EngineLauncher) {
+        $sourceReceipt = Join-Path $directory 'ci-source-receipt.json'
+        & (Join-Path $PSScriptRoot 'source-receipt.ps1') -InputPackageDirectory $package -Version $env:MANA_RELEASE_VERSION -PortableArchive $archive -SourceArchive $sourceArchive -OutputPath $sourceReceipt | Out-Null
+        if ($Mutation -eq 'missing-source-receipt') { Remove-Item -LiteralPath $sourceReceipt }
+        if ($Mutation -eq 'wrong-source-receipt') {
+            $receipt = [IO.File]::ReadAllText($sourceReceipt) | ConvertFrom-Json
+            $receipt.sourceRevision = 'b' * 40
+            Write-Json $sourceReceipt $receipt
+        }
+    }
     return $directory
 }
 try {
@@ -77,6 +115,32 @@ try {
         if (-not $rejected) { throw "Native artifact mutation was accepted: $mutation" }
         $checks++
     }
+    foreach ($variant in @('valid-launcher', 'unrelated-root-engine')) {
+        $fixture = New-PackageFixture $variant $variant -EngineLauncher
+        & (Join-Path $PSScriptRoot 'restore-package.ps1') -Directory $fixture -RequireHarness -RequireEngineLauncher
+        $launcherCopy = Join-Path $fixture 'engine-launch/forge-engine-fixtures.jar'
+        $productionCopy = Join-Path $fixture 'engine-launch/forge-engine.jar'
+        if ((Get-FileHash -LiteralPath $launcherCopy -Algorithm SHA256).Hash -cne (Get-FileHash -LiteralPath (Join-Path $fixture 'forge-engine-fixtures.jar') -Algorithm SHA256).Hash -or
+            (Get-FileHash -LiteralPath $productionCopy -Algorithm SHA256).Hash -cne (Get-FileHash -LiteralPath (Join-Path $fixture 'unpacked/package/engine/forge-engine.jar') -Algorithm SHA256).Hash) { throw 'The launch pair must contain the exact verified launcher and packaged dependency.' }
+        if (-not ((Get-Content -LiteralPath $env:GITHUB_ENV) -contains "MANA_NATIVE_FIXTURE_LAUNCHER=$launcherCopy")) { throw 'The adapter must receive the fresh verified launch path.' }
+        if (Test-Path -LiteralPath (Join-Path $fixture 'unpacked/package/engine/forge-engine-fixtures.jar')) { throw 'The test-only launcher must not enter the shipping engine directory.' }
+        if ($variant -eq 'unrelated-root-engine' -and [IO.File]::ReadAllText((Join-Path $fixture 'forge-engine.jar')) -cne 'unverified unrelated dependency') { throw 'The launch helper must not replace or use an unrelated adjacent engine.' }
+        $checks++
+    }
+    foreach ($mutation in @('launcher-content','launcher-length','missing-launcher','missing-source-receipt','wrong-source-receipt','stale-launch-directory')) {
+        $fixture = New-PackageFixture $mutation $mutation -EngineLauncher
+        $rejected = $false
+        try { & (Join-Path $PSScriptRoot 'restore-package.ps1') -Directory $fixture -RequireHarness -RequireEngineLauncher }
+        catch { $rejected = $true; Write-Output ("Rejected $mutation mutation: " + $_.Exception.Message) }
+        if (-not $rejected) { throw "Packaged engine input mutation was accepted: $mutation" }
+        $checks++
+    }
+    $withoutHarness = New-PackageFixture 'launcher-without-harness' '' -EngineLauncher
+    $rejected = $false
+    try { & (Join-Path $PSScriptRoot 'restore-package.ps1') -Directory $withoutHarness -RequireEngineLauncher }
+    catch { $rejected = $_.Exception.Message.Contains('source-bound native harness') }
+    if (-not $rejected) { throw 'A launcher cannot waive native harness verification.' }
+    $checks++
     Write-Output "$checks native CI partition/provenance fixture checks passed. No UI, downloaded code or network was used."
     & (Join-Path $PSScriptRoot 'test-source-receipt.ps1') -TestDirectory (Join-Path $TestDirectory 'source-receipts')
     & (Join-Path $PSScriptRoot 'test-tools.ps1') -TestDirectory (Join-Path $TestDirectory 'tools')

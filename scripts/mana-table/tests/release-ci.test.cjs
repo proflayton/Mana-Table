@@ -207,6 +207,7 @@ function sparseDirectories(job) {
 test('native consumers check out only their source dependencies while producers and publisher remain full', () => {
   const jobs = nativeJobs();
   const cases = [
+    ['packaged-engine', jobs.get('packaged-engine'), ['mana-native/ci']],
     ['native-ui', jobs.get('native-ui'), ['mana-native/ci']],
     ['installer-lifecycle', jobs.get('installer-lifecycle'), ['mana-native/ci', 'mana-native/installer']],
     ['managed-updates', jobs.get('managed-updates'), ['mana-native/ci', 'mana-native/installer']],
@@ -260,6 +261,7 @@ test('native consumers receive only their required pinned tool archives', () => 
   }
   assert.equal(new Set(directories).size, 3, 'Tool types must not upload the same combined directory.');
   const consumers = [
+    ['packaged-engine', jobs.get('packaged-engine'), [], ['package']],
     ['native-ui', jobs.get('native-ui'), ['graphics'], ['package', 'tools']],
     ['installer-lifecycle', jobs.get('installer-lifecycle'), ['graphics', 'installer'], ['package', 'tools']],
     ['update-installer', jobs.get('update-installer'), ['installer'], ['tools']],
@@ -278,8 +280,8 @@ test('native consumers receive only their required pinned tool archives', () => 
     if (prerequisites) assert.deepEqual(dependencies(job).sort(), prerequisites, `${name} retains its required production prerequisites.`);
   }
 });
-test('native checks use the engine wait window without omitting or preempting packaged Forge verification', () => {
-  const producer = nativeJobs().get('package');
+test('native checks use the engine wait window before sharing immutable artifacts for parallel verification', () => {
+  const jobs = nativeJobs(), producer = jobs.get('package'), adapter = jobs.get('packaged-engine');
   const steps = jobSteps(producer);
   function onlyStep(pattern, description) {
     const matches = steps.map((source, index) => ({ source, index })).filter(step => pattern.test(step.source));
@@ -293,7 +295,7 @@ test('native checks use the engine wait window without omitting or preempting pa
   assert.ok(wait.index < verify.index && verify.index < packaged.index, 'Packaging must use the verified engine.');
   const independent = ['presentation', 'headless-presentation', 'headless-clutter', 'headless-priority-flow'].map(mode => '--smoke-' + mode);
   assert.deepEqual([...producer.matchAll(/--smoke-[\w-]+/g)].map(match => match[0]).sort(),
-    [...independent, '--smoke-headless-engine'].sort(), 'Declare every required native mode once.');
+    [...independent].sort(), 'Only engine-independent checks precede artifact sharing.');
   const modes = build.source.match(/foreach \(\$mode in @\(([^)]*)\)\)/);
   assert.ok(modes, 'The early harness step must execute its declared modes.');
   assert.deepEqual([...modes[1].matchAll(/'([^']+)'/g)].map(match => match[1]), independent);
@@ -303,13 +305,28 @@ test('native checks use the engine wait window without omitting or preempting pa
   assert.match(build.source, /dotnet build [^\n]+\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /);
   assert.match(build.source, /dotnet \.\/dist\/harness\/Mana.Table.Tests.dll \$mode --profile \("dist\/" \+ \$mode.Substring\(8\) \+ "-checks"\)\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /,
     'Each early mode must run with its own profile and fail the producer on error.');
-  const engine = onlyStep(/--smoke-headless-engine\b/, 'Check the real Forge engine');
-  assert.ok(engine.index > packaged.index, 'The real Forge walkthrough requires the completed production package.');
-  assert.match(engine.source, /dotnet \.\/dist\/harness\/Mana.Table.Tests.dll --smoke-headless-engine --engine-jar forge-api\/target\/forge-engine-fixtures.jar --production-engine-jar forge-api\/target\/forge-engine.jar --engine-resources dist\/package\/engine --source-revision \$env:GITHUB_SHA --source-manifest forge-api\/target\/ci-engine-manifest.json --profile dist\/headless-engine-checks\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /);
   const manifest = onlyStep(/Set-Content dist\/ci-harness-manifest.json/, 'Bind the checked harness');
   const shared = onlyStep(/name: mana-native-ui-inputs-/, 'Share the checked harness');
-  assert.ok(engine.index < manifest.index && manifest.index < shared.index,
-    'Publish harness identity only after the real Forge walkthrough passes.');
+  assert.ok(packaged.index < manifest.index && manifest.index < shared.index,
+    'Publish the immutable harness only after overlaying the actual packaged assemblies.');
+  assert.match(packaged.source, /foreach \(\$name in @\('Mana.AI','Mana.Planning','Mana.Contracts','Mana.Forge'\)\)/);
+  assert.match(packaged.source, /Copy-Item "dist\/package\/\$name.dll" dist\/harness/);
+  assert.match(shared.source, /dist\/forge-engine-fixtures.jar/);
+  assert.match(shared.source, /dist\/ci-source-receipt.json/);
+  assert.deepEqual(dependencies(adapter), ['package'], 'The real walkthrough consumes the completed package without serializing installer or UI work.');
+  assert.deepEqual([...adapter.matchAll(/--smoke-[\w-]+/g)].map(match => match[0]), ['--smoke-headless-engine'],
+    'The existing complete real-engine mode runs exactly once in its own required job.');
+  assert.doesNotMatch(adapter, /dotnet (?:build|publish)|mvn |package\.ps1 -Release|name: package-source.zip|name: mana-native-tools-/,
+    'Verify the immutable artifacts without rebuilding or transferring unrelated source/tools.');
+  assert.match(adapter, /restore-package\.ps1 -Directory dist\/ci-inputs -RequireHarness -RequireEngineLauncher/);
+  assert.match(adapter, /--engine-jar \$env:MANA_NATIVE_FIXTURE_LAUNCHER/);
+  assert.match(adapter, /--production-engine-jar .*forge-engine.jar/);
+  assert.match(adapter, /--engine-resources .*engine/);
+  assert.match(adapter, /--source-revision \$env:GITHUB_SHA --source-manifest dist\/ci-inputs\/ci-engine-manifest.json/);
+  assert.match(adapter, /--profile dist\/headless-engine-checks\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /);
+  assert.match(adapter, /if: always\(\)\n        uses: actions\/upload-artifact@/);
+  for (const evidence of ['json', 'log', 'whole-seat-ai-public.jsonl']) assert.ok(adapter.includes(evidence));
+  assert.match(adapter, /name: package-windows-x64.zip\n          path: dist\/ci-inputs\n          skip-decompress: true\n          digest-mismatch: error/);
 });
 test('full SDK fixture verification starts from tools while product migration retains its exact package', () => {
   const jobs = nativeJobs(), sdk = jobs.get('sdk-updates'), migration = jobs.get('managed-updates');
@@ -327,15 +344,16 @@ test('full SDK fixture verification starts from tools while product migration re
 test('the actual Windows aggregate requires every check and exactly the authorized installer lane', () => {
   const gate = nativeJobs().get('windows'), required = dependencies(gate);
   assert.match(gate, /^    if: \$\{\{ always\(\) && !\(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport\) \}\}$/m);
-  assert.deepEqual([...required].sort(), ['checks', 'tools', 'package', 'native-ui', 'installer', 'installer-release',
+  assert.deepEqual([...required].sort(), ['checks', 'tools', 'package', 'packaged-engine', 'native-ui', 'installer', 'installer-release',
     'installer-lifecycle', 'update-installer', 'managed-updates', 'sdk-updates'].sort(), 'Every native release gate remains required.');
   const embedded = gate.match(/          node <<'NODE'\n([\s\S]*?)^          NODE$/m);
   assert.ok(embedded, 'Exercise the shipping aggregate rather than a second gate implementation.');
   const script = embedded[1].replace(/^          /gm, '');
-  function run(installer, job, result, remove) {
+  function run(installer, job, result, remove, extra) {
     const inactive = installer === 'installer' ? 'installer-release' : 'installer';
     const results = Object.fromEntries(required.map(name => [name, { result: name === job ? result : name === inactive ? 'skipped' : 'success' }]));
     if (remove) delete results[remove];
+    if (extra) results[extra] = { result: 'success' };
     const process = { env: { JOB_RESULTS: JSON.stringify(results), INSTALLER_JOB: installer }, exitCode: 0 };
     vm.runInNewContext(script, { process, console: { log() {}, error() {} } }, { timeout: 1000 });
     return process.exitCode;
@@ -347,7 +365,10 @@ test('the actual Windows aggregate requires every check and exactly the authoriz
       for (const result of ['failure', 'cancelled', 'skipped', 'neutral', 'timed_out', null])
         assert.equal(run(installer, job, result), 1, `${installer}: ${job}=${result} must remain red.`);
     for (const result of ['success', 'failure', 'cancelled', null]) assert.equal(run(installer, inactive, result), 1);
-    for (const missing of ['installer', 'installer-release']) assert.throws(() => run(installer, null, null, missing), /accounted for/);
+    for (const missing of required) assert.throws(() => run(installer, null, null, missing), /exactly the declared verification jobs/,
+      `Missing ${missing} must not disappear from the aggregate's result loop.`);
+    assert.throws(() => run(installer, null, null, null, 'unreviewed-check'), /exactly the declared verification jobs/,
+      'A successful foreign job cannot replace a required verification result.');
   }
   assert.throws(() => run('arbitrary-lane'), /Unknown installer lane/);
 });
@@ -376,6 +397,7 @@ test('publication follows a successful aggregate despite its intentionally skipp
   }
   for (const dependency of dependencies(publish)) visit(dependency);
   assert.ok(ancestors.has('installer') && ancestors.has('installer-release'), 'Exercise the actual mutually exclusive installer graph.');
+  assert.ok(ancestors.has('packaged-engine'), 'The independent real-engine job must remain a publication prerequisite.');
   const master = { repository: REPO, ref: 'refs/heads/master', event_name: 'push' };
   function selected(github = master, aggregate = 'success', inputs = {}) {
     const results = Object.fromEntries([...ancestors].map(name => [name, name === 'installer' ? 'skipped' : name === 'windows' ? aggregate : 'success']));
@@ -417,6 +439,6 @@ test('the transport benchmark is manual-only, read-only, and outside release pub
   assert.match(benchmark, /gh release download mana-native-v0\.2\.89/);
   assert.ok(!dependencies(jobs.get('windows')).includes('artifact-transport-benchmark'));
   assert.match(jobs.get('windows'), /inputs.benchmark_transport && 'Release checks not run \(transport benchmark\)' \|\| 'Verify and package Windows x64'/);
-  for (const name of ['checks', 'tools', 'package', 'native-ui', 'installer', 'installer-release', 'installer-lifecycle', 'managed-updates', 'sdk-updates', 'update-installer', 'windows', 'publish'])
+  for (const name of ['checks', 'tools', 'package', 'packaged-engine', 'native-ui', 'installer', 'installer-release', 'installer-lifecycle', 'managed-updates', 'sdk-updates', 'update-installer', 'windows', 'publish'])
     assert.match(jobs.get(name), /!\(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport\)/, `${name} must skip benchmark-only runs.`);
 });

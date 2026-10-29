@@ -1418,6 +1418,13 @@ automatic coverage. A local mode's existence does not mean CI runs it. The
 extended inventory remains available for targeted investigation; it is not the
 default local checklist.
 
+The package producer shares immutable runtime, source and harness artifacts
+before the real-engine adapter walkthrough. The required `packaged-engine` job
+restores those exact bytes and runs the unchanged `--smoke-headless-engine`
+journey while UI and installer jobs proceed. Its reports, logs and provenance
+manifests are retained even on failure. The normal Windows aggregate still
+requires this job, every UI shard and all existing lifecycle checks.
+
 Within native verification, the installed SDK update lifecycle starts after the
 immutable tools artifact is available. It can run alongside packaging. The
 product's managed migration lifecycle still waits for both tools and the actual
@@ -1431,11 +1438,20 @@ missing, changed or mismatched source, version, build metadata, archive hashes,
 sizes and runtime-embedded metadata. Production installers continue using the
 actual source ZIP; only isolated smoke identities use its producer-bound receipt.
 Both paths run in the existing native checks and installer/migration jobs.
+Launcher fixtures additionally reject missing/altered launcher bytes, wrong
+lengths, missing or foreign source receipts, an unverified harness and a reused
+launch directory. A positive case places an unrelated engine beside the inputs
+and verifies that the actual launch pair still uses the packaged dependency.
+The test-only launcher stays outside the extracted shipping inventory. These
+small byte/metadata fixtures use no JVM, graphics, downloads or installed code;
+the independent adapter job supplies the actual gameplay execution evidence.
 
 The installer workflow has a read-only PR caller and a master-only staging
-caller. The required Windows aggregate expects exactly its authorized caller to
-succeed and the other to be skipped; every remaining dependency must succeed.
-Repository tests execute that actual aggregate script for both contexts and
+caller. The required Windows aggregate rejects missing or foreign job results,
+expects exactly its authorized caller to succeed and the other to be skipped,
+and requires every remaining dependency to succeed. Repository tests execute
+that actual aggregate script for both contexts, remove each required result,
+inject a foreign result and reject failed/cancelled/skipped adapter checks. They
 exercise release staging/promotion failures through injected API fixtures.
 Private drafts do not establish a successful release or bypass final source CI.
 
