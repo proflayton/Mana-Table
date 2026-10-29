@@ -30,7 +30,9 @@ public class CertifiedUndoTransportTest {
     @Test(dataProvider = "actors", groups = "canonical-interaction", timeOut = 90000)
     public void aLocalOrRemoteSeatRestoresOneSharedBoardAndReconnectsWithoutReplay(int actorSeat) throws Exception {
         if (StaticData.instance() == null) EngineResources.load(RESOURCES);
-        var evidence = Files.createTempDirectory("certified-undo-tcp-" + actorSeat);
+        var evidenceRoot = Path.of("target/rules-regressions/certified-undo-tcp-" + actorSeat);
+        Files.createDirectories(evidenceRoot);
+        var evidence = Files.createTempDirectory(evidenceRoot, "attempt-");
         var host = new SyncLobby(RESOURCES, evidence.resolve("host"), true);
         var guest = new SyncLobby(RESOURCES, evidence.resolve("guest"), true);
         var trace = new ArrayList<Object>();
@@ -47,6 +49,7 @@ public class CertifiedUndoTransportTest {
             var endpoints = List.of(host.match(), guest.match());
             var answered = new HashMap<Integer, String>();
             var initial = until(endpoints, actorSeat, answered, trace, states -> main(states.get(actorSeat)));
+            trace.add(Map.of("stage", "initial", "states", initial));
             var beforeLand = initial.get(actorSeat);
             var handCard = zone(viewer(beforeLand), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
             answer(endpoints.get(actorSeat), beforeLand, Map.of("action", "card", "key", text(handCard, "key")), answered, actorSeat, trace);
@@ -68,16 +71,14 @@ public class CertifiedUndoTransportTest {
                     "offerId", text(offer, "id"), "actionId", text(offer, "actionId"), "undoBarrierVersion", offer.get("barrierVersion").getAsLong());
             assertThrows(IllegalArgumentException.class, () -> endpoints.get(1 - actorSeat).action(request(owner, body)));
             assertEquals(viewer(object(endpoints.get(actorSeat).state())).getAsJsonObject("mana").get("G").getAsInt(), 1);
+            // Capture the first actual transport response before the inverse.
+            // The second response below is deliberately read after publication.
+            var oldHost = object(endpoints.get(0).state());
+            long restoreDeadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
             answer(endpoints.get(actorSeat), owner, body, answered, actorSeat, trace);
-            var restored = until(endpoints, actorSeat, answered, trace, states -> main(states.get(actorSeat))
-                    && !text(states.get(actorSeat).getAsJsonObject("prompt"), "id").equals(text(owner.getAsJsonObject("prompt"), "id")));
+            var restored = observeRestoration(endpoints, actorSeat, owner, offer, oldHost, restoreDeadline, trace);
             for (var state : restored) {
-                assertEquals(state.get("boardRevision"), restored.get(actorSeat).get("boardRevision"));
-                assertEquals(state.getAsJsonObject("undo").get("restorationVersion").getAsLong(), 1);
-                assertTrue(state.getAsJsonObject("undo").get("offer").isJsonNull());
-                var publicActor = player(state, owner.get("viewerId").getAsInt());
-                assertEquals(publicActor.getAsJsonObject("mana").get("G").getAsInt(), 0);
-                assertFalse(zone(publicActor, "Battlefield").getAsJsonArray("cards").get(0).getAsJsonObject().get("tapped").getAsBoolean());
+                assertRestorationView(state, owner, offer);
             }
             assertThrows(IllegalArgumentException.class, () -> endpoints.get(actorSeat).action(request(restored.get(actorSeat), body)));
             assertTrue(object(guest.reconnect()).get("matchActive").getAsBoolean());
@@ -85,10 +86,102 @@ public class CertifiedUndoTransportTest {
             assertEquals(text(rejoined, "id"), text(owner, "id"));
             assertEquals(rejoined.getAsJsonObject("undo").get("restorationVersion").getAsLong(), 1);
             assertTrue(rejoined.getAsJsonObject("undo").get("offer").isJsonNull());
+            assertRestorationView(rejoined, owner, offer);
+            trace.add(Map.of("stage", "reconnected", "state", rejoined));
         } finally {
             Files.writeString(evidence.resolve("trace.json"), JSON.toJson(trace));
             guest.close(); host.close();
         }
+    }
+
+    /** Independent local/TCP reads may straddle a complete publication. Waiting
+     * for its receipt never answers the freshly restored priority input. */
+    private static List<JsonObject> observeRestoration(List<MatchEndpoint> endpoints, int actor,
+            JsonObject owner, JsonObject offer, JsonObject oldHost, long deadline, List<Object> trace) throws Exception {
+        List<JsonObject> states = List.of(oldHost, object(endpoints.get(1).state()));
+        List<JsonObject> previous = states;
+        try {
+            // Force an old-host/new-guest pair over the actual production RPCs.
+            // Equality across these separate reads was the former false oracle.
+            while (System.nanoTime() < deadline) {
+                assertObservedView(states.get(0), owner, offer);
+                assertObservedView(states.get(1), owner, offer);
+                assertObservationProgress(previous, states);
+                previous = states;
+                if (marker(states.get(1)) == 1) break;
+                Thread.sleep(5);
+                states = List.of(oldHost, object(endpoints.get(1).state()));
+            }
+            assertTrue(System.nanoTime() < deadline, "The guest observation must complete within the original restoration budget");
+            assertEquals(marker(states.get(0)), 0L);
+            assertEquals(marker(states.get(1)), 1L, "The real guest must observe the completed inverse within the original budget");
+            assertNotEquals(states.get(0).get("boardRevision"), states.get(1).get("boardRevision"),
+                    "A deterministic publication between transport reads must defeat the old revision-equality oracle");
+            assertFalse(restored(states, actor, owner), "An old observer frame cannot count as completed restoration");
+            trace.add(Map.of("stage", "responses-across-restoration", "states", states));
+
+            while (System.nanoTime() < deadline) {
+                states = endpoints.stream().map(endpoint -> object(endpoint.state())).toList();
+                for (var state : states) assertObservedView(state, owner, offer);
+                assertObservationProgress(previous, states);
+                previous = states;
+                if (restored(states, actor, owner)) {
+                    assertTrue(System.nanoTime() < deadline, "Both restored observations must arrive within the same budget");
+                    trace.add(Map.of("stage", "restored", "states", states));
+                    return states;
+                }
+                Thread.sleep(5);
+            }
+            throw new AssertionError("Both transports must observe the original restoration without another semantic action");
+        } finally {
+            trace.add(Map.of("stage", "last-restoration-observations", "states", states));
+        }
+    }
+    private static void assertObservationProgress(List<JsonObject> before, List<JsonObject> after) {
+        for (int seat = 0; seat < after.size(); seat++) {
+            var previous = before.get(seat); var current = after.get(seat);
+            assertEquals(current.get("viewerId"), previous.get("viewerId"));
+            assertTrue(current.get("boardRevision").getAsLong() >= previous.get("boardRevision").getAsLong(),
+                    "A single transport cannot regress to an older publication");
+            assertTrue(marker(current) >= marker(previous), "A single transport cannot forget an observed restoration");
+        }
+    }
+    private static boolean restored(List<JsonObject> states, int actor, JsonObject owner) {
+        return states.stream().allMatch(state -> marker(state) == 1) && main(states.get(actor))
+                && !text(states.get(actor).getAsJsonObject("prompt"), "id").equals(text(owner.getAsJsonObject("prompt"), "id"));
+    }
+    private static long marker(JsonObject state) {
+        return state.getAsJsonObject("undo").get("restorationVersion").getAsLong();
+    }
+    private static void assertObservedView(JsonObject state, JsonObject owner, JsonObject offer) {
+        assertNotEquals(text(state, "status"), "error", state.toString());
+        assertEquals(text(state, "id"), text(owner, "id"));
+        if (marker(state) != 0) {
+            // Check every observed restored frame immediately. Convergence must
+            // never hide a new marker paired with a partial or older board.
+            assertRestorationView(state, owner, offer);
+            return;
+        }
+        assertTrue(state.getAsJsonObject("undo").get("lastRestoration").isJsonNull());
+        var publicActor = player(state, owner.get("viewerId").getAsInt());
+        assertEquals(publicActor.getAsJsonObject("mana").get("G").getAsInt(), 1);
+        assertTrue(zone(publicActor, "Battlefield").getAsJsonArray("cards").get(0).getAsJsonObject().get("tapped").getAsBoolean(),
+                "An old marker retains the original tapped source, including during admission");
+    }
+    private static void assertRestorationView(JsonObject state, JsonObject owner, JsonObject offer) {
+        assertEquals(marker(state), 1L);
+        assertTrue(state.get("boardRevision").getAsLong() > owner.get("boardRevision").getAsLong());
+        var undo = state.getAsJsonObject("undo");
+        assertTrue(undo.get("offer").isJsonNull());
+        var receipt = undo.getAsJsonObject("lastRestoration");
+        assertNotNull(receipt);
+        assertEquals(receipt.get("version").getAsLong(), 1L);
+        assertEquals(text(receipt, "actionId"), text(offer, "actionId"));
+        assertEquals(text(receipt, "executionId"), text(offer, "executionId"));
+        assertEquals(receipt.get("playerId"), owner.get("viewerId"));
+        var publicActor = player(state, owner.get("viewerId").getAsInt());
+        assertEquals(publicActor.getAsJsonObject("mana").get("G").getAsInt(), 0);
+        assertFalse(zone(publicActor, "Battlefield").getAsJsonArray("cards").get(0).getAsJsonObject().get("tapped").getAsBoolean());
     }
 
     private static List<JsonObject> until(List<MatchEndpoint> endpoints, int actor, Map<Integer, String> answered,

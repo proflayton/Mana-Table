@@ -64,6 +64,14 @@ cached/random stream barriers, permission restoration and unsupported routes.
 `CertifiedUndoTest`, `CertifiedUndoTransportTest` and `CertifiedUndoFaultTest`
 exercise normal Commander actions, actual local/TCP seats, stale offers, source
 queries, clocks, competing departures and post-inverse publication failure.
+The local test captures one committed audience cohort and requires exact revision
+and restoration-marker equality across it. Sequential TCP responses can straddle
+a publication. The transport test deliberately retains a real pre-Undo response
+beside a real restored response, then waits by observation only for both seats
+to receive the original restoration receipt. Every frame is checked immediately
+against its own marker, tap and mana state; convergence never answers priority
+or retries Undo. Network traces and restoration observations remain under
+`target/rules-regressions` so CI failure uploads retain them.
 Shared client/AI regressions cover restoration chronology and lost receipts;
 native `GameplayUndoWireChecks` and `GameplayUndoPresentationChecks` cover the
 negotiated protocol, pointer/keyboard/focus, Auto and one-time scene reconciliation.

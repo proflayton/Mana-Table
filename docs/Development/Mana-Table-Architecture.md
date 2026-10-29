@@ -55,6 +55,10 @@ reentrant hold while waiting and restore them afterward. Copying several live
 views under the adapter gate alone is insufficient: a mana task can otherwise
 change a card between two audience projections. Other upstream hosts retain
 their default behavior unless they opt in and instrument their waits.
+That guarantee applies to one committed publication, not a batch of independent
+network reads. Sequential responses can legitimately have different board
+revisions. Transport convergence correlates the retained operation receipt and
+checks each frame's facts without granting a new action or retrying the inverse.
 Publication first revokes lost visibility for all seat audiences, then allocates
 identities for their new snapshots and the spectator. A stale audience can revoke
 only the identity generation it previously observed. This ordering also covers
