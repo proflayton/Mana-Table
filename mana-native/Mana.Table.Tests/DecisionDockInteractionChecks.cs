@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Mana.Client;
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Scenarios;
@@ -24,19 +25,17 @@ internal static class DecisionDockInteractionChecks
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         engine.ReplyOverride = async reply => { replies.Enqueue(reply); started.TrySetResult(); await release.Task; };
-        using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
-        app.Initialize(); var view = app.TestPort;
+        // This journey explicitly exercises an in-flight background observation.
+        using var app = new PresentationRun(TestTableServices.For(engine), directory, engine.State, new(1600, 900), ObservationDeliveryMode.Polled);
+        var view = app.View;
         view.PresentLobby(new("local", "Controlled decision policy", null, false, null, true, "", null, [], []), true);
         view.SetAutomatic(true);
-        double seconds = 0;
         PresentationFrame frame = null!;
         Tick();
-        GameTime Time() => new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
         void Tick(Point? pointer = null, ButtonState left = ButtonState.Released)
         {
-            seconds += 1.0 / 60; var point = pointer ?? new Point(20, 60);
-            app.Update(Time(), new(point.X, point.Y, 0, left, default, default, default, default), new(), new(1600, 900));
-            frame = app.ReadPresentation();
+            var point = pointer ?? new Point(20, 60);
+            frame = app.Tick(TimeSpan.FromSeconds(1.0 / 60), new(point.X, point.Y, 0, left, default, default, default, default));
         }
         void Until(Func<bool> ready, string message)
         {
@@ -90,7 +89,8 @@ internal static class DecisionDockInteractionChecks
                 "A revision-only observation preserves the quiet handoff and cannot resubmit its consumed local priority");
             engine.ObserveOverride = null;
             engine.Present(engine.State with { Decision = null, DecisionOwnerId = 1, PriorityPlayerId = null, ActionClass = "selection", Status = "resolving" });
-            view.Accept(engine.State); Tick();
+            var requiredChoice = engine.State;
+            view.Post(() => view.Accept(requiredChoice)); Tick();
             Until(() => !view.Busy && view.Match?.ActionClass == "selection", "The application reconciles the next required public choice");
             check(replies.Count == 1 && view.DecisionDock is { Status: DecisionDockStatus.Waiting, ActorId: 1, ActorRole: DecisionDockActorRole.Choosing, Surface: DecisionDockSurface.Workspace }
                     && !frame.Hits.Any(hit => hit.Id == "confirm"),
@@ -130,16 +130,17 @@ internal static class DecisionDockInteractionChecks
                     throw new IOException("Controlled lost acknowledgement");
                 }
             };
-            using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
-            app.Initialize(); var view = app.TestPort;
+            // Lost acknowledgements recover through a real provider poll; the
+            // journey owns the exact expected rejection and recovery errors.
+            using var app = new PresentationRun(TestTableServices.For(engine), directory, engine.State, new(1600, 900),
+                ObservationDeliveryMode.Polled, allowErrors: interruption != "hold");
+            var view = app.View;
             view.PresentLobby(new("local", "Controlled interruption", null, false, null, true, "", null, [], []), true);
             view.SetAutomatic(true);
-            double seconds = 0; PresentationFrame frame = null!;
+            PresentationFrame frame = null!;
             void Tick(Point? pointer = null, ButtonState left = ButtonState.Released) {
-                seconds += 1.0 / 60; var point = pointer ?? new Point(20, 60);
-                app.Update(new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60)),
-                    new(point.X, point.Y, 0, left, default, default, default, default), new(), new(1600, 900));
-                frame = app.ReadPresentation();
+                var point = pointer ?? new Point(20, 60);
+                frame = app.Tick(TimeSpan.FromSeconds(1.0 / 60), new(point.X, point.Y, 0, left, default, default, default, default));
             }
             void Until(Func<bool> ready, string message) {
                 var deadline = DateTime.UtcNow.AddSeconds(5);
@@ -194,18 +195,14 @@ internal static class DecisionDockInteractionChecks
         new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, Stops = ["UPKEEP"] }.Save(directory);
         var engine = new InteractionScenarioEngine(); engine.Present(initial);
         engine.ReplyOverride = _ => throw new InvalidOperationException("Timing controls must not answer the required library search");
-        using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
-        app.Initialize(); var view = app.TestPort;
+        using var app = new PresentationRun(TestTableServices.For(engine), directory, engine.State, new(1600, 900));
+        var view = app.View;
         view.PresentLobby(new("local", "Controlled portrait timing", null, false, null, true, "", null, [], []), true);
-        double seconds = 0;
         PresentationFrame frame = null!;
         void Tick(Point? pointer = null, ButtonState left = ButtonState.Released)
         {
-            seconds += 1.0 / 60;
-            var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
             var point = pointer ?? new Point(20, 60);
-            app.Update(time, new(point.X, point.Y, 0, left, default, default, default, default), new(), new(1600, 900));
-            frame = app.ReadPresentation();
+            frame = app.Tick(TimeSpan.FromSeconds(1.0 / 60), new(point.X, point.Y, 0, left, default, default, default, default));
         }
         void Click(string id)
         {
@@ -242,7 +239,7 @@ internal static class DecisionDockInteractionChecks
 
         int opponent = initial.Players.First(player => player.Id != initial.ViewerId).Id;
         engine.Present(engine.State with { ActivePlayerId = opponent, PhaseKey = "END_OF_TURN", Phase = "End step" });
-        view.Accept(engine.State); Tick();
+        app.QueueObservation(engine.State); Tick();
         check(view.TurnProgress is { IsOwnTurn: false, PhaseLabel: "End step" } other
                 && other.ActivePlayerId == opponent && other.Markers.All(marker => !marker.Current)
                 && other.Markers.Single(marker => marker.Key == "END_OF_TURN").Stop
@@ -258,7 +255,7 @@ internal static class DecisionDockInteractionChecks
         var privateCard = new Card { Name = "Disclosed search option", Type = "Creature", Text = "A scoped private library choice." };
         engine.Present(engine.State with { ActionClass = "selection", DecisionOwnerId = initial.ViewerId, PriorityPlayerId = null,
             Decision = new Decision("", new DecisionContext(Message: "Search your library for a creature."), new OptionsPayload(new ChoiceSelection([new(7, privateCard.Name, privateCard)], new SelectionRange(1, 1), [new(7, privateCard.Name, privateCard)]))) });
-        view.Accept(engine.State); Tick();
+        app.QueueObservation(engine.State); Tick();
         var search = view.Match!.Decision!;
         Click("close-overlay"); // The actual View battlefield gesture keeps the choice pending.
         check(NearOwnPortrait("auto") && NearOwnPortrait("hold"),
@@ -280,21 +277,17 @@ internal static class DecisionDockInteractionChecks
         new PlayPreferences { Automatic = true, ReducedMotion = true, Sounds = false, Stops = ["MAIN1", "MAIN2", "COMBAT_BEGIN"] }.Save(directory);
         var engine = new InteractionScenarioEngine(); engine.Present(initial);
         engine.ReplyOverride = _ => throw new InvalidOperationException("Both authored phases retain their saved stop");
-        using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
-        app.Initialize(); var view = app.TestPort;
+        using var app = new PresentationRun(TestTableServices.For(engine), directory, engine.State, new(1600, 900));
+        var view = app.View;
         view.PresentLobby(new("local", "Controlled stop refresh", null, false, null, true, "", null, [], []), true);
-        double seconds = 0;
         PresentationFrame Tick(Point point, ButtonState left = ButtonState.Released)
         {
-            seconds += 1.0 / 60;
-            var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
-            app.Update(time, new(point.X, point.Y, 0, left, default, default, default, default), new(), new(1600, 900));
-            return app.ReadPresentation();
+            return app.Tick(TimeSpan.FromSeconds(1.0 / 60), new(point.X, point.Y, 0, left, default, default, default, default));
         }
         var first = Tick(new(20, 60)).Hits.Single(hit => hit.Id == "resume-phase-stop");
         Tick(first.Bounds.Center, ButtonState.Pressed);
         engine.Present(engine.State with { PhaseKey = "MAIN2", Phase = "Main phase, postcombat" });
-        view.Accept(engine.State);
+        app.QueueObservation(engine.State);
         var refreshed = Tick(first.Bounds.Center, ButtonState.Pressed).Hits.Single(hit => hit.Id == first.Id);
         check(view.DecisionDock is { PauseReason: DecisionDockPauseReason.PhaseStop, Caption: "Main 2 stop" }
                 && view.Pressed?.Scope == first.Scope && refreshed.Bounds.Contains(first.Bounds.Center),
@@ -312,16 +305,12 @@ internal static class DecisionDockInteractionChecks
         new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false }.Save(directory);
         var engine = new InteractionScenarioEngine(); engine.Present(initial);
         engine.ReplyOverride = _ => throw new InvalidOperationException("Inspection must suspend automatic game commands");
-        using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
-        app.Initialize(); var view = app.TestPort;
+        using var app = new PresentationRun(TestTableServices.For(engine), directory, engine.State, new(1600, 900));
+        var view = app.View;
         view.PresentLobby(new("local", "Controlled inspection", null, false, null, true, "", null, [], []), true);
-        double seconds = 0;
         PresentationFrame Tick(Point point, ButtonState left = ButtonState.Released)
         {
-            seconds += 1.0 / 60;
-            var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
-            app.Update(time, new(point.X, point.Y, 0, left, default, default, default, default), new(), new(1600, 900));
-            return app.ReadPresentation();
+            return app.Tick(TimeSpan.FromSeconds(1.0 / 60), new(point.X, point.Y, 0, left, default, default, default, default));
         }
         var frame = Tick(new(20, 60));
         var land = frame.Cards.Single(card => card.Id == DecisionFlowScenario.LandId);

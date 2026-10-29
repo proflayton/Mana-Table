@@ -24,20 +24,18 @@ internal static class LinkedSourceInteractionChecks
             var initial = new ExperienceLabSession(PreparedSpellScenario.Id).State;
             var provider = new LinkedSourceConnection(initial);
             var setup = new InteractionScenarioEngine();
-            using var app = new TableApplication(new(setup, setup, provider, setup.InitializeAsync) { SourceActions = provider },
-                directory, initialState: initial) { Automated = true };
-            app.Initialize(); var view = app.TestPort;
-            double seconds = 0;
+            using var presentation = new PresentationRun(new(setup, setup, provider, setup.InitializeAsync) { SourceActions = provider },
+                directory, initial, size);
+            var view = presentation.View;
             PresentationFrame frame = null!;
             Point Physical(Point logical) {
                 var at = RenderViewport.Fit(size, 900).ToPhysical(logical.ToVector2());
                 return new((int)MathF.Ceiling(at.X), (int)MathF.Ceiling(at.Y));
             }
             void Tick(Point logical = default, ButtonState left = ButtonState.Released) {
-                seconds += .05; var at = Physical(logical);
-                app.Update(new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.05)),
-                    new(at.X, at.Y, 0, left, default, default, default, default), new(), size);
-                frame = app.ReadPresentation();
+                var at = Physical(logical);
+                frame = presentation.Tick(TimeSpan.FromSeconds(.05),
+                    new(at.X, at.Y, 0, left, default, default, default, default));
             }
             void Until(Func<bool> ready) {
                 var deadline = DateTime.UtcNow.AddSeconds(5);
@@ -60,7 +58,7 @@ internal static class LinkedSourceInteractionChecks
             string SourceHit(string id) => frame.Cards.Single(card => card.Id == id && card.Zone == "Battlefield").Hit.Id;
             bool LinkedReady() => frame.Hits.Any(hit => hit.Id == "read-card-action")
                 && frame.Hits.Any(hit => hit.Id.StartsWith("source-spell:", StringComparison.Ordinal));
-            void Publish(GameSnapshot state) { provider.Replace(state); view.Accept(state); Tick(new(20, 60)); }
+            void Publish(GameSnapshot state) { provider.Replace(state); presentation.QueueObservation(state); Tick(new(20, 60)); }
             Tick(new(20, 60));
             check(view.BattlefieldLabels(PreparedSpellScenario.SourceId).Any(label => label.Kind == "prepared")
                     && initial.Viewer!.Zone("Battlefield").Cards.First().States!.Value.Count(state => state.Kind == "ability") == 2,
@@ -91,7 +89,7 @@ internal static class LinkedSourceInteractionChecks
                         : zone.Name == "Battlefield" ? zone with { Cards = zone.Cards.Select(card => card.VisualId == PreparedSpellScenario.SourceId
                             ? card with { States = card.States!.Value.Where(state => state.Key != "prepared").ToImmutableArray() } : card).ToImmutableArray() } : zone).ToImmutableArray()
                 }).ToImmutableArray() };
-            provider.Replace(unprepared); view.Accept(unprepared); Tick(castPoint);
+            provider.Replace(unprepared); presentation.QueueObservation(unprepared); Tick(castPoint);
             check(provider.Commands.IsEmpty && !view.Activate(oldAction)
                     && !frame.Hits.Any(hit => hit.Id is "read-card-action" || hit.Id.StartsWith("source-spell", StringComparison.Ordinal))
                     && !view.BattlefieldLabels(PreparedSpellScenario.SourceId).Any(label => label.Kind == "prepared"),

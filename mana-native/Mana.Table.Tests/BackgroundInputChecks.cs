@@ -40,7 +40,7 @@ internal static class BackgroundInputChecks
                     Cards = zone.Cards.Select(card => card.VisualId != target.VisualId ? card : card with { Power = card.Power + 1 }).ToImmutableArray()
                 }).ToImmutableArray()
             }).ToImmutableArray() };
-            run.Engine.Present(changed); run.View.Accept(run.Engine.State); run.Tick(active: false);
+            run.Engine.Present(changed); run.QueueObservation(); run.Tick(active: false);
             check(run.Frame.Stamp.Revision == run.Engine.State.Revision
                     && run.Frame.Cards.Single(card => card.Id == target.VisualId).Card.Power == target.Power + 1,
                 "The inactive input gate still admits and renders a fresh authoritative game observation");
@@ -118,7 +118,7 @@ internal static class BackgroundInputChecks
     private static void ScopedTarget(string profile, Action<bool, string> check)
     {
         using var run = new BackgroundRun(profile, "background-input-command");
-        run.Engine.ChoosePlayer(3); run.View.Accept(run.Engine.State); run.Tick();
+        run.Engine.ChoosePlayer(3); run.QueueObservation(); run.Tick();
         string prompt = run.View.Match!.Decision!.Id;
         var at = run.At("player:3");
         run.Tick(active: false, point: at, left: ButtonState.Pressed);
@@ -136,15 +136,14 @@ internal static class BackgroundInputChecks
 
     private sealed class BackgroundRun : IDisposable
     {
-        private readonly TableApplication app;
-        private double seconds;
+        private readonly PresentationRun presentation;
         private int wheel;
         internal InteractionScenarioEngine Engine { get; } = new();
         internal Conversation Social { get; } = new();
-        internal TableApplication.Probe View => app.TestPort;
-        internal PresentationFrame Frame { get; private set; } = null!;
-        internal string? AcceptedHit => app.AcceptedHit;
-        internal bool AcceptedDrag => app.AcceptedDrag;
+        internal TableApplication.Probe View => presentation.View;
+        internal PresentationFrame Frame => presentation.Frame;
+        internal string? AcceptedHit => presentation.AcceptedHit;
+        internal bool AcceptedDrag => presentation.AcceptedDrag;
         internal IEnumerable<string> PaintedText => Frame.Drawing.Commands.Select(command => command switch {
             DrawCommand.Text text => text.Value, DrawCommand.CenterText text => text.Value, _ => null }).OfType<string>();
         internal BackgroundRun(string profile, string name)
@@ -152,22 +151,21 @@ internal static class BackgroundInputChecks
             var path = Path.Combine(profile, name); Directory.CreateDirectory(path);
             new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false }.Save(path);
             Engine.Present(FourPlayerTableScenario.Create()[0].Snapshot);
-            app = new(TestTableServices.For(Engine) with { Social = Social }, path, initialState: Engine.State) { Automated = true };
-            app.Initialize(); app.EnableLiveTableStudy();
+            presentation = new(TestTableServices.For(Engine) with { Social = Social }, path, Engine.State, new(1600, 900));
+            presentation.EnableLiveTableStudy();
             var lobby = new Lobby("joined", "Background input fixture", null, false, null, true, "", null, [], [], "foreground-input-table");
             View.SetConnectedTable(lobby); View.PresentLobby(lobby, true);
             Tick(); Tick();
         }
-        internal void Deactivate() => app.DeactivateInput();
+        internal void QueueObservation() => presentation.QueueObservation(Engine.State);
+        internal void Deactivate() => presentation.Deactivate();
         internal void Tick(KeyboardState keys = default, bool active = true, Point? point = null,
             ButtonState left = ButtonState.Released, bool allButtons = false, int wheelDelta = 0)
         {
-            seconds += .05; wheel += wheelDelta; var at = point ?? new Point(20, 30);
+            wheel += wheelDelta; var at = point ?? new Point(20, 30);
             var other = allButtons ? ButtonState.Pressed : ButtonState.Released;
-            app.Update(new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.05)),
-                new(at.X, at.Y, wheel, allButtons ? ButtonState.Pressed : left, other, other, other, other), keys, new(1600, 900), inputActive: active);
-            Frame = app.ReadPresentation();
-            if (View.Error.Length > 0) throw new InvalidOperationException(View.Error);
+            presentation.Tick(TimeSpan.FromSeconds(.05),
+                new(at.X, at.Y, wheel, allButtons ? ButtonState.Pressed : left, other, other, other, other), keys, active: active);
         }
         internal Point At(string id)
         {
@@ -182,7 +180,7 @@ internal static class BackgroundInputChecks
             var at = At(id); Tick(point: at, left: ButtonState.Pressed); Tick(point: at);
             if (AcceptedHit != id) throw new InvalidOperationException("Foreground fixture click was not accepted: " + id);
         }
-        public void Dispose() => app.Dispose();
+        public void Dispose() => presentation.Dispose();
     }
 
     private sealed class Conversation : ITableSocial

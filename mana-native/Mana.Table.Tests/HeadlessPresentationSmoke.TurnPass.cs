@@ -44,7 +44,7 @@ internal static partial class HeadlessPresentationSmoke
             var autoState = run.View.Match! with { Decision = run.View.Match!.Decision! with {
                 Payload = ((PriorityPayload)run.View.Match.Decision.Payload) with { CanAutoPass = true } } };
             run.Engine.ObserveOverride = () => Task.FromResult<GameSnapshot?>(autoState);
-            run.View.Accept(autoState);
+            run.QueueExact(autoState);
             run.Input(new(20, 60), keys: new(Keys.F)); run.Tick("auto-key-released");
             for (int n = 0; n < 4; n++) run.Tick("waiting-for-confirmation");
             check(run.Engine.Replies.Count == 0 && run.Frame.Hits.Any(hit => hit.Id == "turn-pass-confirm"),
@@ -65,21 +65,26 @@ internal static partial class HeadlessPresentationSmoke
             check(run.Engine.Replies.Count == 0 && !run.View.CurrentHit(old)
                     && run.Frame.Hits.All(hit => hit.Id != "turn-pass-confirm"),
                 "Replacing priority between press and release revokes the captured confirmation instead of passing a new prompt");
-            foreach (var changed in new[] {
-                state with { Turn = state.Turn + 1 },
-                state with { ActivePlayerId = 1 },
-                state with { Players = state.Players.Select(player => player.Id != state.ViewerId ? player
-                    : player with { LandPlaysUsed = 1 }).ToImmutableArray() },
-                state with { PhaseKey = "MAIN2" },
-                state with { ViewerId = 1 },
-                state with { Id = "different-game" }
-            }) {
-                run.Present(state); run.Tick("ready-again"); run.ClickHit("quiet-priority-arm");
-                // Preserve the prompt ID to verify these facts independently of scope replacement.
-                run.View.Accept(changed with { Revision = run.View.Match!.Revision, Decision = run.View.Match.Decision }); run.Tick("changed-turn-facts");
-                check(run.Engine.Replies.Count == 0 && run.Frame.Hits.All(hit => hit.Id != "turn-pass-confirm"),
-                    "A changed game, turn, active seat or first land retires the pending pass intent");
-            }
+        }
+        int factCase = 0;
+        foreach (var changed in new[] {
+            state with { Turn = state.Turn + 1 },
+            state with { ActivePlayerId = 1 },
+            state with { Players = state.Players.Select(player => player.Id != state.ViewerId ? player
+                : player with { LandPlaysUsed = 1 }).ToImmutableArray() },
+            state with { PhaseKey = "MAIN2" },
+            state with { ViewerId = 1 },
+            state with { Id = "different-game" }
+        }) {
+            using var run = new Runner(profile, "first-land-changed-fact-" + factCase++, state, trace, performance);
+            RecordCommands(run); run.Tick("ready-again"); run.ClickHit("quiet-priority-arm");
+            // The fixture owner authors a scope handoff; an old audience's
+            // ingress cannot claim authority to publish another game/viewer.
+            // Preserve prompt and revision to isolate these facts from renewal.
+            var transition = changed with { Revision = run.View.Match!.Revision, Decision = run.View.Match.Decision };
+            run.View.Post(() => run.View.Accept(transition)); run.Tick("changed-turn-facts");
+            check(run.Engine.Replies.Count == 0 && run.Frame.Hits.All(hit => hit.Id != "turn-pass-confirm"),
+                "A changed game, turn, active seat or first land retires the pending pass intent");
         }
         using (var run = new Runner(profile, "first-land-second-main", state with { PhaseKey = "MAIN2", Phase = "Second main phase" }, trace, performance)) {
             RecordCommands(run); run.Tick("ready");

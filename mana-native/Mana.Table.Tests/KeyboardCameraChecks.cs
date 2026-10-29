@@ -177,18 +177,17 @@ internal static class KeyboardCameraChecks
 
     private sealed class CameraRun : IDisposable
     {
-        private readonly TableApplication app;
-        private double time;
+        private readonly PresentationRun presentation;
         internal InteractionScenarioEngine Engine { get; } = new();
-        internal TableApplication.Probe View => app.TestPort;
-        internal PresentationFrame Frame { get; private set; } = null!;
+        internal TableApplication.Probe View => presentation.View;
+        internal PresentationFrame Frame => presentation.Frame;
         internal CameraRun(string profile, string name, GameSnapshot? state = null)
         {
             string path = Path.Combine(profile, name); Directory.CreateDirectory(path);
             new PlayPreferences { Automatic = false, ReducedMotion = false, Sounds = false }.Save(path);
             Engine.Present(state ?? FourPlayerTableScenario.Create()[0].Snapshot);
-            app = new(TestTableServices.For(Engine) with { Social = new Conversation() }, path, initialState: Engine.State) { Automated = true };
-            app.Initialize(); app.EnableLiveTableStudy();
+            presentation = new(TestTableServices.For(Engine) with { Social = new Conversation() }, path, Engine.State, new(1600, 900));
+            presentation.EnableLiveTableStudy();
             var lobby = new Lobby("joined", "Camera fixture", null, false, null, true, "", null, [], [], "keyboard-camera-table");
             View.SetConnectedTable(lobby); View.PresentLobby(lobby, true);
             Tick();
@@ -213,11 +212,9 @@ internal static class KeyboardCameraChecks
         internal void Tick(KeyboardState keys = default, double elapsed = 1d / 60, Point? point = null,
             ButtonState left = ButtonState.Released, ButtonState middle = ButtonState.Released, bool active = true)
         {
-            time += elapsed; var at = point ?? new Point(20, 30);
-            app.Update(new(TimeSpan.FromSeconds(time), TimeSpan.FromSeconds(elapsed)),
-                new(at.X, at.Y, 0, left, middle, default, default, default), keys, new(1600, 900), inputActive: active);
-            Frame = app.ReadPresentation();
-            if (View.Error.Length > 0) throw new InvalidOperationException(View.Error);
+            var at = point ?? new Point(20, 30);
+            presentation.Tick(TimeSpan.FromSeconds(elapsed),
+                new(at.X, at.Y, 0, left, middle, default, default, default), keys, active: active);
         }
         internal void Home() { Tick(new(Keys.Home)); Tick(); Tick(elapsed: .7); }
         internal Point At(string id)
@@ -231,9 +228,9 @@ internal static class KeyboardCameraChecks
         internal void Click(string id)
         {
             var at = At(id); Tick(point: at, left: ButtonState.Pressed); Tick(point: at);
-            if (app.AcceptedHit != id) throw new InvalidOperationException("The production application did not accept the camera fixture gesture: " + id);
+            if (presentation.AcceptedHit != id) throw new InvalidOperationException("The production application did not accept the camera fixture gesture: " + id);
         }
-        public void Dispose() => app.Dispose();
+        public void Dispose() => presentation.Dispose();
     }
 
     private sealed class Conversation : ITableSocial

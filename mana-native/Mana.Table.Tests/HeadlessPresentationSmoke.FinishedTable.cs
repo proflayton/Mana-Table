@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
+using Mana.Client;
 using Mana.Magic;
 
 namespace Mana.Table;
@@ -33,7 +34,9 @@ internal static partial class HeadlessPresentationSmoke
                     ).ToImmutableArray()
                 }).ToImmutableArray()
             };
-            using var run = new Runner(profile, "finished-retired-faces-" + viewer, before, trace, performance);
+            // Keep this actual background-poll regression on the shipping delivery mode.
+            using var run = new Runner(profile, "finished-retired-faces-" + viewer, before, trace, performance,
+                ObservationDeliveryMode.Polled);
             run.Engine.ObserveOverride = () => Task.FromResult<GameSnapshot?>(finished);
             run.Until(() => run.View.Match?.Status == "finished", "terminal-observation");
             run.Settle("terminal-result");
