@@ -10,12 +10,22 @@ on:
         description: Run the complete upstream Forge reactor
         type: boolean
         default: true
+      api_test_trial:
+        description: Compare serial API tests with two isolated JVMs using one compilation
+        type: boolean
+        default: false
+      api_trial_order:
+        description: Reverse only after the first pair passes and improves on both JDKs
+        type: choice
+        options: [serial-first, parallel-first]
+        default: serial-first
 
 permissions:
   contents: read
 
 concurrency:
-  group: java-${{ github.ref }}
+  # A manual timing experiment must never cancel required source verification.
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.api_test_trial && format('java-api-trial-{0}-{1}', github.ref, github.run_id) || format('java-{0}', github.ref) }}
   cancel-in-progress: true
 
 jobs:
@@ -24,7 +34,7 @@ jobs:
     strategy:
       matrix:
         java: ['17', '21']
-    name: Test with Java ${{ matrix.java }}
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.api_test_trial && format('API isolation trial (Java {0})', matrix.java) || format('Test with Java {0}', matrix.java) }}
     steps:
       - uses: actions/checkout@v7
 
@@ -39,20 +49,20 @@ jobs:
         run: command -v Xvfb >/dev/null 2>&1 || { sudo apt update && sudo apt install -y xvfb; }
 
       - uses: actions/setup-node@v7
-        if: matrix.java == '17'
+        if: matrix.java == '17' || github.event_name == 'workflow_dispatch' && inputs.api_test_trial
         with:
           node-version: '24'
 
       # Native packaging can start while the complete Java matrix runs.
       # Tests are still mandatory below and publication requires both Java jobs.
       - name: Produce the shared source-bound engine
-        if: matrix.java == '17'
+        if: matrix.java == '17' && !(github.event_name == 'workflow_dispatch' && inputs.api_test_trial)
         run: |
           xvfb-run -a mvn -B -ntp -pl forge-api -am package -DskipTests
           node scripts/mana-table/ci-engine-artifact.cjs create
 
       - name: Share the exact engine build
-        if: matrix.java == '17'
+        if: matrix.java == '17' && !(github.event_name == 'workflow_dispatch' && inputs.api_test_trial)
         uses: actions/upload-artifact@v7
         with:
           name: engine-${{ github.sha }}
@@ -68,14 +78,35 @@ jobs:
       - name: Run tests in virtual framebuffer
         env:
           EXTENDED: ${{ github.event_name == 'workflow_dispatch' && inputs.extended || false }}
+          API_TEST_TRIAL: ${{ github.event_name == 'workflow_dispatch' && inputs.api_test_trial || false }}
+          API_TRIAL_ORDER: ${{ inputs.api_trial_order || 'serial-first' }}
+          API_TRIAL_ID: github-${{ github.run_id }}-${{ github.run_attempt }}-jdk${{ matrix.java }}
         run: |
           export DISPLAY=":1"
           Xvfb :1 -screen 0 800x600x8 &
-          if [ "$EXTENDED" = 'true' ]; then
+          if [ "$API_TEST_TRIAL" = 'true' ]; then
+            trial_args=(-Papi-test-trial "-Dmana.tests.trialId=$API_TRIAL_ID" "-Dmana.tests.sourceRevision=$GITHUB_SHA")
+            if [ "$API_TRIAL_ORDER" = 'parallel-first' ]; then
+              trial_args+=(-Dmana.tests.firstMode=parallel -Dmana.tests.firstForkCount=2 -Dmana.tests.secondMode=serial -Dmana.tests.secondForkCount=1)
+            elif [ "$API_TRIAL_ORDER" != 'serial-first' ]; then
+              echo 'Unknown API trial order.' >&2
+              exit 1
+            fi
+            mvn -B -ntp -pl forge-api -am clean verify "${trial_args[@]}"
+          elif [ "$EXTENDED" = 'true' ]; then
             mvn -B -ntp test
           else
             mvn -B -ntp -pl forge-api -am verify
           fi
+
+      - name: Retain API trial accounting, reports and first failure evidence
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.api_test_trial
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-test-trial-java-${{ matrix.java }}-${{ github.run_attempt }}
+          path: forge-api/target/api-test-trials/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Save failed test reports and decision traces
         if: failure()

@@ -12,6 +12,19 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <properties>
+                        <property><name>listener</name><value>forge.api.ApiTestListener</value></property>
+                    </properties>
+                    <systemPropertyVariables>
+                        <mana.tests.mode>default</mana.tests.mode>
+                        <mana.tests.forkLabel>fork-${surefire.forkNumber}</mana.tests.forkLabel>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
                 <executions>
                     <execution>
@@ -91,6 +104,123 @@
         </dependency>
     </dependencies>
     <profiles>
+        <!-- Opt-in measurement only. Ordinary verification keeps one serial JVM. -->
+        <profile>
+            <id>api-test-trial</id>
+            <properties>
+                <mana.tests.trialId>trial</mana.tests.trialId>
+                <mana.tests.runRoot>${project.build.directory}/api-test-trials/${mana.tests.trialId}</mana.tests.runRoot>
+                <mana.tests.firstMode>serial</mana.tests.firstMode>
+                <mana.tests.firstForkCount>1</mana.tests.firstForkCount>
+                <mana.tests.secondMode>parallel</mana.tests.secondMode>
+                <mana.tests.secondForkCount>2</mana.tests.secondForkCount>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>default-test</id>
+                                <configuration>
+                                    <forkCount>${mana.tests.firstForkCount}</forkCount>
+                                    <reuseForks>true</reuseForks>
+                                    <reportsDirectory>${mana.tests.runRoot}/reports/${mana.tests.firstMode}/fork-${surefire.forkNumber}</reportsDirectory>
+                                    <systemPropertyVariables>
+                                        <mana.tests.mode>${mana.tests.firstMode}</mana.tests.mode>
+                                        <mana.tests.runRoot>${mana.tests.runRoot}</mana.tests.runRoot>
+                                        <mana.tests.trialId>${mana.tests.trialId}</mana.tests.trialId>
+                                        <mana.tests.sourceRevision>${mana.tests.sourceRevision}</mana.tests.sourceRevision>
+                                    </systemPropertyVariables>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>api-second-mode</id>
+                                <phase>integration-test</phase>
+                                <goals><goal>test</goal></goals>
+                                <configuration>
+                                    <forkCount>${mana.tests.secondForkCount}</forkCount>
+                                    <reuseForks>true</reuseForks>
+                                    <reportsDirectory>${mana.tests.runRoot}/reports/${mana.tests.secondMode}/fork-${surefire.forkNumber}</reportsDirectory>
+                                    <systemPropertyVariables>
+                                        <mana.tests.mode>${mana.tests.secondMode}</mana.tests.mode>
+                                        <mana.tests.runRoot>${mana.tests.runRoot}</mana.tests.runRoot>
+                                        <mana.tests.trialId>${mana.tests.trialId}</mana.tests.trialId>
+                                        <mana.tests.sourceRevision>${mana.tests.sourceRevision}</mana.tests.sourceRevision>
+                                    </systemPropertyVariables>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>prepare-api-test-trial</id>
+                                <phase>process-test-classes</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <executable>node</executable>
+                                    <arguments>
+                                        <argument>${project.basedir}/../scripts/mana-table/api-test-trial.cjs</argument><argument>prepare</argument>
+                                        <argument>--root</argument><argument>${mana.tests.runRoot}</argument>
+                                        <argument>--trial-id</argument><argument>${mana.tests.trialId}</argument>
+                                        <argument>--source-revision</argument><argument>${mana.tests.sourceRevision}</argument>
+                                        <argument>--jdk-runtime</argument><argument>${java.runtime.version}</argument>
+                                        <argument>--jdk-vendor</argument><argument>${java.vendor}</argument>
+                                        <argument>--jdk-vm</argument><argument>${java.vm.name}</argument>
+                                        <argument>--first-mode</argument><argument>${mana.tests.firstMode}</argument>
+                                        <argument>--second-mode</argument><argument>${mana.tests.secondMode}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>finish-api-first-mode</id>
+                                <phase>prepare-package</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <executable>node</executable>
+                                    <arguments>
+                                        <argument>${project.basedir}/../scripts/mana-table/api-test-trial.cjs</argument><argument>boundary</argument>
+                                        <argument>--root</argument><argument>${mana.tests.runRoot}</argument>
+                                        <argument>--mode</argument><argument>${mana.tests.firstMode}</argument>
+                                        <argument>--event</argument><argument>end</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>start-api-second-mode</id>
+                                <phase>pre-integration-test</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <executable>node</executable>
+                                    <arguments>
+                                        <argument>${project.basedir}/../scripts/mana-table/api-test-trial.cjs</argument><argument>boundary</argument>
+                                        <argument>--root</argument><argument>${mana.tests.runRoot}</argument>
+                                        <argument>--mode</argument><argument>${mana.tests.secondMode}</argument>
+                                        <argument>--event</argument><argument>start</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>compare-api-test-trial</id>
+                                <phase>verify</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <executable>node</executable>
+                                    <arguments>
+                                        <argument>${project.basedir}/../scripts/mana-table/api-test-trial.cjs</argument><argument>finish</argument>
+                                        <argument>--root</argument><argument>${mana.tests.runRoot}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <profile>
             <id>api-example</id>
             <build>

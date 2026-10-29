@@ -21,7 +21,7 @@ public class LobbyTempoTest {
     @Test(timeOut = 45000) public void timingRequiresHostSetupAuthorityAndExplicitReadyConsentFromEveryHuman() {
         Path resources = Path.of("../forge-gui/res");
         if (StaticData.instance() == null) EngineResources.load(resources);
-        var host = new SyncLobby(resources, Path.of("target/tempo-lobby"));
+        var host = new SyncLobby(resources, ApiTestWorkspace.profile("tempo-lobby"));
         SyncLobby guest = null;
         try {
             var original = object(host.host("Commander", 2, false, "local")); guest = host.localGuest();

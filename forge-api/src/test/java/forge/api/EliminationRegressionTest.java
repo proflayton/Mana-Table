@@ -113,8 +113,7 @@ public class EliminationRegressionTest {
 
         EliminationGame(String name, boolean allHuman) throws Exception {
             if (StaticData.instance() == null) EngineResources.load(RESOURCES);
-            evidence = Path.of("target/rules-regressions", name);
-            Files.createDirectories(evidence);
+            evidence = ApiTestWorkspace.evidence(name);
             sourceDeck = new Deck("Phage elimination source deck");
             sourceDeck.getMain().add(StaticData.instance().getCommonCards().getCard("Swamp"), 99);
             sourceDeck.getOrCreate(DeckSection.Commander).add(StaticData.instance().getCommonCards().getCard("Phage the Untouchable"));

@@ -36,8 +36,7 @@ public class ActionOccurrenceCoherenceTest {
         var players = java.util.stream.IntStream.range(0, 4)
                 .mapToObj(index -> MatchTable.automated(deck, "Commander", "Policy " + index)).toList();
         players.get(actor).addExtraCardsOnBattlefield(List.of(StaticData.instance().getCommonCards().getCard("Plains")));
-        Path evidence = Path.of("target/rules-regressions/commander-payment-occurrence-" + actor);
-        Files.createDirectories(evidence);
+        Path evidence = ApiTestWorkspace.evidence("commander-payment-occurrence-" + actor);
         try (var table = new MatchTable("Commander", players, resources, evidence, true)) {
             table.start(); var answered = new HashMap<Integer, String>();
             var main = until(table, answered, actor, input -> input.seat() == actor && priority(input)
@@ -95,7 +94,7 @@ public class ActionOccurrenceCoherenceTest {
         // of opening shuffle. The test stops before cleanup/discard or deckout.
         players.get(0).setStartingHand(98);
         players.get(0).addExtraCardsOnBattlefield(List.of(StaticData.instance().getCommonCards().getCard("Plains")));
-        Path evidence = Path.of("target/rules-regressions/warp-occurrence-coherence"); Files.createDirectories(evidence);
+        Path evidence = ApiTestWorkspace.evidence("warp-occurrence-coherence");
         try (var table = new MatchTable("Commander", players, resources, evidence, true)) {
             table.start(); var answered = new HashMap<Integer, String>();
             var main = until(table, answered, 0, input -> input.seat() == 0 && priority(input)

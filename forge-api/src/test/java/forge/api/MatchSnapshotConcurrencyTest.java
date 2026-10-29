@@ -30,7 +30,7 @@ public class MatchSnapshotConcurrencyTest {
         var resume = new CountDownLatch(1);
         var paused = new AtomicBoolean(true);
         var workers = Executors.newFixedThreadPool(2);
-        try (var table = new MatchTable("Constructed", seats, resources, Path.of("target/snapshot-regression"))) {
+        try (var table = new MatchTable("Constructed", seats, resources, ApiTestWorkspace.profile("snapshot-regression"))) {
             // No game thread is started: control a real projection boundary directly.
             table.publish();
             var retained = table.seat(0).state();

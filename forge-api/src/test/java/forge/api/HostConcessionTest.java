@@ -201,7 +201,7 @@ public class HostConcessionTest {
     @Test(timeOut = 90000)
     public void concedingTheHostSeatKeepsItsGuestAndTwoPolicySeatsPlaying() throws Exception {
         if (StaticData.instance() == null) EngineResources.load(RESOURCES);
-        Path evidenceRoot = Path.of("target/rules-regressions"); Files.createDirectories(evidenceRoot);
+        Path evidenceRoot = ApiTestWorkspace.evidence("host-concession-network");
         Path evidence = Files.createTempDirectory(evidenceRoot, "host-concession-network-");
         var cards = CardCatalog.fromDatabases(StaticData.instance().getAvailableDatabases().values());
         var documents = new DeckDocumentSession(cards, evidence.resolve("saved"), new DeckPlaytests(evidence.resolve("saved")));
