@@ -7,12 +7,16 @@ using Mana.Forge;
 
 namespace Mana.Table;
 
-// Four distinct legal Commander decks, four complete policies and no scripted
-// seat answers. Spectator JSONL is public; per-seat decision evidence is separate.
+// The bounded canonical prefix uses four distinct legal commander/basic decks:
+// resource starvation and competing spells cannot gate a required commander
+// continuation. The separate natural campaign retains normal singleton decks.
+// No scripted seat answers. Spectator JSONL and private evidence stay separate.
 internal static class AiWholeSeatEngineCheck
 {
     private const int TraceFormatVersion = 1;
     private const long PolicySeed = 261026;
+    private static readonly ImmutableHashSet<string> CanonicalCommanders = ImmutableHashSet.Create(StringComparer.Ordinal,
+        "Goreclaw, Terror of Qal Sisma", "Torbran, Thane of Red Fell", "Rhys the Redeemed", "Toothy, Imaginary Friend", "Pir, Imaginative Rascal");
     internal static async Task RunStandaloneAsync(ForgePaths paths, bool complete = false)
     {
         Directory.CreateDirectory(paths.Profile);
@@ -29,7 +33,10 @@ internal static class AiWholeSeatEngineCheck
         await engine.EnableAutomatedSeatsAsync();
         var rhys = await Save("AI canonical token economy", "Deck\n99 Forest\nCommander\n1 Rhys the Redeemed");
         var partners = await Save("AI canonical partner counters", "Deck\n49 Forest\n49 Island\nCommander\n1 Toothy, Imaginary Friend\n1 Pir, Imaginative Rascal");
-        ImmutableArray<string> decks = ["green", "red", "deck:" + rhys, "deck:" + partners];
+        var goreclaw = complete ? null : await Save("AI canonical green commander", "Deck\n99 Forest\nCommander\n1 Goreclaw, Terror of Qal Sisma");
+        var torbran = complete ? null : await Save("AI canonical red commander", "Deck\n99 Mountain\nCommander\n1 Torbran, Thane of Red Fell");
+        ImmutableArray<string> decks = [complete ? "green" : "deck:" + goreclaw,
+            complete ? "red" : "deck:" + torbran, "deck:" + rhys, "deck:" + partners];
         await using var host = new AiTableHost(engine, _ => new CasualCommanderPolicy(), PolicySeed,
             new(TimeSpan.FromSeconds(3), 2048));
         GameSnapshot? state = await engine.StartSimulationAsync(decks);
@@ -49,16 +56,17 @@ internal static class AiWholeSeatEngineCheck
         try {
             // Specific draw/counter rules are mandatory controlled goldens. A
             // stochastic opponent can legally remove Toothy before its next draw.
-            while (complete || !(lastTurn >= 20 && tokenSeen && combatSeen && developed.Count == 4 && commanders.Count >= 3)) {
+            while (complete || !(lastTurn >= 20 && tokenSeen && combatSeen && developed.Count == 4 && commanders.Count == 4)) {
                 if (elapsed.Elapsed > TimeSpan.FromSeconds(complete ? 120 : 60) || complete && lastTurn > 160)
-                    throw new TimeoutException(complete ? "The four-policy game did not finish within two minutes and 160 turns." : "The four-policy canonical game did not reach paid token creation and combat.");
+                    throw new TimeoutException(complete ? "The four-policy game did not finish within two minutes and 160 turns."
+                        : $"The four-policy canonical prefix exceeded 60 seconds: turn={lastTurn}, developed={developed.Count}/4, commanders={commanders.Count}/4, paidTokens={tokenSeen}, combat={combatSeen}.");
                 state = await engine.ObserveSimulationAsync();
                 if (state?.Status == "error") throw new InvalidOperationException(state.Error ?? "The simulation stopped with a rules error.");
                 if (state?.Status == "finished") {
                     completed = true;
                     lastTurn = state.Turn;
                     await WriteCheckpoint(state);
-                    if (complete || tokenSeen && combatSeen && developed.Count == 4 && commanders.Count >= 3
+                    if (complete || tokenSeen && combatSeen && developed.Count == 4 && commanders.Count == 4
                         && !string.IsNullOrWhiteSpace(state.Result)) break;
                     throw new InvalidOperationException("The simulation ended before its required continuations.");
                 }
@@ -83,7 +91,8 @@ internal static class AiWholeSeatEngineCheck
                     foreach (var player in state.Players) {
                         if (player.Zone("Command").Cards.Any(card => card.Name == "Rhys the Redeemed")) rhysSeat = player.Id;
                         if (player.Zone("Battlefield").Cards.Any(card => card.Type.Contains("Land", StringComparison.Ordinal))) developed.Add(player.Id);
-                        if (player.Zone("Battlefield").Cards.Any(card => card.Type.Contains("Legendary", StringComparison.Ordinal) && card.Power != null)) commanders.Add(player.Id);
+                        if (player.Zone("Battlefield").Cards.Any(card => card.Power != null && (complete
+                                ? card.Type.Contains("Legendary", StringComparison.Ordinal) : CanonicalCommanders.Contains(card.Name)))) commanders.Add(player.Id);
                         tokenSeen |= player.Id == rhysSeat && player.Zone("Battlefield").Cards.Any(card => card.GamePieceType == "token");
                         counterSeen |= player.Zone("Battlefield").Cards.Any(card => card.Name == "Toothy, Imaginary Friend" && card.Counters.Values.Any(value => value > 0));
                     }
@@ -106,8 +115,8 @@ internal static class AiWholeSeatEngineCheck
                 "Four distinct Commander decks run through independent whole-seat policies with public-only spectator state and no shared private hands");
             check(comparedCheckpoints > 0, "Same-revision spectator and seat projections agree on public life, mana, zone counts and battlefield state; agreement alone does not establish rules correctness");
             check(divergentCheckpoints == 0, "Every compared public projection matches at its exact board revision; see the preserved first mismatch artifact if this fails");
-            check(developed.Count == 4 && (complete || commanders.Count >= 3 && (lastTurn >= 20 || completed)),
-                "Every bot develops its battlefield and multiple command-zone commanders resolve through five rounds or a verified natural game outcome");
+            check(developed.Count == 4 && (complete || commanders.Count == 4 && (lastTurn >= 20 || completed)),
+                "Every bot develops its battlefield and all four canonical seats resolve a commander through five rounds or a verified natural game outcome");
             check(spellSeen && (complete || tokenSeen) && accepted.Values.Any(record => record.Command == nameof(UseOfferedAction))
                     && accepted.Values.Any(record => record.Task == AiTask.Payment
                         && record.Command is nameof(SpendPoolMana) or nameof(PayMana) or nameof(UseOfferedAction)),
@@ -126,6 +135,7 @@ internal static class AiWholeSeatEngineCheck
                 JsonSerializer.Serialize(lastBotObservations, new JsonSerializerOptions { WriteIndented = true }));
             File.WriteAllText(Path.Combine(profile, "whole-seat-ai.json"), JsonSerializer.Serialize(new {
                 formatVersion = TraceFormatVersion, policySeed = PolicySeed, engineRandomnessControlled = false,
+                canonicalDecksControlled = !complete, requiredCommanderSeats = complete ? (int?)null : 4,
                 failure, elapsedMilliseconds = elapsed.Elapsed.TotalMilliseconds, steps, lastTurn, decks, seenBots, developed, commanders,
                 complete, completed, result = state?.Result, tokenSeen, combatSeen, counterSeen, privateIsolation, comparedCheckpoints, divergentCheckpoints, observedTasks, accepted = accepted.Values, histories = host.Histories
             }, new JsonSerializerOptions { WriteIndented = true }));
