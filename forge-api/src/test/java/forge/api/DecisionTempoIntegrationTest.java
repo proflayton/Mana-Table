@@ -49,10 +49,12 @@ public class DecisionTempoIntegrationTest {
             var reading = JSON.toJsonTree(seat.state()).getAsJsonObject();
             assertEquals(text(reading.getAsJsonObject("prompt"), "id"), text(input.prompt(), "id"));
             assertFalse(seat.eliminated());
-            time.set(90_000); game.table.tickTempo(); assertTrue(seat.eliminated());
+            time.set(90_000); game.table.tickTempo();
+            assertThrows(IllegalArgumentException.class, () -> seat.action(request(input, Map.of("action", "ok"))));
+            awaitConcession(game.table, seat);
+            assertTrue(seat.eliminated());
             var shared = JSON.toJsonTree(game.table.seat(1).state()).getAsJsonObject().getAsJsonObject("tempo");
             assertEquals(shared.getAsJsonArray("timedOutPlayers").toString(), "[0]", "The settled reason is public to the table");
-            assertThrows(IllegalArgumentException.class, () -> seat.action(request(input, Map.of("action", "ok"))));
         }
     }
     @Test(timeOut = 45000) public void nestedAbilityChoiceRunsWhileTheInputWorkerWaitsAndCancellationCannotRefundTheParent() throws Exception {
