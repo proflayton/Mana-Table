@@ -71,6 +71,41 @@ internal static class DecisionWorkspaceLayout
             At(800 - width / 2, 470 - height / 2),
             At(anchor.Center.X - width / 2, anchor.Bottom + 16)
         };
+        int? NearestGap(int low, int high, int extent, int target, IEnumerable<(int Start, int End)> blocked)
+        {
+            int cursor = low, distance = int.MaxValue; int? best = null;
+            void Consider(int end)
+            {
+                if (end - cursor < extent) return;
+                int origin = Math.Clamp(target - extent / 2, cursor, end - extent);
+                int nextDistance = Math.Abs(origin + extent / 2 - target);
+                if (nextDistance < distance) { best = origin; distance = nextDistance; }
+            }
+            foreach (var interval in blocked.OrderBy(interval => interval.Start)) {
+                if (interval.End <= cursor) continue;
+                Consider(Math.Min(high, interval.Start));
+                cursor = Math.Max(cursor, interval.End);
+                if (cursor > high) break;
+            }
+            Consider(high); return best;
+        }
+        // Project only the five preferred rows/columns onto their nearest clear
+        // gap. Dense obstacle edges cannot prune these intervals from the grid.
+        var solids = occupied.Prepend(anchor).Where(area => area.Width > 0 && area.Height > 0).ToArray();
+        preferred = preferred.Select(candidate => {
+            int? x = NearestGap(viewport.Left, viewport.Right, width, anchor.Center.X, solids
+                .Where(area => area.Top < candidate.Bottom + 8 && area.Bottom > candidate.Top - 8)
+                .Select(area => (area.Left - 8, area.Right + 8)));
+            int? y = NearestGap(viewport.Top, viewport.Bottom, height, anchor.Center.Y, solids
+                .Where(area => area.Left < candidate.Right + 8 && area.Right > candidate.Left - 8)
+                .Select(area => (area.Top - 8, area.Bottom + 8)));
+            var horizontal = x is { } left ? At(left, candidate.Y) : candidate;
+            var vertical = y is { } top ? At(candidate.X, top) : candidate;
+            if (x == null) return y == null ? candidate : vertical;
+            if (y == null) return horizontal;
+            return Vector2.DistanceSquared(horizontal.Center.ToVector2(), anchor.Center.ToVector2())
+                <= Vector2.DistanceSquared(vertical.Center.ToVector2(), anchor.Center.ToVector2()) ? horizontal : vertical;
+        }).ToArray();
         // A fully clear region beats any collision; distance and source/overlap
         // costs still choose between clear regions or the crowded fallback.
         var best = preferred[0]; long bestOverlap = long.MaxValue; bool bestClear = false;
@@ -84,22 +119,13 @@ internal static class DecisionWorkspaceLayout
         // candidates. Bound both axes so a crowded table does not multiply all
         // permanent positions every frame. The fallback stays fully reachable
         // when physical space requires some overlap; names never get squeezed.
-        IEnumerable<int> NearbyEdges(IEnumerable<int> edges, int extent, int center)
-        {
-            const int budget = 24;
-            var ordered = edges.Distinct().OrderBy(edge => Math.Abs(edge + extent / 2 - center)).ToArray();
-            // Dense edges on one side must not consume the other side's gap
-            // candidates. Return unused quota to the original nearest order.
-            var selected = ordered.Where(edge => edge + extent / 2 < center).Take(budget / 2)
-                .Concat(ordered.Where(edge => edge + extent / 2 >= center).Take(budget / 2))
-                .Concat(ordered).Distinct().Take(budget).ToHashSet();
-            return ordered.Where(selected.Contains);
-        }
-        var xs = NearbyEdges(occupied.SelectMany(obstacle => new[] { obstacle.Right + 8, obstacle.Left - width - 8 })
-            .Append(viewport.Left).Append(viewport.Right - width).Select(x => At(x, 64).X), width, anchor.Center.X)
+        var xs = occupied.SelectMany(obstacle => new[] { obstacle.Right + 8, obstacle.Left - width - 8 })
+            .Append(viewport.Left).Append(viewport.Right - width).Select(x => At(x, 64).X).Distinct()
+            .OrderBy(x => Math.Abs(x + width / 2 - anchor.Center.X)).Take(24)
             .Append(viewport.Left).Append(viewport.Right - width).Distinct().ToArray();
-        var ys = NearbyEdges(occupied.SelectMany(obstacle => new[] { obstacle.Bottom + 8, obstacle.Top - height - 8 })
-            .Append(viewport.Top).Append(viewport.Bottom - height).Select(y => At(20, y).Y), height, anchor.Center.Y)
+        var ys = occupied.SelectMany(obstacle => new[] { obstacle.Bottom + 8, obstacle.Top - height - 8 })
+            .Append(viewport.Top).Append(viewport.Bottom - height).Select(y => At(20, y).Y).Distinct()
+            .OrderBy(y => Math.Abs(y + height / 2 - anchor.Center.Y)).Take(24)
             .Append(viewport.Top).Append(viewport.Bottom - height).Distinct().ToArray();
         foreach (int x in xs) foreach (int y in ys) {
             var candidate = At(x, y); long overlap = Overlap(candidate, bestClear, bestOverlap, out bool clear);

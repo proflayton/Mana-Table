@@ -1577,6 +1577,14 @@ remote clear regions. The existing 24-edge budget now represents both sides of
 each anchor axis, returning unused quota to the original nearest order; the
 same-seat proximity assertion remains unchanged. This is a bounded heuristic,
 not a guarantee of a nearby clear region on every table.
+The next actual run passed the C1 journey but that balanced quota still omitted
+a nearby gap for the pinned C4 reader. The quota change was removed. Each of the
+five existing preferred rectangles now projects onto the nearest clear interval
+on its row and column, choosing the closer clear result or retaining the original
+when neither exists. The original nearest 24 edges and viewport endpoints remain
+the fallback: at most 681 scored candidate slots, with up to ten additional
+interval sorts/scans and five projection comparisons. Both saved scenes have
+separate offline predictions; these do not establish a passing candidate run.
 Failure-only mana-runner snapshots preserve the current frame, measured text,
 resource parts, physical and control reservations, and final hit intent types
 without composing a new frame or invoking actions. Later cases and physical
