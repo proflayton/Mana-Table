@@ -91,7 +91,7 @@ internal sealed partial class TableApplication
             var plan = ManaCostPresentation.CanPlanNominal(preview) ? PlanMana("preview:" + state.Id + ":" + state.Revision + ":" + sourceActions.View.Generation + ":" + offered.Id,
                 preview.Funding, parts, ManaCostPresentation.ReservedSource(preview.Costs, CardViews.Identity(source))) : null;
             string advice = symbols.Contains("{X}") ? "Choose X when casting"
-                : plan?.Status == ManaFundingStatus.Funded ? "Suggested taps · estimate"
+                : plan?.Status == ManaFundingStatus.Funded ? "Suggested mana · estimate"
                 : "Check sources manually";
             manaJourney = new(source, false, parts, preview.Funding, plan, advice) {
                 Caption = offered.Kind == "cast" ? "SPELL COST" : "MANA COST"
@@ -142,6 +142,7 @@ internal sealed partial class TableApplication
         };
         var payer = journey.Payment ? match.Players.FirstOrDefault(player => player.Id == payerId) ?? viewer : viewer;
         DrawManaSourceWitness(journey, payer);
+        DrawManaPoolWitness(journey, viewer);
         string identity = CardViews.Identity(journey.Source);
         var matching = matchPresentation.Cards.Cards.Where(card => CardViews.Same(card.Card, journey.Source)).ToArray();
         var entry = journey.Payment ? matching.LastOrDefault(card => card.Id == "payment:" + match.Decision!.Id)

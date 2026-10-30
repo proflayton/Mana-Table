@@ -203,6 +203,21 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
         };
     }
 
+    private static GameSnapshot FloatingPoolPreview()
+    {
+        var original = ManaPaymentScenario.Snapshot(0);
+        var island = original.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == ManaPaymentScenario.Dual) with {
+            VisualId = ManaPaymentScenario.Island, CombatId = ManaPaymentScenario.Island, Name = "Island", ArtName = "Island",
+            Type = "Basic Land — Island", Text = "{T}: Add {U}."
+        };
+        return original with { DecisionOwnerId = 0, PriorityPlayerId = 0,
+            Players = original.Players.Select(player => player.Id != 0 ? player : player with {
+                Mana = ImmutableDictionary<string, int>.Empty.Add("C", 4),
+                Zones = player.Zones.Select(zone => zone.Name == "Battlefield" ? zone with { Count = 1, Cards = [island] } : zone).ToImmutableArray()
+            }).ToImmutableArray()
+        };
+    }
+
     private static void CheckCountedSourceOutputs(string profile, Action<bool, string> check)
     {
         var metrics = new Mana.Renderer.TextMetrics();
@@ -328,6 +343,53 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
                 }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
             });
         }
+        bool previewKnown = true;
+        Step(() => {
+            engine.SourceActionRead = (game, decision, key) => {
+                var state = engine.State;
+                var funding = new ManaFundingContext(SemanticKnowledge.Known, state.Viewer!.Mana,
+                    [new(ManaPaymentScenario.Island, [new([new(ActionCostKind.Tap, 1, true, "")],
+                        new(SemanticKnowledge.Known, [new(ImmutableDictionary<string, int>.Empty.Add("U", 1))]), SemanticKnowledge.Known)])]);
+                return new(game, decision, key, ManaPaymentScenario.Spell,
+                    [new("floating-preview-cast", "cast", "Cast Faerie Vandal") { CostPreview = previewKnown
+                        ? new([new(ActionCostKind.Mana, 1, false, "") { ManaSymbols = ["{U}"] }], SemanticKnowledge.Known, funding) : null }]) {
+                    Revision = state.Revision
+                };
+            };
+            engine.Present(FloatingPoolPreview()); view.Accept(engine.State); Move(new(12, 65));
+        });
+        Wait(() => view.Loaded && view.Match?.Revision == engine.State.Revision
+            && view.DisplayedPose(ManaPaymentScenario.Spell) != null
+            && view.Match.Viewer!.Zones.SelectMany(zone => zone.Cards).All(card => view.Art(card) != null),
+            () => MoveCard(ManaPaymentScenario.Spell));
+        bool PoolAccent() => view.ManaPoolBadge(0)?.Parts.SingleOrDefault(part => part.Key == "C") is { } pip
+            && view.Frame!.Drawing!.Commands.OfType<Mana.Renderer.DrawCommand.Ring>().Count(ring => ring.Radius == 14 && ring.Width == 1
+                && ring.Center == new Vector2(pip.Bounds.X + 11, pip.Bounds.Center.Y)) == 1;
+        Wait(() => view.ManaJourney is { Payment: false, FundingStatus: ManaFundingStatus.Funded }, () => {
+            Check(PoolAccent() && view.ManaSources is [{ SourceId: ManaPaymentScenario.Island }]
+                && view.ManaPoolBadge(0) is { Total: 4, Parts: [{ Key: "C", Amount: "4" }] }
+                && view.Hits.Single(hit => hit.Id == "mana-pool:0:C").Intent is MatchIntent.OpenManaPool
+                && engine.Replies.Count == 0 && CaptionClearsSeat(),
+                "The loaded physical hand preview connects its funded {1}{U} cost to the actual C4 pip and Island while preserving the full count, inspection gesture and portrait controls");
+            Capture("pool-preview-funded");
+            File.WriteAllText(Path.Combine(view.Profile, "pool-preview-funded.json"), JsonSerializer.Serialize(new {
+                state = view.Match, frame = view.Frame!.Observe(), view.ManaJourney, sources = view.ManaSources,
+                pool = view.ManaPoolBadge(0), viewport, view.TextScale, replies = engine.Replies.Count,
+                scope = "Actual GPU hand-hover preview with loaded Magic card artwork; nominal witness, no payment or human UX approval."
+            }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+            previewKnown = false; engine.Present(engine.State); view.Accept(engine.State);
+        });
+        Wait(() => view.Match?.Revision == engine.State.Revision && view.ManaJourney is { FundingStatus: null, Advice: "Choose an action" }, () => {
+            Check(!PoolAccent() && view.ManaSources.Count == 0 && view.ManaPoolBadge(0) is { Total: 4, Parts: [{ Amount: "4" }] }
+                && view.Hits.Single(hit => hit.Id == "mana-pool:0:C").Intent is MatchIntent.OpenManaPool && engine.Replies.Count == 0,
+                "Replacing that exact cost preview with an unreported cost withdraws the pool and source estimates while preserving the actual C4 count and read-only pip action");
+            Capture("pool-preview-withdrawn"); MoveHit("mana-pool:0:C");
+        }); Click();
+        Wait(() => view.ManaPoolDetail != null, () => {
+            Check(view.ManaPoolDetail is { Total: 4 } && engine.Replies.Count == 0,
+                "The physical portrait pip still opens its full actual-pool inspection after preview withdrawal without submitting a game command");
+            Capture("pool-preview-inspect");
+        });
         Step(() => { finished = true; Save(null); window.Exit(); });
     }
 
