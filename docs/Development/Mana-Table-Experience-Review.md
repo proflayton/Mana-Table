@@ -6,6 +6,49 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Floating mana in a hand-cost preview: 30 October 2026
+
+**Source candidate; human review pending.** In MTG Arena, mousing over a spell
+or ability previews the mana sources Auto Tap would use, as documented in
+[Wizards' 2025.53.0 patch notes](https://mtgarena-support.wizards.com/hc/en-us/articles/43247211334292-Patch-Notes-2025-53-0).
+The player's supplied Arena screenshots place actual floating pips and their
+quantities beside the portrait. Neither reference establishes Arena's precise
+floating-pip accent. Connecting those existing pips to our nominal source
+suggestion is a Mana Table adaptation; its bounded planner is not Arena Auto Tap.
+
+The player's intent is to read which existing resources could cover the actual
+hand card. The source is that visible hand occurrence and its current cost
+offer; the targets are the actual source cards and the portrait pips named by
+the same funded nominal plan. Hovering the card reads the cost and quietly
+accents only those own pool colors, alongside the existing source illumination.
+For {1}{U}, C4 floating plus an Island can suggest one colorless and one blue,
+while the pip still displays the full actual 4. Clicking that pip keeps its
+read-only pool inspection. Reading submits no engine command; dragging or the
+current cast action still begins casting and retires this estimate. The actual
+payment's remaining bill and Spend permissions then govern the pips.
+
+The accent follows the exact current source-query binding and is recomposed
+after this frame's pool geometry. Missing, unsupported, ambiguous, stale or
+unfunded previews withhold it; a failed bounded search does not prove the spell
+unpayable. Priority and decision ownership must explicitly name the local viewer.
+A changed source, prompt, viewer, pool or priority owner retires the
+old cue. Review the controlled C4/Island hover, preview withdrawal and existing
+pool inspection in the normal mana-payment smoke at 1000 x 740 and a larger
+window, including 130% text. Automation and agent captures do not supply human
+acceptance of how clearly the estimate reads.
+
+The bill also reserves current displayed battlefield faces when its funding
+metadata disappears. A physical card keeps its space independently of whether
+the planner knows how it could contribute. The existing bounded workspace
+search uses the measured bill width and nearby source/obstacle positions; on a
+fully packed table its existing fallback still cannot guarantee a clear region.
+The sparse C4/Island withdrawal review must keep the printed-cost bill separate
+from that Island, the actual pool and portrait controls at both text scales.
+
+Separate future audit: the existing read-only mana inspector is a broad generic
+modal. Its game-feel redesign remains pending; this cue does not redesign or
+establish acceptance of that inspection surface.
+
 ## Floating mana during payment: 30 October 2026
 
 The player's supplied MTG Arena mana references place floating mana symbols and

@@ -1527,8 +1527,25 @@ edge and then fully offscreen, keeping the observation and command count intact.
 The same window smoke captures each counted source at both text scales after its
 ordinary pointer journey, with loaded card artwork, fitted-surface and physical
 window images, and matching state/frame observations in `counted-outputs-*`.
+Each of those windows then hovers an actual {1}{U} hand card with C4 floating
+and one Island, captures the quiet pool/source estimate, replaces the exact
+offer with an unreported cost and captures withdrawal, then opens the unchanged
+read-only pool. Captures are `pool-preview-funded`, `pool-preview-withdrawn` and
+`pool-preview-inspect`; the funded frame also records state and composition in
+`pool-preview-funded.json`. The full actual C4 quantity and inspection intent
+must survive all three gestures with zero commands. The headless journey
+enables the shared table and compares the unknown-cost bill with actual current
+frame card bounds. Each GPU withdrawal checkpoint makes the same independent
+viewport/face assertion and records `pool-preview-withdrawn.json`, preserving
+physical card space even after funding metadata disappears. These sparse-frame
+checks do not claim overlap-free placement on a fully packed battlefield.
+Further headless coverage checks pool-only and mixed witnesses, repeated steps of one color,
+unrelated positive colors/seats, ambiguous modes, missing/unsupported/X/bounded
+previews, stale revisions, hidden sources, empty pools and foreign/unknown priority.
+Beginning the current cast must retire the estimate; the actual payment's
+existing Spend ring and permission then take over with its full actual count.
 The normal native UI inventory runs this window journey at 1000 x 740, including
-both text scales. Only after the ordinary journey and both counted-source
+both text scales. Only after the ordinary journey and both counted-source/preview
 windows finish does the producer write `mana-payment-ci-results.json`: one
 ordinary array receipt containing their actual checks. The shared UI runner
 keeps its existing result contract; wrapped per-window diagnostics remain

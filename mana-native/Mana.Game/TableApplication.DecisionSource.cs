@@ -57,7 +57,9 @@ internal sealed partial class TableApplication
             occupied.Add(new(left, top, (int)controls.Max(point => point.X) + 22 - left,
                 (int)controls.Max(point => point.Y) + 22 - top));
             if (reserveBattlefield) occupied.AddRange(tableScene.BattlefieldDrawOrder.Select(card => {
-                var protectedBounds = boardView.Apply(card.Pose).Bounds; protectedBounds.Inflate(8, 8); return protectedBounds;
+                var protectedBounds = matchPresentation.Cards.TryGetPose(card.Id, out var displayed)
+                    ? displayed.Bounds : boardView.Apply(card.Pose).Bounds;
+                protectedBounds.Inflate(8, 8); return protectedBounds;
             }));
             occupied.AddRange(state.Players.Select(player => PlanManaHalo(player, SeatDisplayIndex(player.Id)).Bounds).Where(bounds => !bounds.IsEmpty));
             if (TableStudyEnabled && matchPresentation.Cards.Pinned is { Zone: "Battlefield" } && anchor.Width >= 300)

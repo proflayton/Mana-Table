@@ -1,5 +1,6 @@
 using Mana.Contracts;
 using Mana.Magic;
+using Mana.Planning;
 using Mana.Renderer;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
@@ -192,6 +193,23 @@ internal sealed partial class TableApplication
             && (state.DecisionOwnerId == null || state.DecisionOwnerId == state.ViewerId)
             && player.Id == state.ViewerId && payment.PayerId == player.Id && payment.UsablePoolManaColors != null;
         return (payer && usable, payer && usable ? "Spend" : known ? "Not usable for the remaining cost" : "");
+    }
+
+    private void DrawManaPoolWitness(ManaJourneyRead journey, Player viewer)
+    {
+        if (journey.Payment || journey.Plan is not { Status: ManaFundingStatus.Funded } plan
+            || dragging || busy || session.NeedsRecovery || viewer.Eliminated
+            || match is not { Decision.Payload: PriorityPayload } state
+            || state.DecisionOwnerId != viewer.Id || state.PriorityPlayerId != viewer.Id
+            || !viewer.Zone("Hand").Cards.Any(card => !card.FaceDown && card.Key == journey.Source.Key && CardViews.Same(card, journey.Source))
+            || !ReaderActionsMatch(journey.Source) || !manaPoolBadges.TryGetValue(viewer.Id, out var pool)) return;
+        // Portrait pips were composed before this frame's source read. Add only
+        // its exact nominal pool witness now, keeping actual counts and hits.
+        foreach (var steps in plan.Steps.OfType<ManaFundingStep.Pool>().Where(step => step.Amount > 0).GroupBy(step => step.Color)) {
+            if (viewer.Mana.GetValueOrDefault(steps.Key) < steps.Sum(step => (long)step.Amount)
+                || pool.Parts.FirstOrDefault(part => part.Key == steps.Key) is not { } pip) continue;
+            canvas.Ring(new(pip.Bounds.X + 11, pip.Bounds.Center.Y), 14, new Color(135, 221, 194) * .65f, 1);
+        }
     }
 
     private void DrawManaPoolHover()
