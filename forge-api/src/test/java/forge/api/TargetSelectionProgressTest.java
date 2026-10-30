@@ -57,6 +57,7 @@ public class TargetSelectionProgressTest {
             var actual = (InputSelectTargets)controller.getInputQueue().getInput();
             String episode = episode(table);
             assertFalse(episode.isEmpty());
+            assertPublishedTargets(table, selection, episode);
             var first = cards(selection.state(), 1).get(0);
             answer(table, answered, selection, Map.of("action", "card", "key", text(first, "key")));
             var chosen = until(table, answered, 0, input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputSelectTargets")
@@ -69,6 +70,7 @@ public class TargetSelectionProgressTest {
             assertTrue(selected.get("selectable").getAsBoolean(), "A selected target remains available for undo");
             assertFalse(sibling.get("selectable").getAsBoolean(), "The existing different-controller commitment check excludes an unproductive sibling");
             assertTrue(cards(chosen.state(), 2).get(0).get("selectable").getAsBoolean(), "Another opponent's target remains productive");
+            assertPublishedTargets(table, chosen, episode);
             Files.writeString(evidence.resolve("private-productive-other-observation.json"), JSON.toJson(table.automatedSeat(0).automatedObservation()));
             table.game.getAction().withState(() -> {
                 var before = JSON.toJsonTree(table.automatedSeat(0).automatedObservation());
@@ -86,13 +88,16 @@ public class TargetSelectionProgressTest {
                     && cards(input.state(), 1).stream().noneMatch(card -> card.get("highlighted").getAsBoolean()));
             assertTrue(cards(undone.state(), 1).stream().allMatch(card -> card.get("selectable").getAsBoolean()));
             assertEquals(episode(table), episode);
+            assertPublishedTargets(table, undone, episode);
             var again = queuedTargetChange(table, answered, undone, controller);
             assertEquals(episode(table), episode);
+            assertPublishedTargets(table, again, episode);
             answer(table, answered, again, Map.of("action", "card", "key", text(cards(again.state(), 2).get(0), "key")));
             var subset = until(table, answered, 0, input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputSelectTargets")
                     && cards(input.state(), 2).get(0).get("highlighted").getAsBoolean());
             assertEquals(subset.prompt().get("max").getAsInt(), 3); assertTrue(subset.prompt().get("okEnabled").getAsBoolean());
             assertEquals(episode(table), episode);
+            assertPublishedTargets(table, subset, episode);
             assertTrue(subset.state().getAsJsonArray("players").asList().stream().map(value -> value.getAsJsonObject())
                     .flatMap(player -> zone(player, "Battlefield").getAsJsonArray("cards").asList().stream())
                     .map(value -> value.getAsJsonObject()).noneMatch(card -> card.get("selectable").getAsBoolean() && !card.get("highlighted").getAsBoolean()));
@@ -112,6 +117,37 @@ public class TargetSelectionProgressTest {
     }
     private static String episode(MatchTable table) {
         return text(JSON.toJsonTree(table.automatedSeat(0).automatedObservation()).getAsJsonObject().getAsJsonObject("semantics"), "episodeId");
+    }
+    private static void assertPublishedTargets(MatchTable table, Input current, String episode) {
+        HeadlessPlatform.query(table, () -> {
+            var session = table.automatedSeat(0);
+            var observation = JSON.toJsonTree(session.automatedObservation()).getAsJsonObject();
+            var state = observation.getAsJsonObject("state");
+            assertEquals(state, JSON.toJsonTree(session.state()), "Human-compatible state and AI facts share the current publication");
+            var prompt = state.getAsJsonObject("prompt");
+            assertEquals(prompt.get("id"), current.prompt().get("id"));
+            assertEquals(prompt.get("min"), current.prompt().get("min"));
+            assertEquals(prompt.get("max"), current.prompt().get("max"));
+            var semantics = observation.getAsJsonObject("semantics");
+            assertEquals(text(semantics, "episodeId"), episode);
+            assertEquals(text(semantics, "intent"), "Exile");
+            assertTrue(semantics.getAsJsonArray("selectedPlayers").isEmpty());
+            int active = semantics.get("operationId").getAsInt();
+            var operation = semantics.getAsJsonObject("operationGraph").getAsJsonArray("operations").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(value -> value.get("id").getAsInt() == active).findFirst().orElseThrow();
+            var actualRecipients = operation.getAsJsonObject("recipients").getAsJsonArray("entities").asList().stream()
+                    .map(value -> text(value.getAsJsonObject(), "cardId")).filter(value -> !value.isEmpty())
+                    .collect(java.util.stream.Collectors.toSet());
+            var highlighted = state.getAsJsonArray("players").asList().stream().map(value -> value.getAsJsonObject())
+                    .flatMap(player -> zone(player, "Battlefield").getAsJsonArray("cards").asList().stream())
+                    .map(value -> value.getAsJsonObject()).filter(card -> card.get("highlighted").getAsBoolean())
+                    .map(card -> text(card, "combatId")).collect(java.util.stream.Collectors.toSet());
+            assertEquals(actualRecipients, highlighted,
+                    "Each refreshed captured graph follows the exact current selected-card highlights, including deselection and queued rejection");
+            assertEquals(JSON.toJsonTree(session.automatedObservation()), observation,
+                    "The same-cut target read cannot mutate the graph, source, choices or highlights");
+            return null;
+        });
     }
     private static Input queuedTargetChange(MatchTable table, Map<Integer, String> answered, Input current,
                                              PlayerControllerHuman controller) throws Exception {

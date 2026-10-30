@@ -43,6 +43,7 @@ public final class InputSelectTargets extends InputSyncronizedBase {
 
     public boolean hasCancelled() { return bCancel; }
     public boolean hasPressedOk() { return bOk; }
+    public boolean isTargetSelectionActive() { return !isFinished(); }
 
     /** The exact ability whose current targets this input owns. */
     public SpellAbility getSpellAbility() { return sa; }
@@ -351,7 +352,7 @@ public final class InputSelectTargets extends InputSyncronizedBase {
 
     /** The same choices accepted by a player click, including deselecting a target. */
     public boolean canSelectPlayer(final Player player) {
-        return targets.contains(player) || playerTargetProblem(player) == null;
+        return isTargetSelectionActive() && player != null && (targets.contains(player) || playerTargetProblem(player) == null);
     }
 
     @Override
@@ -447,6 +448,7 @@ public final class InputSelectTargets extends InputSyncronizedBase {
     }
 
     private void done() {
+        setFinished();
         final List<GameEntityView> views = new ArrayList<>(targets.size());
         for (final GameEntity ge : targets) views.add(GameEntityView.get(ge));
         getController().getGui().setHighlighted(views, false);
@@ -461,6 +463,9 @@ public final class InputSelectTargets extends InputSyncronizedBase {
 
     @Override
     protected void onStop() {
+        // Cleanup can publish before InputSyncronizedBase.stop schedules its
+        // finished callback. Retire this same flag before that publication.
+        setFinished();
         getController().getGui().clearSelectables();
         super.onStop();
     }

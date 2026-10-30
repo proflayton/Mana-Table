@@ -24,6 +24,8 @@ serialized finite runner owns dispatch and reconciliation. Source preferences do
 not grant priority yields, persist across matches or authorize arbitrary choices.
 The game projects those preferences onto the actual source and reader controls.
 
+## Published decision facts
+
 Current payment facts have one publication owner. After all seats reconcile
 visibility, `MatchSession` captures a per-seat copied payment value for the exact
 decision, board cohort and source-action version. Human prompt fields, AI payment
@@ -37,6 +39,17 @@ funding witness; command admission and execution still validate live rules state
 The existing table board generation fences publication too: a superseded outer
 publication cannot overwrite a newer seat capture or finish an older spectator
 cohort. Rejecting a superseded AI read preserves the newer published capture.
+
+Target selection follows the same publication boundary. The exact target input's
+limits, legal player choices, staged selections, effect context and private AI
+semantics are copied together after visibility reconciliation. Observation reads
+that capture rather than reconstructing a second target decision from live rules.
+Selecting or deselecting on the same input replaces its capture while retaining
+the input episode. Card offers remain part of that published board; command
+admission and queued execution recheck current target legality. A projected
+operation graph describes an effect, not permission to select its future targets.
+Decision classification uses the existing effect and literal-amount classifiers
+without repeating a source action's cost, affordability and funding analysis.
 
 ## AI policy boundary
 

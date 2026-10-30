@@ -19,6 +19,15 @@ final class DecisionSemantics {
     }
 
     static Map<String, Object> describe(Input input, Game game, Player viewer, Function<CardView, String> identity) {
+        return describe(input, game, viewer, identity, null);
+    }
+
+    static Map<String, Object> describeTargets(SpellAbility ability, Game game, Player viewer, Function<CardView, String> identity) {
+        return describe(null, game, viewer, identity, ability);
+    }
+
+    private static Map<String, Object> describe(Input input, Game game, Player viewer,
+                                               Function<CardView, String> identity, SpellAbility capturedAbility) {
         if (input instanceof InputSelectCardsForConvokeOrImprovise)
             return Map.of("intent", "Tap", "selectionIsCost", true);
         var paying = game.costPaymentStack.peek();
@@ -36,7 +45,7 @@ final class DecisionSemantics {
             }
             return result;
         }
-        SpellAbility ability = input instanceof InputSelectTargets targets ? targets.getSpellAbility()
+        SpellAbility ability = capturedAbility != null ? capturedAbility : input instanceof InputSelectTargets targets ? targets.getSpellAbility()
                 : input instanceof InputSelectManyBase<?> many ? many.getSpellAbility()
                 : input instanceof InputConfirm confirm ? confirm.getSpellAbility() : null;
         return describeAbility(ability, viewer, identity);
@@ -52,9 +61,8 @@ final class DecisionSemantics {
             result.put("intent", "Unknown");
             return result;
         }
-        var facts = ActionSemantics.describeAbility(ability, viewer, identity);
         result.putAll(ActionOperationProjection.describeDecision(ability, viewer, identity));
-        result.put("intent", switch (String.valueOf(facts.get("effect"))) {
+        result.put("intent", switch (ActionSemantics.effect(ability)) {
             case "Permanent", "Land", "Mana", "Draw", "LifeGain", "Token" -> "Benefit";
             case "Damage" -> "Damage";
             case "Destroy" -> "Destroy";
@@ -70,7 +78,7 @@ final class DecisionSemantics {
             case "Discard" -> "Discard";
             default -> "Unknown";
         });
-        result.put("amount", facts.get("effectAmount"));
+        result.put("amount", ActionSemantics.effectAmount(ability));
         result.put("counterType", ability.getParamOrDefault("CounterType", ""));
         result.put("selectionIsCost", false);
         return result;

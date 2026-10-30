@@ -1141,6 +1141,14 @@ actual Convoke assignment and its zero-assignment route to ordinary mana.
 `TargetCounterExperienceTest` checks actual Battlegrowth additions, Thrull
 Parasite removal and Proliferate subset/empty choices. These distinguish
 already-working engine effects from input-publication and native routing faults.
+`TargetPublicationTest` checks that published target facts stay readable without
+reopening the live ability, retain literal-only AI amounts separately from
+supported captured damage amounts, and survive a newer reentrant publication.
+It also checks that stopping the real target input cannot reopen it during GUI
+cleanup. `TargetSelectionProgressTest` follows a real multi-opponent selection
+through select, deselect and queued rejection, comparing the human board and AI
+facts at each committed publication. Existing player-target, counter-target,
+pending-effect and occurrence tests retain legality and visibility coverage.
 The existing native headless presentation lane also follows an inspected source
 through activation/payment and a keyless historical source face: missing physical
 candidate permission stays read-only; an authoritative candidate enables only
