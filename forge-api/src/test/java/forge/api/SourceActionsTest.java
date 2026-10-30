@@ -308,6 +308,127 @@ public class SourceActionsTest {
         }
     }
 
+    @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void resolvingReadsRetainTheCommittedBoardAndItsActualTriggerFramesUntilTheNextPublication() throws Exception {
+        try (var game = RulesScenario.automated("resolving-trigger-publication", Map.of(0,
+                java.util.Collections.nCopies(5, "Island")), "Mulldrifter", "Rhys the Redeemed")) {
+            var input = main(game);
+            for (int amount = 1; amount <= 5; amount++) {
+                var island = zone(viewer(input.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
+                        .map(value -> value.getAsJsonObject()).filter(value -> text(value, "name").equals("Island")
+                                && !value.get("tapped").getAsBoolean()).findFirst().orElseThrow();
+                var mana = query(game, input, island);
+                var action = mana.getAsJsonArray("actions").get(0).getAsJsonObject();
+                assertEquals(text(action, "kind"), "activate");
+                assertTrue(game.answer(input, invoke(mana, action)));
+                final int expected = amount;
+                input = game.until(next -> next.seat() == 0 && priority(next)
+                        && viewer(next.state()).getAsJsonObject("mana").get("U").getAsInt() == expected);
+            }
+            var spells = query(game, input, card(input.state(), "Hand", "Mulldrifter"));
+            var normal = spells.getAsJsonArray("actions").asList().stream().map(value -> value.getAsJsonObject())
+                    .filter(action -> text(action, "kind").equals("cast") && action.getAsJsonObject("costPreview")
+                            .getAsJsonArray("costs").asList().stream().map(value -> value.getAsJsonObject())
+                            .anyMatch(cost -> text(cost, "kind").equals("Mana") && cost.get("amount").getAsInt() == 4)).toList();
+            assertEquals(normal.size(), 1, "Choose Mulldrifter's normal four-generic cost rather than its two-generic Evoke cost");
+            assertEquals(normal.get(0).getAsJsonObject("costPreview").getAsJsonArray("costs").get(0).getAsJsonObject()
+                    .getAsJsonArray("manaSymbols"), JSON.toJsonTree(List.of("{U}")));
+            assertTrue(game.answer(input, invoke(spells, normal.get(0))));
+            finishTargetedCast(game, "Mulldrifter", null, "U");
+            var trigger = game.until(next -> next.seat() == 0 && priority(next) && next.state().getAsJsonArray("stack").size() == 1
+                    && text(next.state().getAsJsonArray("stack").get(0).getAsJsonObject(), "kind").equals("triggered"));
+            var item = trigger.state().getAsJsonArray("stack").get(0).getAsJsonObject();
+            assertEquals(text(item, "name"), "Mulldrifter");
+            assertNotNull(item.getAsJsonObject("repetition"));
+            String executionId = text(item, "executionId");
+            assertFalse(executionId.isBlank());
+            int handBefore = count(viewer(trigger.state()), "Hand");
+            assertEquals(viewer(trigger.state()).getAsJsonObject("mana").get("U").getAsInt(), 0);
+            var finalPass = game.until(next -> next.seat() == 3 && priority(next)
+                    && next.state().getAsJsonArray("stack").size() == 1
+                    && text(next.state().getAsJsonArray("stack").get(0).getAsJsonObject(), "executionId").equals(executionId));
+            var nextController = (PlayerControllerHuman)game.table.game.getRegisteredPlayers().get(0).getController();
+            var originalGui = nextController.getGui();
+            var reached = new CountDownLatch(1); var release = new CountDownLatch(1);
+            var held = new AtomicInteger();
+            var trace = new ArrayList<Object>();
+            try {
+                var admitted = HeadlessPlatform.query(game.table, () -> {
+                    var before = JSON.toJsonTree(game.session(3).state()).getAsJsonObject();
+                    assertEquals(text(before.getAsJsonObject("prompt"), "id"), text(finalPass.prompt(), "id"));
+                    var oldExecution = before.getAsJsonObject("executions").getAsJsonArray("occurrences").asList().stream()
+                            .map(value -> value.getAsJsonObject()).filter(value -> text(value, "id").equals(executionId)).findFirst().orElseThrow();
+                    assertEquals(text(oldExecution, "step"), "stack");
+                    assertEquals(text(oldExecution, "sourceCardId"), text(item.getAsJsonObject("repetition"), "sourceCardId"));
+                    trace.add(Map.of("label", "before-final-pass", "state", before));
+                    nextController.setGui((IGuiGame)Proxy.newProxyInstance(IGuiGame.class.getClassLoader(), new Class<?>[] { IGuiGame.class },
+                            (proxy, method, args) -> {
+                                var actual = game.table.game.getExecutions().occurrence(executionId);
+                                if (method.getName().equals("updateButtons") && actual != null && actual.step().equals("complete")
+                                        && nextController.getInputQueue().getInput() instanceof InputPassPriority
+                                        && held.compareAndSet(0, 1)) {
+                                    reached.countDown();
+                                    await(release); // Hold the real next display before its normal publication, without owning state.
+                                }
+                                try { return method.invoke(originalGui, args); }
+                                catch (InvocationTargetException failure) { throw failure.getCause(); }
+                            }));
+                    assertTrue(game.answer(finalPass, Map.of("action", "passPriority", "expectedTask", "priority")));
+                    var busy = JSON.toJsonTree(game.session(3).state()).getAsJsonObject();
+                    assertEquals(text(busy, "status"), "resolving");
+                    assertTrue(!busy.has("prompt") || busy.get("prompt").isJsonNull());
+                    for (String field : List.of("boardRevision", "stack", "activity", "executions")) assertEquals(busy.get(field), before.get(field));
+                    trace.add(Map.of("label", "accepted-final-pass", "state", busy));
+                    return busy;
+                });
+                assertTrue(reached.await(5, TimeUnit.SECONDS), "The real trigger completes before the next input display is allowed to publish");
+                var completed = game.table.game.getAction().readState(() -> game.table.game.getExecutions().occurrence(executionId));
+                assertNotNull(completed); assertEquals(completed.step(), "complete"); assertEquals(completed.outcome(), "resolved");
+                assertTrue(game.table.game.getAction().readState(() -> game.table.game.getStack().isEmpty()));
+                var during = JSON.toJsonTree(game.session(3).state()).getAsJsonObject();
+                trace.add(Map.of("label", "rules-complete-before-publication", "state", during));
+                for (String field : List.of("boardRevision", "stack", "activity", "executions")) assertEquals(during.get(field), admitted.get(field),
+                        "A reader must retain the committed " + field + " until the next coherent board publication");
+                assertEquals(JSON.toJsonTree(game.session(3).state()), during, "Repeated observation does not advance facts or revision");
+                assertThrows(IllegalArgumentException.class, () -> game.session(3).action(request(finalPass,
+                        Map.of("action", "passPriority", "expectedTask", "priority"))));
+                release.countDown();
+                var settled = game.until(next -> next.seat() == 0 && priority(next) && next.state().getAsJsonArray("stack").isEmpty()
+                        && next.state().get("boardRevision").getAsLong() > admitted.get("boardRevision").getAsLong());
+                HeadlessPlatform.query(game.table, () -> {
+                    var views = game.table.automatedSeats().stream().map(seat -> JSON.toJsonTree(seat.state()).getAsJsonObject()).toList();
+                    long board = views.get(0).get("boardRevision").getAsLong();
+                    assertTrue(board >= settled.state().get("boardRevision").getAsLong());
+                    assertTrue(board > admitted.get("boardRevision").getAsLong());
+                    for (var view : views) {
+                        assertEquals(view.get("boardRevision").getAsLong(), board);
+                        assertTrue(view.getAsJsonArray("stack").isEmpty());
+                        var resolved = view.getAsJsonObject("executions").getAsJsonArray("occurrences").asList().stream()
+                                .map(value -> value.getAsJsonObject()).filter(value -> text(value, "id").equals(executionId)).findFirst().orElseThrow();
+                        assertEquals(text(resolved, "step"), "complete"); assertEquals(text(resolved, "outcome"), "resolved");
+                        var events = view.getAsJsonArray("activity").asList().stream().map(value -> value.getAsJsonObject())
+                                .filter(value -> text(value, "executionId").equals(executionId)).toList();
+                        assertEquals(events.stream().filter(value -> text(value, "kind").equals("draw"))
+                                .mapToInt(value -> value.get("count").getAsInt()).sum(), 2);
+                        assertTrue(events.stream().anyMatch(value -> text(value, "kind").equals("resolved")
+                                && text(value, "outcome").equals("resolved")), "The new board also publishes the trigger's actual settlement");
+                    }
+                    trace.add(Map.of("label", "published-completion", "views", views));
+                    return null;
+                });
+                assertEquals(count(viewer(settled.state()), "Hand"), handBefore + 2, "The actual Mulldrifter trigger draws its two cards");
+                assertTrue(game.answer(settled, Map.of("action", "passPriority", "expectedTask", "priority")));
+                var successor = game.until(next -> next.seat() == 1 && priority(next) && next.state().getAsJsonArray("stack").isEmpty());
+                assertNull(game.session(successor.seat()).state().get("error"));
+                assertEquals(held.get(), 1, "The input barrier never replays a pass or a display callback");
+            } finally {
+                release.countDown();
+                HeadlessPlatform.query(game.table, () -> { nextController.setGui(originalGui); return null; });
+                Files.writeString(game.evidence.resolve("resolving-trigger-publication.json"), JSON.toJson(trace));
+            }
+        }
+    }
+
     @Test(timeOut = 90000)
     public void aGlobalPublicationDuringStoppedPriorityPublishesEveryAudienceWithoutRevivingItsAuthority() throws Exception {
         try (var game = RulesScenario.automated("source-actions-stopped-priority-publication", Map.of(0, List.of("Forest")),

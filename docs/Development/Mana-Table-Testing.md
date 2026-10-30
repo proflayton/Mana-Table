@@ -353,6 +353,16 @@ revision. A separate nested source read must retain its completed domain and
 usable handles after the outer read is rejected, without requiring another
 publication. These cases use the real engine and existing state boundary;
 descriptive values never grant additional command authority.
+The resolving-publication regression casts normal Mulldrifter for its actual
+four-generic/blue cost through five Island abilities and explicit pool spending.
+After its real trigger receives the final priority pass, it holds the next GUI
+display before publication while the actual rules occurrence has completed.
+Reads must retain the committed board, activity and execution frame without
+advancing revision or reviving the answered prompt. Releasing that display must
+publish the empty stack, completed trigger, actual draw-two history and new
+priority for every audience; a fresh pass proves normal continuation. The barrier
+uses the existing state suspension and GUI callback, without authored execution
+events, explicit publication or relaxed validation.
 The Stack-source journey casts Lightning Storm from its deterministic first-main
 hand (the real opening seven plus first draw), retains its extra portrait and
 matching action domain, then activates that

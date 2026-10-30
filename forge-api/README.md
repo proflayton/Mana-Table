@@ -1043,10 +1043,21 @@ objects and logs are never exported. A `resolved` entry's typed `outcome`
 distinguishes resolution from non-resolution. Actual `draw` and `shuffle` entries
 carry positive counts and omit hidden card identities; a library-to-hand move
 without a draw event remains `moved`. Older untyped entries cannot establish an
-outcome or a true draw merely from their kind or prose. During `resolving`, polling may
-advance `revision`, turn/phase metadata, and activity while keeping the last stable
-board. `boardRevision` changes only when a fresh board snapshot is published.
-Clients can update status and history without rebuilding cards during AI work.
+outcome or a true draw merely from their kind or prose. During `resolving`, an
+accepted command can retire its prompt immediately, but the board, turn/phase,
+activity and execution facts remain paired with their last committed publication.
+Polling does not splice later event facts into that board or advance its revision.
+The next coherent input or terminal publication includes the retained event
+history and execution frame together with its new board. `boardRevision` changes
+only on a fresh board publication; tempo remains separate clock enrichment.
+Event subscribers continue collecting the bounded history independently. Legacy
+autonomous Forge AI can therefore show resolution history later, at its next
+publication; polling does not drive its rules work. An uninterrupted legacy AI
+segment can evict older ordinary entries before that boundary. The existing
+120-entry ordinary history plus latest whole counter-effect group and the
+separate 4,096-entry finite-grant retention/overflow rules are unchanged; delayed
+publication does not promise every intermediate event. Native AI seats are
+externally controlled and publish their actual input boundaries.
 
 Cast/ability and resolution entries may carry `stackId`, copied from the exact
 engine stack instance at the event boundary. This joins an announcement to its
