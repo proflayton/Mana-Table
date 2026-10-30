@@ -166,10 +166,26 @@ internal static class PendingEffectPresentationChecks
             return wire;
         }
         GameSnapshot Snapshot(int selected, bool complete = true) => ForgeSnapshotDecoder.Decode(JsonSerializer.SerializeToElement(Wire(selected, complete)))!;
-        var engine = new InteractionScenarioEngine(); engine.Present(Snapshot(0));
+        JsonNode NumberWire() {
+            var wire = Wire(0); var numberSource = wire["prompt"]!["sourceCard"]!.DeepClone();
+            wire["actionClass"] = "number";
+            wire["prompt"] = new JsonObject {
+                ["id"] = "announce-x", ["kind"] = "number", ["task"] = "number",
+                ["message"] = "Choose X for Crackle with Power", ["min"] = 0, ["max"] = int.MaxValue,
+                ["sourceCardId"] = "optional-damage-source", ["sourceControllerId"] = 0,
+                ["sourceZone"] = "Stack", ["sourceCard"] = numberSource
+            };
+            return wire;
+        }
+        var engine = new InteractionScenarioEngine();
+        engine.Present(ForgeSnapshotDecoder.Decode(JsonSerializer.SerializeToElement(NumberWire()))!);
         var commands = new ConcurrentQueue<GameCommand>();
+        var numberCommands = new ConcurrentQueue<ChooseNumber>();
         int staged = 0;
         engine.ReplyOverride = command => {
+            if (command is ChooseNumber number) {
+                numberCommands.Enqueue(number); engine.Present(Snapshot(0)); return Task.CompletedTask;
+            }
             if (command is SelectPlayer { Player: 1 }) { staged = 1 - staged; engine.Present(Snapshot(staged)); }
             else if (command is CompleteSelection)
                 engine.Present(engine.State with { Decision = null, DecisionOwnerId = null, ActionClass = "resolving" });
@@ -197,6 +213,43 @@ internal static class PendingEffectPresentationChecks
             while (!ready() && DateTime.UtcNow < deadline) { Tick(); Thread.Yield(); }
             check(ready(), description);
         }
+        bool NumberValue(string value) => frame.Hits.SingleOrDefault(hit => hit.Id == "text-input") is { } input
+            && frame.Drawing.Commands.OfType<DrawCommand.CenterText>().Any(text => text.Value == value && input.Bounds.Contains(text.Bounds));
+        void SaveNumber(string checkpoint) {
+            var input = frame.Hits.SingleOrDefault(hit => hit.Id == "text-input");
+            File.WriteAllText(Path.Combine(directory, checkpoint + ".json"), JsonSerializer.Serialize(new {
+                wire = NumberWire(), state = view.Match, frame = frame.Observe(),
+                input = frame.Drawing.Commands.OfType<DrawCommand.CenterText>()
+                    .Where(text => input != null && input.Bounds.Contains(text.Bounds)).Select(text => new { text.Value, text.Bounds }).ToArray(),
+                hits = frame.Hits.Select(hit => new { hit.Id, hit.Scope, hit.Bounds, intent = hit.Intent.ToString(),
+                    centerHit = view.HitAt(hit.Bounds.Center)?.Id }).ToArray(),
+                numberCommands = numberCommands.ToArray(), targetCommands = commands.Select(command => command.GetType().Name).ToArray()
+            }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+        }
+        Tick(); Tick();
+        SaveNumber("number-initial-before-assert");
+        check(view.Match!.Decision?.Payload is NumberPayload { Initial.Length: 0, Range: { Min: 0, Max: int.MaxValue } }
+                && NumberValue("Click here and type...") && numberCommands.IsEmpty && commands.IsEmpty,
+            "The Crackle announcement wire shape opens a fresh empty number entry with its engine-owned zero-to-int-max range and no submitted answer");
+        string numberGame = view.Match!.Id, numberDecision = view.Match.Decision!.Id;
+        var more = frame.Hits.Single(hit => hit.Id == "number-more");
+        Click(more.Bounds.Center);
+        for (int repeat = 0; repeat < 8; repeat++) Tick();
+        SaveNumber("number-first-step-before-assert");
+        check(NumberValue("1") && view.Match!.Decision!.Id == numberDecision && numberCommands.IsEmpty && commands.IsEmpty,
+            "The first actual plus gesture on an empty X entry displays one without submitting a number or selecting a target");
+        Click(frame.Hits.Single(hit => hit.Id == "number-more").Bounds.Center);
+        for (int repeat = 0; repeat < 8; repeat++) Tick();
+        SaveNumber("number-second-step-before-assert");
+        check(NumberValue("2") && view.Match!.Decision!.Id == numberDecision && numberCommands.IsEmpty && commands.IsEmpty,
+            "A second plus gesture displays two through unchanged observations while the explicit number confirmation remains separate");
+        Click(frame.Hits.Single(hit => hit.Id == "value").Bounds.Center);
+        Await(() => !view.Busy && numberCommands.Count == 1 && view.Match!.Decision?.Payload is TargetSelectionPayload,
+            "The separate current numeric confirmation reaches the existing target choice through the normal reply and observation path");
+        SaveNumber("number-completed-before-assert");
+        check(numberCommands.Single() is { Value: 2 } reply && reply.GameId == numberGame && reply.DecisionId == numberDecision
+                && commands.IsEmpty,
+            "Only explicit confirmation sends exactly one ChooseNumber two for the current announcement before the unchanged target journey");
         Tick(); Tick();
         File.WriteAllText(Path.Combine(directory, "initial-before-assert.json"), JsonSerializer.Serialize(new {
             wire = Wire(0), state = view.Match, frame = frame.Observe(),
