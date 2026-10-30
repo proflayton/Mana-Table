@@ -1698,6 +1698,16 @@ checks the same decision cut, immutable retained values and private audiences.
 The first unchanged-production cast passed. This is a bounded reproduction,
 not proof of the cause of a secondhand player report.
 
+Additional real casts cover maximum-target auto-completion for two players or
+a player plus a creature, eleven manual mana activations, and partial manual
+payment followed by a still-payable Auto remainder. A retained failing cast
+exposed stale Auto availability after Shivan Reef's colorless activation left
+two red symbols but only one red source; one offered Auto attempt left payment
+unfinished. The regressions require the existing `InputPayMana` owner to refresh
+its current Auto plan after payment changes, withholding an unpayable offer while
+preserving payable remainders. This reproduces a concrete payment failure path;
+the original player's precise cause remains unconfirmed.
+
 `PendingEffectPresentationChecks` follows a real exposed player click through
 an authored current prompt refresh and a separate confirmation-center click.
 Its test-only baseline `962af4eb` fed the new optional progress field through the
