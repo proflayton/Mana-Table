@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using Mana.Client;
 using Mana.Scenarios;
 
 namespace Mana.Table;
@@ -7,6 +8,7 @@ namespace Mana.Table;
 // interfaces nor owns the provider's lifetime.
 public sealed record TableServices(IEngineCatalog Catalog, ITableSetup Tables, IMatchConnection Match, Func<Task> Initialize)
 {
+    public Action<ClientDiagnostic>? Diagnostics { get; init; }
     public ISourceActions? SourceActions { get; init; }
     public ICardPrintings? Printings { get; init; }
     public IDeckTokens? Tokens { get; init; }

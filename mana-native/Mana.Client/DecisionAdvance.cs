@@ -5,9 +5,16 @@ namespace Mana.Client;
 
 /// <summary>Bounded continuation through current authorized decisions on the same
 /// seat connection. Intent policies own consent; rules still run in the engine.</summary>
-public sealed class DecisionAdvance(IMatchConnection connection)
+public sealed class DecisionAdvance
 {
+    private readonly IMatchConnection connection;
+    private readonly ClientCommandDiagnostics? diagnostics;
+    private long diagnosticEpoch;
     private string? automaticSubmitted, quietSubmitted;
+    public DecisionAdvance(IMatchConnection connection) => this.connection = connection;
+    internal DecisionAdvance(IMatchConnection connection, ClientCommandDiagnostics diagnostics)
+        : this(connection) => this.diagnostics = diagnostics;
+    internal void SetDiagnosticEpoch(long epoch) => diagnosticEpoch = epoch;
 
     public Task<GameSnapshot?> RunAsync(GameSnapshot initial, Func<GameSnapshot, bool> canPass,
         Func<GameSnapshot, GameSnapshot, bool> shouldPresent, CancellationToken cancellation = default)
@@ -37,15 +44,18 @@ public sealed class DecisionAdvance(IMatchConnection connection)
                 if (UndoFacts.RestoredSince(initial, state)) { intent.Stop(); return state; }
                 if (intent.IsPaused || !intent.CanContinue(state) || shouldPresent(initial, state)) return state;
                 var command = intent.NextCommand(state);
+                ClientDiagnosticAttempt? attempt = null;
                 if (!intent.IsActive) return state;
                 if (command != null) {
                     if (!GameCommandPermissions.Allows(state, command)) { intent.Stop(); return state; }
                     if (cancellation.IsCancellationRequested) return state;
-                    await connection.ExecuteAsync(command);
+                    attempt = diagnostics?.Begin(state, command, ClientDiagnosticOrigin.Finite, diagnosticEpoch);
+                    if (attempt == null) await connection.ExecuteAsync(command);
+                    else await diagnostics!.ExecuteAsync(connection, command, attempt);
                     intent.Submitted(state, command); passes++;
                 }
                 // Cancellation never hides the result of a pass already sent.
-                var next = await connection.ObserveAsync();
+                var next = diagnostics == null ? await connection.ObserveAsync() : await diagnostics.ObserveAsync(connection, attempt);
                 if (next == null) { intent.Stop(); return null; }
                 if (next.Id != state.Id) { intent.Stop(); observed?.Invoke(next); return next; }
                 if (next.Revision >= state.Revision) {
@@ -85,6 +95,7 @@ public sealed class DecisionAdvance(IMatchConnection connection)
             string scope = state.Id + ":" + state.Decision?.Id;
             string? submitted = quietToken == null ? automaticSubmitted : quietSubmitted;
             bool waiting = state.Decision == null || submitted == scope;
+            ClientDiagnosticAttempt? attempt = null;
             if (!waiting) {
                 if (state.Decision is not { } decision || quietToken == null && !policy(state)) return state;
                 // The two intents share transport, never authority. A token
@@ -93,12 +104,14 @@ public sealed class DecisionAdvance(IMatchConnection connection)
                     : new PassForNow(state.Id, decision.Id, quietToken);
                 if (!GameCommandPermissions.Allows(state, command)) return state;
                 if (cancellation.IsCancellationRequested) return state;
-                await connection.ExecuteAsync(command);
+                attempt = diagnostics?.Begin(state, command, quietToken == null ? ClientDiagnosticOrigin.Automatic : ClientDiagnosticOrigin.Quiet, diagnosticEpoch);
+                if (attempt == null) await connection.ExecuteAsync(command);
+                else await diagnostics!.ExecuteAsync(connection, command, attempt);
                 if (quietToken == null) automaticSubmitted = scope; else quietSubmitted = scope;
                 submitted = scope; passes++;
             }
             // Always reconcile an already submitted command, even if Hold was pressed in flight.
-            var next = await connection.ObserveAsync();
+            var next = diagnostics == null ? await connection.ObserveAsync() : await diagnostics.ObserveAsync(connection, attempt);
             if (next == null) return null;
             if (next.Id != state.Id) return next;
             if (next.Revision >= state.Revision) { UndoFacts.ValidateProgress(state, next); state = next; }

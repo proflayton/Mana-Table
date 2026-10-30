@@ -16,6 +16,36 @@ journals; they do not alter shipping rules state or release gate identities.
 Normal accounting and controlled serial/parallel equivalence trials have
 different proof scopes. See the [testing guide](Mana-Table-Testing.md#api-test-process-ownership-ci-and-timing-trial).
 
+## Local command diagnostics
+
+The source implementation after 0.2.290 adds viewer-local command diagnostics at
+`Mana.Client/ClientSession`. Its optional typed callback describes admission,
+dispatch, provider return, observation return and actual replica acceptance as
+different stages. A provider return is not proof that a command applied, and an
+accepted publication does not certify that a spell resolved. Definite dispatch
+rejection stays distinct from an unavailable observation or uncertain outcome.
+Accepted publications have no invented command correlation; stale returned
+observations cannot supply new decision facts or borrow the new session's scope.
+
+Ordinary `Submit` and `DecisionAdvance` emit only bounded summaries. Connection,
+lobby and internal finite-revocation cleanup operations are outside this journal.
+The current disclosed decision portrait may contribute its name, including a local
+player's chosen hand card. Face-down portraits, other audiences' decisions, zone
+collections, raw snapshots, live command handles, chat and free text are excluded.
+Identical polling does not append another accepted-publication record. Diagnostic
+subscribers cannot change command admission, recovery, replay or presentation.
+
+Shipping composition supplies a `ClientDiagnosticJournal` callback through
+`TableServices`; neither the renderer nor the rules provider owns file storage.
+Its bounded queue keeps writes off the game loop. The callback may run on the
+session owner or transport worker and must be fast and thread-safe. A single
+file worker owns build headers, loss accounting, prompt buffer flushing and
+bounded rotation. Logging failures are contained. The journal is operational
+evidence, not a durable match
+save, rules replay, public activity stream or automatic upload. See
+[local command diagnostics](Mana-Table-Testing.md#local-command-diagnostics) for
+limits and tests.
+
 ## Optional payment consent
 
 Optional human payment preferences belong to `Mana.Client/ClientSession`, not
