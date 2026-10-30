@@ -21,6 +21,15 @@ node scripts/mana-table/check-docs.cjs
 - `wait-release-ci.cjs` requires the current master source's completed Java and
   shared-tooling checks, plus applicable iOS evidence, before native publication.
   It performs read-only API calls and never merges, reruns or publishes.
+- `release-assets.cjs stage|promote` verifies exact source/run identities and
+  artifact digests before uploading a private draft or publishing it. Its JSON
+  metadata GETs reuse `github-read.cjs`: they request cache revalidation, share
+  one 90-second deadline per lookup and make at most three attempts under the
+  existing transient HTTP/network and rate-limit policy. A successful HTTP
+  response with wrong provenance still fails immediately. Provenance failures
+  report only bounded expected/observed identity fields; remote error bodies
+  remain unread. Raw sidecar bytes retain their digest-checked command path.
+  Writes and uploads are one-shot commands and are never retried by this client.
 - `check-docs.cjs` checks maintained local links/headings without network access.
   It does not validate feature claims or the user experience.
 
