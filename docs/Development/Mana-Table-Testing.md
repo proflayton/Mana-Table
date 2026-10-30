@@ -1571,6 +1571,12 @@ check. A separately authorized, instrumented focused run recorded the actual
 Colorless token overlapping the local turn arc by 13 x 21 logical pixels; full
 names/counts and passive hit isolation passed. The generic bounded workspace
 now prefers any fully clear candidate before its existing collision fallback.
+A first full run of that correction exposed a second placement failure: the
+independently capped nearest axes omitted a clear nearby edge, leaving only
+remote clear regions. The existing 24-edge budget now represents both sides of
+each anchor axis, returning unused quota to the original nearest order; the
+same-seat proximity assertion remains unchanged. This is a bounded heuristic,
+not a guarantee of a nearby clear region on every table.
 Failure-only mana-runner snapshots preserve the current frame, measured text,
 resource parts, physical and control reservations, and final hit intent types
 without composing a new frame or invoking actions. Later cases and physical

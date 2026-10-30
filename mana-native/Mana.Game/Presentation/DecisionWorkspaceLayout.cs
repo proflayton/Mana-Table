@@ -84,13 +84,22 @@ internal static class DecisionWorkspaceLayout
         // candidates. Bound both axes so a crowded table does not multiply all
         // permanent positions every frame. The fallback stays fully reachable
         // when physical space requires some overlap; names never get squeezed.
-        var xs = occupied.SelectMany(obstacle => new[] { obstacle.Right + 8, obstacle.Left - width - 8 })
-            .Append(viewport.Left).Append(viewport.Right - width).Select(x => At(x, 64).X).Distinct()
-            .OrderBy(x => Math.Abs(x + width / 2 - anchor.Center.X)).Take(24)
+        IEnumerable<int> NearbyEdges(IEnumerable<int> edges, int extent, int center)
+        {
+            const int budget = 24;
+            var ordered = edges.Distinct().OrderBy(edge => Math.Abs(edge + extent / 2 - center)).ToArray();
+            // Dense edges on one side must not consume the other side's gap
+            // candidates. Return unused quota to the original nearest order.
+            var selected = ordered.Where(edge => edge + extent / 2 < center).Take(budget / 2)
+                .Concat(ordered.Where(edge => edge + extent / 2 >= center).Take(budget / 2))
+                .Concat(ordered).Distinct().Take(budget).ToHashSet();
+            return ordered.Where(selected.Contains);
+        }
+        var xs = NearbyEdges(occupied.SelectMany(obstacle => new[] { obstacle.Right + 8, obstacle.Left - width - 8 })
+            .Append(viewport.Left).Append(viewport.Right - width).Select(x => At(x, 64).X), width, anchor.Center.X)
             .Append(viewport.Left).Append(viewport.Right - width).Distinct().ToArray();
-        var ys = occupied.SelectMany(obstacle => new[] { obstacle.Bottom + 8, obstacle.Top - height - 8 })
-            .Append(viewport.Top).Append(viewport.Bottom - height).Select(y => At(20, y).Y).Distinct()
-            .OrderBy(y => Math.Abs(y + height / 2 - anchor.Center.Y)).Take(24)
+        var ys = NearbyEdges(occupied.SelectMany(obstacle => new[] { obstacle.Bottom + 8, obstacle.Top - height - 8 })
+            .Append(viewport.Top).Append(viewport.Bottom - height).Select(y => At(20, y).Y), height, anchor.Center.Y)
             .Append(viewport.Top).Append(viewport.Bottom - height).Distinct().ToArray();
         foreach (int x in xs) foreach (int y in ys) {
             var candidate = At(x, y); long overlap = Overlap(candidate, bestClear, bestOverlap, out bool clear);
