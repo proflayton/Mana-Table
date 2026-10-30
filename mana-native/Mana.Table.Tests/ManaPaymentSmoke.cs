@@ -826,13 +826,44 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
         using var stream = File.Create(Path.Combine(view.Profile, name + ".png")); window.Surface.SaveAsPng(stream, window.Surface.Width, window.Surface.Height);
         window.CaptureWindow(Path.Combine(view.Profile, name + "-window.png"));
     }
-    private void Save(string? error) => File.WriteAllText(Path.Combine(view.Profile, "mana-payment-results.json"), JsonSerializer.Serialize(new {
-        passed = error == null, error, checks, observations, currentManaJourney = view.ManaJourney, currentManaColors = view.ManaColors.ToArray(),
-        replies = recordedReplies.Concat(lab.ManaPaymentReplies).Select(reply => new {
-            kind = reply.GetType().Name, payload = JsonSerializer.SerializeToElement(reply, reply.GetType())
-        }).ToArray(),
-        scope = "Production pointer/composition journey over authored payment checkpoints, not a rules simulation or human UX approval.", realArtwork = window != null
-    }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+    private void Save(string? error)
+    {
+        object? failure = null;
+        if (error != null) {
+            var frame = view.Frame;
+            var metrics = new Mana.Renderer.TextMetrics();
+            failure = new {
+                lab.StageIndex, view.Now, view.Overlay, view.Busy, view.NeedsRecovery, viewport, state = view.Match,
+                frame = frame?.Observe(), currentManaJourney = view.ManaJourney,
+                detail = view.ManaPoolDetail is { } detail ? detail with { Parts = detail.Parts.ToArray() } : null,
+                sources = view.ManaSources.ToArray(), colors = view.ManaColors.ToArray(),
+                cards = frame?.Cards.Select(card => new { card.Id, card.Zone, card.Card.Key, card.Focused,
+                    bounds = card.Display.Bounds, card.ReaderTarget }).ToArray(),
+                hits = view.Hits.Select(hit => new { hit.Id, hit.Bounds, intent = hit.Intent.GetType().Name }).ToArray(),
+                texts = frame is { } currentFrame ? currentFrame.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Text>().Select(text => {
+                    var measured = metrics.TextSize(text.Value ?? "", text.Size, text.Width, text.MaxLines, text.Bold, currentFrame.Drawing.TextScale);
+                    return new { text.Value, text.X, text.Y, text.Width, text.Size, text.MaxLines, text.Bold,
+                        currentFrame.Drawing.TextScale, bounds = new Microsoft.Xna.Framework.Rectangle(text.X, text.Y, measured.X, measured.Y),
+                        naturalWidth = metrics.TextWidth(text.Value ?? "", text.Size, text.Bold, currentFrame.Drawing.TextScale) };
+                }).ToArray() : null,
+                seats = frame?.Scene is { } scene && view.Match is { } state ? state.Players.Select(player => {
+                    var hero = scene.Seat(player.Id).Geometry.Hero;
+                    return new { player.Id, hero, portrait = new Microsoft.Xna.Framework.Rectangle((int)hero.X - 58, (int)hero.Y - 58, 116, 116),
+                        controls = Mana.Renderer.TurnControlLayout.For(hero).Reservations.ToArray(),
+                        badge = view.ManaPoolBadge(player.Id) is { } badge ? badge with { Parts = badge.Parts.ToArray() } : null };
+                }).ToArray() : null,
+                poolReadingClearsContext = PoolReadingClearsContext(view), poolReadingIsolated = PoolReadingIsolated(view)
+            };
+        }
+        File.WriteAllText(Path.Combine(view.Profile, "mana-payment-results.json"), JsonSerializer.Serialize(new {
+            passed = error == null, error, checks, observations, currentManaJourney = view.ManaJourney, currentManaColors = view.ManaColors.ToArray(),
+            failure,
+            replies = recordedReplies.Concat(lab.ManaPaymentReplies).Select(reply => new {
+                kind = reply.GetType().Name, payload = JsonSerializer.SerializeToElement(reply, reply.GetType())
+            }).ToArray(),
+            scope = "Production pointer/composition journey over authored payment checkpoints, not a rules simulation or human UX approval.", realArtwork = window != null
+        }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+    }
     private void Advance()
     {
         if (view.Error.Length > 0) throw new InvalidOperationException(view.Error);
