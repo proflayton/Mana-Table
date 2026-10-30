@@ -65,8 +65,11 @@ cached/random stream barriers, permission restoration and unsupported routes.
 exercise normal Commander actions, actual local/TCP seats, stale offers, source
 queries, clocks, competing departures and post-inverse publication failure.
 The local test captures one committed audience cohort and requires exact revision
-and restoration-marker equality across it. Sequential TCP responses can straddle
-a publication. The transport test deliberately retains a real pre-Undo response
+and restoration-marker equality across it. Rejected-command before/after checks
+run together in the existing input query under the state/table boundary. They
+compare the entire snapshot, including both publication revisions, so an unrelated
+queued publication cannot interleave the comparison. Sequential TCP responses can
+straddle a publication. The transport test deliberately retains a real pre-Undo response
 beside a real restored response, then waits by observation only for both seats
 to receive the original restoration receipt. Every frame is checked immediately
 against its own marker, tap and mana state; convergence never answers priority
