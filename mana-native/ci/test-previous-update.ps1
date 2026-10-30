@@ -60,6 +60,70 @@ $copy={param($Url,$Path,$Maximum)
     [IO.File]::WriteAllBytes($Path,$script:fixturePayloadBytes)
 }
 $checks=0
+# Exercise the actual request objects, without reading a real credential or
+# sending any request. An API credential must never follow public asset URLs.
+$fixtureToken='fixture.read-only-token'
+$request=New-ManaPreviousUpdateRequest -Url $api -Token $fixtureToken
+try {
+    $authorization=$request.Headers.Authorization
+    if($request.Method.Method -cne 'GET' -or $request.RequestUri.OriginalString -cne $api -or $null -ne $request.Content -or $request.Headers.UserAgent.Count -eq 0 -or
+        $null -eq $authorization -or $authorization.Scheme -cne 'Bearer' -or $authorization.Parameter -cne $fixtureToken){throw 'The exact releases lookup must be a scoped authenticated GET without a body.'}
+} finally {$request.Dispose()}
+$checks++
+$publicUrls=@(($rootUrl+'update-manifest.json'),($rootUrl+'installer-manifest.json'),($rootUrl+$fullName))
+foreach($publicUrl in $publicUrls){
+    foreach($credential in @($fixtureToken,$null)){
+        $request=New-ManaPreviousUpdateRequest -Url $publicUrl -Token $credential
+        try {
+            if($request.Method.Method -cne 'GET' -or $request.RequestUri.OriginalString -cne $publicUrl -or $null -ne $request.Content -or
+                $null -ne $request.Headers.Authorization){throw 'A canonical public release asset must remain an anonymous GET, including after an authenticated lookup.'}
+        } finally {$request.Dispose()}
+        $checks++
+    }
+}
+function Expect-RequestRejection([string]$Url,[AllowNull()][string]$Token,[switch]$Credential){
+    $unexpected=$null; $rejected=$false; $message=''
+    try {$unexpected=New-ManaPreviousUpdateRequest -Url $Url -Token $Token}
+    catch {$rejected=$true; $message=$_.Exception.Message}
+    finally {if($null -ne $unexpected){$unexpected.Dispose()}}
+    if(-not $rejected){throw 'An unsupported previous-update request or credential was accepted.'}
+    if($Credential -and $message -notmatch 'GH_TOKEN'){throw 'A missing or malformed credential must produce an explicit GH_TOKEN diagnostic.'}
+    if(-not [string]::IsNullOrWhiteSpace($Token) -and $message.Contains($Token)){throw 'A rejected credential appeared in the diagnostic.'}
+}
+foreach($credential in @($null,'','   ','fixture token',"fixture`r`nInjected: value",'fixture!token')){
+    Expect-RequestRejection -Url $api -Token $credential -Credential
+    $checks++
+}
+foreach($unsupportedUrl in @(
+    'https://untrusted.invalid/repos/proflayton/Mana-Table/releases?per_page=30',
+    'https://api.github.com.untrusted.invalid/repos/proflayton/Mana-Table/releases?per_page=30',
+    'https://api.github.com/repos/else/Other/releases?per_page=30',
+    'https://api.github.com/repos/Proflayton/Mana-Table/releases?per_page=30',
+    'https://api.github.com/repos/proflayton/Mana-Table/releases/?per_page=30',
+    'https://api.github.com/repos/proflayton/Mana-Table/releases?per_page=10',
+    'https://api.github.com/repos/proflayton/Mana-Table/releases?per_page=30&page=1',
+    'https://api.github.com/repos/proflayton/Mana-Table/releases?per_page=%33%30',
+    'http://api.github.com/repos/proflayton/Mana-Table/releases?per_page=30',
+    'https://api.github.com:443/repos/proflayton/Mana-Table/releases?per_page=30',
+    'https://api.github.com@untrusted.invalid/repos/proflayton/Mana-Table/releases?per_page=30',
+    ($api+'#fragment'),
+    ($api+"`n"),
+    ($rootUrl.Replace('github.com','untrusted.invalid')+'update-manifest.json'),
+    ($rootUrl.Replace('github.com','github.com.untrusted.invalid')+'update-manifest.json'),
+    ($rootUrl.Replace('proflayton/Mana-Table','else/Other')+'update-manifest.json'),
+    ($rootUrl.Replace('https://','http://')+'update-manifest.json'),
+    ($rootUrl.Replace('https://github.com','https://user@github.com')+'update-manifest.json'),
+    ($rootUrl.Replace('github.com/','github.com:443/')+'update-manifest.json'),
+    ($rootUrl+'update-manifest.json?download=1'),
+    ($rootUrl+'update-manifest.json#fragment'),
+    ($rootUrl+"update-manifest.json`n"),
+    ($rootUrl+'ManaTable-0.2.122-win-x64-full.nupkg'),
+    ($rootUrl+'../update-manifest.json'),
+    ($rootUrl+'ManaTable-Setup.exe'),
+    (' '+$rootUrl+'update-manifest.json'))){
+    Expect-RequestRejection -Url $unsupportedUrl -Token $fixtureToken
+    $checks++
+}
 Fixture 'valid'
 $result=Get-ManaPreviousUpdate -Directory (Join-Path $TestDirectory 'valid') -Version '0.2.124' -ReadMetadata $read -CopyAsset $copy
 if(-not $result.Available -or $result.Version -cne '0.2.123' -or $result.Sha256 -cne $hash -or $script:fixtureCopies -ne 1){throw 'A verified previous update was not accepted.'}
@@ -79,4 +143,4 @@ foreach($mutation in @('identity','channel','framework','source','smoke','filena
     if(-not $rejected){throw ('Accepted an invalid previous update: '+$mutation)}
     $checks++
 }
-Write-Output "$checks previous-update discovery and rejection checks passed. No network or downloaded code was used."
+Write-Output "$checks previous-update request-scope, discovery and rejection checks passed. No network or downloaded code was used."

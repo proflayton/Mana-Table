@@ -159,6 +159,15 @@ Current target card offers use the same nonmutating joint-admissibility checks
 as an actual target click. Already selected cards remain selectable/highlighted
 for undo; they are distinct from productive additions. A Complete offer remains
 authoritative even when the maximum target count has not been reached.
+Target limits, player choices, effect/search context and private target semantics
+share one immutable per-seat publication capture, scoped to the exact decision,
+board and source version after visibility reconciliation. Target observation does
+not repeat live effect or funding analysis. A refreshed selection replaces its
+capture while keeping the actual input episode. Missing or stale captures are
+rejected, not interpreted as empty domains. Current card/player commands still
+recheck live eligibility; selected targets remain available for deselection.
+The public pending-damage summary can resolve supported captured bindings while
+the private legacy amount remains literal-only; neither invents an unknown amount.
 Current mana inputs can add `payment` provenance: `purpose` (`SpellCost`,
 `ActivatedAbilityCost`, `TriggeredAbilityCost`, `EffectCost` or `Unknown`), actual
 `payerId`, entitled `sourceCardId` and the input's `mandatory` fact. The current

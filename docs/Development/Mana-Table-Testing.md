@@ -1141,6 +1141,14 @@ actual Convoke assignment and its zero-assignment route to ordinary mana.
 `TargetCounterExperienceTest` checks actual Battlegrowth additions, Thrull
 Parasite removal and Proliferate subset/empty choices. These distinguish
 already-working engine effects from input-publication and native routing faults.
+`TargetPublicationTest` checks that published target facts stay readable without
+reopening the live ability, retain literal-only AI amounts separately from
+supported captured damage amounts, and survive a newer reentrant publication.
+It also checks that stopping the real target input cannot reopen it during GUI
+cleanup. `TargetSelectionProgressTest` follows a real multi-opponent selection
+through select, deselect and queued rejection, comparing the human board and AI
+facts at each committed publication. Existing player-target, counter-target,
+pending-effect and occurrence tests retain legality and visibility coverage.
 The existing native headless presentation lane also follows an inspected source
 through activation/payment and a keyless historical source face: missing physical
 candidate permission stays read-only; an authoritative candidate enables only
@@ -1565,6 +1573,13 @@ that actual aggregate script for both contexts, remove each required result,
 inject a foreign result and reject failed/cancelled/skipped matrix results. They
 exercise release staging/promotion failures through injected API fixtures.
 Private drafts do not establish a successful release or bypass final source CI.
+
+`test-previous-update.ps1` exercises actual request construction without network
+access: only the fixed release-list API request receives the supplied token,
+public assets remain anonymous, and foreign or credential-bearing URLs fail.
+Its existing fixtures retain previous-package identity, source, size and hash
+rejection. These checks run in the required native logic job; they do not replace
+the production discovery and installer journey.
 
 The existing repository lane also exercises the shared read-only GitHub transport
 with fake clocks and responses: timeout recovery, bounded transient HTTP/socket

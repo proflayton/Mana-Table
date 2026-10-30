@@ -70,6 +70,8 @@ jobs:
       - name: Extract the pinned update package compiler
         run: ./mana-native/ci/update-tools.ps1 -Directory dist/ci-tools
       - name: Find the verified previous published update base
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./mana-native/ci/previous-update.ps1 -Directory dist/previous-update -Version $env:MANA_RELEASE_VERSION
       - name: Build genuine full and incremental update packages
         run: |

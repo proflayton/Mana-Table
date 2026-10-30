@@ -2,6 +2,33 @@
 param([string]$Directory,[ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+Add-Type -AssemblyName System.Net.Http
+
+function New-ManaPreviousUpdateRequest {
+    param([string]$Url,[string]$Token)
+    $api='https://api.github.com/repos/proflayton/Mana-Table/releases?per_page=30'
+    $authenticated=[String]::Equals($Url,$api,[StringComparison]::Ordinal)
+    if ($authenticated) {
+        if ([string]::IsNullOrWhiteSpace($Token)) { throw 'GH_TOKEN is required to look up the previous published Mana Table release.' }
+        if ($Token -cnotmatch '\A[A-Za-z0-9._~+/-]+=*\z') { throw 'GH_TOKEN is not a valid bearer credential.' }
+    } else {
+        if ($Url -cnotmatch '\Ahttps://github\.com/proflayton/Mana-Table/releases/download/mana-native-v([0-9]+\.[0-9]+\.[0-9]+)/([A-Za-z0-9._-]+)\z') {
+            throw 'Previous update requests must use the fixed releases API or a canonical public Mana Table release asset.'
+        }
+        $releaseVersion=$Matches[1]; $assetName=$Matches[2]; $parsedVersion=$null
+        if (-not [Version]::TryParse($releaseVersion,[ref]$parsedVersion) -or $parsedVersion.ToString(3) -cne $releaseVersion -or
+            $assetName -cnotin @('update-manifest.json','installer-manifest.json',"ManaTable-$releaseVersion-win-x64-full.nupkg")) {
+            throw 'Previous update asset URL is not canonical.'
+        }
+    }
+    $request=[Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Get,[Uri]$Url)
+    $request.Headers.UserAgent.ParseAdd('ManaTable-CI/1.0')
+    if ($authenticated) {
+        $request.Headers.Add('X-GitHub-Api-Version','2022-11-28')
+        $request.Headers.Authorization=[Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer',$Token)
+    }
+    return $request
+}
 
 # Dot-source only to test the metadata/download boundary with local fixtures.
 # The normal script supplies HTTP callbacks for the fixed public repository.
@@ -65,45 +92,56 @@ function Get-ManaPreviousUpdate {
 
 if ($MyInvocation.InvocationName -ne '.') {
     if (-not $Directory -or -not $Version) { throw 'Directory and Version are required.' }
-    Add-Type -AssemblyName System.Net.Http
     $http=New-Object Net.Http.HttpClient
     $http.Timeout=[TimeSpan]::FromMinutes(10)
-    $http.DefaultRequestHeaders.UserAgent.ParseAdd('ManaTable-CI/1.0')
-    $http.DefaultRequestHeaders.Add('X-GitHub-Api-Version','2022-11-28')
+    # Authenticated API requests never follow redirects. Public assets use a
+    # separate anonymous client so their CDN redirects cannot carry the token.
+    $apiHandler=New-Object Net.Http.HttpClientHandler
+    $apiHandler.AllowAutoRedirect=$false
+    $apiHttp=[Net.Http.HttpClient]::new($apiHandler)
+    $apiHttp.Timeout=[TimeSpan]::FromMinutes(10)
     $read={ param($Url,$Maximum)
-        $response=$http.GetAsync($Url,[Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        $request=New-ManaPreviousUpdateRequest -Url $Url -Token $env:GH_TOKEN
         try {
-            if ([int]$response.StatusCode -eq 404) { return $null }
-            $null=$response.EnsureSuccessStatusCode()
-            if ($response.Content.Headers.ContentLength -gt $Maximum) { throw 'Previous release metadata is too large.' }
-            $inputStream=$response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
-            $output=New-Object IO.MemoryStream; $buffer=New-Object byte[] 16384
+            $client=if ($request.Headers.Authorization) { $apiHttp } else { $http }
+            $response=$client.SendAsync($request,[Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
             try {
-                while (($count=$inputStream.Read($buffer,0,$buffer.Length)) -gt 0) {
-                    if ($output.Length+$count -gt $Maximum) { throw 'Previous release metadata is too large.' }
-                    $output.Write($buffer,0,$count)
-                }
-                return ,$output.ToArray()
-            } finally { $inputStream.Dispose(); $output.Dispose() }
-        } finally { $response.Dispose() }
+                if ([int]$response.StatusCode -eq 404) { return $null }
+                $null=$response.EnsureSuccessStatusCode()
+                if ($response.Content.Headers.ContentLength -gt $Maximum) { throw 'Previous release metadata is too large.' }
+                $inputStream=$response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+                $output=New-Object IO.MemoryStream; $buffer=New-Object byte[] 16384
+                try {
+                    while (($count=$inputStream.Read($buffer,0,$buffer.Length)) -gt 0) {
+                        if ($output.Length+$count -gt $Maximum) { throw 'Previous release metadata is too large.' }
+                        $output.Write($buffer,0,$count)
+                    }
+                    return ,$output.ToArray()
+                } finally { $inputStream.Dispose(); $output.Dispose() }
+            } finally { $response.Dispose() }
+        } finally { $request.Dispose() }
     }
     $copy={ param($Url,$Path,$Maximum)
-        $response=$http.GetAsync($Url,[Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        $request=New-ManaPreviousUpdateRequest -Url $Url -Token $env:GH_TOKEN
         try {
-            $null=$response.EnsureSuccessStatusCode()
-            if ($response.Content.Headers.ContentLength -and $response.Content.Headers.ContentLength -ne $Maximum) { throw 'Previous full package response length changed.' }
-            $inputStream=$response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
-            $output=[IO.File]::Open($Path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
-            $buffer=New-Object byte[] 65536; $received=0L
+            $client=if ($request.Headers.Authorization) { $apiHttp } else { $http }
+            $response=$client.SendAsync($request,[Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
             try {
-                while (($count=$inputStream.Read($buffer,0,$buffer.Length)) -gt 0) {
-                    $received+=$count
-                    if ($received -gt $Maximum) { throw 'Previous full package exceeds its published size.' }
-                    $output.Write($buffer,0,$count)
-                }
-                $output.Flush($true)
-            } finally { $inputStream.Dispose(); $output.Dispose() }
-        } finally { $response.Dispose() }
+                $null=$response.EnsureSuccessStatusCode()
+                if ($response.Content.Headers.ContentLength -and $response.Content.Headers.ContentLength -ne $Maximum) { throw 'Previous full package response length changed.' }
+                $inputStream=$response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+                $output=[IO.File]::Open($Path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+                $buffer=New-Object byte[] 65536; $received=0L
+                try {
+                    while (($count=$inputStream.Read($buffer,0,$buffer.Length)) -gt 0) {
+                        $received+=$count
+                        if ($received -gt $Maximum) { throw 'Previous full package exceeds its published size.' }
+                        $output.Write($buffer,0,$count)
+                    }
+                    $output.Flush($true)
+                } finally { $inputStream.Dispose(); $output.Dispose() }
+            } finally { $response.Dispose() }
+        } finally { $request.Dispose() }
     }
     try {
         $result=Get-ManaPreviousUpdate -Directory $Directory -Version $Version -ReadMetadata $read -CopyAsset $copy
@@ -114,5 +152,5 @@ if ($MyInvocation.InvocationName -ne '.') {
             [IO.File]::AppendAllText($env:GITHUB_ENV,"MANA_PREVIOUS_FULL=$env:MANA_PREVIOUS_FULL`nMANA_PREVIOUS_SHA=$env:MANA_PREVIOUS_SHA`n",$utf8)
         }
         $result | ConvertTo-Json -Depth 5
-    } finally { $http.Dispose() }
+    } finally { $apiHttp.Dispose(); $http.Dispose() }
 }
