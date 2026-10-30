@@ -91,7 +91,6 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private volatile boolean closed;
     private volatile String error;
     private long revision;
-    private long activityRevision;
     private String message = "Preparing the match…", ok = "Continue", cancel = "Cancel";
     private boolean okEnabled, cancelEnabled;
     private Input displayedInput;
@@ -281,23 +280,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     public IGuiGame gui() { return gui; }
     public Map<String, Object> state() {
         synchronized (gate) {
-            // During AI work, publish only event-time copies. Never read a live board from IPC.
-            if ("resolving".equals(latest.get("status"))) {
-                var publication = MatchActivity.capture(activity::frame, executions::frame);
-                var frame = publication.activity();
-                var executionFrame = publication.executions();
-                var priorExecutions = latest.get("executions");
-                if (frame.revision() != activityRevision || !(priorExecutions instanceof MatchExecutions.Frame prior)
-                        || executionFrame.lastSequence() != prior.lastSequence()) {
-                    activityRevision = frame.revision();
-                    var next = new LinkedHashMap<>(latest);
-                    next.put("revision", ++revision);
-                    next.put("turn", frame.turn()); next.put("phase", frame.phase()); next.put("phaseKey", frame.phaseKey());
-                    next.put("activePlayerId", frame.activePlayerId()); next.put("activity", frame.entries());
-                    next.put("executions", executionFrame);
-                    latest = Collections.unmodifiableMap(next);
-                }
-            }
+            // The board, activity and executions share one committed publication.
+            // Event subscribers collect the next frame without changing a read.
             if (!table.tempo.enabled()) return latest;
             var timed = new LinkedHashMap<>(latest);
             timed.put("tempo", table.tempo.view(!finished()));
@@ -2086,7 +2070,6 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         executions.pinStack(pinnedExecutions);
         var publication = MatchActivity.capture(activity::frame, executions::frame);
         var activityFrame = publication.activity();
-        activityRevision = activityFrame.revision();
         Map<String, Object> projectedPrompt = null;
         CurrentDecisionProjection.Capture captured = null;
         if (prompt != null) {

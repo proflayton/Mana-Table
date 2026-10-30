@@ -62,6 +62,17 @@ selection and publication guards share the actual queue/proxy and active-input
 check. A queued action alone is not proof that its input has retired; required
 dialog futures and combat refresh keep their separate ownership.
 
+An audience's board, activity and execution frame remain one committed value.
+Accepting a command can retire its prompt before the next publication, but polling
+does not merge newer event frames into the retained board or advance its revision.
+Event subscribers collect the bounded history independently; the next coherent
+input or terminal publication presents it with the matching board. Legacy
+autonomous Forge AI history can wait longer for that boundary, without changing
+what wakes or runs its rules work. Its older ordinary events can be evicted by
+the unchanged bounded history before publication; finite retention and overflow
+guards remain separate. Native AI seats remain externally controlled.
+Tempo enrichment is a separate clock read and does not republish game facts.
+
 Source queries have one completed value owner alongside that decision capture.
 The automated action domain and its extra Stack/Sideboard source portraits are
 copied together with `PublishedDecisionFacts`; human action previews use the same

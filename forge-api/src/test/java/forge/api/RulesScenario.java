@@ -139,8 +139,9 @@ final class RulesScenario implements AutoCloseable {
 
     JsonObject state(int seat) {
         var state = JSON.toJsonTree(session(seat).state()).getAsJsonObject();
-        assertNotEquals(text(state, "status"), "error", state.toString());
-        assertNotEquals(text(state, "status"), "finished", "Scenario ended early: " + state);
+        String status = text(state, "status");
+        assertNotEquals(status, "error", status.equals("error") ? state.toString() : null);
+        assertNotEquals(status, "finished", status.equals("finished") ? "Scenario ended early: " + state : null);
         return state;
     }
 

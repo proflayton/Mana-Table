@@ -19,14 +19,16 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
     private readonly List<string> checks = [];
     private MouseState mouse;
     private Task? background;
-    private double lastStep;
+    private double lastStep, resizedReadyUntil;
     private int step;
     private string tableId = "", deckId = "";
+    private TempoSettings? agreedTempo;
+    private string? scheduledPressScope, scheduledReleaseScope;
     private GameSnapshot[] privateViews = [];
     private GameSnapshot?[] openingViews = [];
     private bool firstMainObserved;
     private readonly DateTime deadline = DateTime.UtcNow.AddMinutes(5);
-    public string? ExpectedClick => null;
+    public string? ExpectedClick { get; private set; }
     public bool ClickAccepted { get; set; }
     public MouseState ReadMouse() => mouse;
 
@@ -67,7 +69,10 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
             Check(view.Lobby!.Seats.All(seat => !seat.Ready), "Enabling a decision timer requires renewed Ready consent");
         });
         Click("tempo-expiry:Warn");
-        Wait(() => view.Lobby?.Tempo?.Expiry == TempoExpiry.Warn && !view.Busy, 10, () => Capture("02b-lobby-tempo"));
+        Wait(() => view.Lobby?.Tempo?.Expiry == TempoExpiry.Warn && !view.Busy, 10, () => {
+            agreedTempo = view.Lobby!.Tempo;
+            Capture("02b-lobby-tempo");
+        });
         Click("review-deck"); Click("confirm-deck"); Click("ready");
         Step(.1, () => background = JoinGuests());
         Wait(() => view.Lobby?.CanStart == true, 20, () => {
@@ -91,8 +96,14 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
                 "Choosing three removes only the unused open seat and retains every friend at the same table");
             background = ReadyGuests();
         });
+        // Completing guest RPCs does not publish their readiness to the host.
+        // Share the original 20-second readiness window with that observation.
+        Step(0, () => resizedReadyUntil = view.Now + 20);
+        Wait(() => ResizedGuestsReady() || view.Now >= resizedReadyUntil, 20, () => {
+            if (!ResizedGuestsReady()) throw new TimeoutException("The host did not observe both resized guests ready with the agreed settings.");
+        });
         Click("ready");
-        Wait(() => view.Lobby?.CanStart == true, 20, () => {
+        Wait(() => view.Lobby?.CanStart == true || view.Now >= resizedReadyUntil, 20, () => {
             Check(view.Lobby!.Seats.All(s => s.Ready) && view.Hits.Any(h => h.Id == "start"),
                 "After everyone readies again the resized three-human table can start");
             Capture("05-resized-three-ready");
@@ -139,6 +150,11 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
             await guests[i].SetReadyAsync(lobby.TableId, true, lobby.Tempo!.Revision);
         }
     }
+    private bool ResizedGuestsReady() => view.Lobby is { Mode: "hosting", MatchActive: false, Seats.Length: 3 } lobby
+        && lobby.TableId == tableId && agreedTempo is { Preset: TempoPreset.Fast, Expiry: TempoExpiry.Warn } && lobby.Tempo == agreedTempo
+        && view.DeckConfirmed && view.DeckDetails?.Id == deckId && !lobby.CanStart
+        && lobby.Seats[0] is { Index: 0, Local: true, Type: "LOCAL", Ready: false, Deck: not null }
+        && lobby.Seats.Skip(1).Select((seat, index) => seat.Index == index + 1 && !seat.Local && seat.Type == "REMOTE" && seat.Ready && seat.Deck != null).All(value => value);
     private async Task FinishOpening()
     {
         var until = DateTime.UtcNow.AddSeconds(45);
@@ -194,7 +210,25 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
         return owner is { Decision: { Id.Length: > 0, Payload: PriorityPayload { Pass.Enabled: true } } }
             && states.All(state => state.ActionClass == "priority" && state.PriorityPlayerId == owner.ViewerId && state.DecisionOwnerId == owner.ViewerId);
     }
-    private void Click(string id) { Step(.1, () => MoveHit(view.Hits.Single(h => h.Id == id))); Step(0, () => mouse = Mouse(ButtonState.Pressed)); Step(0, () => mouse = Mouse()); }
+    private void Click(string id)
+    {
+        Step(.1, () => {
+            MoveHit(view.Hits.Single(h => h.Id == id));
+            ExpectedClick = id; ClickAccepted = false;
+            scheduledPressScope = scheduledReleaseScope = null;
+        });
+        Step(0, () => { scheduledPressScope = view.Scope; mouse = Mouse(ButtonState.Pressed); });
+        Step(0, () => { scheduledReleaseScope = view.Scope; mouse = Mouse(); });
+        Step(0, () => {
+            // Scopes describe the frames scheduling each edge. Acceptance is
+            // reported by TableWindow after the actual input handler dispatches.
+            File.AppendAllText(Path.Combine(view.Profile, "click-results.log"), JsonSerializer.Serialize(new {
+                time = view.Now, expected = ExpectedClick, scheduledPressScope, scheduledReleaseScope, resultScope = view.Scope, accepted = ClickAccepted
+            }) + Environment.NewLine);
+            if (!ClickAccepted) throw new InvalidOperationException("Rejected lobby click: " + ExpectedClick);
+            ExpectedClick = null;
+        });
+    }
     private void MoveHit(Mana.Table.Interaction.TableHit hit) { var p = SmokePointer.Hit(view, hit); mouse = new(p.X, p.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released); }
     private MouseState Mouse(ButtonState left = ButtonState.Released) => new(mouse.X, mouse.Y, 0, left, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
     private void Step(double delay, Action action) => steps.Enqueue((delay, null, action));
@@ -223,6 +257,7 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
         } catch {
             File.WriteAllText(Path.Combine(view.Profile, "lobby-three-player-failure.json"), JsonSerializer.Serialize(new { step, view.Now, checks,
                 view.Scope, view.SetupModal, view.Lobby, view.Match, privateViews, firstMainObserved, openingViews,
+                ExpectedClick, ClickAccepted, scheduledPressScope, scheduledReleaseScope, resizedReadyUntil,
                 hits = view.Hits.Select(h => new { h.Id, h.Bounds }) }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
             Capture("failure"); throw;
         }
