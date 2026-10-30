@@ -99,10 +99,26 @@ public class SourceActionsTest {
                 "Mountain", "Rhys the Redeemed", Map.of(0, library))) {
             var input = main(game);
             assertEquals(count(viewer(input.state()), "Hand"), 8);
+            // External policies pay their own costs; Forge's human Auto button
+            // is deliberately unavailable. Fund through three actual abilities.
+            for (int amount = 1; amount <= 3; amount++) {
+                var mountain = zone(viewer(input.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
+                        .map(value -> value.getAsJsonObject()).filter(value -> text(value, "name").equals("Mountain")
+                                && !value.get("tapped").getAsBoolean()).findFirst().orElseThrow();
+                var mana = query(game, input, mountain);
+                var manaAction = mana.getAsJsonArray("actions").get(0).getAsJsonObject();
+                assertEquals(text(manaAction, "kind"), "activate");
+                assertTrue(game.answer(input, invoke(mana, manaAction)));
+                final int expected = amount;
+                input = game.until(next -> next.seat() == 0 && priority(next)
+                        && viewer(next.state()).getAsJsonObject("mana").get("R").getAsInt() == expected);
+            }
             var spell = query(game, input, card(input.state(), "Hand", "Lightning Storm"));
             assertTrue(game.answer(input, invoke(spell, castAction(spell))));
-            finishTargetedCast(game, "Lightning Storm", null);
+            finishTargetedCast(game, "Lightning Storm", null, "R");
             var stacked = game.until(next -> next.seat() == 0 && priority(next) && next.state().getAsJsonArray("stack").size() == 1);
+            assertEquals(viewer(stacked.state()).getAsJsonObject("mana").get("R").getAsInt(), 0,
+                    "The actual cast spends all three units produced through the real source actions");
             HeadlessPlatform.query(game.table, () -> null);
             var session = game.session(0);
             record StackRead(Map<String, Object> raw, JsonObject observation, JsonObject source) { }
@@ -464,6 +480,10 @@ public class SourceActionsTest {
     }
 
     private static void finishTargetedCast(RulesScenario game, String spell, String targetCard) throws Exception {
+        finishTargetedCast(game, spell, targetCard, null);
+    }
+
+    private static void finishTargetedCast(RulesScenario game, String spell, String targetCard, String poolColor) throws Exception {
         // Targeting/payment may publish intermediate prompts (including another
         // payment prompt). Their count is not the spell's completion condition.
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(45);
@@ -476,6 +496,13 @@ public class SourceActionsTest {
                 assertTrue(game.answer(input, targetCard == null
                         ? Map.of("action", "player", "playerId", input.state().get("viewerId").getAsInt())
                         : Map.of("action", "card", "key", text(card(input.state(), "Battlefield", targetCard), "key"))));
+            } else if (poolColor != null) {
+                assertFalse(input.prompt().get("okEnabled").getAsBoolean(), "The external payer cannot use Forge Auto");
+                assertTrue(input.prompt().getAsJsonArray("usablePoolManaColors").asList().stream()
+                        .anyMatch(value -> value.getAsString().equals(poolColor)));
+                assertTrue(viewer(input.state()).getAsJsonObject("mana").get(poolColor).getAsInt() > 0);
+                assertFalse(input.prompt().getAsJsonArray("unpaidManaParts").isEmpty());
+                if (!game.answer(input, Map.of("action", "spendPoolMana", "manaColor", poolColor))) continue;
             } else {
                 assertTrue(input.prompt().get("okEnabled").getAsBoolean(), "The fixture supplies the real spell's mana cost");
                 // Auto can complete while a republished payment is being read.
