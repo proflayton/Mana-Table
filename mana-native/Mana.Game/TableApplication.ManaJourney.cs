@@ -6,6 +6,7 @@ using Mana.Renderer;
 using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
+using Point = Microsoft.Xna.Framework.Point;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Table;
