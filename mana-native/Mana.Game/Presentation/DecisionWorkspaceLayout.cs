@@ -92,48 +92,62 @@ internal static class DecisionWorkspaceLayout
         // A fully clear region beats any collision; distance and source/overlap
         // costs still choose between clear regions or the crowded fallback.
         var best = preferred[0]; long bestOverlap = long.MaxValue; bool bestClear = false;
-        foreach (var candidate in preferred) {
+        void Consider(Rectangle candidate)
+        {
             long overlap = Overlap(candidate, bestClear, bestOverlap, out bool clear);
             if (clear && !bestClear || clear == bestClear && overlap < bestOverlap) {
                 best = candidate; bestOverlap = overlap; bestClear = clear;
             }
         }
-        // Nearby obstacle edges and viewport edges supplement the source/center
-        // candidates. Bound both axes so a crowded table does not multiply all
-        // permanent positions every frame. The fallback stays fully reachable
-        // when physical space requires some overlap; names never get squeezed.
-        var xs = occupied.SelectMany(obstacle => new[] { obstacle.Right + 8, obstacle.Left - width - 8 })
+        foreach (var candidate in preferred) Consider(candidate);
+        // Sweep complete critical axes, never their unbounded Cartesian product.
+        // Single-axis distance bounds interleave the nearest rows and columns.
+        IEnumerable<int> HorizontalEdges(IEnumerable<Rectangle> areas) => areas
+            .SelectMany(obstacle => new[] { obstacle.Right + 8, obstacle.Left - width - 8 })
             .Append(viewport.Left).Append(viewport.Right - width).Select(x => At(x, 64).X).Distinct()
-            .OrderBy(x => Math.Abs(x + width / 2 - anchor.Center.X)).Take(24)
-            .Append(viewport.Left).Append(viewport.Right - width).Distinct().ToArray();
-        var ys = occupied.SelectMany(obstacle => new[] { obstacle.Bottom + 8, obstacle.Top - height - 8 })
+            .OrderBy(x => Math.Abs(x + width / 2 - anchor.Center.X));
+        IEnumerable<int> VerticalEdges(IEnumerable<Rectangle> areas) => areas
+            .SelectMany(obstacle => new[] { obstacle.Bottom + 8, obstacle.Top - height - 8 })
             .Append(viewport.Top).Append(viewport.Bottom - height).Select(y => At(20, y).Y).Distinct()
-            .OrderBy(y => Math.Abs(y + height / 2 - anchor.Center.Y)).Take(24)
-            .Append(viewport.Top).Append(viewport.Bottom - height).Distinct().ToArray();
-        // Replace one slot per sampled row/column with its nearest clear gap.
-        // Sort twice, then scan ordered intervals; never cross all obstacle edges.
+            .OrderBy(y => Math.Abs(y + height / 2 - anchor.Center.Y));
         var solids = occupied.Prepend(anchor).Where(area => area.Width > 0 && area.Height > 0).ToArray();
+        var xs = HorizontalEdges(solids).ToArray();
+        var ys = VerticalEdges(solids).ToArray();
         var horizontal = solids.OrderBy(area => area.Left).ToArray();
         var vertical = solids.OrderBy(area => area.Top).ToArray();
-        var rowGaps = ys.Select(y => NearestGap(viewport.Left, viewport.Right, width, anchor.Center.X, horizontal
-            .Where(area => area.Top < y + height + 8 && area.Bottom > y - 8)
-            .Select(area => (area.Left - 8, area.Right + 8)))).ToArray();
-        var columnGaps = xs.Select(x => NearestGap(viewport.Top, viewport.Bottom, height, anchor.Center.Y, vertical
-            .Where(area => area.Left < x + width + 8 && area.Right > x - 8)
-            .Select(area => (area.Top - 8, area.Bottom + 8)))).ToArray();
-        for (int column = 0; column < xs.Length; column++) for (int row = 0; row < ys.Length; row++) {
-            var candidate = At(xs[column], ys[row]);
-            if (column == 0 && rowGaps[row] is { } left) candidate = At(left, ys[row]);
-            if (row == 0 && columnGaps[column] is { } top) {
-                var alternative = At(xs[column], top);
-                if (column != 0 || rowGaps[row] == null
-                    || Vector2.DistanceSquared(alternative.Center.ToVector2(), anchor.Center.ToVector2())
-                        < Vector2.DistanceSquared(candidate.Center.ToVector2(), anchor.Center.ToVector2())) candidate = alternative;
-            }
-            long overlap = Overlap(candidate, bestClear, bestOverlap, out bool clear);
-            if (clear && !bestClear || clear == bestClear && overlap < bestOverlap) {
-                best = candidate; bestOverlap = overlap; bestClear = clear;
+        long AxisCost(int origin, int extent, int target)
+        {
+            // Match the float distance score with the other axis set to zero.
+            float delta = origin + extent / 2 - target;
+            return (long)(delta * delta * .15f);
+        }
+        int column = 0, row = 0; bool columnTie = true;
+        for (int probe = 0; probe < 676; probe++) {
+            long columnCost = column < xs.Length ? AxisCost(xs[column], width, anchor.Center.X) : long.MaxValue;
+            long rowCost = row < ys.Length ? AxisCost(ys[row], height, anchor.Center.Y) : long.MaxValue;
+            bool canColumn = column < xs.Length && (!bestClear || columnCost < bestOverlap);
+            bool canRow = row < ys.Length && (!bestClear || rowCost < bestOverlap);
+            if (!canColumn && !canRow) break;
+            bool chooseColumn = canColumn && (!canRow || columnCost < rowCost || columnCost == rowCost && columnTie);
+            if (canColumn && canRow && columnCost == rowCost) columnTie = !columnTie;
+            if (chooseColumn) {
+                int x = xs[column++];
+                int? y = NearestGap(viewport.Top, viewport.Bottom, height, anchor.Center.Y, vertical
+                    .Where(area => area.Left < x + width + 8 && area.Right > x - 8)
+                    .Select(area => (area.Top - 8, area.Bottom + 8)));
+                if (y is { } top) Consider(At(x, top));
+            } else {
+                int y = ys[row++];
+                int? x = NearestGap(viewport.Left, viewport.Right, width, anchor.Center.X, horizontal
+                    .Where(area => area.Top < y + height + 8 && area.Bottom > y - 8)
+                    .Select(area => (area.Left - 8, area.Right + 8)));
+                if (x is { } left) Consider(At(left, y));
             }
         }
+        if (bestClear) return best;
+        // No clear region found: retain the weighted, bounded crowded fallback.
+        var fallbackXs = HorizontalEdges(occupied).Take(24).Append(viewport.Left).Append(viewport.Right - width).Distinct().ToArray();
+        var fallbackYs = VerticalEdges(occupied).Take(24).Append(viewport.Top).Append(viewport.Bottom - height).Distinct().ToArray();
+        foreach (int x in fallbackXs) foreach (int y in fallbackYs) Consider(At(x, y));
         return best;
     }}

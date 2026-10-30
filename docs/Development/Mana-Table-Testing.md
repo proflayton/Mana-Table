@@ -1591,12 +1591,26 @@ bill had also moved, which the earlier fixed-bill offline prediction did not
 model. The C4 reconstruction additionally overincluded a stack reservation and
 misplaced two compact remote halos; retained correction notes separate those
 inferences from actual frame evidence.
-The current candidate instead replaces one existing grid slot per sampled row
+The following candidate instead replaced one existing grid slot per sampled row
 and column with its nearest feasible interval. It keeps the original five seeds
 and nearest-edge fallback, at most 681 score evaluations, and no larger grid.
 Positive obstacles sort once by each axis, followed by at most 52 linear interval
 scans. The geometry, final-hit isolation and old-action/ResolveHit assertions
 report separately without changing their order, gestures or required facts.
+That run passed pinned C4 but the first C1024/U3/W1/literal-key refresh made a
+wider group whose nearby row was still outside the independently capped axes.
+The current search sweeps the complete clamped critical row and column edge
+lists, merged by a conservative single-axis distance bound, for at most 676
+linear interval probes. The original five seeds establish an initial clear
+upper bound; only a known clear best can stop an axis whose remaining distance
+cannot improve it. If none is clear, the original weighted 24-edge grid runs.
+Solids sort once by each axis. The worst bound is 676N interval work plus 681N
+candidate-score work and sorting for N reservations, roughly twice the former
+worst case; it never crosses the complete obstacle-edge lists. A probe cap and
+fully packed table can still prevent a nearby clear result.
+Critical edges explicitly include the positive source anchor. The crowded
+fallback retains the original occupied-only edge membership and order, with its
+two edge sorts materialized once per axis only when that fallback is needed.
 For a focused iteration, append `--presentation-group mana-pool` to the existing
 `--smoke-headless-presentation` invocation. It calls the same pool/payment clarity
 and lifecycle group and writes the same receipts labeled `mana-pool`; an omitted
