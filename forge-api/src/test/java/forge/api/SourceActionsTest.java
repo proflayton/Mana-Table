@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import forge.gamemodes.match.input.InputPassPriority;
 import forge.gui.interfaces.IGuiGame;
 import forge.player.PlayerControllerHuman;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import java.lang.reflect.InvocationTargetException;
@@ -23,6 +24,164 @@ import static org.testng.Assert.*;
 /** The production source-action capability observes first, then invokes exactly one engine ability. */
 public class SourceActionsTest {
     private static final Gson JSON = new Gson();
+
+    @DataProvider(name = "sourceQueryAudiences")
+    public Object[][] sourceQueryAudiences() { return new Object[][] { { false }, { true } }; }
+
+    @Test(dataProvider = "sourceQueryAudiences", timeOut = 90000)
+    public void sourceQueryValuesRejectNestedMutationAndRetainTheirActualActionAuthority(boolean automated) throws Exception {
+        var field = Map.of(0, List.of("Forest", "Forest", "Forest"));
+        try (var game = automated ? RulesScenario.automated("source-query-values-ai", field, "Manalith", "Rhys the Redeemed")
+                : new RulesScenario("source-query-values-human", field, "Manalith", "Rhys the Redeemed")) {
+            var input = main(game);
+            HeadlessPlatform.query(game.table, () -> null);
+            var session = game.session(0);
+            record ReadValues(Object facts, com.google.gson.JsonElement retained, JsonObject mana) { }
+            var values = HeadlessPlatform.query(game.table, () -> {
+                var before = game.state(0);
+                var spell = card(before, "Hand", "Manalith");
+                var sourceRequest = request(input, Map.of("key", text(spell, "key")));
+                Map<String, Object> reply = automated ? session.automatedObservation() : session.sourceActions(sourceRequest);
+                Object facts = automated ? reply.get("domain") : reply;
+                var retained = JSON.toJsonTree(facts);
+                assertTrue(retained.getAsJsonObject().getAsJsonArray("actions").size() > 0);
+                if (automated) assertTrue(retained.toString().contains("\"operationGraph\""), "The actual private domain includes structured effect facts");
+                else {
+                    var preview = retained.getAsJsonObject().getAsJsonArray("actions").get(0).getAsJsonObject().getAsJsonObject("costPreview");
+                    assertNotNull(preview);
+                    assertEquals(preview.getAsJsonObject("funding").getAsJsonArray("sources").size(), 3);
+                }
+                assertFrozenSourceValue(facts, automated ? "private domain" : "human source reply");
+                Map<String, Object> repeated = automated ? session.automatedObservation() : session.sourceActions(sourceRequest);
+                Object again = automated ? repeated.get("domain") : repeated;
+                assertEquals(JSON.toJsonTree(again), retained, "A consumer cannot rewrite a later source read through an earlier value tree");
+                if (automated) assertSame(again, facts, "A repeated AI read retains the same committed immutable source query");
+                assertEquals(game.state(0), before, "Reading and rejected value mutations do not advance the published game");
+                var forest = card(before, "Battlefield", "Forest");
+                var mana = JSON.toJsonTree(session.sourceActions(request(input, Map.of("key", text(forest, "key"))))).getAsJsonObject();
+                return new ReadValues(facts, retained, mana);
+            });
+            var facts = values.facts(); var retained = values.retained(); var mana = values.mana();
+            Files.writeString(game.evidence.resolve("source-query-before-mutation.json"), JSON.toJson(retained));
+            assertTrue(game.answer(input, invoke(mana, mana.getAsJsonArray("actions").get(0).getAsJsonObject())),
+                    "Freezing descriptions does not freeze or replace the live engine action authority");
+            var paid = game.until(next -> next.seat() == 0 && priority(next)
+                    && viewer(next.state()).getAsJsonObject("mana").get("G").getAsInt() == 1);
+            assertEquals(zone(viewer(paid.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(value -> value.get("tapped").getAsBoolean()).count(), 1L);
+            assertEquals(JSON.toJsonTree(facts), retained, "The original source facts cannot change with later resource expenditure");
+            assertThrows(IllegalArgumentException.class, () -> session.action(request(input,
+                    invoke(mana, mana.getAsJsonArray("actions").get(0).getAsJsonObject()))));
+            assertNull(session.state().get("error"));
+            Files.writeString(game.evidence.resolve("source-query-live-continuation.json"), JSON.toJson(Map.of(
+                    "audience", automated ? "automated" : "human", "retained", retained, "paid", paid.state())));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void assertFrozenSourceValue(Object value, String path) {
+        if (value instanceof Map<?, ?> map) {
+            assertThrows(UnsupportedOperationException.class,
+                    () -> ((Map<Object, Object>)map).put("__source_query_consumer_probe", null));
+            for (var entry : map.entrySet()) assertFrozenSourceValue(entry.getValue(), path + "." + entry.getKey());
+        } else if (value instanceof List<?> list) {
+            assertThrows(UnsupportedOperationException.class, () -> ((List<Object>)list).add(null));
+            for (int index = 0; index < list.size(); index++) assertFrozenSourceValue(list.get(index), path + "[" + index + "]");
+        }
+    }
+
+    @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void aRealStackActivationRetainsItsImmutableExtraSourcePortraitAndCurrentActionHandle() throws Exception {
+        // The real opening seven plus the multiplayer first draw contains all
+        // eight cards, independent of shuffle. Stop before any second draw.
+        var library = List.of("Lightning Storm", "Mountain", "Mountain", "Mountain", "Mountain", "Mountain", "Mountain", "Mountain");
+        try (var game = RulesScenario.automated("source-query-stack-portrait", Map.of(0, List.of("Mountain", "Mountain", "Mountain")),
+                "Mountain", "Rhys the Redeemed", Map.of(0, library))) {
+            var input = main(game);
+            assertEquals(count(viewer(input.state()), "Hand"), 8);
+            // External policies pay their own costs; Forge's human Auto button
+            // is deliberately unavailable. Fund through three actual abilities.
+            for (int amount = 1; amount <= 3; amount++) {
+                var mountain = zone(viewer(input.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
+                        .map(value -> value.getAsJsonObject()).filter(value -> text(value, "name").equals("Mountain")
+                                && !value.get("tapped").getAsBoolean()).findFirst().orElseThrow();
+                var mana = query(game, input, mountain);
+                var manaAction = mana.getAsJsonArray("actions").get(0).getAsJsonObject();
+                assertEquals(text(manaAction, "kind"), "activate");
+                assertTrue(game.answer(input, invoke(mana, manaAction)));
+                final int expected = amount;
+                input = game.until(next -> next.seat() == 0 && priority(next)
+                        && viewer(next.state()).getAsJsonObject("mana").get("R").getAsInt() == expected);
+            }
+            var spell = query(game, input, card(input.state(), "Hand", "Lightning Storm"));
+            assertTrue(game.answer(input, invoke(spell, castAction(spell))));
+            finishTargetedCast(game, "Lightning Storm", null, "R");
+            var stacked = game.until(next -> next.seat() == 0 && priority(next) && next.state().getAsJsonArray("stack").size() == 1);
+            assertEquals(viewer(stacked.state()).getAsJsonObject("mana").get("R").getAsInt(), 0,
+                    "The actual cast spends all three units produced through the real source actions");
+            HeadlessPlatform.query(game.table, () -> null);
+            var session = game.session(0);
+            record StackRead(Map<String, Object> raw, JsonObject observation, JsonObject source) { }
+            var values = HeadlessPlatform.query(game.table, () -> {
+                var before = JSON.toJsonTree(session.state());
+                var raw = session.automatedObservation();
+                var observation = JSON.toJsonTree(raw).getAsJsonObject();
+                var extra = observation.getAsJsonObject("state").getAsJsonArray("actionSources");
+                assertEquals(extra.size(), 1, "The actual stack ability has one physical extra source");
+                var portrait = extra.get(0).getAsJsonObject();
+                assertEquals(text(portrait, "zone"), "Stack");
+                assertEquals(text(portrait, "decisionId"), text(stacked.prompt(), "id"));
+                var card = portrait.getAsJsonObject("card");
+                assertEquals(text(card, "name"), "Lightning Storm");
+                assertFalse(card.get("selectable").getAsBoolean());
+                assertFalse(card.get("highlighted").getAsBoolean());
+                assertFalse(text(card, "key").isEmpty());
+                assertFalse(text(card, "visualId").isEmpty());
+                assertFalse(text(card, "combatId").isEmpty());
+                var source = observation.getAsJsonObject("domain").getAsJsonArray("sources").asList().stream()
+                        .map(value -> value.getAsJsonObject()).filter(value -> text(value, "sourceCardKey").equals(text(card, "key")))
+                        .findFirst().orElseThrow();
+                assertEquals(text(source, "sourceCardId"), text(card, "visualId"));
+                assertFalse(source.getAsJsonArray("actions").isEmpty());
+                assertTrue(source.getAsJsonArray("actions").asList().stream().map(value -> value.getAsJsonObject())
+                        .allMatch(action -> text(action, "kind").equals("activate")));
+                var rawExtras = ((Map<?, ?>)raw.get("state")).get("actionSources");
+                assertFrozenSourceValue(rawExtras, "extra stack source portraits");
+                assertFrozenSourceValue(raw.get("domain"), "matching stack domain");
+                var repeated = session.automatedObservation();
+                assertSame(repeated.get("domain"), raw.get("domain"));
+                assertSame(((Map<?, ?>)repeated.get("state")).get("actionSources"), rawExtras,
+                        "The cache owns the domain and extra portraits together");
+                assertEquals(JSON.toJsonTree(repeated), observation);
+                assertEquals(JSON.toJsonTree(session.state()), before);
+                return new StackRead(raw, observation, source);
+            });
+            Files.writeString(game.evidence.resolve("stack-source-before-activation.json"), JSON.toJson(values.observation()));
+            var action = values.source().getAsJsonArray("actions").get(0).getAsJsonObject();
+            assertTrue(game.answer(stacked, invoke(values.source(), action)), "The extra source's exact retained handle runs its real stack activation");
+            var discard = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").equals("InputSelectCardsFromList"));
+            assertTrue(game.answer(discard, Map.of("action", "card", "key", text(card(discard.state(), "Hand", "Mountain"), "key"))));
+            var activated = game.until(next -> next.seat() == 0 && priority(next) && next.state().getAsJsonArray("stack").size() == 2);
+            assertEquals(count(viewer(activated.state()), "Hand"), 6);
+            assertEquals(count(viewer(activated.state()), "Graveyard"), 1);
+            assertEquals(text(card(activated.state(), "Graveyard", "Mountain"), "name"), "Mountain");
+            var changeTargets = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").equals("InputConfirm"));
+            assertTrue(game.answer(changeTargets, Map.of("action", "cancel")), "Keep the original real spell target");
+            String charge = forge.game.card.CounterEnumType.CHARGE.getName();
+            var charged = game.until(next -> next.seat() == 0 && priority(next) && next.state().getAsJsonArray("stack").size() == 1
+                    && next.state().getAsJsonArray("stack").get(0).getAsJsonObject().getAsJsonObject("card").getAsJsonObject("counters").has(charge));
+            assertEquals(charged.state().getAsJsonArray("stack").get(0).getAsJsonObject()
+                    .getAsJsonObject("card").getAsJsonObject("counters").get(charge).getAsInt(), 2);
+            var refreshed = JSON.toJsonTree(session.automatedObservation()).getAsJsonObject();
+            assertEquals(refreshed.getAsJsonObject("state").getAsJsonArray("actionSources").get(0).getAsJsonObject()
+                    .getAsJsonObject("card").getAsJsonObject("counters").get(charge).getAsInt(), 2);
+            assertEquals(JSON.toJsonTree(values.raw()), values.observation(), "The old portrait remains unchanged after a real counter event");
+            assertThrows(IllegalArgumentException.class, () -> session.action(request(stacked, invoke(values.source(), action))));
+            assertNull(session.state().get("error"));
+            Files.writeString(game.evidence.resolve("stack-source-after-activation.json"), JSON.toJson(Map.of(
+                    "activated", activated.state(), "charged", charged.state(), "refreshed", refreshed)));
+        }
+    }
 
     @Test(groups = "canonical-interaction", timeOut = 90000)
     public void anExplicitFlexibleManaSourceLeavesItsRealColorChoiceToTheHuman() throws Exception {
@@ -321,6 +480,10 @@ public class SourceActionsTest {
     }
 
     private static void finishTargetedCast(RulesScenario game, String spell, String targetCard) throws Exception {
+        finishTargetedCast(game, spell, targetCard, null);
+    }
+
+    private static void finishTargetedCast(RulesScenario game, String spell, String targetCard, String poolColor) throws Exception {
         // Targeting/payment may publish intermediate prompts (including another
         // payment prompt). Their count is not the spell's completion condition.
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(45);
@@ -333,6 +496,13 @@ public class SourceActionsTest {
                 assertTrue(game.answer(input, targetCard == null
                         ? Map.of("action", "player", "playerId", input.state().get("viewerId").getAsInt())
                         : Map.of("action", "card", "key", text(card(input.state(), "Battlefield", targetCard), "key"))));
+            } else if (poolColor != null) {
+                assertFalse(input.prompt().get("okEnabled").getAsBoolean(), "The external payer cannot use Forge Auto");
+                assertTrue(input.prompt().getAsJsonArray("usablePoolManaColors").asList().stream()
+                        .anyMatch(value -> value.getAsString().equals(poolColor)));
+                assertTrue(viewer(input.state()).getAsJsonObject("mana").get(poolColor).getAsInt() > 0);
+                assertFalse(input.prompt().getAsJsonArray("unpaidManaParts").isEmpty());
+                if (!game.answer(input, Map.of("action", "spendPoolMana", "manaColor", poolColor))) continue;
             } else {
                 assertTrue(input.prompt().get("okEnabled").getAsBoolean(), "The fixture supplies the real spell's mana cost");
                 // Auto can complete while a republished payment is being read.
@@ -782,7 +952,7 @@ public class SourceActionsTest {
                 .filter(card -> text(card, "name").equals(name)).findFirst().orElse(null);
     }
     private static JsonObject query(RulesScenario game, Input input, JsonObject source) {
-        return JSON.toJsonTree(game.table.seat(input.seat()).sourceActions(request(input, Map.of("key", text(source, "key"))))).getAsJsonObject();
+        return JSON.toJsonTree(game.session(input.seat()).sourceActions(request(input, Map.of("key", text(source, "key"))))).getAsJsonObject();
     }
     private static Map<String, ?> invoke(JsonObject actions, JsonObject action) {
         return Map.of("action", "useSourceAction", "key", text(actions, "sourceCardKey"), "actionId", text(action, "id"));

@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static forge.api.RulesScenario.*;
 import static org.testng.Assert.*;
@@ -95,6 +96,117 @@ public class AutomatedObservationTest {
         }
     }
 
+    @Test(timeOut = 90000)
+    public void aHumanPreviewRechecksItsActualInputAfterItsLastFundingQuery() throws Exception {
+        try (var game = new RulesScenario("human-source-preview-owner", Map.of(0, List.of("Forest", "Forest", "Forest")),
+                "Manalith", "Rhys the Redeemed")) {
+            var main = main(game);
+            HeadlessPlatform.query(game.table, () -> null);
+            var actor = game.table.game.getRegisteredPlayers().get(0);
+            var controller = (PlayerControllerHuman)actor.getController();
+            var session = game.session(0);
+            var original = controller.getInputQueue().getInput();
+            var before = game.state(0);
+            var spell = card(before, "Hand", "Manalith");
+            var sourceRequest = request(before, before.getAsJsonObject("prompt"), Map.of("key", text(spell, "key")));
+            var offered = JSON.toJsonTree(session.sourceActions(sourceRequest)).getAsJsonObject();
+            var oldAction = offered.getAsJsonArray("actions").asList().stream().map(value -> value.getAsJsonObject())
+                    .filter(action -> text(action, "kind").equals("cast")).findFirst().orElseThrow();
+            assertNotNull(oldAction.getAsJsonObject("costPreview"), "The warmed real catalog must run a mana funding preview");
+            var confirm = new InputConfirm(controller, "An actual replacement during cost inspection", "Continue", "Cancel", true);
+            var worker = Executors.newSingleThreadExecutor();
+            try {
+                HeadlessPlatform.query(game.table, () -> {
+                    long revision = ((Number)session.state().get("revision")).longValue();
+                    try (var boundary = new DuringDiscovery(actor, ZoneType.Battlefield, NumericDecisionProjection.class, "funding", () -> {
+                        try { worker.submit(() -> controller.getInputQueue().setInput(confirm)).get(3, TimeUnit.SECONDS); }
+                        catch (Exception failure) { throw new AssertionError(failure); }
+                        assertSame(controller.getInputQueue().getInput(), confirm);
+                        assertSame(controller.getInputProxy().getInput(), confirm);
+                        assertEquals(((Number)session.state().get("revision")).longValue(), revision,
+                                "The real queue replacement precedes its queued display; a revision-only fence cannot detect it");
+                    })) {
+                        assertThrows(IllegalArgumentException.class, () -> session.sourceActions(sourceRequest));
+                        assertTrue(boundary.fired, "The warmed catalog must be replaced inside its final funding preview");
+                        assertEquals(((Number)session.state().get("revision")).longValue(), revision);
+                    }
+                    return null;
+                });
+            } finally { worker.shutdownNow(); }
+            var replacement = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").equals("InputConfirm"));
+            assertSame(controller.getInputQueue().getRootInput(), original);
+            assertEquals(actor.getManaPool().totalMana(), 0);
+            assertTrue(actor.getCardsIn(ZoneType.Battlefield).stream().noneMatch(forest -> forest.isTapped()));
+            assertThrows(IllegalArgumentException.class, () -> session.action(request(before, before.getAsJsonObject("prompt"), Map.of(
+                    "action", "useSourceAction", "key", text(spell, "key"), "actionId", text(oldAction, "id")))));
+            assertTrue(game.answer(replacement, Map.of("action", "ok")));
+            var resumed = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").equals("InputPassPriority"));
+            assertSame(controller.getInputQueue().getInput(), original);
+            assertNotEquals(text(resumed.prompt(), "id"), text(main.prompt(), "id"));
+            var freshSpell = card(resumed.state(), "Hand", "Manalith");
+            var fresh = JSON.toJsonTree(session.sourceActions(request(resumed.state(), resumed.prompt(),
+                    Map.of("key", text(freshSpell, "key"))))).getAsJsonObject();
+            assertTrue(fresh.getAsJsonArray("actions").asList().stream().map(value -> value.getAsJsonObject())
+                    .anyMatch(action -> text(action, "kind").equals("cast") && !text(action, "id").equals(text(oldAction, "id"))));
+            assertEquals(actor.getManaPool().totalMana(), 0);
+            assertTrue(actor.getCardsIn(ZoneType.Battlefield).stream().noneMatch(forest -> forest.isTapped()));
+            assertTrue(resumed.state().getAsJsonArray("stack").isEmpty());
+            assertNull(session.state().get("error"));
+            Files.writeString(game.evidence.resolve("human-preview-resumption.json"), JSON.toJson(Map.of(
+                    "before", before, "replacement", replacement.state(), "resumed", resumed.state(), "fresh", fresh)));
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void aNestedSourceQueryKeepsItsCompletedDomainAndHandlesWhenTheOuterReadIsDiscarded() throws Exception {
+        try (var game = RulesScenario.automated("nested-source-query-owner", Map.of(0, List.of("Forest")),
+                "Manalith", "Rhys the Redeemed")) {
+            main(game);
+            HeadlessPlatform.query(game.table, () -> null);
+            var actor = game.table.game.getRegisteredPlayers().get(0);
+            var controller = (PlayerControllerHuman)actor.getController();
+            var session = game.session(0);
+            var original = controller.getInputQueue().getInput();
+            var inner = new AtomicReference<Map<String, Object>>();
+            var retained = HeadlessPlatform.query(game.table, () -> {
+                var before = JSON.toJsonTree(session.state());
+                try (var boundary = new DuringDiscovery(actor, () -> inner.set(session.automatedObservation()))) {
+                    assertThrows(StaleObservationException.class, session::automatedObservation);
+                    assertTrue(boundary.fired, "The inner read must run during the outer input's actual source discovery");
+                }
+                assertNotNull(inner.get());
+                var recovered = session.automatedObservation();
+                assertSame(recovered.get("domain"), inner.get().get("domain"),
+                        "The first rejected read cannot delete or replace the already completed inner query");
+                assertEquals(JSON.toJsonTree(recovered), JSON.toJsonTree(inner.get()));
+                assertEquals(JSON.toJsonTree(session.state()), before);
+                assertSame(controller.getInputQueue().getInput(), original);
+                assertSame(controller.getInputProxy().getInput(), original);
+                assertEquals(actor.getManaPool().totalMana(), 0);
+                assertFalse(actor.getCardsIn(ZoneType.Battlefield).get(0).isTapped());
+                return JSON.toJsonTree(recovered).getAsJsonObject();
+            });
+            var state = retained.getAsJsonObject("state");
+            var prompt = state.getAsJsonObject("prompt");
+            var forest = card(state, "Battlefield", "Forest");
+            var source = retained.getAsJsonObject("domain").getAsJsonArray("sources").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(value -> text(value, "sourceCardId").equals(text(forest, "visualId")))
+                    .findFirst().orElseThrow();
+            var action = source.getAsJsonArray("actions").get(0).getAsJsonObject();
+            var command = Map.of("action", "useSourceAction", "key", text(source, "sourceCardKey"), "actionId", text(action, "id"));
+            assertTrue(game.answer(new Input(0, state, prompt), command), "The exact inner query's retained handle remains executable");
+            var paid = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").equals("InputPassPriority")
+                    && viewer(next.state()).getAsJsonObject("mana").get("G").getAsInt() == 1);
+            assertTrue(card(paid.state(), "Battlefield", "Forest").get("tapped").getAsBoolean());
+            assertEquals(actor.getManaPool().totalMana(), 1);
+            assertTrue(paid.state().getAsJsonArray("stack").isEmpty());
+            assertThrows(IllegalArgumentException.class, () -> session.action(request(state, prompt, command)));
+            assertNull(session.state().get("error"));
+            Files.writeString(game.evidence.resolve("nested-source-query-resumption.json"), JSON.toJson(Map.of(
+                    "inner", retained, "paid", paid.state())));
+        }
+    }
+
     @Test
     public void onlyTheTypedPrivateObservationFailureReceivesARecoverableWireCode() {
         var observation = new JsonObject(); observation.addProperty("id", 17); observation.addProperty("method", "automatedState");
@@ -113,6 +225,14 @@ public class AutomatedObservationTest {
         var deck = new Deck(name); deck.getMain().add(StaticData.instance().getCommonCards().getCard("Forest"), 99);
         deck.getOrCreate(DeckSection.Commander).add(StaticData.instance().getCommonCards().getCard("Rhys the Redeemed")); return deck;
     }
+    private static Input main(RulesScenario game) throws Exception {
+        return game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").equals("InputPassPriority")
+                && text(next.state(), "phaseKey").equals("MAIN1") && next.state().get("activePlayerId").getAsInt() == 0);
+    }
+    private static JsonObject card(JsonObject state, String zone, String name) {
+        return zone(viewer(state), zone).getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject())
+                .filter(value -> text(value, "name").equals(name)).findFirst().orElseThrow();
+    }
     private static JsonObject request(JsonObject state, JsonObject prompt, Map<String, ?> answer) {
         var request = JSON.toJsonTree(answer).getAsJsonObject();
         request.addProperty("sessionId", text(state, "id")); request.addProperty("promptId", text(prompt, "id")); return request;
@@ -123,22 +243,27 @@ public class AutomatedObservationTest {
     private static final class DuringDiscovery implements AutoCloseable {
         private final Map<ZoneType, PlayerZone> zones;
         private final PlayerZone original;
+        private final ZoneType zone;
         private boolean fired;
-        @SuppressWarnings("unchecked")
         DuringDiscovery(Player actor, Runnable replacement) throws Exception {
+            this(actor, ZoneType.Hand, SourceActions.class, "discover", replacement);
+        }
+        @SuppressWarnings("unchecked")
+        DuringDiscovery(Player actor, ZoneType zone, Class<?> caller, String method, Runnable replacement) throws Exception {
             var field = Player.class.getDeclaredField("zones"); field.setAccessible(true);
-            zones = (Map<ZoneType, PlayerZone>) field.get(actor); original = zones.get(ZoneType.Hand);
-            zones.put(ZoneType.Hand, new PlayerZone(ZoneType.Hand, actor) {
+            this.zone = zone;
+            zones = (Map<ZoneType, PlayerZone>) field.get(actor); original = zones.get(zone);
+            zones.put(zone, new PlayerZone(zone, actor) {
                 @Override public CardCollectionView getCards(boolean filter) {
                     var actual = original.getCards(filter);
                     if (!fired && StackWalker.getInstance().walk(frames -> frames.anyMatch(frame ->
-                            frame.getClassName().equals(SourceActions.class.getName()) && frame.getMethodName().equals("discover")))) {
+                            frame.getClassName().equals(caller.getName()) && frame.getMethodName().equals(method)))) {
                         fired = true; close(); replacement.run();
                     }
                     return actual;
                 }
             });
         }
-        @Override public void close() { zones.put(ZoneType.Hand, original); }
+        @Override public void close() { zones.put(zone, original); }
     }
 }

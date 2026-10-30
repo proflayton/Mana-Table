@@ -52,6 +52,12 @@ final class RulesScenario implements AutoCloseable {
                 () -> System.nanoTime() / 1_000_000, Map.of(), true);
     }
 
+    static RulesScenario automated(String name, Map<Integer, List<String>> battlefield, String mainCard, String commander,
+                                   Map<Integer, List<String>> mainDeckOverrides) throws Exception {
+        return new RulesScenario(name, battlefield, mainCard, List.of(commander), false, 4, DecisionTempo.Settings.off(),
+                () -> System.nanoTime() / 1_000_000, mainDeckOverrides, true);
+    }
+
     RulesScenario(String name, int seatCount) throws Exception {
         this(name, Map.of(), "Forest", List.of("Rhys the Redeemed"), false, seatCount);
     }

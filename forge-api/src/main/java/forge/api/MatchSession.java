@@ -129,13 +129,22 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
     }
 
+    /** One completed source query owns its copied domain and extra portraits. */
+    private record SourceQueryValues(long version, Map<String, Object> domain, List<Map<String, Object>> additionalSources) {
+        @SuppressWarnings("unchecked")
+        SourceQueryValues {
+            var facts = PublishedDecisionFacts.freeze(map("domain", domain, "additionalSources", additionalSources));
+            domain = (Map<String, Object>) facts.get("domain");
+            additionalSources = (List<Map<String, Object>>) facts.get("additionalSources");
+        }
+    }
+
     private static final class Pending {
         final String id = UUID.randomUUID().toString();
         final String kind;
         final Input input;
         final Map<String, CardView> cards = new LinkedHashMap<>();
         final Map<String, CardView> additionalCards = new LinkedHashMap<>();
-        final List<Map<String, Object>> additionalSources = new ArrayList<>();
         final Map<Integer, String> cardKeys = new HashMap<>();
         final Map<String, SourceActions.Catalog> sourceActions = new HashMap<>();
         final Set<String> poolManaColors = new HashSet<>();
@@ -147,8 +156,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         Input colorPaymentOwner;
         CurrentDecisionProjection.Capture publishedDecision;
         String announcedSymbol = "";
-        Map<String, Object> cachedDomain;
-        long cachedDomainVersion = -1;
+        SourceQueryValues sourceQuery;
         long combatSequence = -1;
         int nextCardKey;
         final Set<Integer> players = new HashSet<>();
@@ -602,23 +610,27 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 Card source = sourceCard(view);
                 if (source == null) throw new IllegalArgumentException("Card is not visible in this prompt");
                 long version = sourceActionVersion.get();
-                var catalog = current.sourceActions.get(key);
+                var observedCatalog = current.sourceActions.get(key);
+                var catalog = observedCatalog;
                 if (view.isFaceDown() || catalog == null || !catalog.matches(source, version)) {
                     catalog = view.isFaceDown() ? SourceActions.empty(source, key, version)
                             : SourceActions.describe(current.input, source, key, version, this::visibleActionHost);
                     if (!sourceInputCurrent(current) || sourceActionVersion.get() != version)
                         throw new IllegalArgumentException("The source actions changed. Read the current card again.");
-                    current.sourceActions.put(key, catalog);
                 }
-                var result = sourceCatalogState(current, catalog);
+                var result = sourceCatalogState(current, catalog, true);
                 if (revision != observedRevision) throw new IllegalArgumentException("The table changed. Read the current card again.");
-                return result;
+                // Preview/funding queries can yield after the catalog itself
+                // was checked. The complete reply must retain that same owner.
+                Card currentSource = sourceCard(current.cards.containsKey(key) ? current.cards.get(key) : current.additionalCards.get(key));
+                if (pending != current || !sourceInputCurrent(current) || sourceActionVersion.get() != version
+                        || current.sourceActions.get(key) != observedCatalog || !catalog.matches(currentSource, version))
+                    throw new IllegalArgumentException("The source actions changed. Read the current card again.");
+                var frozen = PublishedDecisionFacts.freeze(result);
+                current.sourceActions.put(key, catalog);
+                return frozen;
             }
         });
-    }
-
-    private Map<String, Object> sourceCatalogState(Pending current, SourceActions.Catalog catalog) {
-        return sourceCatalogState(current, catalog, true);
     }
 
     private Map<String, Object> sourceCatalogState(Pending current, SourceActions.Catalog catalog, boolean readOnlyFacts) {
@@ -639,7 +651,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "sourceCardId", catalog.source().isFaceDown() && human.isExternallyAutomated()
                         ? combatIds.id(catalog.source().getView()) : activity.visualId(catalog.source().getView()), "actions", actions);
         if (readOnlyFacts) result.put("revision", revision);
-        return Collections.unmodifiableMap(result);
+        return result;
     }
 
     // Only the process owner calls this. No network seat can enumerate bot
@@ -663,35 +675,49 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 Pending observedOwner = pending;
                 long version = sourceActionVersion.get();
                 var captured = currentDecisionCapture(current);
+                var observedQuery = current == null ? null : current.sourceQuery;
+                SourceQueryValues sourceValues = null;
+                Map<String, CardView> additionalCards = null;
+                Map<String, SourceActions.Catalog> catalogs = null;
+                Map<String, SourceActions.Catalog> observedCatalogs = null;
+                var additionalSources = new ArrayList<Map<String, Object>>();
                 boolean discovered = false;
-                Map<String, Object> domain = map("version", version, "coverage", "NotApplicable", "sources", List.of(), "actions", List.of());
+                Map<String, Object> domain = Map.of("version", version, "coverage", "NotApplicable", "sources", List.of(), "actions", List.of());
                 if (current != null && sourceInputCurrent(current)) {
-                    if (current.cachedDomain != null && current.cachedDomainVersion == version) domain = current.cachedDomain;
+                    if (observedQuery != null && observedQuery.version() == version) {
+                        sourceValues = observedQuery;
+                        domain = sourceValues.domain();
+                    }
                     else {
                         var discovery = SourceActions.discover(current.input, human.getPlayer(), this::actionHostVisible);
                         boolean complete = discovery.complete();
                         var sources = new ArrayList<Object>();
                         var semantics = new ArrayList<Object>();
-                        current.additionalCards.clear(); current.additionalSources.clear();
+                        var sourceCards = new LinkedHashMap<String, CardView>();
+                        additionalCards = sourceCards;
+                        catalogs = new LinkedHashMap<>();
+                        observedCatalogs = new LinkedHashMap<>();
                         for (Card source : discovery.sources()) {
                             String key = current.cardKeys.get(source.getId());
                             if (source.getZone().getZoneType() == ZoneType.Stack || source.getZone().getZoneType() == ZoneType.Sideboard) {
-                                var face = cardState(source.getView(), current);
-                                key = String.valueOf(face.get("key"));
+                                key = cardKey(source.getView(), current);
+                                var face = cardState(source.getView(), null);
+                                face.put("key", key);
                                 face.put("selectable", false); face.put("highlighted", false);
-                                current.additionalCards.put(key, source.getView());
-                                current.additionalSources.add(Collections.unmodifiableMap(map("decisionId", current.id,
+                                sourceCards.put(key, source.getView());
+                                additionalSources.add(map("decisionId", current.id,
                                         "zone", source.getZone().getZoneType().name(), "playerId", source.getController().getId(),
-                                        "card", Collections.unmodifiableMap(face))));
+                                        "card", face));
                             } else if (key == null || !current.cards.containsKey(key)) { complete = false; continue; }
                             var catalog = current.sourceActions.get(key);
+                            observedCatalogs.put(key, catalog);
                             if (catalog == null || !catalog.matches(source, version)) {
                                 catalog = SourceActions.describe(current.input, source, key, version, this::actionHostVisible);
-                                current.sourceActions.put(key, catalog);
                             }
+                            catalogs.put(key, catalog);
                             sources.add(sourceCatalogState(current, catalog, false));
                             for (var action : catalog.actions()) semantics.add(ActionSemantics.describe(action, current.input,
-                                    human.getPlayer(), this::semanticCardId));
+                                    human.getPlayer(), card -> semanticCardId(card, sourceCards)));
                         }
                         domain = map("version", version, "coverage", complete ? "Complete" : "Unsupported",
                                 "sources", complete ? sources : List.of(), "actions", complete ? semantics : List.of());
@@ -700,14 +726,18 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         discovered = true;
                     }
                 }
-                var snapshot = automatedState(current);
+                var snapshot = state();
                 long observedRevision = revision;
                 var semantics = automatedSemantics(current, captured);
+                boolean catalogsChanged = false;
+                if (observedCatalogs != null) for (var entry : observedCatalogs.entrySet())
+                    if (current.sourceActions.get(entry.getKey()) != entry.getValue()) { catalogsChanged = true; break; }
                 // Also fence cached catalogs and the decision metadata read.
                 // A reentrant callback can replace ownership while a rules
                 // query temporarily yields the state boundary. No part of
                 // that mixed read, including newly allocated offers, is usable.
-                if (pending != observedOwner || sourceActionVersion.get() != version || revision != observedRevision
+                if (pending != observedOwner || sourceActionVersion.get() != version || revision != observedRevision || catalogsChanged
+                        || current != null && current.sourceQuery != observedQuery
                         || captured != null && (current.publishedDecision != captured || !decisionOwnerCurrent(current))
                         || current != null && current.kind.equals("input")
                             && (inputActionQueued || human.getInputQueue().getInput() != current.input
@@ -715,32 +745,34 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                                 || (current.input instanceof InputPassPriority || current.input instanceof InputPayMana)
                                     && !sourceInputCurrent(current)
                                 || isSelectionInput(current.input) && !selectionInputCurrent(current))) {
-                    if (current != null) {
-                        current.cachedDomain = null;
-                        current.cachedDomainVersion = -1;
-                        current.sourceActions.clear(); current.additionalCards.clear(); current.additionalSources.clear();
-                        // Revoke only the publication this read observed; a
-                        // newer cohort can retain this same Pending.
-                        if (current.publishedDecision == captured) {
+                    // Nothing discovered by this read has been installed. Only
+                    // retire the observed facts if their actual owner was lost;
+                    // nested queries/publications keep their newer handles.
+                    if (current != null && current.sourceQuery == observedQuery && current.publishedDecision == captured
+                            && (sourceActionVersion.get() != version || !decisionOwnerCurrent(current))) {
+                        current.sourceQuery = null;
+                        if (captured != null) {
                             current.poolManaColors.clear(); current.publishedDecision = null;
                         }
                     }
                     throw new StaleObservationException();
                 }
                 if (discovered) {
-                    current.cachedDomain = Collections.unmodifiableMap(domain);
-                    current.cachedDomainVersion = version;
+                    sourceValues = new SourceQueryValues(version, domain, additionalSources);
+                    current.sourceQuery = sourceValues;
+                    current.additionalCards.clear(); current.additionalCards.putAll(additionalCards);
+                    current.sourceActions.putAll(catalogs);
+                    domain = sourceValues.domain();
                 }
-                return map("seatId", viewer.getId(), "state", snapshot, "domain", domain, "semantics", semantics);
+                return map("seatId", viewer.getId(), "state", automatedState(snapshot, sourceValues), "domain", domain, "semantics", semantics);
             }
         });
     }
 
-    private Map<String, Object> automatedState(Pending current) {
-        var snapshot = state();
-        if (current == null || current.additionalSources.isEmpty() || snapshot.get("prompt") == null) return snapshot;
+    private Map<String, Object> automatedState(Map<String, Object> snapshot, SourceQueryValues sourceValues) {
+        if (sourceValues == null || sourceValues.additionalSources().isEmpty() || snapshot.get("prompt") == null) return snapshot;
         var enriched = new LinkedHashMap<>(snapshot);
-        enriched.put("actionSources", List.copyOf(current.additionalSources));
+        enriched.put("actionSources", sourceValues.additionalSources());
         return Collections.unmodifiableMap(enriched);
     }
 
@@ -818,6 +850,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private String semanticCardId(CardView card) {
+        return semanticCardId(card, pending == null ? Map.of() : pending.additionalCards);
+    }
+
+    private String semanticCardId(CardView card, Map<String, CardView> additionalCards) {
         ZoneType zone = card.getZone();
         if (zone == null || !card.canBeShownTo(viewer)) return "";
         if (!currentCardView(card)) return "";
@@ -834,7 +870,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         if (zone == ZoneType.Stack && game.getView().getStack().stream().anyMatch(item -> card.equals(item.getSourceCard())))
             return combatIds.id(card);
-        if (zone == ZoneType.Sideboard && pending != null && pending.additionalCards.containsValue(card)) return combatIds.id(card);
+        if (zone == ZoneType.Sideboard && additionalCards.values().stream().anyMatch(current -> current == card)) return combatIds.id(card);
         return "";
     }
 
@@ -1279,7 +1315,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         quietYield.invalidate();
         finiteStackYield.revoke("action-restored");
         if (pending != null) {
-            pending.sourceActions.clear(); pending.additionalCards.clear(); pending.additionalSources.clear();
+            pending.sourceActions.clear(); pending.additionalCards.clear(); pending.sourceQuery = null;
             pending.publishedDecision = null; pending.poolManaColors.clear();
             if (viewer.getId() == restored.actorId()) pending = null;
         }
@@ -2123,7 +2159,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     && prompt.kind.equals("choice") && "colorChoice".equals(prompt.prompt.get("context"))) {
                 // The same rules input can publish a smaller bill without a
                 // new object identity. Rebuild its bill-dependent domain once.
-                prompt.cachedDomain = null; prompt.cachedDomainVersion = -1;
+                prompt.sourceQuery = null;
             }
         }
         latest = Collections.unmodifiableMap(snapshot);
@@ -2276,13 +2312,17 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return card.getZone() == zone && card.canBeShownTo(viewer);
     }
 
+    private String cardKey(CardView card, Pending prompt) {
+        return prompt.cardKeys.computeIfAbsent(card.getId(), ignored -> prompt.id + ":c" + prompt.nextCardKey++);
+    }
+
     private Map<String, Object> cardState(CardView card, Pending prompt) {
         boolean hidden = card.isFaceDown();
         var face = card.getCurrentState();
         // Refreshes can remove or reorder visible cards without consuming the
         // input. Retain opaque identities separately from the current allowed
         // cards, so a removed card's handle can never select another card.
-        String key = prompt == null ? "" : prompt.cardKeys.computeIfAbsent(card.getId(), ignored -> prompt.id + ":c" + prompt.nextCardKey++);
+        String key = prompt == null ? "" : cardKey(card, prompt);
         if (prompt != null) prompt.cards.put(key, card);
         var counters = new LinkedHashMap<String, Integer>();
         if (card.getCounters() != null) for (var entry : card.getCounters().entrySet()) counters.put(entry.getElement().getName(), entry.getCount());
