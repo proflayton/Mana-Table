@@ -447,6 +447,25 @@ Real-engine resolution, schema checks, authored pointer journeys and actual-wind
 review are separate forms of evidence. The original secondhand failure remains
 unconfirmed; improved feedback is not proof that every reported cast now works.
 
+## First numeric step: 30 October 2026 (source candidate)
+
+Forge's [announcement call](https://github.com/proflayton/Mana-Table/blob/a9dda0790a855f1edad456a69dfa8d200338c7ba/forge-gui/src/main/java/forge/player/PlayerControllerHuman.java)
+supplies the actual numeric range; its [integer chooser](https://github.com/proflayton/Mana-Table/blob/a9dda0790a855f1edad456a69dfa8d200338c7ba/forge-gui/src/main/java/forge/gui/util/SGuiChoose.java)
+offers legal numbers before a separate response. Our existing plus/minus buttons
+are an adaptation of choosing that value, not an observed Arena stepper.
+
+For a fresh Crackle with Power X prompt, the player clicks plus to display 1,
+then 2. Only Confirm sends the current scoped number. The retained baseline
+showed the first plus leaving the empty draft unchanged with zero commands.
+The existing `DecisionSession` now owns stepping for its current number draft:
+an empty string starts from zero on a deliberate step, using the engine's bounds.
+Nonempty invalid text, including whitespace, remains available for editing.
+The existing widened arithmetic and explicit confirmation route remain intact.
+
+**Human review: pending for the first-step journey.**
+The authored pointer regression is separate from real-engine casting evidence;
+this finding does not establish the cause of the secondhand target-selection report.
+
 ## Design rules learned from player feedback
 
 1. **Design the journey before its controls.** Identify the player's intent,

@@ -97,6 +97,13 @@ internal sealed class DecisionSession
     }
 
     internal void Clear() { scope = null; Current = null; Draft = null; Presentation = null; }
+    internal bool AdjustNumber(int delta)
+    {
+        if (Payload is not NumberPayload number || Draft is not ValueDraft draft) return false;
+        if (!int.TryParse(draft.Text, out int value) && draft.Text.Length != 0) return false;
+        draft.Text = Math.Clamp((long)value + delta, number.Range?.Min ?? int.MinValue, number.Range?.Max ?? int.MaxValue).ToString();
+        return true;
+    }
     internal int Position(int index) => Choice?.Selected.IndexOf(index) + 1 ?? 0;
     internal void ClearSelection() => Choice?.Selected.Clear();
     internal bool Toggle(GameSnapshot state, int index)

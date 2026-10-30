@@ -96,9 +96,8 @@ public class CertifiedUndoTest {
                         .map(value -> value.getAsJsonObject()).filter(value -> text(value, "name").equals(name)).findFirst().orElseThrow();
                 assertFalse(source.get("tapped").getAsBoolean(), "Every audience sees the restored untapped source");
             }
-            var unchanged = game.state(0);
-            assertThrows(IllegalArgumentException.class, () -> game.session(0).action(request(restored, request)));
-            assertEquals(game.state(0), unchanged, "A consumed Undo does not mutate or expose another action");
+            rejectedUnchanged(game, () -> game.session(0).action(request(restored, request)),
+                    "A consumed Undo does not mutate or expose another action");
             var again = activate(game, restored, name);
             assertEquals(mana(again.state(), color), amount, "Reactivation produces exactly one ordinary activation's mana");
             assertEquals(footprint(game, rulesSource).activationsThisTurn(), before.activationsThisTurn() + 1);
@@ -116,9 +115,8 @@ public class CertifiedUndoTest {
             var second = activate(game, first, "Sol Ring");
             var current = offer(second);
             assertNotEquals(text(current, "id"), text(old, "id"));
-            var unchanged = game.state(0);
-            assertThrows(IllegalArgumentException.class, () -> game.session(0).action(request(second, undo(old))));
-            assertEquals(game.state(0), unchanged);
+            rejectedUnchanged(game, () -> game.session(0).action(request(second, undo(old))),
+                    "A replaced Undo offer cannot change the committed state");
             assertTrue(game.answer(second, undo(current)));
             var restored = freshPriority(game, second);
             assertEquals(mana(restored.state(), "G"), 1, "The first activation remains committed");
@@ -136,16 +134,15 @@ public class CertifiedUndoTest {
         try (var game = new RulesScenario("certified-undo-rejected-offers", Map.of(0, List.of("Sol Ring")))) {
             var active = activate(game, main(game), "Sol Ring");
             var offer = offer(active);
-            var unchanged = game.state(0);
             for (var invalid : List.of(Map.of("offerId", "foreign"), Map.of("actionId", "foreign"),
                     Map.of("undoBarrierVersion", offer.get("barrierVersion").getAsLong() + 1), Map.of("undoBarrierVersion", 0.5))) {
                 var body = new java.util.LinkedHashMap<String, Object>(undo(offer)); body.putAll(invalid);
-                assertThrows(IllegalArgumentException.class, () -> game.session(0).action(request(active, body)));
-                assertEquals(game.state(0), unchanged, "Rejected authority cannot untap a source or leave/duplicate mana");
+                rejectedUnchanged(game, () -> game.session(0).action(request(active, body)),
+                        "Rejected authority cannot untap a source or leave/duplicate mana");
             }
             var foreign = request(active, undo(offer));
-            assertThrows(IllegalArgumentException.class, () -> game.session(1).action(foreign));
-            assertEquals(game.state(0), unchanged);
+            rejectedUnchanged(game, () -> game.session(1).action(foreign),
+                    "Another seat cannot change the committed state with a foreign Undo");
             assertTrue(game.answer(active, Map.of("action", "passPriority", "expectedTask", "priority")));
             HeadlessPlatform.query(game.table, () -> null);
             assertNull(game.table.game.getReversibleManaAction().current(), "Accepted priority passing revokes before later rules events");
@@ -213,6 +210,17 @@ public class CertifiedUndoTest {
             assertTrue(after.get("remainingMs").getAsLong() <= elapsed.get("remainingMs").getAsLong());
             assertEquals(text(after, "phase"), "thinking", "Undo cannot regain a presentation allowance");
         }
+    }
+
+    private static void rejectedUnchanged(RulesScenario game, Runnable rejected, String message) {
+        HeadlessPlatform.query(game.table, () -> {
+            synchronized (game.table.gate) {
+                var before = game.state(0);
+                assertThrows(IllegalArgumentException.class, rejected::run);
+                assertEquals(game.state(0), before, message);
+                return null;
+            }
+        });
     }
 
     private record Footprint(boolean tapped, int tappedThisTurn, int activationsThisTurn,

@@ -72,10 +72,31 @@ internal static class DecisionSessionChecks
         var newInitial = bounded with { Decision = bounded.Decision! with { Payload = new NumberPayload("3", new(0, 20)) } };
         check(draft.Observe(newInitial, false) && draft.Input == "3",
             "A same-ID numeric initial-value replacement starts with the newly offered value");
+        check(draft.AdjustNumber(1) && draft.Input == "4", "A number step uses the engine's explicit initial value");
+        draft.Input = "";
+        check(draft.AdjustNumber(1) && draft.Input == "1", "A deliberate first plus establishes one from an empty numeric draft");
+        draft.Input = "";
+        check(draft.AdjustNumber(-1) && draft.Input == "0", "A first minus from empty respects the current zero minimum");
+        foreach (string invalid in new[] { "-", " " }) {
+            draft.Input = invalid;
+            check(!draft.AdjustNumber(1) && draft.Input == invalid, "A number step preserves nonempty invalid intermediate text: [" + invalid + "]");
+        }
+        var narrowNumber = newInitial with { Decision = newInitial.Decision! with { Payload = new NumberPayload("", new(2, 5)) } };
+        draft.Observe(narrowNumber, false);
+        check(draft.AdjustNumber(1) && draft.Input == "2", "A first numeric step clamps to a nonzero engine minimum");
+        draft.Input = "5";
+        check(draft.AdjustNumber(1) && draft.Input == "5", "A number step cannot exceed the current explicit maximum");
+        var unboundedNumber = newInitial with { Decision = newInitial.Decision! with { Payload = new NumberPayload("") } };
+        draft.Observe(unboundedNumber, false); draft.Input = int.MaxValue.ToString();
+        bool upperClamped = draft.AdjustNumber(1) && draft.Input == int.MaxValue.ToString();
+        draft.Input = int.MinValue.ToString();
+        check(draft.AdjustNumber(-1) && draft.Input == int.MinValue.ToString() && upperClamped,
+            "Number steps retain widened arithmetic and clamp both integer extremes without overflow");
         var text = newInitial with { Decision = newInitial.Decision! with { Payload = new TextPayload("First answer") } };
         draft.Observe(text, false); draft.Input = "Unfinished answer";
         check(!draft.Observe(text with { Revision = 101 }, false) && draft.Input == "Unfinished answer",
             "Unchanged text input retains the local draft");
+        check(!draft.AdjustNumber(1) && draft.Input == "Unfinished answer", "Numeric stepping cannot edit an ordinary text payload");
         var newText = text with { Decision = text.Decision! with { Payload = new TextPayload("Replacement answer") } };
         check(draft.Observe(newText, false) && draft.Input == "Replacement answer",
             "A same-ID text replacement cannot inherit the preceding answer");
