@@ -1162,6 +1162,22 @@ Cleanup tests exercise the actual discard input's waiting callback and require
 completion before highlight cleanup without duplicate notifications. Existing
 Evangel, Convoke/nested-color and counter-cost journeys retain real payment and
 resolution coverage; allocated counters remain distinct from unique donors.
+`SourceActionsTest` also exercises a real stopped-priority handoff under the
+existing state boundary. Its actual waiting callback invokes the global table
+publisher before the successor display runs. Every seat and the spectator must
+advance to the same fresh board, retire the old prompt and source actions, and
+resume ordinary next-seat priority without spending mana. This distinguishes
+input retirement from queued-work scheduling and catches an audience silently
+retaining an older board while execution facts advance.
+The complete decision context uses one retained publication owner, including
+ordinary number, numeric-text and allocation callbacks. Three parameterized
+`ChoicePublicationTest` cases open actual GUI callbacks inside a genuine
+`CostPayment` and `HumanCostDecision` input. Changing the pushed cost's amount
+without publishing must leave both the human snapshot and complete AI observation
+unchanged; republishing must update the copied cost while preserving that exact
+dialog's answer future. Restoring the cost and answering the child must resume
+the original payment and tap its chosen permanent once. These reuse the existing
+fixture and source/rules boundary, with no second engine or snapshot simulator.
 `ChoicePublicationTest` enters actual controller choice callbacks to check copied
 option facts, retained-read purity, deep immutability and a superseded option
 query across all seat and spectator views. A choice nested inside a real cost

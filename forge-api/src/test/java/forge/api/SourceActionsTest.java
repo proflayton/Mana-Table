@@ -2,12 +2,19 @@ package forge.api;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import forge.gamemodes.match.input.InputPassPriority;
+import forge.gui.interfaces.IGuiGame;
+import forge.player.PlayerControllerHuman;
 import org.testng.annotations.Test;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.nio.file.Files;
 
 import static forge.api.RulesScenario.*;
@@ -138,6 +145,98 @@ public class SourceActionsTest {
                 assertEquals(game.state(0), settled, "After the display queue is drained, repeated source reads preserve the exact snapshot too");
             } finally {
                 publish.countDown(); reader.shutdownNow();
+            }
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void aGlobalPublicationDuringStoppedPriorityPublishesEveryAudienceWithoutRevivingItsAuthority() throws Exception {
+        try (var game = RulesScenario.automated("source-actions-stopped-priority-publication", Map.of(0, List.of("Forest")),
+                "Forest", "Rhys the Redeemed")) {
+            var first = main(game);
+            var actor = game.table.game.getRegisteredPlayers().get(0);
+            var controller = (PlayerControllerHuman)actor.getController();
+            var session = game.session(0);
+            var awaited = new AtomicInteger();
+            var trace = new ArrayList<Object>();
+            try {
+                HeadlessPlatform.query(game.table, () -> {
+                    var before = JSON.toJsonTree(session.state()).getAsJsonObject();
+                    var original = new Input(0, before, before.getAsJsonObject("prompt"));
+                    assertEquals(text(original.prompt(), "id"), text(first.prompt(), "id"));
+                    var priority = (InputPassPriority)controller.getInputQueue().getInput();
+                    assertTrue(priority.isPriorityActive());
+                    assertSame(controller.getInputProxy().getInput(), priority);
+                    var forest = card(before, "Battlefield", "Forest");
+                    var catalog = JSON.toJsonTree(session.sourceActions(request(original,
+                            Map.of("key", text(forest, "key"))))).getAsJsonObject();
+                    var mana = catalog.getAsJsonArray("actions").get(0).getAsJsonObject();
+                    long priorBoard = before.get("boardRevision").getAsLong();
+                    trace.add(Map.of("label", "before-pass", "state", before));
+                    var originalGui = controller.getGui();
+                    controller.setGui((IGuiGame)Proxy.newProxyInstance(IGuiGame.class.getClassLoader(), new Class<?>[] { IGuiGame.class },
+                            (proxy, method, args) -> {
+                                if (method.getName().equals("awaitNextInput")) {
+                                    assertEquals(awaited.incrementAndGet(), 1);
+                                    assertFalse(priority.isPriorityActive(), "The actual pass finishes priority before its await callback");
+                                    assertSame(controller.getInputQueue().getInput(), priority);
+                                    assertSame(controller.getInputProxy().getInput(), priority);
+                                    // An unrelated seat can publish in precisely this
+                                    // handoff. Do not use publishInput, whose own
+                                    // display reconciliation would hide the defect.
+                                    game.table.publish();
+                                    var views = game.table.automatedSeats().stream()
+                                            .map(seat -> JSON.toJsonTree(seat.state()).getAsJsonObject()).toList();
+                                    var spectator = JSON.toJsonTree(game.table.spectatorState()).getAsJsonObject();
+                                    trace.add(Map.of("label", "stopped-owner-global-publication", "views", views, "spectator", spectator));
+                                    long board = spectator.get("boardRevision").getAsLong();
+                                    assertTrue(board > priorBoard);
+                                    assertEquals(views.size(), 4);
+                                    for (var view : views) {
+                                        assertEquals(view.get("boardRevision").getAsLong(), board,
+                                                "Every seat must publish this same new board even while its former priority remains queued");
+                                        assertTrue(!view.has("prompt") || view.get("prompt").isJsonNull());
+                                        assertEquals(text(view, "status"), "playing");
+                                        assertEquals(text(view, "actionClass"), "resolving");
+                                        assertTrue(!view.has("decisionOwnerId") || view.get("decisionOwnerId").isJsonNull());
+                                        assertTrue(!view.has("priorityPlayerId") || view.get("priorityPlayerId").isJsonNull());
+                                        var publicActor = player(view, actor.getId());
+                                        assertEquals(count(publicActor, "Battlefield"), 1);
+                                        var publicForest = zone(publicActor, "Battlefield").getAsJsonArray("cards").get(0).getAsJsonObject();
+                                        assertEquals(text(publicForest, "name"), "Forest"); assertFalse(publicForest.get("tapped").getAsBoolean());
+                                    }
+                                    assertTrue(!spectator.has("prompt") || spectator.get("prompt").isJsonNull());
+                                    assertThrows(IllegalArgumentException.class, () -> session.action(request(original,
+                                            Map.of("action", "passPriority", "expectedTask", "priority"))));
+                                    assertThrows(IllegalArgumentException.class, () -> session.action(request(original, invoke(catalog, mana))));
+                                    assertThrows(IllegalArgumentException.class, () -> session.sourceActions(request(original,
+                                            Map.of("key", text(forest, "key")))));
+                                    var passive = JSON.toJsonTree(session.automatedObservation()).getAsJsonObject();
+                                    assertEquals(text(passive.getAsJsonObject("domain"), "coverage"), "NotApplicable");
+                                    assertTrue(passive.getAsJsonObject("domain").getAsJsonArray("sources").isEmpty());
+                                    assertEquals(passive.get("state"), JSON.toJsonTree(session.state()));
+                                    assertEquals(passive.getAsJsonObject("state").get("boardRevision").getAsLong(), board);
+                                    assertEquals(actor.getManaPool().totalMana(), 0);
+                                    assertFalse(actor.getCardsIn(forge.game.zone.ZoneType.Battlefield).get(0).isTapped());
+                                }
+                                try { return method.invoke(originalGui, args); }
+                                catch (InvocationTargetException failure) { throw failure.getCause(); }
+                            }));
+                    try { priority.passPriority(); }
+                    finally { controller.setGui(originalGui); }
+                    assertEquals(awaited.get(), 1);
+                    return null;
+                });
+                var successor = game.until(next -> priority(next) && next.seat() != 0);
+                assertNotEquals(text(successor.prompt(), "id"), text(first.prompt(), "id"));
+                assertTrue(game.answer(successor, Map.of("action", "passPriority", "expectedTask", "priority")));
+                var continued = game.until(next -> priority(next) && !text(next.prompt(), "id").equals(text(successor.prompt(), "id")));
+                assertNull(game.session(continued.seat()).state().get("error"));
+                assertEquals(awaited.get(), 1, "The real pass and its resumed rules loop do not replay the old await callback");
+                assertEquals(actor.getManaPool().totalMana(), 0);
+                trace.add(Map.of("label", "normal-priority-continuation", "seat", continued.seat(), "state", continued.state()));
+            } finally {
+                Files.writeString(game.evidence.resolve("stopped-priority-publication.json"), JSON.toJson(trace));
             }
         }
     }

@@ -33,10 +33,20 @@ The game projects those preferences onto the actual source and reader controls.
 
 ## Published decision facts
 
-Current payment facts have one publication owner. After all seats reconcile
-visibility, `MatchSession` captures a per-seat copied payment value for the exact
-decision, board cohort and source-action version. Human prompt fields, AI payment
-provenance, the remaining bill and pool-color facts derive from that value.
+Every current decision has one publication owner. After all seats reconcile
+visibility, `MatchSession` stages a `CurrentDecisionProjection.Capture` for the
+exact decision, board cohort, source-action version and execution step. Human
+prompt fields, complete private AI semantics, numeric context, player choices
+and usable pool colors are copied into that one retained value. Payment,
+selection and numeric projectors supply family-specific facts without owning
+separate stamped lifetimes. Observation reads the committed value; it does not
+reclassify an ambient cost stack after publication.
+
+Number, text and allocation callbacks retain their actual current cost context,
+as do priority, combat and mulligan inputs. Unknown context stays unknown; it
+is not a substitute for a known cost. An unavailable announced-numeric value
+remains distinct from an ordinary number with no announcement. The existing
+input lifecycle or exact unfinished response future remains answer authority.
 Republishing the same input replaces its capture; an outdated capture cannot
 establish a zero bill or certify an unpayable cost. A nested color choice retains
 its explicit parent payment context without inheriting the parent's commands.
@@ -46,9 +56,14 @@ funding witness; command admission and execution still validate live rules state
 The existing table board generation fences publication too: a superseded outer
 publication cannot overwrite a newer seat capture or finish an older spectator
 cohort. Rejecting a superseded AI read preserves the newer published capture.
+A stopped or replaced controller input retires its question without withholding
+that audience's fresh passive board and matching execution frame. Source,
+selection and publication guards share the actual queue/proxy and active-input
+check. A queued action alone is not proof that its input has retired; required
+dialog futures and combat refresh keep their separate ownership.
 
 Targets, multiple-entity selections, indexed choice/reveal dialogs and ordinary
-confirmations share one selection publication boundary.
+confirmations stage their family facts in that same publication.
 The current input's existing player choices, staged selections, effect or cost
 context and private AI semantics are copied together after visibility
 reconciliation. Target limits, Convoke progress and counter-payment allocations

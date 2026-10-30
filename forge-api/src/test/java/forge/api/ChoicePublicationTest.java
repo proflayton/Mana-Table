@@ -19,6 +19,7 @@ import forge.gamemodes.match.input.InputSelectManyBase;
 import forge.gui.interfaces.IGuiGame;
 import forge.player.HumanCostDecision;
 import forge.player.PlayerControllerHuman;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import java.lang.reflect.InvocationTargetException;
@@ -163,6 +164,108 @@ public class ChoicePublicationTest {
             assertTrue(fixture.source.isTapped()); assertFalse(fixture.forest.isTapped());
             assertNull(fixture.table.game.costPaymentStack.peek()); assertEquals(fixture.actor().getManaPool().totalMana(), 0);
             assertThrows(IllegalArgumentException.class, () -> fixture.answer(child, 0));
+        }
+    }
+
+    @DataProvider(name = "requiredCostDialogKinds")
+    public Object[][] requiredCostDialogKinds() {
+        return new Object[][] { { "number" }, { "text" }, { "allocate" } };
+    }
+
+    @Test(dataProvider = "requiredCostDialogKinds", timeOut = 30000)
+    public void requiredCostDialogsRetainTheirPublishedClassificationUntilRepublished(String kind) throws Exception {
+        try (var fixture = new Fixture("required-cost-" + kind)) {
+            var parentOpened = new CountDownLatch(1); var childOpened = new CountDownLatch(1);
+            var childResult = new CompletableFuture<Object>();
+            fixture.parentOpened = parentOpened;
+            fixture.afterSelected = () -> {
+                // This is the existing real GUI callback inside the selected
+                // HumanCostDecision input, with its genuine cost Entry pushed.
+                childOpened.countDown();
+                try {
+                    Object result = switch (kind) {
+                        case "number" -> fixture.controller().getGui().getInteger("A nested cost quantity", 1, 3, 3);
+                        case "text" -> fixture.session().platformDialog("showInputDialog",
+                                new Object[] { "A nested cost quantity", null, null, "1", null, true });
+                        case "allocate" -> fixture.controller().getGui().assignGenericAmount(fixture.source.getView(),
+                                Map.<Object, Integer>of(fixture.forest.getView(), 3), 3, false, "lblShield");
+                        default -> throw new AssertionError(kind);
+                    };
+                    childResult.complete(result);
+                } catch (RuntimeException | Error failure) { childResult.completeExceptionally(failure); throw failure; }
+            };
+            var parentCost = new Cost("tapXType<1/Creature>", true);
+            var parentAbility = new AbilityApiBased(ApiType.Draw, fixture.source, parentCost, null,
+                    Map.of("AB", "Draw", "NumCards", "1"));
+            parentAbility.setActivatingPlayer(fixture.actor());
+            var payment = fixture.startWorker(() -> new CostPayment(parentCost, parentAbility).payCost(
+                    new HumanCostDecision(fixture.controller(), fixture.actor(), parentAbility, false, "")));
+            assertTrue(parentOpened.await(5, TimeUnit.SECONDS), "The real parent cost must open its selection");
+            var parent = fixture.current();
+            var source = zone(viewer(parent.getAsJsonObject("state")), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(value -> text(value, "name").equals("Grizzly Bears")).findFirst().orElseThrow();
+            assertTrue(source.get("selectable").getAsBoolean());
+            fixture.session().action(request(input(parent), Map.of("action", "card", "key", text(source, "key"))));
+            assertTrue(childOpened.await(5, TimeUnit.SECONDS), "The selected input must open its actual required dialog");
+            // The UI lane is awaiting this child. Its real rules-state cut,
+            // rather than a queued UI barrier, observes the completed publication.
+            var current = fixture.table.game.getAction().readState(() -> {
+                var entry = fixture.table.game.costPaymentStack.peek(); assertNotNull(entry);
+                assertSame(entry.payment().getPayer(), fixture.actor());
+                assertEquals(entry.cost().getAmount(), "1");
+                var raw = fixture.session().automatedObservation(); var before = JSON.toJsonTree(raw).getAsJsonObject();
+                var humanBefore = JSON.toJsonTree(fixture.session().state());
+                var prompt = before.getAsJsonObject("state").getAsJsonObject("prompt");
+                assertEquals(text(prompt, "kind"), kind);
+                assertTrue(before.getAsJsonObject("semantics").get("selectionIsCost").getAsBoolean());
+                assertEquals(text(before.getAsJsonObject("semantics"), "intent"), "Tap");
+                assertEquals(before.getAsJsonObject("semantics").get("amount").getAsInt(), 1);
+                assertFalse(before.getAsJsonObject("semantics").has("numeric"),
+                        "A plain number, numeric textbox or allocation cannot acquire announcement metadata");
+                if (kind.equals("number")) {
+                    assertEquals(prompt.get("min").getAsInt(), 1); assertEquals(prompt.get("max").getAsInt(), 3);
+                } else if (kind.equals("text")) {
+                    assertTrue(prompt.get("numeric").getAsBoolean()); assertEquals(text(prompt, "task"), "number");
+                    assertFalse(prompt.has("min")); assertFalse(prompt.has("max"));
+                } else assertEquals(prompt.get("amount").getAsInt(), 3, "Allocation quantity is distinct from its ambient cost");
+
+                entry.cost().setAmount("2");
+                try {
+                    for (int read = 0; read < 3; read++) {
+                        assertEquals(JSON.toJsonTree(fixture.session().state()), humanBefore);
+                        assertEquals(fixture.observation(), before,
+                                "Changing the actual cost cannot rewrite this already published required dialog");
+                    }
+                    fixture.table.publish();
+                    var refreshed = fixture.observation();
+                    assertEquals(text(refreshed.getAsJsonObject("semantics"), "intent"), "Tap");
+                    assertTrue(refreshed.getAsJsonObject("semantics").get("selectionIsCost").getAsBoolean());
+                    assertEquals(refreshed.getAsJsonObject("semantics").get("amount").getAsInt(), 2);
+                    assertEquals(refreshed.getAsJsonObject("state").getAsJsonObject("prompt").get("id"), prompt.get("id"));
+                    assertEquals(JSON.toJsonTree(raw), before, "The retained raw observation owns detached cost facts");
+                    assertFalse(childResult.isDone()); assertFalse(payment.isDone());
+                    assertCohort(fixture, refreshed.getAsJsonObject("state").get("boardRevision").getAsLong());
+                    assertPrivate(fixture); fixture.record("before", before); fixture.record("refreshed", refreshed);
+                } finally { entry.cost().setAmount("1"); }
+                fixture.table.publish();
+                var restored = fixture.observation();
+                assertSame(fixture.table.game.costPaymentStack.peek(), entry);
+                assertEquals(restored.getAsJsonObject("semantics").get("amount").getAsInt(), 1);
+                assertEquals(restored.getAsJsonObject("state").getAsJsonObject("prompt").get("id"), prompt.get("id"));
+                fixture.record("restored", restored); return restored;
+            });
+            Map<String, Object> answer = kind.equals("allocate")
+                    ? Map.of("action", "allocate", "values", List.of(3), "expectedTask", "allocate")
+                    : Map.of("action", kind.equals("text") ? "text" : "number", "value", 2, "expectedTask", "number");
+            fixture.session().action(request(input(current), answer));
+            Object result = childResult.get(5, TimeUnit.SECONDS);
+            if (kind.equals("number")) assertEquals(result, Integer.valueOf(2));
+            else if (kind.equals("text")) assertEquals(result, "2");
+            else assertEquals(result, Map.<Object, Integer>of(fixture.forest.getView(), 3));
+            assertTrue(payment.get(5, TimeUnit.SECONDS), "The required dialog must resume the real parent cost");
+            assertTrue(fixture.source.isTapped()); assertFalse(fixture.forest.isTapped());
+            assertNull(fixture.table.game.costPaymentStack.peek()); assertEquals(fixture.actor().getManaPool().totalMana(), 0);
+            assertThrows(IllegalArgumentException.class, () -> fixture.session().action(request(input(current), answer)));
         }
     }
 
