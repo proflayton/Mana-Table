@@ -49,6 +49,7 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
 
 /** One seat in an authoritative match, independent of its connection. Mutable engine objects never leave this adapter. */
 public final class MatchSession implements ManaTableSession, MatchEndpoint {
@@ -122,10 +123,23 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private void notifyPlaytest() {
-        if (!playtestObservers.isEmpty()) {
+        notifyPlaytest(() -> true);
+    }
+
+    private void notifyPlaytest(BooleanSupplier current) {
+        if (current.getAsBoolean() && !playtestObservers.isEmpty()) {
             var frame = playtestFrame();
-            for (var observer : playtestObservers) observer.accept(frame);
+            for (var observer : playtestObservers) {
+                if (!current.getAsBoolean()) return;
+                observer.accept(frame);
+            }
         }
+    }
+
+    /** Normal publication effects belong to the completed table, not a seat. */
+    void completePublication(BooleanSupplier current) {
+        notifyPlaytest(current);
+        if (current.getAsBoolean()) queueFiniteStackPass();
     }
 
     /** One completed source query owns its copied domain and extra portraits. */
@@ -1964,10 +1978,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     void refreshVisibility() { activity.refreshVisibility(); }
 
-    void publishView(long boardRevision) {
+    boolean publishView(long boardRevision) {
         // Failure retains the last published board. The table aborts rules work
         // and releases waiters without manufacturing player concessions.
-        if (error != null || !table.currentPublication(boardRevision)) return;
+        if (error != null || !table.currentPublication(boardRevision)) return false;
         if (viewer.getHasLost() || game.isGameOver()) {
             Pending old = pending;
             pending = null;
@@ -2093,7 +2107,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             projectedPrompt.remove("optionalPaymentSupport");
             captured = captureDecision(prompt, boardRevision, publicationSourceVersion, execution, publication.executions(), projectedPrompt);
             if (captured == null || !table.currentPublication(boardRevision) || pending != prompt
-                    || sourceActionVersion.get() != publicationSourceVersion) return;
+                    || sourceActionVersion.get() != publicationSourceVersion) return false;
             projectedPrompt.putAll(captured.promptFacts());
             projectedPrompt.put("executionId", captured.executionId());
             projectedPrompt.put("executionStep", captured.executionStep());
@@ -2121,7 +2135,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "ignoredPriorityAbilities", priorityAbilities(human.getIgnoredPriorityAbilities(), prompt),
                 "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries(), "executions", publication.executions());
         if (!table.currentPublication(boardRevision) || pending != prompt || sourceActionVersion.get() != publicationSourceVersion
-                || captured != null && !decisionOwnerCurrent(prompt)) return;
+                || captured != null && !decisionOwnerCurrent(prompt)) return false;
         String quietToken = quietYield.observe(snapshot, activity.quietSequence());
         if (prompt != null) {
             var quietPrompt = new LinkedHashMap<>(projectedPrompt);
@@ -2130,7 +2144,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             snapshot.put("prompt", quietPrompt);
         }
         if (!table.currentPublication(boardRevision) || pending != prompt || sourceActionVersion.get() != publicationSourceVersion
-                || captured != null && !decisionOwnerCurrent(prompt)) return;
+                || captured != null && !decisionOwnerCurrent(prompt)) return false;
         if (prompt != null) {
             prompt.prompt = projectedPrompt; prompt.publishedDecision = captured;
             if (isSelectionInput(prompt.input) || selectionDialog(prompt)) {
@@ -2147,8 +2161,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         latest = Collections.unmodifiableMap(snapshot);
         publishedSourceActionVersion = publicationSourceVersion;
-        notifyPlaytest();
-        queueFiniteStackPass();
+        return true;
     }
 
     private static Map<String, Integer> publicMana(PlayerView player) {
