@@ -8,7 +8,7 @@ does not establish that a person can understand or use the screen.
 
 ## Reading floating mana at its seat: 30 October 2026
 
-**Source candidate; validation and human review pending.** The earlier C4
+**Source candidate; local checks passed; exact-head CI and human review pending.** The earlier C4
 inspection replaced its portrait, Island and current card/bill with a large
 dimmed sheet containing one resource row and general mana prose. The new
 candidate expands those same resource symbols beside the inspected seat,

@@ -1506,6 +1506,9 @@ For a relevant graphical regression, use the same test driver, for example:
 dotnet $driver --smoke-card-reading --size 1000x740 --profile '<fresh-profile>'
 dotnet $driver --smoke-mana-payment --size 1000x740 --profile '<fresh-profile>'
 dotnet $driver --smoke-mana-payment --headless --profile '<fresh-profile>'
+dotnet $driver --smoke-headless-presentation --presentation-group mana-pool --profile '<fresh-profile>'
+dotnet $driver --smoke-headless-presentation --presentation-group match-header --profile '<fresh-profile>'
+dotnet $driver --smoke-headless-presentation --profile '<fresh-profile>'
 ```
 
 The mana journey includes hovering one floating colorless mana while blue remains
@@ -1563,69 +1566,20 @@ owned reader and bill. Dismissal returns the chat toggle without reopening the
 drawer; only a new deliberate chat click opens the preserved text. Typing/Enter
 while reading cannot capture or send that draft. F1 guide takeover verifies the input filter
 runs after every producer while higher views retain their own close controls.
-These candidate additions reuse existing runners and are separate from the
-retained old-production baseline: that first run failed the earlier payment
-bill-continuity assertion, before the pinned-reader and lifecycle cases ran.
-The first contextual candidate retained that bill but failed the same combined
-check. A separately authorized, instrumented focused run recorded the actual
-Colorless token overlapping the local turn arc by 13 x 21 logical pixels; full
-names/counts and passive hit isolation passed. The generic bounded workspace
-now prefers any fully clear candidate before its existing collision fallback.
-A first full run of that correction exposed a second placement failure: the
-independently capped nearest axes omitted a clear nearby edge, leaving only
-remote clear regions. The existing 24-edge budget now represents both sides of
-each anchor axis, returning unused quota to the original nearest order; the
-same-seat proximity assertion remains unchanged. This is a bounded heuristic,
-not a guarantee of a nearby clear region on every table.
-The next actual run passed the C1 journey but that balanced quota still omitted
-a nearby gap for the pinned C4 reader. The quota change was removed. Each of the
-five existing preferred rectangles projected onto the nearest clear interval
-on its row and column, choosing the closer clear result or retaining the original
-when neither exists. The original nearest 24 edges and viewport endpoints remain
-the fallback: at most 681 scored candidate slots, with up to ten additional
-interval sorts/scans and five projection comparisons. Both saved scenes have
-separate offline predictions; these do not establish a passing candidate run.
-That preferred-seed candidate passed the focused payment journey but the full
-run still placed two pinned C4 tokens beyond the same-seat bound. Its current
-bill had also moved, which the earlier fixed-bill offline prediction did not
-model. The C4 reconstruction additionally overincluded a stack reservation and
-misplaced two compact remote halos; retained correction notes separate those
-inferences from actual frame evidence.
-The following candidate instead replaced one existing grid slot per sampled row
-and column with its nearest feasible interval. It keeps the original five seeds
-and nearest-edge fallback, at most 681 score evaluations, and no larger grid.
-Positive obstacles sort once by each axis, followed by at most 52 linear interval
-scans. The geometry, final-hit isolation and old-action/ResolveHit assertions
-report separately without changing their order, gestures or required facts.
-That run passed pinned C4 but the first C1024/U3/W1/literal-key refresh made a
-wider group whose nearby row was still outside the independently capped axes.
-A subsequent candidate swept the complete clamped critical row and column edge
-lists, merged by a conservative single-axis distance bound, for at most 676
-linear interval probes. The original five seeds establish an initial clear
-upper bound; only a known clear best can stop an axis whose remaining distance
-cannot improve it. If none is clear, the original weighted 24-edge grid runs.
-Solids sort once by each axis. The worst bound is 676N interval work plus 681N
-candidate-score work and sorting for N reservations, roughly twice the former
-worst case; it never crosses the complete obstacle-edge lists. A probe cap and
-fully packed table can still prevent a nearby clear result.
-Critical edges explicitly include the positive source anchor. The crowded
-fallback retains the original occupied-only edge membership and order, with its
-two edge sorts materialized once per axis only when that fallback is needed.
-That actual quick run still failed the first wider value map. Source review
-identified the static decision-dock rectangle in two reservation paths even
-though the passive view suppressed its painter. The current candidate removes
-the advanced sweep and retains the reviewed clear-first rule, safe score cutoff
-and original 24-edge grid. One generic dock visibility predicate now owns both
-existing draw gates and both reservation copies. Renderer defaults still reserve
-the dock for ordinary board arrangement and camera calculations. These changes
-preserve the actual card, bill, resource, portrait, turn, pile and command areas;
-the same 500-pixel proximity and full text assertions remain unchanged.
-The visibility-only candidate still placed the first pinned C4 reading far from
-its seat. The current candidate therefore adds back only the five preferred
-horizontal/vertical gap projections: two solid-axis sorts and ten linear
-interval scans. It retains the original 24-edge grid, clear-first score and safe
-cutoff, and the corrected dock visibility. The 52-row/column and 676-probe sweep
-implementations remain only in retained commits/evidence, not current code.
+These checks reuse existing runners and keep geometry, final-hit isolation and
+old-action/ResolveHit assertions separate. The geometry oracle measures complete
+name/count text inside each resource token, reserves actual current card and
+bill bounds, and retains the same 500-pixel seat-proximity requirement.
+The generic bounded workspace prefers fully clear candidates before its weighted
+collision fallback. Its five preferred placements can project horizontally and
+vertically into clear intervals: two solid-axis sorts and ten linear scans, then
+the original nearest 24 edges and viewport endpoints, at most 681 scored slots.
+One generic decision-dock visibility predicate owns both existing draw gates and
+both reservation copies. Renderer defaults still reserve the dock for ordinary
+board arrangement and camera calculations; a suppressed painter contributes no
+phantom dock. Physical cards, bills, resources, portraits, turn controls, piles
+and command areas retain their reservations. This remains a finite heuristic;
+a fully packed table may have no clear nearby region.
 For a focused iteration, append `--presentation-group mana-pool` or
 `--presentation-group match-header` to the existing `--smoke-headless-presentation`
 invocation. These call the same pool/payment clarity and lifecycle group or the
@@ -1634,18 +1588,25 @@ An omitted selector runs the unchanged full sequence labeled `all`. Unknown
 selectors fail. CI retains its literal full invocation, protected by the existing
 exact argument-array check in `ci/test-native-verification.ps1`; focused receipts
 are partial evidence and cannot replace the required full suite.
-The first minimal-projection candidate passed the 88-check pool group and
-44-check pointer/payment journey, then stopped after 1951 full-suite checks at
-the connected Social fixture. Its first conjunct incorrectly searched ordinary
-text for a button painted as centered text. No post-pip snapshot was saved, so
-its later conjuncts remain unobserved. The corrected fixture checks the actual
-centered label inside the original button bounds, copies its current checkpoint
-before asserting, and separates paint, drawer/draft, reader/bill, isolation and
-stale-hit checks without changing the gestures or production bytes.
 Failure-only mana-runner snapshots preserve the current frame, measured text,
 resource parts, physical and control reservations, and final hit intent types
-without composing a new frame or invoking actions. Later cases and physical
-acceptance remain pending until a corrected candidate actually completes them.
+without composing a new frame or invoking actions. The connected Social fixture
+also copies its checkpoint before the first assertion or old-hit activation.
+It checks the real centered button label inside its original bounds, then
+drawer/draft, current reader/bill, final isolation and stale-hit behavior.
+Local code candidate `e289982fdbfc4359f697684b9c13aab60df58c5b` passed 2606 full
+headless checks (`all`) and 68 focused header checks (`match-header`). Its
+unchanged production predecessor passed 88 pool-group and 44 pointer/payment
+checks. The two actual window suites passed 62 canonical checks each: 44 ordinary
+payment checks and nine counted/preview checks at each text scale. Both sizes
+cover C4 inspection and dismissal at 100% and 130%; the ordinary C1 payment
+capture is 100% only. Social/guide and lifecycle coverage is headless.
+Source/compiled hashes, first logs, images and receipts remain in the ignored
+`contextual-mana-reading-checks-20261030` evidence directory, including
+`candidatee289-first.json`. The original old-production bill-continuity failure,
+later first failures and `offline-c4-correction-addendum-first.json` remain
+unchanged; offline reconstructed scenes are not passing integration evidence.
+Final exact-head CI and human UX acceptance remain separate and pending.
 The normal native UI inventory runs this window journey at 1000 x 740, including
 both text scales. Only after the ordinary journey and both counted-source/preview
 windows finish does the producer write `mana-payment-ci-results.json`: one
