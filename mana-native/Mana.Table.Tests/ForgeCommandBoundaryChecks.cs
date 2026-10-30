@@ -38,6 +38,7 @@ internal static class ForgeCommandBoundaryChecks
         check(selected.Payload is TargetSelectionPayload { Range: { Min: 1, Max: 1 } } && selectionWire.GetRawText() == original,
             "A direct immutable decode consumes authoritative semantics without editing JSON or exposing provider class names");
         CurrentChoiceDisclosures(check);
+        TargetSelectionProgressShapes(check);
         foreach (string invalid in new[] {
             """ "kind":"input","task":"unknown-required-task" """,
             """ "kind":"choice","task":"mana" """,
@@ -364,6 +365,48 @@ internal static class ForgeCommandBoundaryChecks
         bool replacementRejected = false;
         try { new ForgeCommandScope().Encode(new PassPriority(game, prompt)); } catch (EngineCommandRejectedException) { replacementRejected = true; }
         check(replacementRejected, "A replacement provider process cannot inherit command authority");
+    }
+
+    private static void TargetSelectionProgressShapes(Action<bool, string> check)
+    {
+        const string targets = """ "kind":"input","task":"selection","purpose":"targets","min":0,"max":2,"ok":"Confirm","okEnabled":true,"playerChoices":[0,1,2] """;
+        TargetSelectionPayload Read(string? progress) => (TargetSelectionPayload)Decode(targets
+            + (progress == null ? "" : ",\"targetSelectionProgress\":" + progress), 0, 1, 2).Payload;
+        check(Read(null).Progress == null && Read("null").Progress == null,
+            "Absent or explicit-null target progress stays unknown rather than reporting zero selected targets");
+        check(Read(""" {"selectedCount":0,"selectedPlayers":[]} """).Progress is { SelectedCount: 0, SelectedPlayers.IsEmpty: true },
+            "A known zero target count remains explicit even when optional completion is available");
+        check(Read(""" {"selectedCount":2,"selectedPlayers":[1]} """).Progress is { SelectedCount: 2, SelectedPlayers: var selected }
+                && selected.SequenceEqual([1]),
+            "The decoder retains the authoritative total count and exact selected players without treating player count as all selected entities");
+        foreach (string invalid in new[] {
+            """ {"selectedCount":-1,"selectedPlayers":[]} """,
+            """ {"selectedCount":"1","selectedPlayers":[1]} """,
+            """ {"selectedCount":1.5,"selectedPlayers":[1]} """,
+            """ {"selectedPlayers":[]} """,
+            """ {"selectedCount":1} """,
+            """ {"selectedCount":1,"selectedPlayers":null} """,
+            """ {"selectedCount":1,"selectedPlayers":"1"} """,
+            """ {"selectedCount":1,"selectedPlayers":["1"]} """,
+            """ {"selectedCount":1,"selectedPlayers":[99]} """,
+            """ {"selectedCount":2,"selectedPlayers":[1,1]} """,
+            """ {"selectedCount":0,"selectedPlayers":[1]} """,
+            """ [] """, """ true """
+        }) {
+            bool rejected = false;
+            try { Read(invalid); } catch (IOException) { rejected = true; }
+            check(rejected, "Malformed, incomplete, contradictory or foreign target progress fails at the existing provider boundary");
+        }
+        const string progress = """ ,"targetSelectionProgress":{"selectedCount":0,"selectedPlayers":[]} """;
+        foreach (string otherTask in new[] {
+            """ "kind":"input","task":"priority" """,
+            """ "kind":"input","task":"selection","min":0,"max":2 """,
+            """ "kind":"choice","task":"choice","min":0,"max":0,"choices":[] """
+        }) {
+            bool rejected = false;
+            try { Decode(otherTask + progress, 0, 1, 2); } catch (IOException) { rejected = true; }
+            check(rejected, "Target progress cannot relabel a priority, ordinary entity selection or synchronous choice task");
+        }
     }
 
     private static async Task ObservationCompletionOrder(Action<bool, string> check)

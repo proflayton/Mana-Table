@@ -142,7 +142,7 @@ internal static class PendingEffectPresentationChecks
     {
         string directory = Path.Combine(profile, "optional-target-progress"); Directory.CreateDirectory(directory);
         new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false }.Save(directory);
-        JsonNode Wire(int selected) {
+        JsonNode Wire(int selected, bool complete = true) {
             var wire = JsonNode.Parse("""
                 {"id":"optional-target-progress","status":"playing","viewerId":0,"turn":3,"phaseKey":"MAIN1",
                  "activePlayerId":0,"decisionOwnerId":0,"actionClass":"selection","stack":[],
@@ -162,14 +162,16 @@ internal static class PendingEffectPresentationChecks
                 ["selectedCount"] = selected,
                 ["selectedPlayers"] = selected == 0 ? new JsonArray() : new JsonArray(1)
             };
+            wire["prompt"]!["okEnabled"] = complete;
             return wire;
         }
-        GameSnapshot Snapshot(int selected) => ForgeSnapshotDecoder.Decode(JsonSerializer.SerializeToElement(Wire(selected)))!;
+        GameSnapshot Snapshot(int selected, bool complete = true) => ForgeSnapshotDecoder.Decode(JsonSerializer.SerializeToElement(Wire(selected, complete)))!;
         var engine = new InteractionScenarioEngine(); engine.Present(Snapshot(0));
         var commands = new ConcurrentQueue<GameCommand>();
+        int staged = 0;
         engine.ReplyOverride = command => {
-            if (command is SelectPlayer { Player: 1 } && commands.IsEmpty) engine.Present(Snapshot(1));
-            else if (command is CompleteSelection && commands.Count == 1)
+            if (command is SelectPlayer { Player: 1 }) { staged = 1 - staged; engine.Present(Snapshot(staged)); }
+            else if (command is CompleteSelection)
                 engine.Present(engine.State with { Decision = null, DecisionOwnerId = null, ActionClass = "resolving" });
             else throw new InvalidOperationException("The optional-target journey received an unrequested command");
             commands.Enqueue(command); return Task.CompletedTask;
@@ -209,6 +211,10 @@ internal static class PendingEffectPresentationChecks
         for (int repeat = 0; repeat < 8; repeat++) Tick();
         check(commands.IsEmpty && !view.Busy && view.Overlay.Length == 0,
             "Reading and polling the current optional-target source cannot select a recipient or complete the choice");
+        check(frame.Observe().Text.Any(text => text.Value == "0 of up to 2 targets")
+                && frame.Observe().Text.Any(text => text.Value == "Choose no targets")
+                && !frame.Observe().Text.Any(text => text.Value == "Selected: Targeted opponent"),
+            "Known zero optional targets is explicit and offers deliberate empty completion without inventing a selected recipient");
         var target = frame.Hits.Single(hit => hit.Id == "player:1");
         check(target.Intent is MatchIntent.UsePlayer { PlayerId: 1 }, "The visible recipient carries its current player-target intent");
         string firstDecision = view.Match!.Decision!.Id;
@@ -236,5 +242,54 @@ internal static class PendingEffectPresentationChecks
         Await(() => !view.Busy && commands.Count == 2, "The actual current confirmation center completes the selected subset once");
         check(commands.OfType<CompleteSelection>().Single().DecisionId == currentDecision,
             "Explicit target confirmation submits exactly one CompleteSelection for the current selected-subset scope");
+
+        // Continue the same real pointer surface with an authored current input;
+        // Java separately verifies the controller's actual target toggles.
+        staged = 0; engine.Present(Snapshot(0)); view.Accept(engine.State); Tick(); Tick();
+        Click(Exposed(frame.Hits.Single(hit => hit.Id == "player:1")));
+        Await(() => !view.Busy && commands.Count == 3, "A subsequent current target input stages its own player choice");
+        Click(Exposed(frame.Hits.Single(hit => hit.Id == "player:1")));
+        Await(() => !view.Busy && commands.Count == 4, "Clicking the currently selected recipient publishes deselection");
+        check(staged == 0 && commands.OfType<CompleteSelection>().Count() == 1
+                && frame.Observe().Text.Any(text => text.Value == "0 of up to 2 targets")
+                && frame.Observe().Text.Any(text => text.Value == "Choose no targets")
+                && !frame.Observe().Text.Any(text => text.Value.StartsWith("Selected:", StringComparison.Ordinal)),
+            "Deselection refreshes the current count and removes the selected-player cue without automatically completing");
+        confirm = frame.Hits.Single(hit => hit.Id == "confirm");
+        Tick(confirm.Bounds.Center); Tick(confirm.Bounds.Center, ButtonState.Pressed);
+        engine.Present(Snapshot(0)); view.Accept(engine.State);
+        Tick(confirm.Bounds.Center);
+        check(commands.Count == 4 && !view.Busy,
+            "A confirmation press from the previous publication cannot complete the replacement target scope");
+
+        Click(Exposed(frame.Hits.Single(hit => hit.Id == "player:1")));
+        Await(() => !view.Busy && commands.Count == 5, "The current recipient remains selectable after a stale confirmation is retired");
+        confirm = frame.Hits.Single(hit => hit.Id == "confirm");
+        string sameOwner = view.Match!.Decision!.Id;
+        var unavailable = Snapshot(1, false);
+        unavailable = unavailable with { Revision = view.Match.Revision,
+            Decision = unavailable.Decision! with { Id = sameOwner } };
+        engine.ObserveOverride = () => Task.FromResult<GameSnapshot?>(unavailable);
+        view.Accept(unavailable);
+        Tick(); Tick();
+        File.WriteAllText(Path.Combine(directory, "same-owner-disabled-before-assert.json"), JsonSerializer.Serialize(new {
+            wire = Wire(1, false), state = view.Match, frame = frame.Observe(),
+            oldConfirm = new { confirm.Id, confirm.Scope, confirm.Bounds },
+            hits = frame.Hits.Select(hit => new { hit.Id, hit.Bounds, intent = hit.Intent.ToString() }).ToArray(),
+            commands = commands.Select(command => command.GetType().Name).ToArray()
+        }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+        check(view.Match.Decision!.Id == sameOwner && frame.Observe().Text.Any(text => text.Value == "1 of up to 2 targets")
+                && frame.Observe().Text.Any(text => text.Value == "Selected: Targeted opponent")
+                && !frame.Hits.Any(hit => hit.Id == "confirm") && !view.Activate(confirm) && commands.Count == 5,
+            "A same-owner refresh retains descriptive progress while disabled completion revokes the old confirmation authority");
+        engine.ObserveOverride = null;
+        view.Accept(engine.State);
+        Tick(); Tick();
+        confirm = frame.Hits.Single(hit => hit.Id == "confirm");
+        Click(confirm.Bounds.Center);
+        Await(() => !view.Busy && commands.Count == 6, "Re-enabled current completion accepts one fresh separate confirmation gesture");
+        check(commands.OfType<CompleteSelection>().Count() == 2
+                && commands.Last() is CompleteSelection final && final.DecisionId == sameOwner,
+            "Reading, refreshing and deselecting add no completions; each current explicit confirmation contributes exactly one");
     }
 }
