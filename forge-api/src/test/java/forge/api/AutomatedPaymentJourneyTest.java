@@ -108,8 +108,7 @@ public class AutomatedPaymentJourneyTest {
                     reduction.prompt.getAsJsonObject("manaReduction").getAsJsonArray("remainingManaParts"));
             assertTrue(choice.prompt.getAsJsonArray("choices").asList().stream().map(value -> value.getAsJsonObject())
                     .anyMatch(value -> text(value, "mana").equals("{1}")), "Colorless convoke contribution represents a generic reduction, not produced C mana");
-            Files.createDirectories(Path.of("target/rules-regressions"));
-            Files.writeString(Path.of("target/rules-regressions/convoke-owned-color-choice.json"), JSON.toJson(choice.state));
+            Files.writeString(ApiTestWorkspace.evidenceFile("convoke-owned-color-choice.json"), JSON.toJson(choice.state));
             int white = choice.prompt.getAsJsonArray("choices").asList().stream().map(value -> value.getAsJsonObject())
                     .filter(value -> text(value, "mana").equals("{W}")).findFirst().orElseThrow().get("index").getAsInt();
             driver.answer(choice, Map.of("action", "choice", "choices", List.of(white)));
@@ -141,7 +140,7 @@ public class AutomatedPaymentJourneyTest {
             assertEquals(reductionEpisode(table, policyId), episode);
             var observation = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation());
             assertEquals(JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()), observation, "Filtering choices and reading the remaining bill cannot contribute, publish or alter the episode");
-            Files.writeString(Path.of("target/rules-regressions/convoke-colored-only-choice.json"), JSON.toJson(coloredOnly.state));
+            Files.writeString(ApiTestWorkspace.evidenceFile("convoke-colored-only-choice.json"), JSON.toJson(coloredOnly.state));
         }
     }
 
@@ -181,8 +180,7 @@ public class AutomatedPaymentJourneyTest {
                 driver.answer(payment, Map.of("action", "spendPoolMana", "manaColor", "R"));
             } else {
                 var observation = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()).getAsJsonObject();
-                Files.createDirectories(Path.of("target/rules-regressions"));
-                Files.writeString(Path.of("target/rules-regressions/automated-temple-before-output.json"), JSON.toJson(observation));
+                Files.writeString(ApiTestWorkspace.evidenceFile("automated-temple-before-output.json"), JSON.toJson(observation));
                 driver.use(payment, card(payment.state, "Battlefield", "Temple of Epiphany"), "activate", Map.of("R", 1));
             }
             payment = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").startsWith("InputPayMana")

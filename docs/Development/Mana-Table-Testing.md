@@ -1253,6 +1253,81 @@ Use an immutable engine JAR whose source/hash is known. Rebuilding
 replace a JAR or package while another process uses it. A controlled UI fixture
 cannot substitute for a real engine regression.
 
+### API test process ownership and timing trial
+
+The API Surefire listener owns one fresh workspace per JVM. It initializes the
+existing headless services with that workspace's profile and cache before tests
+run, then verifies the actual cached Forge paths. Methods and data providers stay
+serial inside each process. Fixed scenario traces and profiles use fresh attempts
+below their process owner; existing unique temporary directories remain separate.
+This is test support and does not change the shipping engine's profile contract.
+
+Ordinary verification keeps its serial configuration. Its process records live
+below `forge-api/target/rules-regressions/api-jvms`. Each process writes a new
+`process-start.json`, flushes invocation results to `invocations.jsonl`, and writes
+one final `receipt.json` on JVM shutdown. Reused Surefire forks can create several
+TestNG executions, so ending the first class cannot finalize the process. Failure
+stacks are retained immediately; a crash without a final receipt is incomplete.
+
+Tests of read-only observation purity must capture both complete batches within
+one existing `HeadlessPlatform.query(table, ...)` state boundary. Comparing
+separately unlocked batches can mistake an intervening input publication for a
+mutating read. Keep exact equality and all domain assertions; retain serialized
+evidence outside the boundary and leave deliberate publications between checks.
+
+The opt-in `api-test-trial` Maven profile compares the complete API suite in one
+reused JVM and in two reused JVMs over one compilation. Upstream module tests run
+once. The first mode uses the normal test phase; the second runs at integration
+test; final comparison runs at verify. Packaging between modes is outside their
+measured windows. Inherited JVM opens, assertions and timeouts remain in force.
+There is no TestNG thread parallelism. See the pinned
+[Surefire 3.1.2 fork contract](https://maven.apache.org/components/surefire-archives/surefire-3.1.2/maven-surefire-plugin/examples/fork-options-and-parallel-execution.html).
+
+Run from committed source. Retain earlier evidence before cleaning any existing
+target output, or use a fresh worktree. A clean reactor invocation compiles once:
+
+```powershell
+$trialRevision = git rev-parse HEAD
+mvn -B -ntp -pl forge-api -am clean verify -Papi-test-trial '-Dmana.tests.trialId=first-pair' "-Dmana.tests.sourceRevision=$trialRevision"
+```
+
+The manual [Java workflow](../../.github/workflows/test-build.yaml) offers
+`api_test_trial` and `api_trial_order`. It runs the pair on Java 17 and 21 with
+fresh targets, skips the separate early engine build for the experiment, and
+uses a separate concurrency group and check names. It cannot cancel or substitute
+for normal required source CI. Push and PR verification keep their existing full
+reactor checks and engine producer. A failed trial does not cancel its sibling
+JDK; evidence from both is uploaded even on failure.
+
+Evidence lives below `forge-api/target/api-test-trials/<trialId>`: an exact-source
+manifest, mode timing boundaries, separate mode/fork reports and process
+workspaces, and a final `comparison.json`. Compiled reactor bytes are checked
+before, between and after modes. The comparator requires the same selected class
+set and invocation multiset, including overloaded method signatures and typed,
+canonical parameter values. It rejects missing/duplicate/foreign evidence,
+failures, skips, configuration failures, stale or linked workspaces, unbound
+journals and test processes outside their measured window. Two nonempty trial
+processes must actually overlap while executing classes. The serial run at the
+same source defines the expected cases; the case count is not a permanent golden.
+Each fork requires root Surefire TEST XML reports. Direct `junitreports/` mirrors
+for that fork's owned classes are recognized TestNG diagnostics; they do not
+count as additional invocations or replace the root reports and journals.
+Fork numbers are Surefire allocator labels reused across executions: after the
+parallel mode, the serial process may legitimately use `fork-2`. Ownership means
+exactly one serial process and two parallel processes, with each report directory
+and receipt bound to the same actual label, PID and workspace.
+
+The output records wall time, bootstrap time and per-pool peak heap usage. Heap
+pool peaks are diagnostics, not process RSS or a simultaneous total. Equivalence
+is distinct from a speedup. Keep serial CI until the first pair passes and improves
+on both JDKs, then run an explicit reverse-order confirmation with the same source.
+Do not change a timeout or retry a failure into a timing success. Preserve its
+first journal, receipt, reports and failure cause before changing the candidate.
+
+`ApiTestIsolationTest` and the repository's Node tests cover workspace ownership,
+typed parameter identity, reused-JVM accounting and fail-closed orchestration.
+Those fixtures do not replace the complete serial/two-JVM experiment.
+
 ## Experience clarity and recovery
 
 Use [Experience review](Mana-Table-Experience-Review.md) to open the shared,

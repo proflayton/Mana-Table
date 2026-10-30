@@ -30,8 +30,7 @@ public class CertifiedUndoTransportTest {
     @Test(dataProvider = "actors", groups = "canonical-interaction", timeOut = 90000)
     public void aLocalOrRemoteSeatRestoresOneSharedBoardAndReconnectsWithoutReplay(int actorSeat) throws Exception {
         if (StaticData.instance() == null) EngineResources.load(RESOURCES);
-        var evidenceRoot = Path.of("target/rules-regressions/certified-undo-tcp-" + actorSeat);
-        Files.createDirectories(evidenceRoot);
+        var evidenceRoot = ApiTestWorkspace.evidence("certified-undo-tcp-" + actorSeat);
         var evidence = Files.createTempDirectory(evidenceRoot, "attempt-");
         var host = new SyncLobby(RESOURCES, evidence.resolve("host"), true);
         var guest = new SyncLobby(RESOURCES, evidence.resolve("guest"), true);
