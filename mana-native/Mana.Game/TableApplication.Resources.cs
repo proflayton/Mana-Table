@@ -147,8 +147,8 @@ internal sealed partial class TableApplication
             float progress = (float)(cue?.Progress(now) ?? 1);
             float opacity = cue is { After: 0 } ? 1 - progress : 1;
             string hitId = "mana-pool:" + player.Id + ":" + item.Part.Key;
-            bool spend = match is { Decision.Payload: PaymentPayload payment } && player.Id == (payment.PayerId ?? match.ViewerId)
-                && payment.UsablePoolManaColors?.Contains(item.Part.Key) == true && item.Part.Amount > 0;
+            var use = ManaPoolUse(player, item.Part);
+            bool spend = use.Spend;
             bool hover = IsControlHovered(hitId), down = hover && pressed?.Id == hitId && CurrentHit(pressed);
             var symbol = new Vector2(bounds.X + 11, bounds.Center.Y);
             float emphasis = hover ? down ? .34f : .24f : .11f;
@@ -173,7 +173,6 @@ internal sealed partial class TableApplication
             if (hover && item.Part.Symbol.Length > 0) canvas.Ring(symbol, down ? 10 : 12, Blue * opacity, down ? 2 : 1);
             if (spend) {
                 canvas.Ring(symbol, 14, new Color(135, 221, 194) * opacity, 1.5f);
-                if (hover) canvas.Text("Spend", bounds.X - 2, bounds.Bottom + 2, Ink, .42f, 68, 1, true);
             }
             painted.Add(new(item.Part.Key, item.Part.Name, amount, bounds, canvas.TextWidth(amount, item.Size, true), available)
                 { Delta = cue?.Delta, AnimationStarted = cue?.Started, Opacity = opacity });
@@ -181,6 +180,60 @@ internal sealed partial class TableApplication
         }
         manaPoolBadges[player.Id] = new("UNSPENT MANA", PublicResources.ManaTotal(player), halo.Bounds, painted.ToArray(), 0, 0);
     }
+
+    private (bool Spend, string Hint) ManaPoolUse(Player player, PublicResourcePart part)
+    {
+        if (match is not { Decision.Payload: PaymentPayload payment } state || part.Amount <= 0) return (false, "");
+        bool payer = player.Id == (payment.PayerId ?? state.ViewerId);
+        bool usable = payment.UsablePoolManaColors?.Contains(part.Key) == true;
+        // Spending retains the existing legacy payer fallback. A negative
+        // explanation needs explicit current facts; absence is not exclusion.
+        bool known = !busy && !session.NeedsRecovery && state.Status == "playing" && state.Viewer is { Eliminated: false }
+            && (state.DecisionOwnerId == null || state.DecisionOwnerId == state.ViewerId)
+            && player.Id == state.ViewerId && payment.PayerId == player.Id && payment.UsablePoolManaColors != null;
+        return (payer && usable, payer && usable ? "Spend" : known ? "Not usable for the remaining cost" : "");
+    }
+
+    private void DrawManaPoolHover()
+    {
+        if (!InputReady || OverlayOpen || CardCollectionOpen || match is not { } state) return;
+        // Compose only after this frame's mana bill, funding annotations and
+        // readers. No prior-frame caption or resource geometry is retained.
+        foreach (var player in state.Players) foreach (var part in PublicResources.Mana(player)) {
+            if (!IsControlHovered("mana-pool:" + player.Id + ":" + part.Key)) continue;
+            var halo = PlanManaHalo(player, SeatDisplayIndex(player.Id));
+            DrawManaPoolHint(part, halo.Bounds, ManaPoolUse(player, part).Hint);
+            return;
+        }
+    }
+
+    private void DrawManaPoolHint(PublicResourcePart part, Rectangle halo, string guidance)
+    {
+        string heading = part.Name + " mana · " + part.Amount;
+        const float headingSize = .60f, guidanceSize = .56f;
+        int width = Math.Clamp(Math.Max(canvas.TextWidth(heading, headingSize, true), canvas.TextWidth(guidance, guidanceSize)) + 20, 140, 420);
+        int headingHeight = canvas.TextSize(heading, headingSize, width - 20, 80, true).Y;
+        int guidanceHeight = canvas.TextSize(guidance, guidanceSize, width - 20, 80).Y;
+        int height = headingHeight + (guidanceHeight > 0 ? guidanceHeight + 4 : 0) + 16;
+        // Reuse the current table's reserved portrait, pip and control geometry.
+        // This is a measured hover caption, without another input surface.
+        var reserved = new List<Rectangle> { decisionPanelBounds, sourceReaderActionsBounds };
+        if (hoverPreview is { } reader) reserved.Add(reader);
+        foreach (var source in manaSourcePaint) {
+            reserved.Add(source.Bounds);
+            if (!source.OutputBounds.IsEmpty) reserved.Add(source.OutputBounds);
+        }
+        if (manaJourneyPaint is { } bill) { reserved.Add(bill.Bounds); reserved.Add(bill.SourceBounds); }
+        var room = DecisionActionArea(halo, width, height, reserveBattlefield: true,
+            additionalReservations: reserved, minimumWidth: width, boundedWorkspace: true);
+        if (room.Width < width || room.Height < height) return;
+        var area = new Rectangle(room.X, room.Y, width, height);
+        canvas.Rounded(area, new Color(8, 17, 23) * .94f, 4);
+        canvas.Text(heading, area.X + 10, area.Y + 8, Ink, headingSize, width - 20, 80, true);
+        if (guidanceHeight > 0)
+            canvas.Text(guidance, area.X + 10, area.Y + 12 + headingHeight, Muted, guidanceSize, width - 20, 80);
+    }
+
     private void OpenManaPool(int player) { zonePlayer = player; overlay = "mana"; }
 
     private void DrawManaDetails()

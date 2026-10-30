@@ -82,6 +82,7 @@ internal sealed partial class TableApplication
         DrawStudyBattlefieldName();
         DrawStudyFocusNavigation();
         DrawCardCollection();
+        DrawManaPoolHover();
         DrawExperienceLabHeader();
     }
     private void DrawGameHeader()

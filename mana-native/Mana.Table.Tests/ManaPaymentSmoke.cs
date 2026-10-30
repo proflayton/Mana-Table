@@ -160,7 +160,7 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
     private static void Prepare(string profile)
     {
         Directory.CreateDirectory(profile);
-        new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = true }.Save(profile);
+        (PlayPreferences.Load(profile) with { Automatic = false, Sounds = false, ReducedMotion = true }).Save(profile);
     }
 
     private ManaPaymentSmoke(TableApplication.Probe view, ExperienceLabSession lab, Point viewport, TableWindow.Probe? window = null)
@@ -209,8 +209,24 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
                 && tappedRing.Bounds.Width > tappedRing.Bounds.Height
                 && Math.Abs(Math.Abs(MathHelper.WrapAngle(tappedRing.Angle - untappedRing.Angle)) - MathHelper.PiOver2) < .01f,
                 "A settled rock keeps the same physical face and makes a visible quarter-turn from tall to wide rather than cancelling the tap by swapping dimensions");
-            Capture("04-rock-tapped-blue-remains"); MoveCard(ManaPaymentScenario.Dual);
+            Capture("04-rock-tapped-blue-remains"); MoveHit("mana-pool:0:C");
+        });
+        Wait(() => HasText("Colorless mana · 1") && HasText("Not usable for the remaining cost"), () => {
+            Check(lab.StageIndex == 2 && lab.ManaPaymentReplies.Count == 2
+                && view.ManaJourney?.Symbols.SequenceEqual(["{U}"]) == true
+                && view.Hits.Single(hit => hit.Id == "mana-pool:0:C").Intent is MatchIntent.OpenManaPool,
+                "Hover explains the actual colorless pip's exclusion from the remaining blue bill without spending mana or changing the pending card");
+            Check(view.ManaSources.Any(source => source.SourceId == ManaPaymentScenario.Dual && !source.OutputBounds.IsEmpty)
+                && PoolCaptionClearsPayment(view, "Colorless mana · 1", "Not usable for the remaining cost", out _),
+                "The complete hover caption and backing clear the current blue source face and output symbol, pending card and exact bill");
+            Capture("04a-colorless-cannot-pay-blue");
         }); Click();
+        Wait(() => view.ManaPoolDetail != null, () => {
+            Check(lab.StageIndex == 2 && lab.ManaPaymentReplies.Count == 2 && view.ManaPoolDetail is { Total: 1 },
+                "An unusable payment pip keeps its existing read-only pool inspection; opening it submits no game action");
+            Capture("04b-read-unspent-colorless"); MoveHit("close-overlay");
+        }); Click();
+        Wait(() => view.Overlay.Length == 0, () => MoveCard(ManaPaymentScenario.Dual)); Click();
         Wait(() => ReaderReady(ManaPaymentScenario.Dual) && view.Hits.Any(hit => hit.Id == "read-card-action"), () => {
             Check(view.Frame!.Drawing!.Commands.OfType<Mana.Renderer.DrawCommand.Text>().Any(text => text.Value?.Contains("Add") == true),
                 "A flexible mana source exposes its current symbol-bearing choices on its own readable card");
@@ -218,7 +234,7 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
                 && !bill.Bounds.Intersects(view.DisplayedPose(ManaPaymentScenario.Dual)!.Value.Bounds)
                 && !view.Hits.Where(hit => hit.Id == "source-actions-surface").Any(hit => hit.Bounds.Intersects(bill.Bounds)),
                 "Reading a dual source keeps its current color choices and the pending spell's exact bill visible in separate adjacent space");
-            Capture("04b-dual-source-color-choices");
+            Capture("04c-dual-source-color-choices");
             MoveHit("read-card-action");
         }); Click();
         Wait(() => lab.StageIndex == 3 && !view.Busy && view.Match?.Stack.Length == 1, () => {
@@ -241,6 +257,13 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             Check(view.ManaJourney.SourceZone == "Stack" && CaptionClearsSeat(),
                 "A payment source still present in a zone anchors its bill to the pending source reference and keeps the portrait and usable pip unobscured");
             Capture("06-colorless-pip-can-pay"); MoveHit("mana-pool:0:C");
+        });
+        Wait(() => HasText("Colorless mana · 1") && HasText("Spend"), () => {
+            Check(!HasText("Not usable for the remaining cost") && lab.ManaPaymentReplies.Count == 0,
+                "A current usable colorless pip retains its Spend guidance and hover alone never pays the exact colorless bill");
+            Check(PoolCaptionClearsPayment(view, "Colorless mana · 1", "Spend", out _),
+                "The usable-pip caption keeps the current bill, source faces and output quantities unobscured before payment");
+            Capture("06a-hover-current-spend");
         }); Click();
         Wait(() => lab.StageIndex == 6 && !view.Busy, () => {
             Check(lab.ManaPaymentReplies[^1] is SpendPoolMana { Color: "C" }
@@ -416,6 +439,35 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
 
     private bool ReaderReady(string id) => view.DisplayedPose(id) is { Size.X: >= 300 } pose
         && view.Frame!.Cards.Any(card => card.Id == id && card.Focused && Vector2.Distance(card.Display.Center, (card.ReaderTarget ?? card.Rest).Center) < 2);
+    private bool HasText(string value) => view.Frame!.Drawing!.Commands.OfType<Mana.Renderer.DrawCommand.Text>().Any(text => text.Value == value);
+    internal static bool PoolCaptionClearsPayment(TableApplication.Probe view, string heading, string guidance,
+        out Microsoft.Xna.Framework.Rectangle caption)
+    {
+        caption = Microsoft.Xna.Framework.Rectangle.Empty;
+        if (view.Frame?.Drawing is not { } drawing) return false;
+        var lines = drawing.Commands.Select((command, index) => (Command: command, Index: index))
+            .Where(item => item.Command is Mana.Renderer.DrawCommand.Text text && (text.Value == heading || text.Value == guidance)).ToArray();
+        if (lines.Length != 2) return false;
+        var metrics = new Mana.Renderer.TextMetrics();
+        var textBounds = lines.Select(item => {
+            var text = (Mana.Renderer.DrawCommand.Text)item.Command;
+            var size = metrics.TextSize(text.Value!, text.Size, text.Width, text.MaxLines, text.Bold, drawing.TextScale);
+            return new Microsoft.Xna.Framework.Rectangle(text.X, text.Y, size.X, size.Y);
+        }).Aggregate(Microsoft.Xna.Framework.Rectangle.Union);
+        // Read the actual painted backing, rather than reconstructing the
+        // production placement algorithm or checking only the text's origin.
+        var backing = drawing.Commands.Take(lines.Min(item => item.Index)).OfType<Mana.Renderer.DrawCommand.Rounded>()
+            .LastOrDefault(item => item.Bounds.Contains(textBounds));
+        if (backing == null) return false;
+        caption = backing.Bounds;
+        var protectedAreas = view.ManaSources.SelectMany(source => new[] { source.Bounds, source.OutputBounds }).ToList();
+        if (view.ManaJourney is { } bill) { protectedAreas.Add(bill.Bounds); protectedAreas.Add(bill.SourceBounds); }
+        if (view.Match is { } state) foreach (var player in state.Players)
+            if (view.ManaPoolBadge(player.Id) is { } pool) protectedAreas.Add(pool.Bounds);
+        var area = caption;
+        return area.X >= 0 && area.Y >= 0 && area.Right <= 1600 && area.Bottom <= view.DesignHeight
+            && protectedAreas.Where(bounds => !bounds.IsEmpty).All(bounds => !area.Intersects(bounds));
+    }
     private bool SettledTapped(string id) => view.Frame!.Cards.FirstOrDefault(card => card.Id == id) is { Focused: false } card
         && Math.Abs(MathHelper.WrapAngle(card.Display.Angle - card.Rest.Angle)) < .01f
         && Vector2.Distance(card.Display.Size, card.Rest.Size) < 1;

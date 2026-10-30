@@ -6,6 +6,38 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Floating mana during payment: 30 October 2026
+
+The player's supplied MTG Arena mana references place floating mana symbols and
+quantities beside the player portrait while the battlefield remains visible.
+This is direct evidence for keeping resources with their seat; those stills do
+not establish Arena's hover behavior. The contextual explanation below is our
+adaptation to the reported confusion about colorless mana and payable costs.
+
+The player points at an existing floating mana pip to read its full color name
+and current amount. During an owned payment, an explicitly excluded color also
+explains that it is not usable for the remaining cost. A currently usable pip
+keeps its Spend guidance and exact spend action. Clicking an excluded pip opens
+the existing read-only pool inspection, then closing it returns to the pending
+card and its remaining bill. Reading never spends mana or advances the engine.
+
+The explanation follows the current payment's explicit payer and usable-color
+set. Missing metadata, foreign decisions and recovery do not establish an
+exclusion. The remaining bill and current source offers stay authoritative;
+the caption does not infer a particular restriction or calculate another mana
+total. The existing scoped hit and foreground-input rules own every gesture.
+Each frame recomputes the cue, so a changed bill or payer retires the old meaning.
+The caption composes after the actual current funding symbols and bill. Their
+measured paint bounds reserve space beside the pip; prior-frame geometry and
+source-card bounds alone cannot protect a contribution symbol above that card.
+
+Review `mana-payment.v1` at its colorless-floating/blue-remaining checkpoint and
+its exact colorless payment. Inspect actual windows at 1000 x 740 and a larger
+size with 130% text: the caption, pending card, bill, pips and portrait controls
+must remain readable together. Headless and physical-pointer checks establish
+scoped behavior; agent captures do not establish human clarity acceptance.
+Human review of this source candidate remains pending.
+
 ## Replacement and committed-result continuity: 28 October 2026
 
 The player's supplied MTG Arena sequences show a played source, an inspectable

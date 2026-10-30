@@ -71,6 +71,7 @@ internal static partial class HeadlessPresentationSmoke
             CheckChoiceEligibility(profile, Check, trace, performance);
             CheckPlayAccess(profile, Check, trace, performance);
             ManaPaymentSmoke.RunHeadless(profile, Check);
+            CheckManaPoolPaymentClarity(profile, Check, trace, performance);
             CommanderInteractionChecks.Run(profile, Check);
             DisclosedSourceInteractionChecks.Run(profile, Check);
             LinkedSourceInteractionChecks.Run(profile, Check);

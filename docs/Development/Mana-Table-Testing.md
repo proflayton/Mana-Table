@@ -1468,6 +1468,16 @@ dotnet $driver --smoke-mana-payment --size 1000x740 --profile '<fresh-profile>'
 dotnet $driver --smoke-mana-payment --headless --profile '<fresh-profile>'
 ```
 
+The mana journey includes hovering one floating colorless mana while blue remains
+unpaid, inspecting that pool without a command, then continuing through the dual
+source. Its exact-colorless checkpoint separately hovers and spends the current
+usable pip. The headless presentation lane covers missing/legacy facts, foreign
+owners and payers, generic versus colorless bills, restricted-pool exclusions,
+changed bills/scopes and an exhausted pool at 130% text. The scenario supplies
+authored eligibility; real engine mana-availability journeys retain rule authority.
+For actual-window review, also run the same smoke at a larger size with an
+isolated profile's text scale set to 1.3; preparation preserves that setting.
+
 Other focused modes include `--smoke-priority-flow`,
 `--smoke-cluttered-changes`, `--smoke-recovery`, `--smoke-state-clarity`,
 `--smoke-allocation`, and `--smoke-deck-experience`. Consult the
