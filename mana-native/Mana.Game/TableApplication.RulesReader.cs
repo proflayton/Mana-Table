@@ -57,7 +57,7 @@ internal sealed partial class TableApplication
     private bool DrawRulesReader(PresentedCard entry)
     {
         if (!entry.Focused || rulesReaderId != entry.Id || rulesReaderGame != match?.Id
-            || entry.Card.FaceDown || !CardContext.CanRead(entry) || entry.Display.Size.X < 300) return false;
+            || entry.Card.FaceDown || !CardContext.CanRetainPinned(entry) || entry.Display.Size.X < 300) return false;
         float progress = preferences.ReducedMotion ? 1 : Math.Clamp((float)((now - rulesReaderTurnedAt) / RulesFlipSeconds), 0, 1);
         if (!rulesReaderText && progress >= 1) return false;
         bool text = progress >= .5f ? rulesReaderText : !rulesReaderText;

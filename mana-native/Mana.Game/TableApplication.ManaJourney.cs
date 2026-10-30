@@ -43,7 +43,7 @@ internal sealed partial class TableApplication
     {
         manaJourney = null; manaJourneyPaint = null; manaSourcePaint.Clear();
         if (match is not { Status: "playing", Viewer: not null, Decision: { } decision } state
-            || session.NeedsRecovery || OverlayOpen && !BattlefieldFocused || CardCollectionOpen) return;
+            || session.NeedsRecovery || OverlayOpen && !BattlefieldFocused && !CurrentManaReading || CardCollectionOpen) return;
         if (QuietUnpayableOptionalPayment) return;
         if (decision.Payload is OptionsPayload { ManaPaymentContext: { Source.Card: { FaceDown: false } owningCostSource } context }
             && !context.UnpaidManaParts.IsDefaultOrEmpty) {
@@ -217,6 +217,8 @@ internal sealed partial class TableApplication
         }
         int adviceY = y + 29 + rows * 42;
         canvas.Text(journey.Advice, x + 9, adviceY, Muted, .66f, width - 18, 1);
+        manaJourneyPaint = new(identity, journey.Payment, area, journey.Parts, journey.Advice, journey.Plan?.Status, entry.Zone, face);
+        if (CurrentManaReading) return;
         if (journey.Payment && match.Decision?.Payload is PaymentPayload payment) {
             int controlY = area.Bottom - 31 - (declineBatch != null ? batchHeight + 11 : 0) - policyHeight;
             if (payment.Pay.Enabled && CurrentOptionalPayment?.Availability != OptionalManaPaymentAvailability.Unpayable)
@@ -238,7 +240,6 @@ internal sealed partial class TableApplication
                 Button("cancel", selection.Cancel.Label, x + width - 94, area.Bottom - 41, 86,
                     new MatchIntent.CancelDecision(), !busy, height: 27);
         }
-        manaJourneyPaint = new(identity, journey.Payment, area, journey.Parts, journey.Advice, journey.Plan?.Status, entry.Zone, face);
     }
 
     private void DrawManaSourceWitness(ManaJourneyRead journey, Player viewer)

@@ -46,7 +46,7 @@ internal sealed partial class TableApplication
         }
         bool experienceInput = ExperienceOpen && !ActivityOpen && !updatesOpen;
         bool blockedInput = ActivityOpen || experienceInput || updatesOpen;
-        bool chatKeys = blockedInput || ChatKeys(keys);
+        bool chatKeys = blockedInput || !CurrentManaReading && ChatKeys(keys);
         if (!chatKeys) { DeckKeys(keys); SetupKeys(keys); }
         pointer = RenderViewport.Fit(viewport, DesignHeight).ToLogical(new(mouse.X, mouse.Y));
         if (UpdateAudioInput(mouse, keys, blockedInput)) {
@@ -104,7 +104,9 @@ internal sealed partial class TableApplication
             CloseTableGuide();
         }
         if (updatesOpen && !ActivityOpen && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) CloseAppUpdates();
-        if (escapePressed && turnPassRequest != null) {
+        if (escapePressed && CurrentManaReading) {
+            overlay = ""; pressed = null;
+        } else if (escapePressed && turnPassRequest != null) {
             turnPassRequest = null;
         } else if (escapePressed && !cancelledDrag) {
             CancelReleasedPlayIntent();

@@ -11,7 +11,7 @@ namespace Mana.Table.Presentation;
 internal sealed record CardPresentationContext(GameSnapshot? State, string Scope,
     bool OverlayOpen, bool GalleryOpen, bool Dragging, bool CompactDecision,
     bool KeepBattlefieldAnchor = false, Rectangle? BattlefieldReaderAvoid = null, DecisionDockView? Decision = null,
-    CardCollectionTarget.PublicZone? PublicCollection = null, Vector2? ReaderContentSize = null)
+    CardCollectionTarget.PublicZone? PublicCollection = null, Vector2? ReaderContentSize = null, bool PassivePinnedReading = false)
 {
     private DecisionReadingPolicy Reading => new(Decision ?? (State == null ? null : DecisionDockPresentation.From(State, new())));
     public bool OpeningHandDecision => Reading.Allows(DecisionReading.OpeningHandInspection);
@@ -58,6 +58,13 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
         return GalleryOpen && entry.Hit.Scope == Scope
             && ChoiceFace(entry.Request.ChoiceSlot) is { FaceDown: false };
     }
+
+    // Retaining an existing current face grants neither a new read gesture nor
+    // action admission through an overlay. Callers supply only their pinned face.
+    public bool CanRetainPinned(PresentedCard entry) => CanRead(entry)
+        || PassivePinnedReading && !Dragging && entry.ChoiceSlot < 0
+            && (!CompactDecision || CanBrowseHandSelection(entry) || CanBrowsePublicCollection(entry))
+            && (this with { OverlayOpen = false }).CanRead(entry);
 
     // A historical source/choice face is not a live card location. Real readers
     // reconcile against the current physical zone or stack, including a disclosed top.

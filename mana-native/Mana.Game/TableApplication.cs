@@ -140,7 +140,7 @@ internal sealed partial class TableApplication : IDisposable
     internal void ReceiveText(char character)
     {
         if (!InputReady) return;
-        if (updatesOpen || ActivityOpen || ExperienceOpen) return;
+        if (updatesOpen || ActivityOpen || ExperienceOpen || CurrentManaReading) return;
         if (chatOpen && chatFocus) { ChatText(character); return; }
         if (match == null && deckEditor) { DeckText(character); return; }
         if (match == null) { SetupText(character); return; }
@@ -179,6 +179,7 @@ internal sealed partial class TableApplication : IDisposable
         => projectionCapture?.ObserveEnvironment(updateTime, ProjectionSettings(updateViewport), match);
     private void AcceptPresentation(GameSnapshot? previous, GameSnapshot? state)
     {
+        ReconcileManaReading(previous, state);
         bool restored = session.RestorationChanged;
         if (restored) ReconcileRestoredInteraction();
         if (state != null) finiteProgressProjection?.Observe(state);
@@ -235,6 +236,7 @@ internal sealed partial class TableApplication : IDisposable
         pumpingObservations = true;
         try { session.Pump(); }
         finally { pumpingObservations = false; }
+        ReconcileManaReading(match, match);
         UpdateLobbyDeck();
         UpdateActivity();
         UpdateTempo();
@@ -369,6 +371,7 @@ internal sealed partial class TableApplication : IDisposable
             canvas.Fill(new(0, 0, 1600, DesignHeight), new Color(12, 18, 26) * (float)(.5 * (1 - (now - sceneRevealAt) / .2)));
         EndCardReading();
         var drawing = canvas.Complete();
+        IsolateManaReadingInput();
         hits.Publish();
         Frame = new(drawing, hits.Published, tableScene, matchPresentation.Cards.Cards, DesignHeight,
             new(match?.Id, match?.Revision ?? 0, match?.Decision?.Id, Scope, time.TotalGameTime.TotalSeconds), boardView, followTurnEnabled);

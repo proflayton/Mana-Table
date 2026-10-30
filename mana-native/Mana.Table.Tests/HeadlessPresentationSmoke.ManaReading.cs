@@ -62,6 +62,19 @@ internal static partial class HeadlessPresentationSmoke
                     && ManaPaymentSmoke.PoolReadingIsolated(run.View) && run.Engine.Replies.Count == 0,
                     "Same-decision mana reading immediately uses the newest full names and quantities, including 1024, literal unknown keys, color disappearance and an empty actual pool");
             }
+            Accept(run, run.View.Match! with { Players = run.View.Match!.Players.Select(player => player.Id == 0 ? player with {
+                Mana = ImmutableDictionary<string, int>.Empty.Add("C", 4)
+            } : player).ToImmutableArray() });
+            run.ClickHit("close-overlay"); run.Settle("close-before-current-rules-face");
+            run.ClickHit("read-card-rules"); run.Settle("current-rules-face");
+            var readerBounds = run.Frame.Cards.Single(card => card.Id == ManaPaymentScenario.Spell && card.Focused).Display.Bounds;
+            Mana.Renderer.DrawCommand.Text[] CurrentRules() => run.Frame.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Text>()
+                .Where(text => readerBounds.Contains(text.X, text.Y)).ToArray();
+            var rules = CurrentRules();
+            run.ClickHit("mana-pool:0:C"); run.Settle("inspect-with-current-rules-face");
+            check(rules.Length > 0 && rules.SequenceEqual(CurrentRules()) && ManaPaymentSmoke.PoolReadingIsolated(run.View)
+                && run.Frame.Cards.Any(card => card.Id == ManaPaymentScenario.Spell && card.Card.Key == key && card.Focused),
+                "Mana reading retains the already-selected complete rules face and its exact drawing rather than silently turning the pinned reader back to artwork");
             Accept(run, run.View.Match! with { Players = run.View.Match!.Players.Select(player => player.Id != 0 ? player : player with {
                 Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with {
                     Cards = zone.Cards.Select(card => card with { FaceDown = true }).ToImmutableArray()

@@ -407,14 +407,15 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             Capture("pool-preview-withdrawn"); MoveHit("mana-pool:0:C");
         }); Click();
         Wait(() => view.ManaPoolDetail != null, () => {
+            var currentFrame = view.Frame ?? throw new InvalidOperationException("Mana reading has no current presentation frame.");
             Check(view.ManaPoolDetail is { Total: 4 } && ReaderReady(ManaPaymentScenario.Spell)
-                && view.Frame!.Cards.Single(card => card.Id == ManaPaymentScenario.Spell && card.Focused).Card.Key == inspectedHandKey
+                && currentFrame.Cards.Single(card => card.Id == ManaPaymentScenario.Spell && card.Focused).Card.Key == inspectedHandKey
                 && view.Match!.Decision!.Id == inspectedDecision && view.ManaJourney is { Payment: false, FundingStatus: null, Advice: "Choose an action" }
-                && view.Frame.Cards.Any(card => card.Id == ManaPaymentScenario.Island && card.Zone == "Battlefield")
+                && currentFrame.Cards.Any(card => card.Id == ManaPaymentScenario.Island && card.Zone == "Battlefield")
                 && PoolReadingClearsContext(view) && PoolReadingIsolated(view) && engine.Replies.Count == 0,
                 "The physical C4 inspection expands beside its own portrait while the exact pinned hand occurrence, physical Island and current unknown-funding bill remain visible with passive hits and zero commands");
             File.WriteAllText(Path.Combine(view.Profile, "pool-preview-inspect.json"), JsonSerializer.Serialize(new {
-                state = view.Match, frame = view.Frame.Observe(), view.ManaJourney,
+                state = view.Match, frame = currentFrame.Observe(), view.ManaJourney,
                 pool = view.ManaPoolDetail, pinnedKey = inspectedHandKey, viewport, view.TextScale, replies = engine.Replies.Count,
                 scope = "Current expanded same-seat mana, retained current reader and bill, measured physical geometry and isolated input; authored presentation, no human acceptance."
             }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));

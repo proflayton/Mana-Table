@@ -140,6 +140,7 @@ internal sealed partial class TableApplication
     }
     private void DrawPlayerMana(Player player, ManaHaloPlan halo)
     {
+        if (CurrentManaReading && player.Id == zonePlayer) return;
         var painted = new List<PublicResourcePartPaint>();
         foreach (var item in halo.Parts) {
             var bounds = item.Bounds;
@@ -252,18 +253,76 @@ internal sealed partial class TableApplication
             canvas.Text(guidance, area.X + 10, area.Y + 12 + headingHeight, Muted, guidanceSize, width - 20, 80);
     }
 
-    private void OpenManaPool(int player) { zonePlayer = player; overlay = "mana"; }
+    private void OpenManaPool(int player)
+    {
+        if (chatOpen) ToggleChat();
+        zonePlayer = player; overlay = "mana";
+    }
+
+    private Player? ManaReadingPlayer => overlay == "mana" && !session.NeedsRecovery
+        && match is { Status: "playing", Viewer: { Eliminated: false } } state
+            ? state.Players.FirstOrDefault(player => player.Id == zonePlayer && !player.Eliminated) : null;
+    private bool CurrentManaReading => ManaReadingPlayer != null && !StartupVisible && !updatesOpen && !ActivityOpen && !ExperienceOpen;
+
+    private void ReconcileManaReading(GameSnapshot? previous, GameSnapshot? state)
+    {
+        if (overlay == "mana" && (!CurrentManaReading || previous?.Id != state?.Id
+            || previous?.ViewerId != state?.ViewerId || previous?.Decision?.Id != state?.Decision?.Id)) overlay = "";
+    }
+
+    // This runs immediately before publication, after every late hit producer.
+    // OverlayOpen remains authoritative to ResolveHit and command admission.
+    private void IsolateManaReadingInput()
+    {
+        if (!CurrentManaReading) return;
+        var close = hits.LastOrDefault(hit => hit.Intent is MatchIntent.CloseView);
+        hits.Clear();
+        hits.Add(new("mana-reading-surface", Scope, new(0, 0, 1600, DesignHeight), UiIntent.None, ShowPointer: false));
+        if (close != null) hits.Add(close);
+    }
 
     private void DrawManaDetails()
     {
-        var player = match!.Players.FirstOrDefault(p => p.Id == zonePlayer);
-        if (player == null) return;
-        ModalFrame("Unspent mana · " + StateClarity.SeatName(match, player.Id), new MatchIntent.CloseView());
-        canvas.Text("CURRENT POOL · READ ONLY", 212, 191, Gold, .7f, 1150, 1, true);
-        long total = PublicResources.ManaTotal(player);
-        var layout = ResourceLayout("UNSPENT MANA", total, PublicResources.Mana(player, includeEmpty: true), 1125);
-        manaPoolDetail = DrawResourceRow("UNSPENT MANA", total, layout, 212, 232, Blue);
-        canvas.Text(PublicResources.ManaDetail, 212, 350, Ink, .88f, 1125, (int)Math.Ceiling(6 * preferences.TextScale));
-        canvas.Text("Inspecting this pool does not spend mana or select a game action.", 212, 533, Muted, .8f, 1125, 2);
+        if (!CurrentManaReading || ManaReadingPlayer is not { } player) return;
+        const float size = .65f;
+        var parts = PublicResources.Mana(player, includeEmpty: true).Select(part => {
+            int glyph = part.Symbol.Length > 0 ? 28 : 0;
+            int label = glyph + canvas.TextWidth(part.Name + " ", size, true);
+            int amount = canvas.TextWidth(part.Amount.ToString(), size, true);
+            return (Part: part, Glyph: glyph, Label: label, Amount: amount, Width: label + amount + 12);
+        }).ToArray();
+        int ColumnWidth(int column) => parts.Where((_, index) => index % 2 == column).Select(part => part.Width).DefaultIfEmpty(0).Max();
+        int closeWidth = Math.Max(84, canvas.TextWidth("Close", .76f) + 24);
+        int width = Math.Max(ColumnWidth(0) + ColumnWidth(1) + 10, canvas.TextWidth("Unspent mana", .7f, true) + closeWidth + 16);
+        int rowHeight = Math.Max(28, parts.Max(part => canvas.TextSize(part.Part.Name, size, part.Label, 1, true).Y) + 6);
+        int header = Math.Max(34, canvas.TextSize("Unspent mana", .7f, width, 1, true).Y + 8);
+        int height = header + (parts.Length + 1) / 2 * rowHeight;
+        var hero = SeatHero(player.Id);
+        var anchor = new Rectangle((int)hero.X - 58, (int)hero.Y - 58, 116, 116);
+        var occupied = matchPresentation.Cards.Cards.Select(card => card.Display.Bounds).ToList();
+        if (!battlefieldReaderStateBounds.IsEmpty) occupied.Add(battlefieldReaderStateBounds);
+        occupied.AddRange(manaSourcePaint.SelectMany(source => new[] { source.Bounds, source.OutputBounds }));
+        if (manaJourneyPaint is { } bill) { occupied.Add(bill.Bounds); occupied.Add(bill.SourceBounds); }
+        foreach (var seat in match!.Players) {
+            var portrait = SeatHero(seat.Id);
+            occupied.Add(new((int)portrait.X - 58, (int)portrait.Y - 58, 116, 116));
+            occupied.AddRange(TurnControlLayout.For(portrait).Reservations);
+        }
+        var area = DecisionActionArea(anchor, width, height, reserveBattlefield: true,
+            additionalReservations: occupied, minimumWidth: width, boundedWorkspace: true);
+        canvas.Text("Unspent mana", area.X + 4, area.Y + 3, Ink, .7f, width - closeWidth - 12, 1, true);
+        Button("close-overlay", "Close", area.X + width - closeWidth, area.Y, closeWidth, new MatchIntent.CloseView(), height: header - 6);
+        var painted = new List<PublicResourcePartPaint>();
+        for (int index = 0; index < parts.Length; index++) {
+            var item = parts[index];
+            int x = area.X + (index % 2 == 0 ? 0 : ColumnWidth(0) + 10), y = area.Y + header + index / 2 * rowHeight;
+            var bounds = new Rectangle(x, y, item.Width, rowHeight - 3);
+            canvas.Gradient(bounds, new Color(8, 17, 23) * .94f, new Color(8, 17, 23) * .6f);
+            if (item.Part.Symbol.Length > 0) PaintManaSymbol(item.Part.Symbol, new(x + 13, bounds.Center.Y), 22);
+            canvas.Text(item.Part.Name, x + item.Glyph + 4, y + 1, Ink, size, item.Label - item.Glyph, 1, true);
+            canvas.Text(item.Part.Amount.ToString(), x + item.Label + 4, y + 1, Ink, size, item.Amount, 1, true);
+            painted.Add(new(item.Part.Key, item.Part.Name, item.Part.Amount.ToString(), bounds, item.Amount, item.Amount));
+        }
+        manaPoolDetail = new("Unspent mana", PublicResources.ManaTotal(player), new(area.X, area.Y, width, height), painted.ToArray(), 0, 0);
     }
 }

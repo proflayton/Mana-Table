@@ -6,6 +6,58 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Reading floating mana at its seat: 30 October 2026
+
+**Source candidate; validation and human review pending.** The earlier C4
+inspection replaced its portrait, Island and current card/bill with a large
+dimmed sheet containing one resource row and general mana prose. The new
+candidate expands those same resource symbols beside the inspected seat,
+keeping their full color names and actual amounts under the short label
+"Unspent mana". Known colors include zero; an empty pool cannot retain an old
+positive amount. Extra public keys keep their literal names without invented
+source provenance, snow status, restrictions or affordability.
+
+Wizards' [official snow mana-pool image](https://media.wizards.com/2020/images/daily/m7g4ren4_snow_mana_pool.jpg)
+places counted resource symbols next to the avatar while recognizable lands
+remain on the battlefield. Its [January 2021 developer article](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-january-2021-01-21)
+describes manual mana addition, holding a card to read it and dragging it to
+cast. The mobile reference does not establish current desktop inspection or
+four-seat placement. The expanded named-symbol arrangement and dismissal here
+are Mana Table adaptations; no verified reference demonstrates Arena uses this
+inspector transition. The source-hover reference below separately grounds the
+connection between a hand-cost estimate and its physical mana sources.
+
+The player intends to read this seat's already-floating resources while keeping
+the object that prompted the question. The source is the existing portrait pip
+and its current OpenManaPool intent; the target is that same seat's current
+public Mana map. A pip click expands it; existing CloseView or Escape returns to
+the table. A valid pinned hand occurrence, physical Island and current bill
+remain visible through opening and dismissal without another card click.
+An excluded C1 pip beside an unpaid blue bill follows the same reading route;
+usable payment pips retain their existing spend gesture and engine permission.
+Reading itself submits no game command and pauses automatic passing.
+Opening this resource reading closes an existing chat drawer and its focus
+through the normal chat close path, preserving unsent text. Closing the reading
+returns the chat toggle; it never reopens the drawer automatically.
+
+Passive pin retention belongs to the existing presentation policy; it does not
+admit new reading or action gestures through an overlay. Only the passive
+surface and its existing dismissal remain active after every late painter.
+Higher guide/activity/update views keep their own input. The guide deliberately
+clears the old reader; closing it cannot restore that card or action. Accepted
+game/viewer/decision changes, recovery even without a new snapshot, terminal
+state and seat loss retire this reading. Same-decision pool updates refresh
+immediately. A private or removed source retires through current-occurrence
+checks, with no remembered face or restore step.
+
+The complete measured expansion reserves current physical cards, reader,
+bill/source/output footprints, other pips, portraits and turn controls using
+the existing finite workspace search. This sparse authored journey must be
+reviewed at 1000 x 740 and a larger window, at 100% and 130% text and with reduced
+motion. A fully packed battlefield may still have no clear placement. Source,
+edge-seat and crowded-table review remains separate from automated geometry;
+automation and agent inspection do not establish human acceptance.
+
 ## Floating mana in a hand-cost preview: 30 October 2026
 
 **Source candidate; human review pending.** In MTG Arena, mousing over a spell
@@ -45,9 +97,9 @@ fully packed table its existing fallback still cannot guarantee a clear region.
 The sparse C4/Island withdrawal review must keep the printed-cost bill separate
 from that Island, the actual pool and portrait controls at both text scales.
 
-Separate future audit: the existing read-only mana inspector is a broad generic
-modal. Its game-feel redesign remains pending; this cue does not redesign or
-establish acceptance of that inspection surface.
+The broad generic inspector observed with this preview prompted the separate
+contextual-reading source candidate above. Acceptance of that inspection
+transition remains pending independently of this quiet preview cue.
 
 ## Floating mana during payment: 30 October 2026
 

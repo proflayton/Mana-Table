@@ -23,7 +23,7 @@ internal sealed partial class TableApplication
     private bool DrawSourceActionReader(PresentedCard entry)
     {
         if ((!SourceActionsSupported && !IsStudyBattlefieldReader(entry)) || !entry.Focused || entry.ChoiceSlot >= 0 || entry.Card.FaceDown
-            || entry.Display.Size.X < 300 || !CardContext.CanRead(entry)) return false;
+            || entry.Display.Size.X < 300 || !CardContext.CanRetainPinned(entry)) return false;
         var card = VisibleCards().FirstOrDefault(current => SameVisibleCard(current, entry.Card));
         if (card == null) return false;
         // Reading always paints the complete original face. Action discovery,

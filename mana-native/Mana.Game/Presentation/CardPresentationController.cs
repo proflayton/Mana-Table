@@ -54,7 +54,7 @@ internal sealed class CardPresentationController
         // A reader survives pointer movement, but never lost visibility or a
         // required compact interaction. Reconciliation uses the current snapshot.
         if (pinnedId != null && (current.Dragging || leavingOpeningHand || Pinned is not { } pinned
-            || current.CompactDecision && !current.CanBrowseHandSelection(pinned) && !current.CanBrowsePublicCollection(pinned) || !current.CanRead(pinned))) {
+            || current.CompactDecision && !current.CanBrowseHandSelection(pinned) && !current.CanBrowsePublicCollection(pinned) || !current.CanRetainPinned(pinned))) {
             string oldId = pinnedId;
             bool relocated = current.State != null && CardViews.Located(current.State).Any(item =>
                 !item.Card.FaceDown && CardViews.Identity(item.Card) == oldId && item.Zone != pinnedZone);
@@ -71,7 +71,8 @@ internal sealed class CardPresentationController
 
     public PresentedCard Prepare(CardPresentationRequest request)
     {
-        bool readable = (request.ChoiceSlot >= 0 ? context.GalleryOpen : !context.OverlayOpen) && !context.Dragging;
+        bool readable = (request.ChoiceSlot >= 0 ? context.GalleryOpen : !context.OverlayOpen
+            || context.PassivePinnedReading && request.Id == pinnedId && request.Zone == pinnedZone) && !context.Dragging;
         bool focused = !request.Card.FaceDown && pinnedId == request.Id && pinnedZone == request.Zone && readable;
         if (request.Card.FaceDown) { transitions.Remove(request.Id); playFlights.Remove(request.Id); }
         var view = request.ChoiceSlot < 0 && BoardView.AffectsZone(request.Zone) ? boardView : BoardView.Identity;
