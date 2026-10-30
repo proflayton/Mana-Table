@@ -161,6 +161,11 @@ internal static partial class HeadlessPresentationSmoke
         run.Tick("floating-preview-initial");
         run.Input(run.Frame.Cards.Single(card => card.Id == ManaPaymentScenario.Spell).Display.Center.ToPoint(), label: "hover-hand-cost");
         Ready("mixed-pool-and-island-preview");
+        var pool = run.View.ManaPoolBadge(0)!;
+        trace.Add(new { scenario = "floating-mana-cost-preview-facts", label = "mixed-pool-and-island-preview",
+            journey = run.View.ManaJourney, sources = run.View.ManaSources.ToArray(), pool = pool with { Parts = pool.Parts.ToArray() },
+            poolIntent = run.Hit("mana-pool:0:C").Intent.GetType().Name, quietPoolRings = Rings(0, "C").Length,
+            replies = run.Engine.Replies.Count, islandTapped = run.Engine.State.Viewer!.Zone("Battlefield").Cards.Single().Tapped });
         check(Rings(0, "C").Length == 1 && Rings(1, "C").Length == 0
             && run.View.ManaJourney!.Symbols.SequenceEqual(["{1}", "{U}"])
             && run.View.ManaSources is [{ SourceId: ManaPaymentScenario.Island }]
@@ -175,7 +180,7 @@ internal static partial class HeadlessPresentationSmoke
         run.ClickHit("mana-pool:0:C"); run.Settle("inspect-estimated-floating-pool");
         check(run.View.ManaPoolDetail is { Total: 4 } && Rings(0, "C").Length == 0 && run.Engine.Replies.Count == 0,
             "A suggested pip opens the existing full actual-pool inspection without spending or retaining the preview over it");
-        run.ClickHit("close-overlay"); Ready("return-to-funded-preview");
+        run.ClickHit("close-overlay"); run.ClickCard(ManaPaymentScenario.Spell); Ready("return-to-funded-preview");
 
         Refresh(funded with { Costs = [new(ActionCostKind.Mana, 1, false, "") { ManaSymbols = ["{C}"] }],
             Funding = funding with { Sources = [] } }, "pool-only-exact-colorless-and-generic");
