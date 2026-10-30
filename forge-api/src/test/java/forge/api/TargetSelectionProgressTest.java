@@ -6,6 +6,7 @@ import forge.StaticData;
 import forge.deck.Deck;
 import forge.deck.DeckSection;
 import forge.game.zone.ZoneType;
+import forge.gamemodes.match.input.InputPayMana;
 import forge.gamemodes.match.input.InputSelectTargets;
 import forge.player.PlayerControllerHuman;
 import org.testng.annotations.Test;
@@ -25,6 +26,81 @@ import static org.testng.Assert.*;
 /** Current add-target gates and selected-card undo come from the same rules input. */
 public class TargetSelectionProgressTest {
     private static final Gson JSON = new Gson();
+
+    @Test(timeOut = 120000)
+    public void crackleWithPowerConfirmsOneOfTwoTargetsPaysTripleXAndDealsTenDamage() throws Exception {
+        try (var game = new RulesScenario("crackle-power-subset",
+                Map.of(0, java.util.Collections.nCopies(8, "Mountain")), "Crackle with Power", "Rhys the Redeemed")) {
+            var main = game.until(input -> input.seat() == 0 && priority(input)
+                    && text(input.state(), "phaseKey").equals("MAIN1"));
+            int actor = main.state().get("viewerId").getAsInt();
+            int recipient = game.state(1).get("viewerId").getAsInt();
+            var spell = zone(viewer(main.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
+            var catalog = JSON.toJsonTree(game.table.seat(0).sourceActions(request(main,
+                    Map.of("key", text(spell, "key"))))).getAsJsonObject();
+            Files.writeString(game.evidence.resolve("00-cast-source.json"), JSON.toJson(catalog));
+            assertEquals(text(spell, "name"), "Crackle with Power");
+            assertEquals(catalog.getAsJsonArray("actions").size(), 1);
+            var action = catalog.getAsJsonArray("actions").get(0).getAsJsonObject();
+            assertTrue(game.answer(main, Map.of("action", "useSourceAction", "key", text(catalog, "sourceCardKey"),
+                    "actionId", text(action, "id"))));
+            var number = game.until(input -> input.seat() == 0 && text(input.prompt(), "kind").equals("number"));
+            Files.writeString(game.evidence.resolve("01-announce-x.json"), JSON.toJson(number.state()));
+            assertEquals(text(number.prompt().getAsJsonObject("sourceCard"), "name"), "Crackle with Power");
+            assertTrue(game.answer(number, Map.of("action", "number", "value", 2)));
+            var selection = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputSelectTargets"));
+            Files.writeString(game.evidence.resolve("02-targets.json"), JSON.toJson(selection.state()));
+            assertEquals(selection.prompt().get("min").getAsInt(), 0);
+            assertEquals(selection.prompt().get("max").getAsInt(), 2);
+            assertTrue(selection.prompt().getAsJsonArray("playerChoices").asList().stream()
+                    .anyMatch(value -> value.getAsInt() == recipient));
+            assertTrue(game.answer(selection, Map.of("action", "player", "playerId", recipient)));
+            var subset = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputSelectTargets"));
+            Files.writeString(game.evidence.resolve("03-selected-subset.json"), JSON.toJson(subset.state()));
+            HeadlessPlatform.query(game.table, () -> {
+                var controller = (PlayerControllerHuman)game.table.game.getRegisteredPlayers().get(0).getController();
+                var current = (InputSelectTargets)controller.getInputQueue().getInput();
+                assertEquals(current.getSpellAbility().getXManaCostPaid(), Integer.valueOf(2));
+                assertEquals(java.util.stream.StreamSupport.stream(current.getSpellAbility().getTargets().getTargetPlayers().spliterator(), false)
+                                .map(player -> player.getId()).toList(),
+                        List.of(recipient), "One legal player is the actual current target, below the maximum of two");
+                assertTrue(current.isTargetSelectionActive());
+                return null;
+            });
+            assertTrue(subset.prompt().get("okEnabled").getAsBoolean(), "A valid subset must expose its explicit completion");
+            assertTrue(game.answer(subset, Map.of("action", "ok")));
+            var payment = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").startsWith("InputPayMana"));
+            Files.writeString(game.evidence.resolve("04-payment.json"), JSON.toJson(payment.state()));
+            HeadlessPlatform.query(game.table, () -> {
+                var controller = (PlayerControllerHuman)game.table.game.getRegisteredPlayers().get(0).getController();
+                var current = (InputPayMana)controller.getInputQueue().getInput();
+                assertEquals(current.getOriginalManaCost().getConvertedManaCost(), 8);
+                assertEquals(current.getRemainingManaCost().getConvertedManaCost(), 8);
+                assertEquals(current.getPaidForAbility().getXManaCostPaid(), Integer.valueOf(2));
+                return null;
+            });
+            assertTrue(payment.prompt().get("okEnabled").getAsBoolean(), "Auto can fund six generic and two red from the eight Mountains");
+            assertEquals(cards(payment.state(), 0).stream().filter(card -> text(card, "name").equals("Mountain")
+                    && !card.get("tapped").getAsBoolean()).count(), 8L);
+            assertTrue(game.answer(payment, Map.of("action", "ok")));
+            var stacked = game.until(input -> input.seat() == 0 && priority(input) && input.state().getAsJsonArray("stack").size() == 1);
+            Files.writeString(game.evidence.resolve("05-stacked.json"), JSON.toJson(stacked.state()));
+            assertEquals(cards(stacked.state(), 0).stream().filter(card -> text(card, "name").equals("Mountain")
+                    && card.get("tapped").getAsBoolean()).count(), 8L);
+            assertEquals(text(stacked.state().getAsJsonArray("stack").get(0).getAsJsonObject(), "name"), "Crackle with Power");
+            var resolved = game.until(input -> input.seat() == 0 && priority(input) && input.state().getAsJsonArray("stack").isEmpty());
+            Files.writeString(game.evidence.resolve("06-resolved.json"), JSON.toJson(resolved.state()));
+            assertEquals(player(resolved.state(), recipient).get("life").getAsInt(), 30,
+                    "The real spell resolves for five times the announced X against its one confirmed player");
+            for (var value : resolved.state().getAsJsonArray("players")) {
+                var player = value.getAsJsonObject();
+                if (player.get("id").getAsInt() != recipient) assertEquals(player.get("life").getAsInt(), 40);
+            }
+            assertEquals(viewer(resolved.state()).get("id").getAsInt(), actor);
+            assertTrue(zone(viewer(resolved.state()), "Graveyard").getAsJsonArray("cards").asList().stream()
+                    .anyMatch(value -> text(value.getAsJsonObject(), "name").equals("Crackle with Power")));
+        }
+    }
 
     @Test(timeOut = 120000)
     public void actualPerOpponentTargetsExcludeUnproductiveSiblingsPreserveUndoAndCompleteAValidSubset() throws Exception {
