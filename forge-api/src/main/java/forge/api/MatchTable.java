@@ -10,6 +10,7 @@ import forge.player.PlayerControllerHuman;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -34,6 +35,8 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     private String spectatorError;
     private boolean closed;
     private boolean faulted;
+    private boolean startQueued;
+    private final CompletableFuture<Void> startupCompletion = new CompletableFuture<>();
     final DecisionTempo tempo;
     private ScheduledExecutorService tempoWorker;
 
@@ -135,30 +138,77 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         }
     }
 
-    void start() {
-        HeadlessPlatform.activate(this);
-        if (tempo.enabled()) {
-            tempoWorker = Executors.newSingleThreadScheduledExecutor(task -> {
-                var worker = new Thread(task, "mana-table-tempo"); worker.setDaemon(true); return worker;
-            });
-            tempoWorker.scheduleWithFixedDelay(() -> {
-                try { tickTempo(); } catch (Throwable failure) { fail(failure); stopTempo(); }
-            }, 100, 100, TimeUnit.MILLISECONDS);
+    /** Completion belongs to the actual rules worker, not another executor task.
+     * The game executor can run queued tasks in either order. */
+    CompletableFuture<Void> start() {
+        synchronized (gate) {
+            if (startQueued) return startupCompletion;
+            startQueued = true;
         }
-        game.getAction().invoke(() -> {
+        // invoke can run inline on a rules thread; do not retain the table
+        // monitor while entering a game that can wait for controller input.
+        game.getAction().invoke(this::startInState);
+        return startupCompletion;
+    }
+
+    private void startInState() {
+        Throwable unexpected = null;
+        try {
+            synchronized (gate) {
+                if (closed || game.isGameOver()) return;
+                HeadlessPlatform.activate(this);
+                if (tempo.enabled()) {
+                    tempoWorker = Executors.newSingleThreadScheduledExecutor(task -> {
+                        var worker = new Thread(task, "mana-table-tempo"); worker.setDaemon(true); return worker;
+                    });
+                    tempoWorker.scheduleWithFixedDelay(() -> {
+                        try { tickTempo(); } catch (Throwable failure) { fail(failure); stopTempo(); }
+                    }, 100, 100, TimeUnit.MILLISECONDS);
+                }
+            }
+            match.startGame(game);
+        } catch (Throwable failure) {
+            if (!(failure instanceof CancellationException && game.isGameOver())) {
+                unexpected = failure;
+                reportStartupFailure(failure);
+            }
+        } finally {
             try {
-                match.startGame(game);
-            } catch (Throwable failure) {
-                if (!closed && !(failure instanceof CancellationException && game.isGameOver())) fail(failure);
-            }
-            finally {
                 stopTempo();
-                synchronized (gate) { for (var seat : seats.values()) seat.clearDecision(); if (!faulted) publish(); }
-                game.unsubscribeFromEvents(identities);
-                game.unsubscribeFromEvents(stackInterruption);
-                for (var seat : seats.values()) seat.detach();
+                synchronized (gate) {
+                    for (var seat : seats.values()) seat.clearDecision();
+                    if (!faulted) publish();
+                }
+            } catch (Throwable failure) {
+                if (unexpected == null) {
+                    unexpected = failure;
+                    reportStartupFailure(failure);
+                } else unexpected.addSuppressed(failure);
+            } finally {
+                try {
+                    game.unsubscribeFromEvents(identities);
+                    game.unsubscribeFromEvents(stackInterruption);
+                    for (var seat : seats.values()) seat.detach();
+                } catch (Throwable failure) {
+                    if (unexpected == null) {
+                        unexpected = failure;
+                        reportStartupFailure(failure);
+                    } else unexpected.addSuppressed(failure);
+                } finally {
+                    if (unexpected == null) startupCompletion.complete(null);
+                    else startupCompletion.completeExceptionally(unexpected);
+                }
             }
-        });
+        }
+    }
+
+    private void reportStartupFailure(Throwable failure) {
+        synchronized (gate) {
+            // Explicit closure revokes the table's public projection, but must
+            // not hide an unrelated worker/cleanup fault from host diagnostics.
+            if (closed) failure.printStackTrace(System.err);
+            else fail(failure);
+        }
     }
 
     // Only called at controller input boundaries, while the game is waiting.

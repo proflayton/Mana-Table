@@ -1368,6 +1368,13 @@ The existing headless presentation lane separately runs
 keep both host and guest watching the active table, with private hands filtered
 and table departure still explicit. These checks do not establish human UX
 acceptance or reproduce an unrecorded player's exact match.
+`StartupLifecycleTest` controls the existing rules-state boundary to hold queued
+startup while the table closes or a real seat concedes. It waits for the actual
+queued worker, checks departed in-game zones stay empty and surviving players
+retain their registered decks, then answers current decisions until normal play.
+Companion checks retain the original outside-game sideboard object and reject
+resumed setup or stale answers. The tests also preserve unexpected setup failures
+and require no timing race or retry.
 `MatchCompletionRegression` runs in the existing client suite and uses a
 controlled clock to verify the dependent local-return barrier, exact game/viewer
 scope, stale publications, cancellation and both delayed and hung observations.

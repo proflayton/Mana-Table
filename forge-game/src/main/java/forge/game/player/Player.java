@@ -62,6 +62,7 @@ import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -1635,12 +1636,17 @@ public class Player extends GameEntity implements Comparable<Player> {
     }
 
     public final void shuffle(final SpellAbility sa) {
+        if (hasLost() || game.isGameOver()) { return; }
         final CardCollection list = new CardCollection(getCardsIn(ZoneType.Library));
 
         // Note: Shuffling once is sufficient.
         Collections.shuffle(list, MyRandom.getRandom());
 
-        getZone(ZoneType.Library).setCards(getController().cheatShuffle(list));
+        final CardCollectionView shuffled = getController().cheatShuffle(list);
+        // A controller can yield while choosing an arrangement. Loss cleanup
+        // owns the now-empty library; do not restore its captured cards.
+        if (hasLost() || game.isGameOver()) { return; }
+        getZone(ZoneType.Library).setCards(shuffled);
 
         // Always Run triggers (701.20e)
         final Map<AbilityKey, Object> runParams = AbilityKey.mapFromPlayer(this);
@@ -2938,6 +2944,7 @@ public class Player extends GameEntity implements Comparable<Player> {
     }
 
     public void initVariantsZones(RegisteredPlayer registeredPlayer) {
+        if (!canContinuePreparation()) { return; }
         PlayerZone bf = getZone(ZoneType.Battlefield);
         Iterable<? extends IPaperCard> cards = registeredPlayer.getCardsOnBattlefield();
         if (cards != null) {
@@ -3005,6 +3012,7 @@ public class Player extends GameEntity implements Comparable<Player> {
             for (PaperCard pc : registeredPlayer.getCommanders()) {
                 Card cmd = Card.fromPaperCard(pc, this);
                 initCommanderColor(cmd);
+                if (!canContinuePreparation()) { return; }
                 cmd.setCollectible(true);
                 com.add(cmd);
                 this.addCommander(cmd);
@@ -3026,11 +3034,13 @@ public class Player extends GameEntity implements Comparable<Player> {
                 if (!CardFactoryUtil.handleHiddenAgenda(this, conspire, ki)) {
                     addToCommand = false;
                 }
+                if (!canContinuePreparation()) { return; }
             }
             for (KeywordInterface ki : conspire.getKeywords(Keyword.DOUBLE_AGENDA)) {
                 if (!CardFactoryUtil.handleHiddenAgenda(this, conspire, ki)) {
                     addToCommand = false;
                 }
+                if (!canContinuePreparation()) { return; }
             }
 
             if (Objects.equals(conspire.getName(), "Backup Plan")) {
@@ -3087,17 +3097,20 @@ public class Player extends GameEntity implements Comparable<Player> {
                     effect.setActivatingPlayer(this);
 
                     getController().playSpellAbilityNoStack(effect, true);
+                    if (!canContinuePreparation()) { return; }
                 }
             }
         }
     }
 
     public void initCommanderColor(Card cmd) {
+        if (!canContinuePreparation()) { return; }
         if (cmd.getRules().getAddsWildCardColor()) {
             Player p = cmd.getController();
             String prompt = Localizer.getInstance().getMessage("lblChooseAColorFor", cmd.getName());
             SpellAbility cmdColorsa = new SpellAbility.EmptySa(ApiType.ChooseColor, cmd, p);
             byte chosenColor = p.getController().chooseColor(prompt, cmdColorsa, ColorSet.WUBRG);
+            if (!canContinuePreparation()) { return; }
             cmd.setChosenColors(List.of(MagicColor.toLongString(chosenColor)));
             p.getGame().getAction().notifyOfValue(cmdColorsa, cmd,
                     Localizer.getInstance().getMessage("lblPlayerPickedChosen", p.getName(), MagicColor.toLongString(chosenColor)), p);
@@ -3129,6 +3142,7 @@ public class Player extends GameEntity implements Comparable<Player> {
     }
 
     public void assignCompanion(Game game, PlayerController player) {
+        if (!canContinuePreparation() || player.getPlayer().hasLost()) { return; }
         List<Card> legalCompanions = Lists.newArrayList();
 
         boolean uniqueNames = true;
@@ -3195,12 +3209,25 @@ public class Player extends GameEntity implements Comparable<Player> {
         CardCollectionView view = CardCollection.getView(legalCompanions);
 
         SpellAbility fakeSa = new SpellAbility.EmptySa(ApiType.CompanionChoose, legalCompanions.get(0), this);
-        Card companion = player.chooseSingleEntityForEffect(view, fakeSa, Localizer.getInstance().getMessage("lblChooseACompanion"), true, null);
+        Card companion;
+        try {
+            companion = player.chooseSingleEntityForEffect(view, fakeSa, Localizer.getInstance().getMessage("lblChooseACompanion"), true, null);
+        } catch (CancellationException cancellation) {
+            if (canContinuePreparation() && !player.getPlayer().hasLost()) { throw cancellation; }
+            return;
+        }
+        // This optional choice releases the rules-state boundary. A departing
+        // player has already ceased to own any zones when it resumes.
+        if (!canContinuePreparation() || player.getPlayer().hasLost() || companion == null) { return; }
 
         PlayerZone commandZone = getZone(ZoneType.Command);
         companion = game.getAction().moveTo(ZoneType.Command, companion, null, AbilityKey.newMap());
         commandZone.add(Player.createCompanionEffect(companion));
         updateZoneForView(commandZone);
+    }
+
+    private boolean canContinuePreparation() {
+        return !hasLost() && !game.isGameOver();
     }
 
     public boolean deckMatchesDeckRestriction(Card source, String restriction) {

@@ -127,6 +127,14 @@ The provider revokes all seat inputs before terminalizing rules work and
 releasing waits. It cannot start new reveal acknowledgements during abort or
 publish a victory/defeat result for that failure; original errors stay private.
 
+Queued match startup uses that same rules-state boundary. Closing the table or
+ending the game revokes preparation that has not started. Zone preparation uses
+each player's retained registration, rather than indexing a shrinking live seat
+list against the original roster. A departure during a setup choice ends that
+player's remaining setup work; it cannot repopulate their in-game zones or move
+another seat's deck into their place. Their existing outside-game sideboard keeps
+its actual identity. Unexpected setup faults still interrupt the table.
+
 The private automated observation port reads under the same rules-state boundary,
 without joining the UI queue. A nested choice can be published by a UI callback
 which is waiting for its answer; queueing observation behind that callback would
