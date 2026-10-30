@@ -1620,6 +1620,12 @@ existing draw gates and both reservation copies. Renderer defaults still reserve
 the dock for ordinary board arrangement and camera calculations. These changes
 preserve the actual card, bill, resource, portrait, turn, pile and command areas;
 the same 500-pixel proximity and full text assertions remain unchanged.
+The visibility-only candidate still placed the first pinned C4 reading far from
+its seat. The current candidate therefore adds back only the five preferred
+horizontal/vertical gap projections: two solid-axis sorts and ten linear
+interval scans. It retains the original 24-edge grid, clear-first score and safe
+cutoff, and the corrected dock visibility. The 52-row/column and 676-probe sweep
+implementations remain only in retained commits/evidence, not current code.
 For a focused iteration, append `--presentation-group mana-pool` to the existing
 `--smoke-headless-presentation` invocation. It calls the same pool/payment clarity
 and lifecycle group and writes the same receipts labeled `mana-pool`; an omitted

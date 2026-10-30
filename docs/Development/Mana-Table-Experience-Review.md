@@ -57,7 +57,8 @@ precedence over a colliding candidate; existing distance and source/overlap
 costs choose within each class. The decision dock's own visibility policy also
 owns its placement reservation: a suppressed dock cannot push the expanded
 resources away from their portrait. Normal board-layout reservations keep their
-existing defaults.
+existing defaults. The five preferred placements can project along their row
+and column into a clear interval before the original bounded edge fallback.
 This sparse authored journey must be
 reviewed at 1000 x 740 and a larger window, at 100% and 130% text and with reduced
 motion. A fully packed battlefield may still have no clear placement. Source,
