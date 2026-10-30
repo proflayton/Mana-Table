@@ -62,7 +62,7 @@ internal static class Program
                 if (args.Contains("--headless")) ManaPaymentSmoke.RunHeadless(profile, (passed, description) => {
                     if (!passed) throw new InvalidOperationException(description);
                 });
-                else ManaPaymentSmoke.Run(profile, size);
+                else ManaPaymentSmoke.Run(profile, size, args.Contains("--fixture-art"));
                 return 0;
             }
             if (args.Contains("--smoke-draw-triggers")) {

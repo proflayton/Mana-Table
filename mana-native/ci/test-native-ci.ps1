@@ -10,6 +10,13 @@ $saved = @{ SHA=$env:GITHUB_SHA; Version=$env:MANA_RELEASE_VERSION; Environment=
 $utf8 = New-Object Text.UTF8Encoding($false)
 $checks = 0
 function Write-Json([string]$Path, $Value) { [IO.File]::WriteAllText($Path, ($Value | ConvertTo-Json -Depth 8), $utf8) }
+function Assert-ManaFixtureArt($Inventory) {
+    $cases = @($Inventory | Where-Object { $_.arguments -ccontains '--fixture-art' })
+    $flags = @($Inventory | ForEach-Object { $_.arguments } | Where-Object { $_ -ceq '--fixture-art' })
+    if ($cases.Count -ne 1 -or $cases[0].name -cne 'mana-payment-1000' -or $flags.Count -ne 1) {
+        throw 'Only the mana-payment CI case must request fixture artwork exactly once.'
+    }
+}
 function New-PackageFixture([string]$Name, [string]$Mutation, [switch]$EngineLauncher) {
     $directory = Join-Path $TestDirectory $Name
     $package = Join-Path $directory 'input/package'
@@ -92,6 +99,7 @@ try {
     $env:MANA_RELEASE_VERSION = '0.2.123'
     $env:GITHUB_ENV = Join-Path $TestDirectory 'github-env.txt'
     [object[]]$inventory = & (Join-Path $PSScriptRoot 'native-ui.ps1') -ListOnly | ConvertFrom-Json
+    Assert-ManaFixtureArt $inventory
     $criticalNames = @('startup','loading','analysis-1000','clutter-1000','audio-settings-1000',
         'deck-experience-1000','equipment-1000','card-states-1000','printings-1000','audio-settings-1540',
         'lobby-ai-1000','card-reading-1000','mana-payment-1000','lobby-three-1000','full-battlefield-1000')
@@ -104,6 +112,7 @@ try {
         @($inventory | Where-Object { $_.name -eq 'audio-settings-1540' -and $_.shard -eq 2 }).Count -ne 1) { throw 'Critical native suite discovery is incomplete or duplicated.' }
     $checks++
     [object[]]$inventory = & (Join-Path $PSScriptRoot 'native-ui.ps1') -ListOnly -Extended | ConvertFrom-Json
+    Assert-ManaFixtureArt $inventory
     if ($inventory.Count -ne 49 -or @($inventory.name | Sort-Object -Unique).Count -ne 49 -or @($inventory.shard | Sort-Object -Unique).Count -ne 12 -or
         @($inventory | Where-Object { $_.name -ceq 'mana-payment-1000' -and $_.mode -ceq '--smoke-mana-payment' -and $_.size -ceq '1000x740' -and $_.result -ceq 'mana-payment-ci-results.json' }).Count -ne 1) { throw 'Extended native suite discovery is incomplete or duplicated.' }
     $checks++

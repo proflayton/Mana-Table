@@ -46,9 +46,6 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     private final Queue<Card> delaySelectCards = new LinkedList<>();
 
     private boolean bPaid = false;
-    /** null = not yet evaluated, or not payable; otherwise cards Auto would tap */
-    private CardCollection autoPayManaSources = null;
-    private boolean autoPayManaSourcesKnown = false;
 
     private boolean locked = false;
 
@@ -418,11 +415,6 @@ public abstract class InputPayMana extends InputSyncronizedBase {
                 if (restrictionsMet && !player.getController().isFullControl(FullControlFlag.NoPaymentFromManaAbility)) {
                     player.getManaPool().payManaFromAbility(saPaidFor, manaCost, chosen);
                 }
-                if (!restrictionsMet || chosen.getPayCosts().hasManaCost()) {
-                    // force refresh in case too much mana got spent
-                    updateButtons();
-                    invalidateAutoPayManaSources();
-                }
             }
             // Need to call this to unlock
             onStateChanged();
@@ -466,8 +458,12 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     }
 
     protected void updateButtons() {
+        updateButtons(false);
+    }
+
+    private void updateButtons(boolean autoPayAvailable) {
         if (supportAutoPay()) {
-            getController().getGui().updateButtons(getOwner(), Localizer.getInstance().getMessage("lblAuto"), Localizer.getInstance().getMessage("lblCancel"), false, !mandatory, false);
+            getController().getGui().updateButtons(getOwner(), Localizer.getInstance().getMessage("lblAuto"), Localizer.getInstance().getMessage("lblCancel"), autoPayAvailable, !mandatory, autoPayAvailable);
         } else {
             getController().getGui().updateButtons(getOwner(), "", Localizer.getInstance().getMessage("lblCancel"), false, !mandatory, false);
         }
@@ -478,14 +474,10 @@ public abstract class InputPayMana extends InputSyncronizedBase {
         if (activateDelayedCard()) {
             return;
         }
-        if (supportAutoPay()) {
-            ensureAutoPayManaSources();
-            if (autoPayManaSources != null) { //enabled Auto button if mana cost can be paid
-                getController().getGui().updateButtons(getOwner(), Localizer.getInstance().getMessage("lblAuto"), Localizer.getInstance().getMessage("lblCancel"), true, !mandatory, true);
-            }
-        }
-        // Drop just-tapped sources from the highlight set; emphasize the AI's auto-tap plan.
-        getController().pushActionableCards(true, getAutoTapPreviewViews());
+        final CardCollection autoPayManaSources = supportAutoPay() ? getAutoPayManaSources() : null;
+        updateButtons(autoPayManaSources != null);
+        // The button and highlights describe the same current unpaid bill.
+        getController().pushActionableCards(true, getAutoTapPreviewViews(autoPayManaSources));
         showMessage(getMessage(), saPaidFor.getView());
     }
 
@@ -493,7 +485,7 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     public void showMessage() {
         if (isFinished()) { return; }
         getController().pushActionableCards(true);
-        updateButtons();
+        updateButtons(false);
         onStateChanged();
     }
 
@@ -509,15 +501,7 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     protected abstract void done();
     protected abstract String getMessage();
 
-    private void invalidateAutoPayManaSources() {
-        autoPayManaSourcesKnown = false;
-        autoPayManaSources = null;
-    }
-
-    private void ensureAutoPayManaSources() {
-        if (autoPayManaSourcesKnown) {
-            return;
-        }
+    private CardCollection getAutoPayManaSources() {
         final ManaCostBeingPaid costCopy = new ManaCostBeingPaid(manaCost);
         Evaluator<CardCollection> proc = new Evaluator<>() {
             @Override
@@ -526,14 +510,12 @@ public abstract class InputPayMana extends InputSyncronizedBase {
             }
         };
         runAsAi(proc);
-        autoPayManaSources = proc.getResult();
-        autoPayManaSourcesKnown = true;
+        return proc.getResult();
     }
 
     /** Cards the Auto button would tap, for emphasized highlighting; null when unavailable. */
-    private Iterable<CardView> getAutoTapPreviewViews() {
-        if (!supportAutoPay() || manaCost == null || manaCost.isPaid()
-                || !autoPayManaSourcesKnown || autoPayManaSources == null) {
+    private Iterable<CardView> getAutoTapPreviewViews(CardCollection autoPayManaSources) {
+        if (!supportAutoPay() || manaCost == null || manaCost.isPaid() || autoPayManaSources == null) {
             return null;
         }
         final Set<CardView> views = new HashSet<>();

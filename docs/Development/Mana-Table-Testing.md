@@ -1522,6 +1522,7 @@ For a relevant graphical regression, use the same test driver, for example:
 ```powershell
 dotnet $driver --smoke-card-reading --size 1000x740 --profile '<fresh-profile>'
 dotnet $driver --smoke-mana-payment --size 1000x740 --profile '<fresh-profile>'
+dotnet $driver --smoke-mana-payment --fixture-art --size 1000x740 --profile '<fresh-profile>'
 dotnet $driver --smoke-mana-payment --headless --profile '<fresh-profile>'
 dotnet $driver --smoke-headless-presentation --presentation-group mana-pool --profile '<fresh-profile>'
 dotnet $driver --smoke-headless-presentation --presentation-group match-header --profile '<fresh-profile>'
@@ -1538,6 +1539,13 @@ changed bills/scopes and an exhausted pool at 130% text. The scenario supplies
 authored eligibility; real engine mana-availability journeys retain rule authority.
 For actual-window review, also run the same smoke at a larger size with an
 isolated profile's text scale set to 1.3; preparation preserves that setting.
+The default window run loads real Magic artwork through `MagicArtSource`.
+The CI inventory explicitly passes `--fixture-art` to use the existing encoded-image
+`CardReadingArtFixture` in the ordinary window and both counted windows. All
+texture-readiness, pointer and geometry checks remain required, without a live
+artwork-service dependency. Results and capture metadata identify the artwork
+source; fixture pixels establish decoded/GPU-backed geometry, not printed-card
+legibility. Use the default real-art mode for that separate visual review.
 The source-output checks also use funded public-counter values of 100 and 1024
 on Everflowing Chalice, plus a simultaneous C129/U3 bundle, with small remaining
 bills. They compare complete measured quantities and adjacent symbols with the
@@ -1697,6 +1705,16 @@ coverage adds selection/deselection and retirement; `TargetPublicationTest`
 checks the same decision cut, immutable retained values and private audiences.
 The first unchanged-production cast passed. This is a bounded reproduction,
 not proof of the cause of a secondhand player report.
+
+Additional real casts cover maximum-target auto-completion for two players or
+a player plus a creature, eleven manual mana activations, and partial manual
+payment followed by a still-payable Auto remainder. A retained failing cast
+exposed stale Auto availability after Shivan Reef's colorless activation left
+two red symbols but only one red source; one offered Auto attempt left payment
+unfinished. The regressions require the existing `InputPayMana` owner to refresh
+its current Auto plan after payment changes, withholding an unpayable offer while
+preserving payable remainders. This reproduces a concrete payment failure path;
+the original player's precise cause remains unconfirmed.
 
 `PendingEffectPresentationChecks` follows a real exposed player click through
 an authored current prompt refresh and a separate confirmation-center click.

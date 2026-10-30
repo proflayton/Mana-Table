@@ -23,6 +23,10 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
     private readonly TableWindow.Probe? window;
     private readonly ExperienceLabSession lab;
     private readonly Point viewport;
+    private readonly bool fixtureArt;
+    private string ArtworkSource => window == null ? "none" : fixtureArt ? nameof(CardReadingArtFixture) : nameof(MagicArtSource);
+    private bool RealArtwork => window != null && !fixtureArt;
+    private string ArtworkDescription => fixtureArt ? "deterministic fixture artwork (not printed-card legibility)" : "loaded Magic card artwork";
     private readonly Queue<(Func<bool>? Ready, Action Action)> steps = [];
     private readonly List<string> checks = [];
     private readonly List<object> observations = [];
@@ -37,15 +41,16 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
     public bool ClickAccepted { get; set; }
     public MouseState ReadMouse() => mouse;
 
-    internal static void Run(string profile, Point? dimensions)
+    internal static void Run(string profile, Point? dimensions, bool fixtureArt = false)
     {
         var size = dimensions ?? new Point(1000, 740); Prepare(profile);
+        ICardArtSource ArtSource() => fixtureArt ? new CardReadingArtFixture() : new MagicArtSource(profile);
         var completed = new List<string>();
         var lab = new ExperienceLabSession(ManaPaymentScenario.Id);
         var engine = new ExperienceLabEngine(lab);
         using (var app = new TableWindow(TestTableServices.For(engine), profile, null, null, size,
-            initialState: lab.State, artSource: new MagicArtSource(profile), enableLiveTableStudy: true)) {
-            var driver = new ManaPaymentSmoke(app.TestPort, lab, size, app.TestPort);
+            initialState: lab.State, artSource: ArtSource(), enableLiveTableStudy: true)) {
+            var driver = new ManaPaymentSmoke(app.TestPort, lab, size, app.TestPort, fixtureArt);
             app.Automation = driver;
             app.Run();
             if (!driver.finished) throw new InvalidOperationException("The mana pointer journey closed before completing its checks.");
@@ -56,15 +61,17 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             (PlayPreferences.Load(directory) with { TextScale = scale }).Save(directory);
             var counted = new InteractionScenarioEngine(); counted.Present(CountedSourceOutput(100, false));
             using var app = new TableWindow(TestTableServices.For(counted), directory, null, "controlled-frames", size,
-                initialState: counted.State, artSource: new MagicArtSource(profile), enableLiveTableStudy: true);
-            var driver = new ManaPaymentSmoke(app.TestPort, new ExperienceLabSession(ManaPaymentScenario.Id), size, counted);
+                initialState: counted.State, artSource: ArtSource(), enableLiveTableStudy: true);
+            var driver = new ManaPaymentSmoke(app.TestPort, new ExperienceLabSession(ManaPaymentScenario.Id), size, counted, fixtureArt);
             app.Automation = driver;
             app.Run();
             if (!driver.finished) throw new InvalidOperationException("The counted mana output capture closed before completing its checks.");
             completed.AddRange(driver.checks);
         }
         File.WriteAllText(Path.Combine(profile, "mana-payment-ci-results.json"), JsonSerializer.Serialize(
-            completed.Select(description => new { description, passed = true }), new JsonSerializerOptions { WriteIndented = true }));
+            completed.Select(description => new { description, passed = true, physicalWindow = true,
+                realArtwork = !fixtureArt, artworkSource = fixtureArt ? nameof(CardReadingArtFixture) : nameof(MagicArtSource) }),
+            new JsonSerializerOptions { WriteIndented = true }));
     }
 
     internal static void RunHeadless(string profile, Action<bool, string> check)
@@ -317,9 +324,10 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
         (PlayPreferences.Load(profile) with { Automatic = false, Sounds = false, ReducedMotion = true }).Save(profile);
     }
 
-    private ManaPaymentSmoke(TableWindow.Probe view, ExperienceLabSession lab, Point viewport, InteractionScenarioEngine engine)
+    private ManaPaymentSmoke(TableWindow.Probe view, ExperienceLabSession lab, Point viewport, InteractionScenarioEngine engine,
+                             bool fixtureArt = false)
     {
-        this.view = view; this.lab = lab; this.viewport = viewport; window = view;
+        this.view = view; this.lab = lab; this.viewport = viewport; window = view; this.fixtureArt = fixtureArt;
         Move(new(12, 65));
         foreach (var example in new[] { (Count: 100, Mixed: false), (Count: 1024, Mixed: false), (Count: 129, Mixed: true) }) {
             Step(() => { engine.Present(CountedSourceOutput(example.Count, example.Mixed)); view.Accept(engine.State); });
@@ -339,7 +347,8 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
                 File.WriteAllText(Path.Combine(view.Profile, name + ".json"), JsonSerializer.Serialize(new {
                     state = view.Match, frame = view.Frame!.Observe(), source = view.ManaSources.Single(), view.ManaJourney,
                     viewport, view.TextScale, view.TableStudyEnabled, replies = engine.Replies.Count,
-                    scope = "Actual GPU surface and full window with loaded Magic card artwork; authored output, no rules simulation or human approval."
+                    artworkSource = ArtworkSource, realArtwork = RealArtwork,
+                    scope = $"Actual GPU surface and full window with {ArtworkDescription}; authored output, no rules simulation or human approval."
                 }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
             });
         }
@@ -379,7 +388,8 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             File.WriteAllText(Path.Combine(view.Profile, "pool-preview-funded.json"), JsonSerializer.Serialize(new {
                 state = view.Match, frame = view.Frame!.Observe(), view.ManaJourney, sources = view.ManaSources,
                 pool = view.ManaPoolBadge(0), viewport, view.TextScale, replies = engine.Replies.Count,
-                scope = "Actual GPU hand-hover preview with loaded Magic card artwork; nominal witness, no payment or human UX approval."
+                artworkSource = ArtworkSource, realArtwork = RealArtwork,
+                scope = $"Actual GPU hand-hover preview with {ArtworkDescription}; nominal witness, no payment or human UX approval."
             }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
             MoveCard(ManaPaymentScenario.Spell);
         }); Click();
@@ -402,6 +412,7 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
                 state = view.Match, frame = view.Frame!.Observe(), bill,
                 battlefield = field.Select(card => new { card.Id, Bounds = card.Display.Bounds }).ToArray(),
                 pool = view.ManaPoolBadge(0), viewport, view.TextScale, replies = engine.Replies.Count,
+                artworkSource = ArtworkSource, realArtwork = RealArtwork,
                 scope = "Current-frame physical face and bill geometry after metadata withdrawal; sparse authored table, no packed-table guarantee or human approval."
             }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
             inspectedHandKey = view.Frame.Cards.Single(card => card.Id == ManaPaymentScenario.Spell && card.Focused).Card.Key;
@@ -419,6 +430,7 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             File.WriteAllText(Path.Combine(view.Profile, "pool-preview-inspect.json"), JsonSerializer.Serialize(new {
                 state = view.Match, frame = currentFrame.Observe(), view.ManaJourney,
                 pool = view.ManaPoolDetail, pinnedKey = inspectedHandKey, viewport, view.TextScale, replies = engine.Replies.Count,
+                artworkSource = ArtworkSource, realArtwork = RealArtwork,
                 scope = "Current expanded same-seat mana, retained current reader and bill, measured physical geometry and isolated input; authored presentation, no human acceptance."
             }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
             Capture("pool-preview-inspect");
@@ -470,7 +482,7 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             && engine.Replies.Count == 0;
         void CheckReaderControls(string label) {
             File.WriteAllText(Path.Combine(view.Profile, "reader-controls-" + label + ".json"),
-                JsonSerializer.Serialize(ReaderControlFacts(view, engine.Replies.Count), new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+                JsonSerializer.Serialize(ReaderControlFacts(view, engine.Replies.Count, ArtworkSource), new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
             var geometry = ReaderControlGeometry(view);
             Check(geometry.Clear, "The complete physical reader footer and shadow stay clear of the phase arc, current actions, cards and bill");
             Check(geometry.FooterOwnsCenter && geometry.PhaseOwnCenters && SameCurrentReader(),
@@ -493,6 +505,7 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             File.WriteAllText(Path.Combine(view.Profile, "reader-bill-public-readouts-" + label + ".json"),
                 JsonSerializer.Serialize(new { state = view.Match, frame = frame.Observe(), readouts, nameplates,
                     currentBill = bill, currentReader = SameCurrentReader(), replies = engine.Replies.Count,
+                    artworkSource = ArtworkSource, realArtwork = RealArtwork,
                     scope = "Measured current emitted land text and current focus/nameplate hits; no World position or placement formula."
                 }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
             Check(readouts.Length == view.Match!.Players.Length * 2 && nameplates.Length == view.Match.Players.Length - 1
@@ -534,6 +547,7 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
                 phases = phases.Select(hit => new { hit.Id, hit.Bounds, centerHit = view.HitAt(hit.Bounds.Center)?.Id }).ToArray(),
                 footer = ReaderControlGeometry(view), currentReader = SameCurrentReader(), view.ManaJourney,
                 viewport, view.TextScale, replies = engine.Replies.Count,
+                artworkSource = ArtworkSource, realArtwork = RealArtwork,
                 scope = "Actual current artwork/backing/shadow surfaces and emitted card-frame strokes versus visible phase controls; no layout formula or human approval."
             }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
             Check(artIndex >= 0 && paint.Count(part => part.Kind == "backing-or-shadow") >= 2
@@ -545,9 +559,10 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
         }
     }
 
-    private ManaPaymentSmoke(TableApplication.Probe view, ExperienceLabSession lab, Point viewport, TableWindow.Probe? window = null)
+    private ManaPaymentSmoke(TableApplication.Probe view, ExperienceLabSession lab, Point viewport, TableWindow.Probe? window = null,
+                             bool fixtureArt = false)
     {
-        this.view = view; this.lab = lab; this.viewport = viewport; this.window = window;
+        this.view = view; this.lab = lab; this.viewport = viewport; this.window = window; this.fixtureArt = fixtureArt;
         Move(new(12, 65));
         Wait(() => view.Loaded && view.DisplayedPose(ManaPaymentScenario.Spell) != null
             && (window == null || lab.State.Viewer!.Zones.SelectMany(zone => zone.Cards).All(card => view.Art(card) != null)), () => MoveCard(ManaPaymentScenario.Spell));
@@ -867,12 +882,12 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
         && new[] { "Flash", "Flying" }.All(value => frame.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Text>()
             .Any(text => text.Value == value && reader.Display.Bounds.Contains(text.X, text.Y)));
 
-    internal static object ReaderControlFacts(TableApplication.Probe view, int replies)
+    internal static object ReaderControlFacts(TableApplication.Probe view, int replies, string artworkSource = "none")
     {
         var frame = view.Frame;
         var geometry = ReaderControlGeometry(view);
         return new { frame = frame?.Observe(), state = view.Match, currentJourney = view.ManaJourney,
-            geometry.Clear, geometry.FooterOwnsCenter, geometry.PhaseOwnCenters, geometry.FooterPaint, geometry.PhaseArc, replies,
+            geometry.Clear, geometry.FooterOwnsCenter, geometry.PhaseOwnCenters, geometry.FooterPaint, geometry.PhaseArc, replies, artworkSource,
             cards = frame?.Cards.Select(card => new { card.Id, card.Zone, card.Card.Key, card.Focused, bounds = card.Display.Bounds, card.ReaderTarget }).ToArray(),
             panels = frame?.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Panel>().Select(panel => panel.Bounds).ToArray(),
             sources = view.ManaSources.ToArray(), hits = frame?.Hits.Select(hit => new { hit.Id, hit.Bounds,
@@ -979,7 +994,8 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
     private void Check(bool passed, string description) { if (!passed) throw new InvalidOperationException(description); checks.Add(description); }
     private void Capture(string name)
     {
-        observations.Add(new { name, lab.StageIndex, view.ManaJourney, sources = view.ManaSources.ToArray(), colors = view.ManaColors.ToArray(), view.Now });
+        observations.Add(new { name, lab.StageIndex, view.ManaJourney, sources = view.ManaSources.ToArray(), colors = view.ManaColors.ToArray(), view.Now,
+            artworkSource = ArtworkSource, realArtwork = RealArtwork, physicalWindow = window != null });
         if (window == null) return;
         using var stream = File.Create(Path.Combine(view.Profile, name + ".png")); window.Surface.SaveAsPng(stream, window.Surface.Width, window.Surface.Height);
         window.CaptureWindow(Path.Combine(view.Profile, name + "-window.png"));
@@ -1019,7 +1035,9 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             replies = recordedReplies.Concat(lab.ManaPaymentReplies).Select(reply => new {
                 kind = reply.GetType().Name, payload = JsonSerializer.SerializeToElement(reply, reply.GetType())
             }).ToArray(),
-            scope = "Production pointer/composition journey over authored payment checkpoints, not a rules simulation or human UX approval.", realArtwork = window != null
+            scope = "Production pointer/composition journey over authored payment checkpoints, not a rules simulation or human UX approval."
+                + (fixtureArt ? " Deterministic fixture pixels do not establish printed-card legibility." : ""),
+            physicalWindow = window != null, realArtwork = RealArtwork, artworkSource = ArtworkSource
         }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
     }
     private void Advance()

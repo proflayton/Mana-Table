@@ -9,10 +9,12 @@ import forge.game.zone.ZoneType;
 import forge.gamemodes.match.input.InputPayMana;
 import forge.gamemodes.match.input.InputSelectTargets;
 import forge.player.PlayerControllerHuman;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -126,6 +128,175 @@ public class TargetSelectionProgressTest {
         }
     }
 
+    @DataProvider public Object[][] crackleCastPaths() {
+        return new Object[][] {
+                {"maximum-two-players", 2, false, false, false},
+                {"maximum-player-and-creature", 2, true, false, false},
+                {"manual-mixed-mana-subset", 3, false, true, false},
+                {"partial-manual-then-auto", 2, false, false, true}
+        };
+    }
+
+    @Test(dataProvider = "crackleCastPaths", timeOut = 120000)
+    public void crackleAdditionalCastPathsReachStackAndResolve(String path, int x, boolean creature, boolean manual,
+                                                              boolean autoRemainder) throws Exception {
+        int cost = 3 * x + 2;
+        var lands = new ArrayList<String>();
+        lands.addAll(java.util.Collections.nCopies(manual || autoRemainder ? 2 : cost, "Mountain"));
+        if (manual || autoRemainder) lands.addAll(java.util.Collections.nCopies(3 * x, "Wastes"));
+        try (var game = new RulesScenario("crackle-power-" + path,
+                Map.of(0, lands, 2, creature ? List.of("Grizzly Bears") : List.of()), "Crackle with Power", "Rhys the Redeemed")) {
+            var main = game.until(input -> input.seat() == 0 && priority(input) && text(input.state(), "phaseKey").equals("MAIN1"));
+            castFrame(game, "00-main", main);
+            int actor = main.state().get("viewerId").getAsInt();
+            int firstPlayer = game.state(1).get("viewerId").getAsInt();
+            int secondPlayer = game.state(2).get("viewerId").getAsInt();
+            var expectedPlayers = manual || creature || autoRemainder ? List.of(firstPlayer) : List.of(firstPlayer, secondPlayer);
+            var spell = zone(viewer(main.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
+            assertEquals(text(spell, "name"), "Crackle with Power");
+            castSource(game, main, spell, "01-cast");
+            var number = game.until(input -> input.seat() == 0 && text(input.prompt(), "kind").equals("number"));
+            castFrame(game, "02-number", number);
+            assertEquals(text(number.prompt().getAsJsonObject("sourceCard"), "name"), "Crackle with Power");
+            castAnswer(game, number, Map.of("action", "number", "value", x), "02-number");
+            var targets = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputSelectTargets"));
+            castFrame(game, "03-targets", targets);
+            assertEquals(targets.prompt().get("min").getAsInt(), 0);
+            assertEquals(targets.prompt().get("max").getAsInt(), x);
+            assertTargetProgress(targets.prompt(), 0, List.of());
+            castAnswer(game, targets, Map.of("action", "player", "playerId", firstPlayer), "03-first-player");
+            var one = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputSelectTargets"));
+            castFrame(game, "04-first-player", one);
+            assertTargetProgress(one.prompt(), 1, List.of(firstPlayer));
+            if (manual || autoRemainder) {
+                assertTrue(one.prompt().get("okEnabled").getAsBoolean());
+                castAnswer(game, one, Map.of("action", "ok"), "04-subset-complete");
+            } else if (creature) {
+                var bear = cards(one.state(), secondPlayer).stream().filter(card -> text(card, "name").equals("Grizzly Bears"))
+                        .findFirst().orElseThrow();
+                assertTrue(bear.get("selectable").getAsBoolean());
+                castAnswer(game, one, Map.of("action", "card", "key", text(bear, "key")), "04-second-creature");
+            } else castAnswer(game, one, Map.of("action", "player", "playerId", secondPlayer), "04-second-player");
+            // Selecting the maximum must finish without an extra OK; the subset above explicitly chose OK.
+            var payment = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").startsWith("InputPayMana"));
+            castFrame(game, "05-payment", payment);
+            assertFalse(payment.prompt().has("targetSelectionProgress"));
+            assertCracklePayment(game, x, cost, expectedPlayers, creature, "05-payment");
+            assertEquals(cards(payment.state(), actor).stream().filter(card -> !card.get("tapped").getAsBoolean()).count(), (long)cost);
+            if (manual) {
+                for (int paid = 0; paid < cost; paid++) {
+                    var current = paid == 0 ? payment : game.until(input -> input.seat() == 0
+                            && text(input.prompt(), "inputType").startsWith("InputPayMana"));
+                    castFrame(game, "06-manual-payment-" + paid, current);
+                    assertCracklePayment(game, x, cost - paid, expectedPlayers, false, "06-manual-payment-" + paid);
+                    assertEquals(cards(current.state(), actor).stream().filter(card -> card.get("tapped").getAsBoolean()).count(), (long)paid);
+                    String sourceName = paid < 2 ? "Mountain" : "Wastes";
+                    var source = cards(current.state(), actor).stream().filter(card -> text(card, "name").equals(sourceName)
+                            && !card.get("tapped").getAsBoolean()).findFirst().orElseThrow();
+                    castSource(game, current, source, "06-manual-source-" + paid);
+                }
+            } else {
+                var autoPayment = payment;
+                if (autoRemainder) {
+                    assertTrue(payment.prompt().get("okEnabled").getAsBoolean(), "The initial two-Mountain/six-Wastes payment is payable");
+                    var mountain = cards(payment.state(), actor).stream().filter(card -> text(card, "name").equals("Mountain"))
+                            .findFirst().orElseThrow();
+                    castSource(game, payment, mountain, "06-manual-red");
+                    autoPayment = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").startsWith("InputPayMana"));
+                    castFrame(game, "06-after-manual-red-before-auto", autoPayment);
+                    var remaining = assertCracklePayment(game, x, cost - 1, expectedPlayers, false, "06-after-manual-red");
+                    assertEquals(remaining.get("generic").getAsInt(), 6);
+                    assertEquals(remaining.get("red").getAsInt(), 1);
+                    assertEquals(cards(autoPayment.state(), actor).stream().filter(card -> card.get("tapped").getAsBoolean()).count(), 1L);
+                    assertTrue(viewer(autoPayment.state()).getAsJsonObject("mana").entrySet().stream()
+                            .allMatch(entry -> entry.getValue().getAsInt() == 0));
+                }
+                assertTrue(autoPayment.prompt().get("okEnabled").getAsBoolean(), "Auto remains available while the current remainder is payable");
+                castAnswer(game, autoPayment, Map.of("action", "ok"), "06-auto");
+            }
+            var stacked = game.until(input -> input.seat() == 0 && priority(input) && input.state().getAsJsonArray("stack").size() == 1);
+            castFrame(game, "07-stacked", stacked);
+            assertEquals(text(stacked.state().getAsJsonArray("stack").get(0).getAsJsonObject(), "name"), "Crackle with Power");
+            assertEquals(cards(stacked.state(), actor).stream().filter(card -> card.get("tapped").getAsBoolean()).count(), (long)cost);
+            assertTrue(viewer(stacked.state()).getAsJsonObject("mana").entrySet().stream().allMatch(entry -> entry.getValue().getAsInt() == 0));
+            assertFalse(stacked.prompt().has("targetSelectionProgress"));
+            var resolved = game.until(input -> input.seat() == 0 && priority(input) && input.state().getAsJsonArray("stack").isEmpty());
+            castFrame(game, "08-resolved", resolved);
+            for (var value : resolved.state().getAsJsonArray("players")) {
+                var player = value.getAsJsonObject();
+                assertEquals(player.get("life").getAsInt(), expectedPlayers.contains(player.get("id").getAsInt()) ? 40 - 5 * x : 40);
+            }
+            assertTrue(zone(viewer(resolved.state()), "Graveyard").getAsJsonArray("cards").asList().stream()
+                    .anyMatch(value -> text(value.getAsJsonObject(), "name").equals("Crackle with Power")));
+            if (creature) {
+                assertTrue(cards(resolved.state(), secondPlayer).isEmpty(), "The actual mixed creature target died from ten damage");
+                assertTrue(zone(player(resolved.state(), secondPlayer), "Graveyard").getAsJsonArray("cards").asList().stream()
+                        .anyMatch(value -> text(value.getAsJsonObject(), "name").equals("Grizzly Bears")));
+            }
+            assertFalse(resolved.prompt().has("targetSelectionProgress"));
+        }
+    }
+
+    @Test(timeOut = 120000)
+    public void crackleAutoWithdrawsWhenManualColorlessManaConsumesItsSecondRedSource() throws Exception {
+        try (var game = new RulesScenario("crackle-power-manual-removes-auto",
+                Map.of(0, List.of("Wastes", "Wastes", "Wastes", "Wastes", "Wastes", "Wastes", "Mountain", "Shivan Reef")),
+                "Crackle with Power", "Rhys the Redeemed")) {
+            var main = game.until(input -> input.seat() == 0 && priority(input) && text(input.state(), "phaseKey").equals("MAIN1"));
+            castFrame(game, "00-main", main);
+            int actor = main.state().get("viewerId").getAsInt(), recipient = game.state(1).get("viewerId").getAsInt();
+            var spell = zone(viewer(main.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
+            castSource(game, main, spell, "01-cast");
+            var number = game.until(input -> input.seat() == 0 && text(input.prompt(), "kind").equals("number"));
+            castFrame(game, "02-number", number);
+            castAnswer(game, number, Map.of("action", "number", "value", 2), "02-number");
+            var targets = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputSelectTargets"));
+            castFrame(game, "03-targets", targets);
+            assertEquals(targets.prompt().get("max").getAsInt(), 2);
+            castAnswer(game, targets, Map.of("action", "player", "playerId", recipient), "03-first-player");
+            var subset = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputSelectTargets"));
+            castFrame(game, "04-subset", subset);
+            assertTargetProgress(subset.prompt(), 1, List.of(recipient));
+            castAnswer(game, subset, Map.of("action", "ok"), "04-subset-complete");
+            var payment = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").startsWith("InputPayMana"));
+            castFrame(game, "05-initial-auto", payment);
+            var initial = assertCracklePayment(game, 2, 8, List.of(recipient), false, "05-initial-auto");
+            assertEquals(initial.get("generic").getAsInt(), 6);
+            assertEquals(initial.get("red").getAsInt(), 2);
+            assertTrue(payment.prompt().get("okEnabled").getAsBoolean(), "Mountain and Shivan Reef can initially supply the two red mana");
+            assertEquals(cards(payment.state(), actor).stream().filter(card -> !card.get("tapped").getAsBoolean()).count(), 8L);
+            var reef = cards(payment.state(), actor).stream().filter(card -> text(card, "name").equals("Shivan Reef")).findFirst().orElseThrow();
+            castSource(game, payment, reef, "Add {C}", "06-reef-colorless");
+            var reduced = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").startsWith("InputPayMana"));
+            castFrame(game, "07-after-reef-before-assert", reduced);
+            var unpaid = assertCracklePayment(game, 2, 7, List.of(recipient), false, "07-after-reef");
+            assertEquals(unpaid.get("generic").getAsInt(), 5);
+            assertEquals(unpaid.get("red").getAsInt(), 2);
+            assertEquals(cards(reduced.state(), actor).stream().filter(card -> text(card, "name").equals("Shivan Reef")
+                    && card.get("tapped").getAsBoolean()).count(), 1L);
+            assertEquals(cards(reduced.state(), actor).stream().filter(card -> text(card, "name").equals("Mountain")
+                    && !card.get("tapped").getAsBoolean()).count(), 1L);
+            assertEquals(cards(reduced.state(), actor).stream().filter(card -> text(card, "name").equals("Wastes")
+                    && !card.get("tapped").getAsBoolean()).count(), 6L);
+            assertTrue(viewer(reduced.state()).getAsJsonObject("mana").entrySet().stream().allMatch(entry -> entry.getValue().getAsInt() == 0));
+            assertTrue(reduced.state().getAsJsonArray("stack").isEmpty(), "The unpaid spell has not entered the rules stack");
+            for (var value : reduced.state().getAsJsonArray("players")) assertEquals(value.getAsJsonObject().get("life").getAsInt(), 40);
+            boolean staleAutoOffered = reduced.prompt().get("okEnabled").getAsBoolean();
+            if (staleAutoOffered) {
+                // One live offered Auto records its outcome; this path still fails the original gate oracle below.
+                castAnswer(game, reduced, Map.of("action", "ok"), "08-single-offered-auto");
+                var afterAuto = game.until(input -> input.seat() == 0 && (priority(input)
+                        || text(input.prompt(), "inputType").startsWith("InputPayMana")));
+                castFrame(game, "09-after-single-auto-before-assert", afterAuto);
+                assertTrue(text(afterAuto.prompt(), "inputType").startsWith("InputPayMana"));
+                var afterFacts = cracklePaymentFacts(game, "09-after-single-auto");
+                assertTrue(afterFacts.get("active").getAsBoolean(), "The fresh unpaid publication is unlocked after Auto returned");
+            }
+            assertFalse(staleAutoOffered,
+                    "Only one red source remains for two red symbols; the previously viable Auto offer must withdraw");
+        }
+    }
+
     @Test(timeOut = 120000)
     public void actualPerOpponentTargetsExcludeUnproductiveSiblingsPreserveUndoAndCompleteAValidSubset() throws Exception {
         var resources = Path.of("../forge-gui/res");
@@ -211,6 +382,61 @@ public class TargetSelectionProgressTest {
         }
     }
 
+    private static void castFrame(RulesScenario game, String stage, Input input) throws Exception {
+        Files.writeString(game.evidence.resolve(stage + ".json"), JSON.toJson(input.state()));
+    }
+    private static void castAnswer(RulesScenario game, Input input, Map<String, ?> command, String stage) throws Exception {
+        Files.writeString(game.evidence.resolve(stage + "-command.json"), JSON.toJson(request(input, command)));
+        assertTrue(game.answer(input, command));
+    }
+    private static void castSource(RulesScenario game, Input input, JsonObject source, String stage) throws Exception {
+        castSource(game, input, source, "", stage);
+    }
+    private static void castSource(RulesScenario game, Input input, JsonObject source, String actionText, String stage) throws Exception {
+        var catalog = JSON.toJsonTree(game.session(0).sourceActions(request(input, Map.of("key", text(source, "key"))))).getAsJsonObject();
+        Files.writeString(game.evidence.resolve(stage + "-source.json"), JSON.toJson(catalog));
+        var actions = catalog.getAsJsonArray("actions").asList().stream().map(value -> value.getAsJsonObject())
+                .filter(action -> actionText.isEmpty() || text(action, "kind").equals("activate") && text(action, "text").contains(actionText)).toList();
+        assertEquals(actions.size(), 1);
+        var command = Map.of("action", "useSourceAction", "expectedTask", priority(input) ? "priority" : "mana",
+                "key", text(catalog, "sourceCardKey"), "actionId", text(actions.get(0), "id"));
+        castAnswer(game, input, command, stage);
+    }
+    private static JsonObject assertCracklePayment(RulesScenario game, int x, int remaining, List<Integer> players, boolean creature,
+                                             String stage) throws Exception {
+        var facts = cracklePaymentFacts(game, stage);
+        assertEquals(facts.get("originalCost").getAsInt(), 3 * x + 2);
+        assertEquals(facts.get("remainingCost").getAsInt(), remaining);
+        assertEquals(facts.get("xPaid").getAsInt(), x);
+        assertEquals(facts.get("players"), JSON.toJsonTree(players));
+        assertEquals(facts.get("cards"), JSON.toJsonTree(creature ? List.of("Grizzly Bears") : List.of()));
+        assertEquals(facts.get("targetCount").getAsInt(), players.size() + (creature ? 1 : 0));
+        assertTrue(facts.get("active").getAsBoolean());
+        return facts;
+    }
+    private static JsonObject cracklePaymentFacts(RulesScenario game, String stage) throws Exception {
+        var facts = HeadlessPlatform.query(game.table, () -> {
+            var controller = (PlayerControllerHuman)game.table.game.getRegisteredPlayers().get(0).getController();
+            var current = (InputPayMana)controller.getInputQueue().getInput();
+            var ability = current.getPaidForAbility();
+            var copy = new JsonObject();
+            copy.addProperty("originalCost", current.getOriginalManaCost().getConvertedManaCost());
+            copy.addProperty("remainingCost", current.getRemainingManaCost().getConvertedManaCost());
+            copy.addProperty("generic", current.getRemainingManaCost().getGenericManaAmount());
+            copy.addProperty("red", current.getRemainingManaCost().getUnpaidShards(forge.card.mana.ManaCostShard.RED));
+            copy.addProperty("xPaid", ability.getXManaCostPaid());
+            copy.add("players", JSON.toJsonTree(java.util.stream.StreamSupport.stream(ability.getTargets().getTargetPlayers().spliterator(), false)
+                    .map(player -> player.getId()).toList()));
+            copy.add("cards", JSON.toJsonTree(java.util.stream.StreamSupport.stream(ability.getTargets().getTargetCards().spliterator(), false)
+                    .map(card -> card.getName()).toList()));
+            copy.addProperty("targetCount", ability.getTargets().size());
+            copy.addProperty("active", current.isPaymentActive());
+            copy.addProperty("sourceZone", ability.getHostCard().getZone().getZoneType().name());
+            return copy;
+        });
+        Files.writeString(game.evidence.resolve(stage + "-rules-facts.json"), JSON.toJson(facts));
+        return facts;
+    }
     private static boolean priority(Input input) { return text(input.prompt(), "inputType").equals("InputPassPriority"); }
     private static void assertTargetProgress(JsonObject prompt, int selectedCount, List<Integer> selectedPlayers) {
         assertEquals(prompt.get("targetSelectionProgress"), JSON.toJsonTree(Map.of(
