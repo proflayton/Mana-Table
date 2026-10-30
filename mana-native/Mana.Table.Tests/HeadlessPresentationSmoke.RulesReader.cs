@@ -33,7 +33,20 @@ internal static partial class HeadlessPresentationSmoke
         check(ability.Left >= reader.Right && ability.Left - reader.Right < 32 && ability.Bottom <= reader.Bottom,
             "An inspected counter-bearing source keeps its exact offered ability in the adjacent live-state column");
         string prompt = run.View.Match!.Decision!.Id;
+        string pinnedKey = run.Frame.Cards.Single(card => card.Id == actual.Id && card.Focused).Card.Key;
+        var offered = run.Hit("read-card-action").Intent;
+        void CheckReaderControls(string label) {
+            trace.Add(new { scenario = "reader-controls-current-source", label, facts = ManaPaymentSmoke.ReaderControlFacts(run.View, run.Engine.Replies.Count) });
+            var geometry = ManaPaymentSmoke.ReaderControlGeometry(run.View);
+            check(geometry.Clear, "The source reader's complete Rules/Artwork control stays clear of its current live-state actions, cards, bill and phase arc");
+            check(geometry.FooterOwnsCenter && geometry.PhaseOwnCenters
+                && run.Frame.Cards.Any(card => card.Id == actual.Id && card.Card.Key == pinnedKey && card.Focused)
+                && Equals(run.Hit("read-card-action").Intent, offered) && run.View.Match!.Decision!.Id == prompt && run.Engine.Replies.Count == 0,
+                "Source reader, offered ability and phase centers retain their own current targets while the same occurrence is inspected");
+        }
+        CheckReaderControls("artwork-with-source-actions");
         run.ClickHit("read-card-rules"); run.Settle("mare-rules-face");
+        CheckReaderControls("rules-with-source-actions");
         check(Text(run.Frame).Contains("Remove") && Text(run.Frame).Contains("counter")
                 && Text(run.Frame).Contains("1/2") && Text(run.Frame).Contains("3 -1/-1 counters"),
             "The rules face renders engine text, symbols and current P/T alongside counter state");

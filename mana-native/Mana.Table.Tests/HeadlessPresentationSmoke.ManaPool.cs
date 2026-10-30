@@ -202,6 +202,7 @@ internal static partial class HeadlessPresentationSmoke
         run.ClickCard(ManaPaymentScenario.Spell); Ready("read-floating-cost");
         var pinned = run.Frame.Cards.Single(card => card.Id == ManaPaymentScenario.Spell && card.Focused);
         var beforeReading = run.View.ManaJourney!;
+        string readerDecision = run.View.Match!.Decision!.Id;
         var castBeforeReading = run.Hit("read-card-action");
         bool SameReader() => run.Frame.Cards.Count(card => card.Id == pinned.Id && card.Zone == pinned.Zone
             && card.Card.Key == pinned.Card.Key && card.Focused && card.ReaderTarget != null) == 1;
@@ -233,6 +234,38 @@ internal static partial class HeadlessPresentationSmoke
         check(run.View.Overlay.Length == 0 && SameReader() && SameBill() && run.Frame.Hits.Any(hit => hit.Id == "read-card-action")
             && run.Engine.Replies.Count == 0,
             "CloseView keeps the same valid pinned reader and bill without another hand click or a restored bookmark");
+        void CheckReaderControls(string label) {
+            trace.Add(new { scenario = "reader-controls-after-mana", label, facts = ManaPaymentSmoke.ReaderControlFacts(run.View, run.Engine.Replies.Count) });
+            var geometry = ManaPaymentSmoke.ReaderControlGeometry(run.View);
+            check(geometry.Clear, "The whole current Rules/Artwork paint and hit stay clear of phase controls, physical cards, current reader actions and bill");
+            check(geometry.FooterOwnsCenter && geometry.PhaseOwnCenters && SameReader() && SameBill()
+                && run.View.Match!.Decision!.Id == readerDecision
+                && run.View.ManaSources is [{ SourceId: ManaPaymentScenario.Island }]
+                && run.Frame.Cards.Any(card => card.Id == ManaPaymentScenario.Island && card.Zone == "Battlefield")
+                && run.Engine.Replies.Count == 0,
+                "The actual footer and phase centers retain their own current input targets, exact pinned occurrence and bill without commands");
+        }
+        CheckReaderControls("artwork-after-close");
+        CompleteActionLabelChecks.Run(run.Frame, "read-card-rules", "Rules", check);
+        run.ClickHit("read-card-rules"); run.Settle("reader-controls-rules-face");
+        CheckReaderControls("rules-face");
+        CompleteActionLabelChecks.Run(run.Frame, "read-card-rules", "Artwork", check);
+        check(ManaPaymentSmoke.ReaderShowsRules(run.View), "The actual Rules footer click reveals the same card's Flash and Flying rules text without casting it");
+        run.ClickHit("read-card-rules"); run.Settle("reader-controls-artwork-face");
+        CheckReaderControls("artwork-returned");
+        CompleteActionLabelChecks.Run(run.Frame, "read-card-rules", "Rules", check);
+        check(!ManaPaymentSmoke.ReaderShowsRules(run.View), "The actual Artwork footer click returns the same card from its complete rules face without a new pin");
+        var phase = run.Hit("phase-stop:MAIN2");
+        bool phaseStopped = PlayPreferences.Load(run.View.Profile).Stops.Contains("MAIN2");
+        run.ClickHit(phase.Id); run.Settle("reader-controls-phase-toggled");
+        check(PlayPreferences.Load(run.View.Profile).Stops.Contains("MAIN2") != phaseStopped
+            && run.Hit(phase.Id).Bounds == phase.Bounds && SameReader() && SameBill()
+            && run.View.Match!.Decision!.Id == readerDecision && run.Engine.Replies.Count == 0,
+            "The existing phase target toggles its own saved stop while retaining the same reader and decision without an engine reply");
+        run.ClickHit(phase.Id); run.Settle("reader-controls-phase-restored");
+        check(PlayPreferences.Load(run.View.Profile).Stops.Contains("MAIN2") == phaseStopped
+            && SameReader() && SameBill() && run.View.Match!.Decision!.Id == readerDecision && run.Engine.Replies.Count == 0,
+            "The second phase click restores the original stop without changing the card or payment context");
         run.ClickHit("mana-pool:0:C"); run.Settle("inspect-before-escape");
         run.Input(new(2, 60), keys: new(Microsoft.Xna.Framework.Input.Keys.Escape), label: "escape-mana-reading");
         run.Tick("escape-released");

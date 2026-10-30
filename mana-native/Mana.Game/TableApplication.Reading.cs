@@ -61,6 +61,7 @@ internal sealed partial class TableApplication
         // Resolve hover against the last published frame before starting the next
         // frame. Preparation then uses current snapshot visibility and policy.
         pointerSurface = HitAt(pointer);
+        manaJourneyPaint = null;
         string? hover = pointerSurface?.Id;
         matchPresentation.Cards.BeginFrame(CardContext, hover, frameElapsed, preferences.ReducedMotion, boardView);
         if (rulesReaderId != readingId || rulesReaderGame != match?.Id) ClearRulesReader();
@@ -147,7 +148,13 @@ internal sealed partial class TableApplication
         var target = (entry.ReaderTarget ?? CardPresentationController.ReaderPose(entry.Rest, entry.Zone)).Bounds;
         if (Vector2.Distance(entry.Display.Size, target.Size.ToVector2()) > 2
             || Vector2.Distance(entry.Display.Center, target.Center.ToVector2()) > 2) return;
-        DrawRulesReaderControl(entry, target);
+        int firstAction = hits.Count();
+        DrawReaderActions(entry, target);
+        DrawRulesReaderControl(entry, target, hits.Skip(firstAction).Select(hit => ReaderControlPaintBounds(hit.Bounds)).ToArray());
+    }
+
+    private void DrawReaderActions(PresentedCard entry, Rectangle target)
+    {
         if (CardContext.CanBrowseOpeningHand(entry)) return;
         if (CardContext.CanBrowseHandSelection(entry)
             || CardContext.CanBrowsePublicCollection(entry) && match?.Decision?.Payload is not (null or PriorityPayload or PaymentPayload)) {

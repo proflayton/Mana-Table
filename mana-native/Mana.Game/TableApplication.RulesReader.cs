@@ -46,11 +46,31 @@ internal sealed partial class TableApplication
         if (rulesReaderText) RulesLayout(entry.Card);
     }
 
-    private void DrawRulesReaderControl(PresentedCard entry, Rectangle face)
+    private static Rectangle ReaderControlPaintBounds(Rectangle bounds) => Rectangle.Union(bounds,
+        new(bounds.X + 2, bounds.Y + 5, bounds.Width, bounds.Height));
+
+    private void DrawRulesReaderControl(PresentedCard entry, Rectangle face, IReadOnlyList<Rectangle> actions)
     {
         if (!entry.Focused || entry.Card.FaceDown || !CardContext.CanRead(entry)) return;
+        // Earlier reader actions are current. A bill is present here only when
+        // its owner has already composed it in this frame; later bills reserve us.
+        var retained = DecisionActionReservations(face, false,
+            actions.Append(manaJourneyPaint?.Bounds ?? Rectangle.Empty)
+                .Append(manaJourneyPaint?.SourceBounds ?? Rectangle.Empty).ToArray(), sourcePadding: 0);
+        var occupied = retained.Concat(matchPresentation.Cards.Cards.Where(card => card.Id != entry.Id)
+            .Select(card => card.Display.Bounds)).ToArray();
+        var area = ReaderControlPaintBounds(new(face.Right - 112, face.Bottom + 6, 108, 30));
+        bool Overlaps(Rectangle candidate, IEnumerable<Rectangle> reservations) =>
+            reservations.Any(bounds => !bounds.IsEmpty && candidate.Intersects(bounds));
+        if (!new Rectangle(0, 0, 1600, DesignHeight).Contains(area) || Overlaps(area, occupied)) {
+            area = DecisionWorkspaceLayout.Place(face, 110, 35, occupied, true, minimumWidth: 110, minimumHeight: 35);
+            if (Overlaps(area, retained))
+                area = DecisionWorkspaceLayout.Place(face, 110, 35, retained, true, minimumWidth: 110, minimumHeight: 35);
+            // If even retained geometry fills the bounded search, keep its
+            // visible least-overlap fallback. No universal packed-table fit.
+        }
         string label = rulesReaderId == entry.Id && rulesReaderText ? "Artwork" : "Rules";
-        Button("read-card-rules", label, face.Right - 112, face.Bottom + 6, 108,
+        Button("read-card-rules", label, area.X, area.Y, 108,
             new MatchIntent.FlipReaderText(entry.Id), height: 30);
     }
 

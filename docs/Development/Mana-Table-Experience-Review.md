@@ -6,6 +6,50 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Reader rules control and phase markers: 30 October 2026
+
+**Source candidate; local checks passed; exact-head CI and human review pending.** Actual window
+review found the Rules footer below a large current card overlapping the local
+phase arc. Its source placement and phase geometry were unchanged from the
+earlier base; a test-only run separately reproduced the whole-footprint overlap.
+Both centers still reached their own targets, so checking centers alone missed
+the competing painted and clickable edges.
+
+Wizards' [Arena gameplay image](https://media.wizards.com/2020/images/daily/m7g4ren4_gameplay.png)
+shows a recognizable Mire's Grasp at the right with phase glyphs and Resolve in
+a separate region below. Its [January 2021 article](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-january-2021-01-21)
+describes inspecting a card separately from dragging it to cast. That mobile
+example does not establish current desktop placement, four-seat scaling or a
+Rules/Artwork flip control. Keeping our existing flip gesture separate from
+fixed turn controls is a Mana Table adaptation.
+
+The player intends to read the exact current pinned card. Clicking its existing
+Rules control turns that same occurrence to complete text; Artwork returns it.
+The current source action and bill remain available, and reading sends no engine
+reply. A deliberate phase click still changes its own saved stop independently.
+Existing disclosure, decision and passive-overlay admission remain authoritative.
+
+The reader owner places its current actions first, then the complete footer and
+shadow against those actions, the current reader and fixed control geometry.
+Early composition cannot borrow the preceding bill: an already composed bill
+can reserve its space, while a later bill reserves the current footer. The
+existing bounded workspace accepts this actual short footprint without changing
+its default minimum height or search. It first considers physical background
+faces too, then retains the reader/action/bill/fixed regions if that pass collides.
+If even that bounded pass cannot clear its retained regions, the controls remain
+visible at its least-overlap result. This is an explicit crowded-table limit,
+not a universal guarantee of a clear region. Review both real gestures at small
+and large windows, including 130% text, separately from human UX acceptance.
+
+The local candidate passed 2623 full headless checks and both actual window
+journeys at 1000 x 740 and 1600 x 900, with 84 canonical checks each. Agent review
+of all eight new Rules/Artwork window captures found the footer separate from
+the phase arc, with its labels and current card/bill/action continuation intact.
+C4 reading covers both 100% and 130% text with reduced motion; ordinary C1 payment
+captures remain 100% only. This review covers the footer. The unchanged large
+card body still reaches the upper phase markers in these scenes; that separate
+reader-body placement issue is queued for another audit.
+
 ## Reading floating mana at its seat: 30 October 2026
 
 **Source candidate; local checks passed; exact-head CI and human review pending.** The earlier C4

@@ -1572,6 +1572,21 @@ owned reader and bill. Dismissal returns the chat toggle without reopening the
 drawer; only a new deliberate chat click opens the preserved text. Typing/Enter
 while reading cannot capture or send that draft. F1 guide takeover verifies the input filter
 runs after every producer while higher views retain their own close controls.
+The same after-close continuation also checks the entire current Rules/Artwork
+button and its actual panel shadow against the visible phase arc, current cards,
+source actions and bill. It copies the completed frame before asserting, then
+uses the actual footer center to flip to complete rules and back. A real phase
+click toggles and restores its own saved stop while the exact card key, decision,
+bill and zero-reply boundary remain intact. The existing Loch Mare reader repeats
+the same frame oracle with its current live-state/ability column before and after
+its rules flip. No new fixture or CI mode is needed. The counted physical windows
+reuse that oracle and gesture continuation at both text scales, saving
+`reader-controls-rules` and `reader-controls-artwork` images and checkpoint JSON.
+The test-only baseline at `624dc0bff6f1dd2b6fe5c665da3d29fff1af715f` compiled
+against unchanged production and failed the first whole-footer clearance check
+after nine prior checks. Its center diagnostics were true; the later new flip
+and phase gestures were unexecuted. That first failure remains preserved.
+
 These checks reuse existing runners and keep geometry, final-hit isolation and
 old-action/ResolveHit assertions separate. The geometry oracle measures complete
 name/count text inside each resource token, reserves actual current card and
@@ -1600,18 +1615,25 @@ without composing a new frame or invoking actions. The connected Social fixture
 also copies its checkpoint before the first assertion or old-hit activation.
 It checks the real centered button label inside its original bounds, then
 drawer/draft, current reader/bill, final isolation and stale-hit behavior.
-Local code candidate `e289982fdbfc4359f697684b9c13aab60df58c5b` passed 2606 full
-headless checks (`all`) and 68 focused header checks (`match-header`). Its
-unchanged production predecessor passed 88 pool-group and 44 pointer/payment
-checks. The two actual window suites passed 62 canonical checks each: 44 ordinary
-payment checks and nine counted/preview checks at each text scale. Both sizes
-cover C4 inspection and dismissal at 100% and 130%; the ordinary C1 payment
-capture is 100% only. Social/guide and lifecycle coverage is headless.
-Source/compiled hashes, first logs, images and receipts remain in the ignored
-`contextual-mana-reading-checks-20261030` evidence directory, including
-`candidatee289-first.json`. The original old-production bill-continuity failure,
-later first failures and `offline-c4-correction-addendum-first.json` remain
-unchanged; offline reconstructed scenes are not passing integration evidence.
+Local code candidate `7b345c4544175c7711ec133e12f123e6714b5961` passed 2623 full
+headless checks (`all`), 101 focused pool checks (`mana-pool`) and 44 ordinary
+pointer/payment checks. Each actual window suite passed 84 canonical checks:
+44 ordinary payment checks and 20 counted/preview/reader-control checks at each
+text scale. Both 1000 x 740 and 1600 x 900 cover C4 inspection, dismissal,
+Rules/Artwork and phase-toggle restoration at 100% and 130% with reduced motion;
+the ordinary C1 payment capture is 100% only. The reader continuation sends no
+engine reply; the ordinary payment journey retains its 21 authored replies.
+Social/guide and lifecycle coverage is headless. All eight new Rules/Artwork
+window images received agent visual review; human acceptance remains pending.
+The footer clears the phase arc in these scenes. Unchanged large-card body
+clipping at the upper phase markers remains a separate queued audit.
+Source/compiled hashes, first logs, 44 capture pairs per window and receipts
+remain in the ignored `reader-control-layout-checks-20261030` evidence directory,
+including `candidate7b34-first.json` and the original `baseline624d-first.json`.
+The earlier contextual-reading receipts and correction addendum remain unchanged
+in `contextual-mana-reading-checks-20261030`; reconstructed scenes are not passing
+integration evidence. These bounded placements do not guarantee a clear footer
+on a fully packed table: the retained-region fallback can still overlap.
 Final exact-head CI and human UX acceptance remain separate and pending.
 The normal native UI inventory runs this window journey at 1000 x 740, including
 both text scales. Only after the ordinary journey and both counted-source/preview
