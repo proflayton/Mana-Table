@@ -4,8 +4,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/** Current target choices and their meaning, copied together for one audience. */
-final class TargetDecisionProjection {
+/** Current target/list choices and their meaning, copied together for one audience. */
+final class SelectionDecisionProjection {
     record Capture(String decisionId, long boardRevision, long sourceVersion,
                    String executionId, String executionStep, Map<String, Object> promptFacts,
                    Map<String, Object> automatedFacts, List<Integer> playerChoices) {
@@ -20,5 +20,5 @@ final class TargetDecisionProjection {
         }
     }
 
-    private TargetDecisionProjection() { }
+    private SelectionDecisionProjection() { }
 }

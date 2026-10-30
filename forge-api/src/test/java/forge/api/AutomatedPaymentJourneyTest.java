@@ -40,6 +40,7 @@ public class AutomatedPaymentJourneyTest {
             driver.use(main, card(main.state, "Hand", "Scatter the Seeds"), "cast");
             var reduction = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").equals("InputSelectCardsForConvokeOrImprovise"));
             String episode = reductionEpisode(table, policyId);
+            var originalReduction = assertReductionPublication(table, policyId);
             assertFalse(episode.isEmpty());
             assertEquals(reduction.prompt.getAsJsonObject("manaReduction").getAsJsonArray("remainingManaParts"),
                     JSON.toJsonTree(List.of(Map.of("symbol", "{G}", "count", 2), Map.of("symbol", "{3}", "count", 1))));
@@ -52,6 +53,7 @@ public class AutomatedPaymentJourneyTest {
                 reduction = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").equals("InputSelectCardsForConvokeOrImprovise")
                         && !text(input.prompt, "id").equals(oldScope));
                 assertEquals(reductionEpisode(table, policyId), episode, "Refreshed decision scopes retain the actual cost-input episode");
+                assertReductionPublication(table, policyId);
             }
             assertTrue(reduction.prompt.getAsJsonObject("manaReduction").getAsJsonArray("remainingManaParts").isEmpty());
             assertTrue(reduction.prompt.get("okEnabled").getAsBoolean(), "Exactly reduced costs still require the current explicit Complete action");
@@ -59,13 +61,19 @@ public class AutomatedPaymentJourneyTest {
                     .filter(value -> !value.get("highlighted").getAsBoolean()).findFirst().orElseThrow();
             assertFalse(unused.get("selectable").getAsBoolean(), "A zero-bill contributor is no longer a productive selection");
             String zeroScope = text(reduction.prompt, "id");
-            driver.answer(reduction, Map.of("action", "card", "key", text(unused, "key")));
-            reduction = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").equals("InputSelectCardsForConvokeOrImprovise")
-                    && !text(input.prompt, "id").equals(zeroScope));
-            assertTrue(reduction.prompt.getAsJsonObject("manaReduction").getAsJsonArray("remainingManaParts").isEmpty(), "An unusable extra click cannot reduce zero further");
-            assertEquals(zone(viewer(reduction.state), "Battlefield").getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject())
+            var zero = reduction;
+            assertThrows(IllegalArgumentException.class, () -> table.automatedSeat(policyId).action(request(zero,
+                    Map.of("action", "card", "key", text(unused, "key")))));
+            var afterRejected = assertReductionPublication(table, policyId);
+            assertEquals(text(afterRejected.getAsJsonObject("state").getAsJsonObject("prompt"), "id"), zeroScope,
+                    "An unavailable zero-bill contributor cannot consume or refresh the current scope");
+            assertTrue(afterRejected.getAsJsonObject("state").getAsJsonObject("prompt").getAsJsonObject("manaReduction").getAsJsonArray("remainingManaParts").isEmpty(), "An unusable extra click cannot reduce zero further");
+            assertEquals(zone(viewer(afterRejected.getAsJsonObject("state")), "Battlefield").getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject())
                     .filter(value -> value.get("highlighted").getAsBoolean()).count(), 5L);
             assertEquals(reductionEpisode(table, policyId), episode, "A no-progress gesture cannot refund the causal budget");
+            assertEquals(originalReduction.getAsJsonObject("state").getAsJsonObject("prompt").getAsJsonObject("manaReduction").getAsJsonArray("remainingManaParts"),
+                    JSON.toJsonTree(List.of(Map.of("symbol", "{G}", "count", 2), Map.of("symbol", "{3}", "count", 1))),
+                    "Later contributions cannot mutate retained original progress");
             table.game.getAction().withState(() -> {
                 var controller = (PlayerControllerHuman)table.game.getPlayers().get(1).getController();
                 var actual = (InputSelectCardsForConvokeOrImprovise)controller.getInputQueue().getInput();
@@ -99,6 +107,7 @@ public class AutomatedPaymentJourneyTest {
             driver.use(main, card(main.state, "Command", "Kasla, the Broken Halo"), "cast");
             var reduction = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").equals("InputSelectCardsForConvokeOrImprovise"));
             String episode = reductionEpisode(table, policyId);
+            var originalReduction = assertReductionPublication(table, policyId);
             driver.answer(reduction, Map.of("action", "card", "key", text(card(reduction.state, "Battlefield", "Lightning Angel"), "key")));
             var choice = driver.until(input -> input.playerId == policyId && text(input.prompt, "context").equals("colorChoice"));
             assertEquals(reductionEpisode(table, policyId), episode, "The private observation must be available while its UI-owned dialog awaits an answer");
@@ -130,6 +139,9 @@ public class AutomatedPaymentJourneyTest {
             driver.answer(choice, Map.of("action", "choice", "choices", List.of(white)));
             var resumed = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").equals("InputSelectCardsForConvokeOrImprovise"));
             assertEquals(reductionEpisode(table, policyId), episode);
+            assertReductionPublication(table, policyId);
+            assertTrue(originalReduction.getAsJsonObject("state").getAsJsonObject("prompt").getAsJsonObject("manaReduction").getAsJsonArray("remainingManaParts").asList().stream()
+                    .anyMatch(value -> text(value.getAsJsonObject(), "symbol").equals("{W}")), "The retained original reduction still owes the white contribution");
             assertFalse(resumed.prompt.has("manaPaymentContext"), "The resumed reduction cannot retain its answered child context");
             assertFalse(resumed.prompt.getAsJsonObject("manaReduction").getAsJsonArray("remainingManaParts").asList().stream()
                     .anyMatch(value -> text(value.getAsJsonObject(), "symbol").equals("{W}")));
@@ -144,6 +156,7 @@ public class AutomatedPaymentJourneyTest {
                         .filter(value -> text(value, "mana").equals("{1}")).findFirst().orElseThrow().get("index").getAsInt();
                 driver.answer(genericChoice, Map.of("action", "choice", "choices", List.of(index)));
                 resumed = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").equals("InputSelectCardsForConvokeOrImprovise"));
+                assertReductionPublication(table, policyId);
             }
             var contributor = zone(viewer(resumed.state), "Battlefield").getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject())
                     .filter(value -> text(value, "name").equals("Lightning Angel") && !value.get("highlighted").getAsBoolean()).findFirst().orElseThrow();
@@ -170,6 +183,23 @@ public class AutomatedPaymentJourneyTest {
     private static String reductionEpisode(MatchTable table, int policyId) {
         var observation = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()).getAsJsonObject();
         return text(observation.getAsJsonObject("semantics"), "episodeId");
+    }
+
+    private static JsonObject assertReductionPublication(MatchTable table, int policyId) {
+        return table.game.getAction().readState(() -> {
+            var observation = ManyPublicationTest.assertCurrentSelection(table, table.automatedSeat(policyId));
+            var controller = (PlayerControllerHuman)table.game.getRegisteredPlayers().stream().filter(player -> player.getId() == policyId).findFirst().orElseThrow().getController();
+            var input = (InputSelectCardsForConvokeOrImprovise)controller.getInputQueue().getInput();
+            assertTrue(input.isSelectionActive());
+            var prompt = observation.getAsJsonObject("state").getAsJsonObject("prompt");
+            assertEquals(prompt.getAsJsonObject("manaReduction").get("remainingManaParts"), JSON.toJsonTree(ManaPaymentFacts.parts(input.getRemainingManaCost())));
+            assertFalse(prompt.has("manaPaymentContext")); assertFalse(prompt.has("payerId"));
+            assertEquals(text(observation.getAsJsonObject("semantics"), "intent"), "Tap");
+            assertTrue(observation.getAsJsonObject("semantics").get("selectionIsCost").getAsBoolean());
+            assertFalse(observation.getAsJsonObject("semantics").has("payment"), "Convoke is a contribution selection, not direct mana payment authority");
+            assertFalse(prompt.has("min")); assertFalse(prompt.has("max"));
+            return observation;
+        });
     }
 
     @DataProvider public Object[][] flexibleOutputStage() { return new Object[][] {{false}, {true}}; }

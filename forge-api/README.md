@@ -168,6 +168,14 @@ rejected, not interpreted as empty domains. Current card/player commands still
 recheck live eligibility; selected targets remain available for deselection.
 The public pending-damage summary can resolve supported captured bindings while
 the private legacy amount remains literal-only; neither invents an unknown amount.
+Multiple-entity selections use the same publication owner for their existing
+player choices, staged selections, Convoke reduction, counter allocations and
+private cost context. Their current cost-stack entry is checked across funding
+queries. A changed entry withdraws the old decision; a fresh input publication
+must establish its replacement. Copied facts never retain a live cost entry.
+Each concrete input still decides whether another click toggles an entity or
+allocates another counter. Shared capture adds no selection-limit fields or
+parent payment commands, and nested color choices keep their own scope.
 Current mana inputs can add `payment` provenance: `purpose` (`SpellCost`,
 `ActivatedAbilityCost`, `TriggeredAbilityCost`, `EffectCost` or `Unknown`), actual
 `payerId`, entitled `sourceCardId` and the input's `mandatory` fact. The current

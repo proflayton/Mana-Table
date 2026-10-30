@@ -7,6 +7,7 @@ import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.spellability.SpellAbilityView;
 import forge.game.spellability.StackItemView;
+import forge.game.zone.CostPaymentStack;
 import forge.gamemodes.match.input.*;
 
 import java.util.*;
@@ -19,18 +20,26 @@ final class DecisionSemantics {
     }
 
     static Map<String, Object> describe(Input input, Game game, Player viewer, Function<CardView, String> identity) {
-        return describe(input, game, viewer, identity, null);
+        var paying = game.costPaymentStack.peek();
+        SpellAbility ability = paying != null ? null : input instanceof InputSelectTargets targets ? targets.getSpellAbility()
+                : input instanceof InputSelectManyBase<?> many ? many.getSpellAbility()
+                : input instanceof InputConfirm confirm ? confirm.getSpellAbility() : null;
+        return describe(input, paying, viewer, identity, ability);
     }
 
     static Map<String, Object> describeTargets(SpellAbility ability, Game game, Player viewer, Function<CardView, String> identity) {
-        return describe(null, game, viewer, identity, ability);
+        return describe(null, game.costPaymentStack.peek(), viewer, identity, ability);
     }
 
-    private static Map<String, Object> describe(Input input, Game game, Player viewer,
-                                               Function<CardView, String> identity, SpellAbility capturedAbility) {
+    static Map<String, Object> describeSelection(InputSelectManyBase<?> input, SpellAbility ability, CostPaymentStack.Entry paying,
+                                                Player viewer, Function<CardView, String> identity) {
+        return describe(input, paying, viewer, identity, ability);
+    }
+
+    private static Map<String, Object> describe(Input input, CostPaymentStack.Entry paying, Player viewer,
+                                               Function<CardView, String> identity, SpellAbility ability) {
         if (input instanceof InputSelectCardsForConvokeOrImprovise)
             return Map.of("intent", "Tap", "selectionIsCost", true);
-        var paying = game.costPaymentStack.peek();
         if (paying != null) {
             var result = new LinkedHashMap<String, Object>();
             result.put("intent", costIntent(paying.cost()));
@@ -45,9 +54,6 @@ final class DecisionSemantics {
             }
             return result;
         }
-        SpellAbility ability = capturedAbility != null ? capturedAbility : input instanceof InputSelectTargets targets ? targets.getSpellAbility()
-                : input instanceof InputSelectManyBase<?> many ? many.getSpellAbility()
-                : input instanceof InputConfirm confirm ? confirm.getSpellAbility() : null;
         return describeAbility(ability, viewer, identity);
     }
 

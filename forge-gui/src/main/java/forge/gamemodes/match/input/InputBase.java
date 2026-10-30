@@ -60,6 +60,7 @@ public abstract class InputBase implements java.io.Serializable, Input {
     private boolean finished = false;
     protected final boolean isFinished() { return finished; }
     protected final void setFinished() {
+        if (finished) { return; }
         finished = true;
 
         if (allowAwaitNextInput()) {

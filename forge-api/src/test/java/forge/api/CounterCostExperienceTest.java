@@ -19,7 +19,7 @@ public class CounterCostExperienceTest {
 
     @Test(groups = "canonical-interaction", timeOut = 90000)
     public void aFixedSourceWithOneRemovableCounterTypePaysAndDrawsWithoutASecondChoice() throws Exception {
-        try (var game = new RulesScenario("counter-cost-loch-mare", Map.of(0,
+        try (var game = RulesScenario.automated("counter-cost-loch-mare", Map.of(0,
                 List.of("Island", "Island", "Island", "Island", MARE)), "Island", "Rhys the Redeemed", true)) {
             var main = main(game);
             var source = card(main.state(), MARE);
@@ -51,7 +51,7 @@ public class CounterCostExperienceTest {
         var battlefield = new java.util.HashMap<Integer, List<String>>();
         battlefield.put(0, List.of("Island", "Island", "Island", "Island", "Island", MARE));
         if (stunRemovalForbidden) battlefield.put(1, List.of("Fear of Sleep Paralysis"));
-        try (var game = new RulesScenario("counter-cost-mixed-" + stunRemovalForbidden + "-" + amount, battlefield,
+        try (var game = RulesScenario.automated("counter-cost-mixed-" + stunRemovalForbidden + "-" + amount, battlefield,
                 "Cryogenic Stasis", "Rhys the Redeemed", true)) {
             var input = floatBlue(game, main(game), 2);
             var stasis = zone(viewer(input.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
@@ -68,7 +68,7 @@ public class CounterCostExperienceTest {
                 assertTrue(priority(counter), "A forbidden stun removal is not a second legal payment choice");
             } else {
                 assertEquals(text(counter.prompt(), "inputType"), "InputSelectCardToRemoveCounter");
-                assertPayment(counter, amount, amount);
+                assertPayment(game, counter, amount, amount);
                 assertTrue(card(counter.state(), MARE).get("selectable").getAsBoolean(),
                         "The actual counter input publishes the source as selectable for the native client");
                 Files.writeString(game.evidence.resolve("explicit-counter-source.json"), JSON.toJson(counter.state()));
@@ -79,7 +79,7 @@ public class CounterCostExperienceTest {
                 chooseType(game, type, amount == 1 ? "STUN" : "M1M1");
                 if (amount == 2) {
                     counter = game.until(i -> text(i.prompt(), "inputType").equals("InputSelectCardToRemoveCounter"));
-                    assertPayment(counter, 2, 1);
+                    assertPayment(game, counter, 2, 1);
                     assertTrue(game.answer(counter, Map.of("action", "card", "key", text(card(counter.state(), MARE), "key"))));
                     type = game.until(i -> text(i.prompt(), "kind").equals("choice"));
                     assertTypePayment(game, type, MARE, text(card(counter.state(), MARE), "visualId"), 2, 1);
@@ -98,7 +98,7 @@ public class CounterCostExperienceTest {
 
     @Test(groups = "canonical-interaction", dataProvider = "distributedAnswers", timeOut = 90000)
     public void aNonSourceCostPublishesItsRealCandidatesAndPreservesTheChosenPermanentOrCancellation(boolean cancel, boolean mixed) throws Exception {
-        try (var game = new RulesScenario("counter-cost-distributed-" + cancel + "-" + mixed, Map.of(0,
+        try (var game = RulesScenario.automated("counter-cost-distributed-" + cancel + "-" + mixed, Map.of(0,
                 List.of("Concordant Crossroads", "Soul Diviner", MARE, MARE, "Island", "Island")),
                 mixed ? "Cryogenic Stasis" : "Island", "Rhys the Redeemed", true)) {
             var input = main(game);
@@ -110,8 +110,9 @@ public class CounterCostExperienceTest {
             }
             int handBefore = count(viewer(input.state()), "Hand");
             activate(game, input, card(input.state(), "Soul Diviner"), "Draw a card");
-            var choice = game.until(i -> text(i.prompt(), "inputType").equals("InputSelectCardToRemoveCounter"));
-            assertPayment(choice, 1, 1);
+            var choice = payAndReachCounterOrStack(game);
+            assertEquals(text(choice.prompt(), "inputType"), "InputSelectCardToRemoveCounter");
+            assertPayment(game, choice, 1, 1);
             var mares = zone(viewer(choice.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
                     .map(value -> value.getAsJsonObject()).filter(value -> text(value, "name").equals(MARE)).toList();
             assertEquals(mares.size(), 2);
@@ -136,19 +137,19 @@ public class CounterCostExperienceTest {
                 assertEquals(actual.getAsJsonObject("counters").get("-1/-1").getAsInt(), !cancel && index == selected ? 2 : 3);
             }
             assertEquals(card(resolved.state(), "Soul Diviner").get("tapped").getAsBoolean(), !cancel);
-            assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(choice,
+            assertThrows(IllegalArgumentException.class, () -> game.session(0).action(request(choice,
                     Map.of("action", "card", "key", text(mares.get(1), "key")))));
         }
     }
 
     private static void finishCast(RulesScenario game, String target) throws Exception {
         for (int step = 0; step < 5; step++) {
-            var input = game.until(i -> text(i.prompt(), "inputType").startsWith("InputPayMana") && i.prompt().get("okEnabled").getAsBoolean()
+            var input = game.until(i -> paymentOrCostOrder(i)
                     || text(i.prompt(), "inputType").equals("InputSelectTargets")
                     || priority(i) && !i.state().getAsJsonArray("stack").isEmpty());
             if (priority(input)) return;
-            assertTrue(game.answer(input, text(input.prompt(), "inputType").equals("InputSelectTargets")
-                    ? Map.of("action", "card", "key", text(card(input.state(), target), "key")) : Map.of("action", "ok")));
+            if (payExplicitCostStep(game, input)) continue;
+            assertTrue(game.answer(input, Map.of("action", "card", "key", text(card(input.state(), target), "key"))));
         }
         fail("The targeted spell did not reach the stack");
     }
@@ -158,12 +159,10 @@ public class CounterCostExperienceTest {
     }
 
     private static Input payAndReachCounterOrStack(RulesScenario game, String target) throws Exception {
-        // Auto can republish its payment input while the UI callback is completing.
-        // Observe only an enabled Auto action in a current scope. An initial
-        // payment publication can still carry disabled buttons while it opens.
-        // Never replay an old OK against a replacement choice.
+        // Externally controlled seats explicitly choose the real cost order and
+        // spend the already-floated blue units. Forge's Auto payment is unavailable.
         for (int step = 0; step < 8; step++) {
-            var input = game.until(i -> text(i.prompt(), "inputType").startsWith("InputPayMana") && i.prompt().get("okEnabled").getAsBoolean()
+            var input = game.until(i -> paymentOrCostOrder(i)
                     || text(i.prompt(), "inputType").equals("InputSelectTargets")
                     || text(i.prompt(), "inputType").equals("InputSelectCardToRemoveCounter")
                     || priority(i) && !i.state().getAsJsonArray("stack").isEmpty());
@@ -172,20 +171,64 @@ public class CounterCostExperienceTest {
                 assertTrue(game.answer(input, Map.of("action", "card", "key", text(card(input.state(), target), "key"))));
                 continue;
             }
-            if (!text(input.prompt(), "inputType").startsWith("InputPayMana")) return input;
-            // Auto can finish while its intermediate publication is observed.
-            // A rejected old scope means observe the new decision; the helper
-            // never replays this OK against a replacement payment or choice.
-            if (!game.answer(input, Map.of("action", "ok"))) continue;
+            if (!payExplicitCostStep(game, input)) return input;
         }
         throw new AssertionError("The actual mana payment did not complete");
     }
 
-    private static void assertPayment(Input input, int amount, int remaining) {
+    private static boolean paymentOrCostOrder(Input input) {
+        return text(input.prompt(), "inputType").startsWith("InputPayMana")
+                || text(input.prompt(), "kind").equals("choice") && input.prompt().has("ordered")
+                    && input.prompt().get("ordered").getAsBoolean();
+    }
+
+    private static boolean payExplicitCostStep(RulesScenario game, Input input) {
+        if (text(input.prompt(), "kind").equals("choice") && input.prompt().has("ordered")
+                && input.prompt().get("ordered").getAsBoolean()) {
+            var choices = input.prompt().getAsJsonArray("choices");
+            assertEquals(input.prompt().get("min").getAsInt(), choices.size());
+            assertEquals(input.prompt().get("max").getAsInt(), choices.size());
+            var observation = game.table.game.getAction().readState(() ->
+                    ManyPublicationTest.assertCurrentSelection(game.table, game.session(input.seat())));
+            assertEquals(text(observation.getAsJsonObject("semantics"), "orderingPurpose"), "CostPayment");
+            var order = choices.asList().stream().map(value -> value.getAsJsonObject().get("index").getAsInt()).toList();
+            assertEquals(observation.getAsJsonObject("semantics").get("defaultOrder"), JSON.toJsonTree(order));
+            assertTrue(game.answer(input, Map.of("choices", order)), "Choose the actual offered default cost order");
+            return true;
+        }
+        if (!text(input.prompt(), "inputType").startsWith("InputPayMana")) return false;
+        assertFalse(input.prompt().get("okEnabled").getAsBoolean(), "The externally controlled fixture cannot use Forge Auto");
+        assertTrue(input.prompt().getAsJsonArray("usablePoolManaColors").asList().stream().anyMatch(value -> value.getAsString().equals("U")),
+                "This fixture pays only its already-floated blue mana");
+        assertTrue(viewer(input.state()).getAsJsonObject("mana").get("U").getAsInt() > 0);
+        assertFalse(input.prompt().getAsJsonArray("unpaidManaParts").isEmpty());
+        assertTrue(game.answer(input, Map.of("action", "spendPoolMana", "manaColor", "U")), "Spend one actual blue unit against this current bill");
+        return true;
+    }
+
+    private static void assertPayment(RulesScenario game, Input input, int amount, int remaining) {
         var payment = input.prompt().getAsJsonObject("counterPayment");
         assertNotNull(payment, "The engine classifies the counter cost independently of prompt prose");
         assertEquals(payment.get("amount").getAsInt(), amount);
         assertEquals(payment.get("remaining").getAsInt(), remaining);
+        game.table.game.getAction().readState(() -> {
+            var observation = ManyPublicationTest.assertCurrentSelection(game.table, game.session(input.seat()));
+            var actual = (forge.player.HumanCostDecision.InputSelectCardToRemoveCounter)
+                    ((forge.player.PlayerControllerHuman)game.table.game.getRegisteredPlayers().get(input.seat()).getController()).getInputQueue().getInput();
+            assertEquals(observation.getAsJsonObject("state").getAsJsonObject("prompt").get("counterPayment"), JSON.toJsonTree(payment));
+            assertEquals(text(observation.getAsJsonObject("semantics"), "intent"), "RemoveCounters");
+            assertTrue(observation.getAsJsonObject("semantics").get("selectionIsCost").getAsBoolean());
+            var selected = actual.getSelected();
+            var highlighted = zone(viewer(observation.getAsJsonObject("state")), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(value -> value.get("highlighted").getAsBoolean()).toList();
+            assertEquals(highlighted.size(), selected.size(), "Highlights count distinct physical counter donors, not allocated counters");
+            for (var donor : selected) {
+                assertTrue(donor instanceof forge.game.card.Card);
+                String id = game.table.identities.id(((forge.game.card.Card)donor).getView());
+                assertTrue(highlighted.stream().anyMatch(card -> text(card, "visualId").equals(id)));
+            }
+            return null;
+        });
     }
 
     private static void assertTypePayment(RulesScenario game, Input input, String source, String affected, int minus, int stun) throws Exception {
@@ -253,7 +296,7 @@ public class CounterCostExperienceTest {
                 .filter(card -> text(card, "name").equals(name)).findFirst().orElseThrow();
     }
     private static void activate(RulesScenario game, Input input, JsonObject source, String contains) {
-        var actions = JSON.toJsonTree(game.table.seat(input.seat()).sourceActions(request(input,
+        var actions = JSON.toJsonTree(game.session(input.seat()).sourceActions(request(input,
                 Map.of("key", text(source, "key"))))).getAsJsonObject();
         var action = actions.getAsJsonArray("actions").asList().stream().map(value -> value.getAsJsonObject())
                 .filter(value -> text(value, "text").contains(contains)).findFirst().orElseThrow();

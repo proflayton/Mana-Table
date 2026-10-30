@@ -31,6 +31,25 @@ public abstract class InputSelectManyBase<T extends GameEntity> extends InputSyn
     /** The engine operation owning this selection, independent of its display message. */
     public SpellAbility getSpellAbility() { return sa; }
 
+    public final boolean isSelectionActive() { return !isFinished(); }
+
+    /** A publication may copy the concrete input's current candidates once.
+     * The returned objects remain rules-owned and must not enter a wire value. */
+    public final List<T> getSelectableEntitiesSnapshot() {
+        if (!isSelectionActive()) { return List.of(); }
+        final List<T> candidates = new ArrayList<>();
+        for (T candidate : getSelectableEntities()) { candidates.add(candidate); }
+        return List.copyOf(candidates);
+    }
+
+    /** Concrete inputs own click membership: selected list/convoke entities can
+     * toggle, while a counter source is clickable only while it can allocate. */
+    public final boolean canSelectEntity(GameEntity entity) {
+        if (!isSelectionActive() || entity == null) { return false; }
+        for (T candidate : getSelectableEntities()) if (candidate == entity) { return true; }
+        return false;
+    }
+
     protected InputSelectManyBase(final PlayerControllerHuman controller, final int min, final int max) {
         super(controller);
         if (min > max) {
@@ -120,12 +139,14 @@ public abstract class InputSelectManyBase<T extends GameEntity> extends InputSyn
 
     @Override
     protected final void onStop() {
+        setFinished();
         getController().getGui().clearSelectables();
         super.onStop();
     }
 
     @Override
     protected void onCancel() {
+        setFinished();
         bCancelled = true;
         resetUsedToPay();
         this.getSelected().clear();
@@ -141,6 +162,7 @@ public abstract class InputSelectManyBase<T extends GameEntity> extends InputSyn
 
     @Override
     protected final void onOk() {
+        setFinished();
         resetUsedToPay();
         this.stop();
     }

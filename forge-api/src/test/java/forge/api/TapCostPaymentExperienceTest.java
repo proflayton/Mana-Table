@@ -62,6 +62,17 @@ public class TapCostPaymentExperienceTest {
                         assertTrue(current.cost() instanceof CostTapType);
                         assertEquals(current.payment().getUnpaidCostParts().stream().anyMatch(value -> value instanceof CostTap), creatureFirst,
                                 "The two real orderings exercise both pending and already-paid source taps");
+                        var observation = ManyPublicationTest.assertCurrentSelection(game.table, game.session(0));
+                        var semantics = observation.getAsJsonObject("semantics");
+                        assertEquals(text(semantics, "intent"), "Tap"); assertTrue(semantics.get("selectionIsCost").getAsBoolean());
+                        var bill = semantics.getAsJsonObject("costPayment");
+                        assertNotNull(bill, "The real extra tap retains its current parent bill");
+                        assertEquals(bill.get("payerId").getAsInt(), payer.getId());
+                        assertEquals(text(bill, "sourceCardId"), text(card(observation.getAsJsonObject("state"), "Selesnya Evangel"), "combatId"));
+                        var unpaid = current.payment().getUnpaidCostParts();
+                        assertSame(unpaid.get(bill.get("currentCostIndex").getAsInt()), current.cost());
+                        assertEquals(bill.getAsJsonArray("remainingCosts").size(), unpaid.size());
+                        assertSame(game.table.game.costPaymentStack.peek(), current, "Reading the bill cannot advance its actual cost owner");
                     });
                     Files.writeString(game.evidence.resolve("tap-candidates.json"), JSON.toJson(input.state()));
                     assertTrue(game.answer(input, Map.of("action", "card", "key", text(card(input.state(), "Grizzly Bears"), "key"))));

@@ -1149,6 +1149,14 @@ cleanup. `TargetSelectionProgressTest` follows a real multi-opponent selection
 through select, deselect and queued rejection, comparing the human board and AI
 facts at each committed publication. Existing player-target, counter-target,
 pending-effect and occurrence tests retain legality and visibility coverage.
+`ManyPublicationTest` extends that boundary to multiple-entity and cost choices:
+retained reads avoid live reconstruction, same-input refreshes keep earlier
+copies unchanged, and reentrant publication preserves the newest audience
+cohort. Replacing a cost-stack entry cannot relabel its old funding query.
+Cleanup tests exercise the actual discard input's waiting callback and require
+completion before highlight cleanup without duplicate notifications. Existing
+Evangel, Convoke/nested-color and counter-cost journeys retain real payment and
+resolution coverage; allocated counters remain distinct from unique donors.
 The existing native headless presentation lane also follows an inspected source
 through activation/payment and a keyless historical source face: missing physical
 candidate permission stays read-only; an authoritative candidate enables only
