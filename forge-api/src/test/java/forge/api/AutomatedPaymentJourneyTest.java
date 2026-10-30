@@ -318,7 +318,16 @@ public class AutomatedPaymentJourneyTest {
                     && text(input.state, "phaseKey").equals("MAIN1"));
             driver.use(main, card(main.state, "Hand", "Hangarback Walker"), "cast");
             var number = driver.until(input -> input.playerId == policyId && text(input.prompt, "kind").equals("number"));
-            var observation = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()).getAsJsonObject();
+            var observation = table.game.getAction().readState(() -> {
+                var session = table.automatedSeat(policyId); var raw = session.automatedObservation();
+                var published = JSON.toJsonTree(raw).getAsJsonObject();
+                assertEquals(published.get("state"), JSON.toJsonTree(session.state()),
+                        "The real announcement's numeric context and human-compatible prompt share one published frame");
+                NumericPublicationTest.assertImmutableNumeric((Map<?, ?>)((Map<?, ?>)raw.get("semantics")).get("numeric"));
+                assertEquals(JSON.toJsonTree(session.automatedObservation()), published,
+                        "Reading funding must not announce X, tap a source, or change the current scope");
+                return published;
+            });
             var numeric = observation.getAsJsonObject("semantics").getAsJsonObject("numeric");
             assertNotNull(numeric, "The real announcement callback must retain its exact current ability, not an untyped integer prompt");
             assertEquals(text(numeric, "purpose"), "AnnounceX");
@@ -344,8 +353,6 @@ public class AutomatedPaymentJourneyTest {
                 assertEquals(route.getAsJsonObject("production").getAsJsonArray("alternatives").get(0)
                         .getAsJsonObject().getAsJsonObject("colors").get("G").getAsInt(), 1);
             }
-            assertEquals(JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()), observation,
-                    "Reading funding must not announce X, tap a source, or change the current scope");
             driver.answer(number, Map.of("action", "number", "value", 2));
             var payment = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").startsWith("InputPayMana"));
             assertFalse(payment.prompt.get("okEnabled").getAsBoolean(), "The policy must fund XX itself");
@@ -386,6 +393,11 @@ public class AutomatedPaymentJourneyTest {
                 assertEquals(actual.getCounters(CounterEnumType.P1P1), 2);
                 assertEquals(actual.getNetPower(), 2); assertEquals(actual.getNetToughness(), 2);
             });
+            assertEquals(numeric.getAsJsonObject("funding").getAsJsonArray("sources").size(), 4,
+                    "Paying from the actual four lands cannot rewrite the retained announcement's funding context");
+            assertEquals(numeric.getAsJsonArray("costs").asList().stream().map(value -> value.getAsJsonObject())
+                    .filter(cost -> text(cost, "kind").equals("Mana"))
+                    .flatMap(cost -> cost.getAsJsonArray("manaSymbols").asList().stream()).map(value -> value.getAsString()).toList(), List.of("{X}", "{X}"));
         }
     }
 
