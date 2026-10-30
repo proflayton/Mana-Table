@@ -11,7 +11,8 @@ namespace Mana.Table.Presentation;
 internal sealed record CardPresentationContext(GameSnapshot? State, string Scope,
     bool OverlayOpen, bool GalleryOpen, bool Dragging, bool CompactDecision,
     bool KeepBattlefieldAnchor = false, Rectangle? BattlefieldReaderAvoid = null, DecisionDockView? Decision = null,
-    CardCollectionTarget.PublicZone? PublicCollection = null, Vector2? ReaderContentSize = null, bool PassivePinnedReading = false)
+    CardCollectionTarget.PublicZone? PublicCollection = null, Vector2? ReaderContentSize = null, bool PassivePinnedReading = false,
+    IReadOnlyList<Rectangle>? ReaderControls = null)
 {
     private DecisionReadingPolicy Reading => new(Decision ?? (State == null ? null : DecisionDockPresentation.From(State, new())));
     public bool OpeningHandDecision => Reading.Allows(DecisionReading.OpeningHandInspection);
@@ -124,4 +125,23 @@ internal readonly record struct CardHitGeometry(Pose Display, Pose? Anchor, Rect
     }
     public bool Contains(Point point) => Display.Contains(point)
         || Anchor?.Contains(point) == true || Activation?.Contains(point) == true;
+}
+
+/// <summary>The physical card body shared by painting and reader placement.</summary>
+internal readonly record struct CardPaintGeometry(Pose Face)
+{
+    internal const int FocusFrameWidth = 2;
+    public Pose Shadow => Face with {
+        Center = Face.Center + new Vector2(4 + Face.Elevation * .18f, (Face.IsProjected ? 5 : 10) + Face.Elevation),
+        Size = Face.Size + new Vector2(7)
+    };
+    public Pose Backing => Face with { Size = Face.Size + new Vector2(4) };
+    public Pose FocusFrame => Backing;
+    public Rectangle Bounds {
+        get {
+            var frame = FocusFrame.Bounds;
+            frame.Inflate(FocusFrameWidth / 2, FocusFrameWidth / 2);
+            return Rectangle.Union(Rectangle.Union(Face.Bounds, Shadow.Bounds), frame);
+        }
+    }
 }

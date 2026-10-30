@@ -11,6 +11,19 @@ internal sealed partial class TableApplication
 {
     private TurnProgressView? turnProgress;
 
+    private bool PortraitTurnControlsCanPaint => DecisionDockCanPaint && !session.NeedsRecovery
+        && match is { Status: not ("finished" or "error"), Viewer: { Eliminated: false }, Turn: > 0 }
+        && turnProgress != null;
+
+    private IReadOnlyList<Rectangle> ReaderControlReservations {
+        get {
+            if (!PortraitTurnControlsCanPaint) return [];
+            var layout = TurnControlLayout.For(SeatHero(match!.ViewerId));
+            return SelectingActionTarget ? [layout.ArcBounds]
+                : [layout.ArcBounds, layout.AutoBounds, layout.HoldBounds, layout.AlertBounds];
+        }
+    }
+
     private void DrawOpponentPhase(Player player, Vector2 hero, int seat)
     {
         if (player.Id != match!.ActivePlayerId || match.Turn == 0 || turnProgress == null || seat == 1) return;
@@ -28,11 +41,10 @@ internal sealed partial class TableApplication
 
     private void DrawPortraitTurnControls()
     {
+        if (!PortraitTurnControlsCanPaint) return;
         var state = match!;
-        if (turnProgress == null) return;
-        if (state.Viewer == null || state.Turn == 0) return;
         var layout = TurnControlLayout.For(SeatHero(state.ViewerId));
-        var markers = turnProgress.Markers;
+        var markers = turnProgress!.Markers;
         for (int i = 1; i < markers.Length; i++)
             canvas.Line(layout.Markers[i - 1], layout.Markers[i], Gold * .22f, 2);
         for (int i = 0; i < markers.Length; i++) {
