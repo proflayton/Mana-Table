@@ -1493,6 +1493,24 @@ changed bills/scopes and an exhausted pool at 130% text. The scenario supplies
 authored eligibility; real engine mana-availability journeys retain rule authority.
 For actual-window review, also run the same smoke at a larger size with an
 isolated profile's text scale set to 1.3; preparation preserves that setting.
+The source-output checks also use funded public-counter values of 100 and 1024
+on Everflowing Chalice, plus a simultaneous C129/U3 bundle, with small remaining
+bills. They compare complete measured quantities and adjacent symbols with the
+actual recorded paint bounds at 100% and 130% text in small and large viewports.
+Reading and fresh source cohorts must preserve pool, tap state and command count.
+One keyboard-camera journey also moves a mixed source partly past the right
+edge and then fully offscreen, keeping the observation and command count intact.
+The same window smoke captures each counted source at both text scales after its
+ordinary pointer journey, with loaded card artwork, fitted-surface and physical
+window images, and matching state/frame observations in `counted-outputs-*`.
+The normal native UI inventory runs this window journey at 1000 x 740, including
+both text scales. Only after the ordinary journey and both counted-source
+windows finish does the producer write `mana-payment-ci-results.json`: one
+ordinary array receipt containing their actual checks. The shared UI runner
+keeps its existing result contract; wrapped per-window diagnostics remain
+separate. Run the larger window locally for the additional scale review.
+These are controlled presentation facts, not another mana rules implementation;
+inspect the physical frames separately and keep human clarity review pending.
 
 Other focused modes include `--smoke-priority-flow`,
 `--smoke-cluttered-changes`, `--smoke-recovery`, `--smoke-state-clarity`,

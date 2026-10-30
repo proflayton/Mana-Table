@@ -6,6 +6,7 @@ using Mana.Renderer;
 using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
+using Point = Microsoft.Xna.Framework.Point;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Table;
@@ -184,7 +185,8 @@ internal sealed partial class TableApplication
         // negative viewport clamp. Exceptionally complex bills keep the normal
         // exact engine instructions and current manual payment controls.
         if (rows > 4) return;
-        var occupied = manaSourcePaint.Select(source => source.Bounds).ToList();
+        var occupied = manaSourcePaint.SelectMany(source => new[] { source.Bounds, source.OutputBounds })
+            .Where(bounds => !bounds.IsEmpty).ToList();
         foreach (var resource in journey.Funding?.Sources ?? [])
             if (matchPresentation.Cards.TryGetPose(resource.SourceCardId, out var resourcePose)) occupied.Add(resourcePose.Bounds);
         if (!sourceReaderActionsBounds.IsEmpty) occupied.Add(sourceReaderActionsBounds);
@@ -255,21 +257,36 @@ internal sealed partial class TableApplication
             var accent = confident ? new Color(135, 221, 194) : Gold;
             canvas.CardFrame(pose with { Size = pose.Size + new Vector2(9) }, accent * .92f, 2);
             var point = pose.Point(.5f, -.1f);
+            var tokens = output.OrderBy(part => part.Key, StringComparer.Ordinal).Select(part => {
+                string amount = part.Value > 1 ? part.Value.ToString() : "";
+                int width = amount.Length == 0 ? 0 : canvas.TextWidth(amount, .64f, true);
+                return (Color: part.Key, Amount: amount, Width: width,
+                    Measured: amount.Length == 0 ? Point.Zero : canvas.TextSize(amount, .64f, width, 1, true));
+            }).ToArray();
+            const int side = 26, quantityGap = 3, tokenGap = 5, margin = 4;
+            int stripWidth = tokens.Sum(token => side + (token.Width > 0 ? quantityGap + token.Width : 0))
+                + Math.Max(0, tokens.Length - 1) * tokenGap;
+            int stripHeight = tokens.Select(token => Math.Max(side, token.Measured.Y + 1)).DefaultIfEmpty(0).Max();
+            int left = (int)MathF.Floor(point.X) - side / 2, top = (int)MathF.Floor(point.Y) - side / 2;
+            if (tokens.Length > 0 && new Rectangle(0, 0, TableLayout.Width, DesignHeight).Intersects(pose.Bounds)) {
+                // Clamp the whole strip while its source is visible, rather
+                // than pinning an offscreen source's annotation to an edge.
+                left = Math.Clamp(left, margin, TableLayout.Width - stripWidth - margin);
+                top = Math.Clamp(top, margin, DesignHeight - stripHeight - margin);
+            }
             int offset = 0;
             var outputBounds = Rectangle.Empty;
-            foreach (var part in output.OrderBy(part => part.Key, StringComparer.Ordinal)) {
-                var center = point + new Vector2(offset, 0);
-                PaintManaSymbol(part.Key, center, 26);
-                var glyph = new Pose(center, new Vector2(26)).Bounds;
+            foreach (var token in tokens) {
+                var center = new Vector2(left + offset + side / 2, top + side / 2);
+                PaintManaSymbol(token.Color, center, side);
+                var glyph = new Pose(center, new Vector2(side)).Bounds;
                 outputBounds = outputBounds.IsEmpty ? glyph : Rectangle.Union(outputBounds, glyph);
-                if (part.Value > 1) {
-                    string amount = part.Value.ToString();
-                    int x = (int)point.X + offset + 16, y = (int)point.Y - 12;
-                    canvas.Text(amount, x, y, Ink, .64f, 34, 1, true);
-                    var measured = canvas.TextSize(amount, .64f, 34, 1, true);
-                    outputBounds = Rectangle.Union(outputBounds, new(x, y, measured.X, measured.Y));
+                if (token.Width > 0) {
+                    int x = left + offset + side + quantityGap, y = top + 1;
+                    canvas.Text(token.Amount, x, y, Ink, .64f, token.Width, 1, true);
+                    outputBounds = Rectangle.Union(outputBounds, new(x, y, token.Measured.X, token.Measured.Y));
                 }
-                offset += part.Value > 1 ? 52 : 31;
+                offset += side + (token.Width > 0 ? quantityGap + token.Width : 0) + tokenGap;
             }
             foreach (var source in group) manaSourcePaint.Add(new(source.SourceCardId, pose.Bounds, source.Output, confident) { OutputBounds = outputBounds });
         }
