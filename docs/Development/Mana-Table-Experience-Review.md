@@ -8,7 +8,7 @@ does not establish that a person can understand or use the screen.
 
 ## Reader rules control and phase markers: 30 October 2026
 
-**Source candidate; local validation and human review pending.** Actual window
+**Source candidate; local checks passed; exact-head CI and human review pending.** Actual window
 review found the Rules footer below a large current card overlapping the local
 phase arc. Its source placement and phase geometry were unchanged from the
 earlier base; a test-only run separately reproduced the whole-footprint overlap.
@@ -40,6 +40,15 @@ If even that bounded pass cannot clear its retained regions, the controls remain
 visible at its least-overlap result. This is an explicit crowded-table limit,
 not a universal guarantee of a clear region. Review both real gestures at small
 and large windows, including 130% text, separately from human UX acceptance.
+
+The local candidate passed 2623 full headless checks and both actual window
+journeys at 1000 x 740 and 1600 x 900, with 84 canonical checks each. Agent review
+of all eight new Rules/Artwork window captures found the footer separate from
+the phase arc, with its labels and current card/bill/action continuation intact.
+C4 reading covers both 100% and 130% text with reduced motion; ordinary C1 payment
+captures remain 100% only. This review covers the footer. The unchanged large
+card body still reaches the upper phase markers in these scenes; that separate
+reader-body placement issue is queued for another audit.
 
 ## Reading floating mana at its seat: 30 October 2026
 
