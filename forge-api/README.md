@@ -185,6 +185,15 @@ must establish its replacement. Copied facts never retain a live cost entry.
 Each concrete input still decides whether another click toggles an entity or
 allocates another counter. Shared capture adds no selection-limit fields or
 parent payment commands, and nested color choices keep their own scope.
+Indexed choice/reveal dialogs use that same capture for their option semantics
+and actual provider cost order. These facts are staged during publication and
+deeply frozen, rather than written to the pending dialog before the publication
+is accepted. The copied graph describes each option's own recipe and grants no
+additional index or target permission. Existing indices, bounds and the pending
+response future still own the answer. A changed ambient cost entry makes its
+classification Unknown without removing the required dialog or inventing a
+payment outcome. Nested color and counter-type choices retain their separate
+payment context and current choice semantics.
 Current mana inputs can add `payment` provenance: `purpose` (`SpellCost`,
 `ActivatedAbilityCost`, `TriggeredAbilityCost`, `EffectCost` or `Unknown`), actual
 `payerId`, entitled `sourceCardId` and the input's `mandatory` fact. The current

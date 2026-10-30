@@ -40,7 +40,8 @@ The existing table board generation fences publication too: a superseded outer
 publication cannot overwrite a newer seat capture or finish an older spectator
 cohort. Rejecting a superseded AI read preserves the newer published capture.
 
-Targets and multiple-entity selections share one selection publication boundary.
+Targets, multiple-entity selections and indexed choice/reveal dialogs share one
+selection publication boundary.
 The current input's existing player choices, staged selections, effect or cost
 context and private AI semantics are copied together after visibility
 reconciliation. Target limits, Convoke progress and counter-payment allocations
@@ -57,6 +58,14 @@ reuse an earlier capture or relabel the old query with a new cost. Nested color
 choices retain their separate payment ownership. Selection completion retires
 the existing input flag before cleanup callbacks and starts its waiting
 transition once.
+Indexed dialogs stage option facts and the provider's actual cost order locally,
+then commit them with the same audience capture. A superseded option query cannot
+write through to the pending dialog. Their exact offered indices, bounds and
+unfinished response future remain answer authority. If the ambient cost entry
+changes during projection, its classification becomes Unknown while the dialog
+stays answerable; discarding that pending future would strand its caller.
+Option descriptions retain their own operation graph scope without running
+discarded affordability or funding probes.
 Decision classification uses the existing effect and literal-amount classifiers
 without repeating a source action's cost, affordability and funding analysis.
 

@@ -36,6 +36,10 @@ final class DecisionSemantics {
         return describe(input, paying, viewer, identity, ability);
     }
 
+    static Map<String, Object> describeChoice(CostPaymentStack.Entry paying) {
+        return describe(null, paying, null, null, null);
+    }
+
     private static Map<String, Object> describe(Input input, CostPaymentStack.Entry paying, Player viewer,
                                                Function<CardView, String> identity, SpellAbility ability) {
         if (input instanceof InputSelectCardsForConvokeOrImprovise)
@@ -117,12 +121,11 @@ final class DecisionSemantics {
             SpellAbility ability = choice instanceof SpellAbility actual ? actual
                     : choice instanceof SpellAbilityView view ? resolve.apply(view) : null;
             if (ability == null) continue;
-            var facts = ActionSemantics.describeAbility(ability, viewer, identity);
             var option = new LinkedHashMap<String, Object>();
             option.put("index", index);
-            option.put("effect", facts.get("effect"));
-            option.put("amount", facts.get("effectAmount"));
-            option.put("operationGraph", facts.get("operationGraph"));
+            option.put("effect", ActionSemantics.effect(ability));
+            option.put("amount", ActionSemantics.effectAmount(ability));
+            option.put("operationGraph", ActionOperationProjection.describe(ability, viewer, identity));
             options.add(option);
         }
         return List.copyOf(options);

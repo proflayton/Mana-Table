@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/** Current target/list choices and their meaning, copied together for one audience. */
+/** Current target/list selections or indexed dialog choices, copied for one audience. */
 final class SelectionDecisionProjection {
     record Capture(String decisionId, long boardRevision, long sourceVersion,
                    String executionId, String executionStep, Map<String, Object> promptFacts,
@@ -15,8 +15,9 @@ final class SelectionDecisionProjection {
             playerChoices = List.copyOf(playerChoices);
         }
 
-        boolean matches(String decision, long board, long version) {
-            return Objects.equals(decisionId, decision) && boardRevision == board && sourceVersion == version;
+        boolean matches(String decision, long board, long version, String execution, String step) {
+            return Objects.equals(decisionId, decision) && boardRevision == board && sourceVersion == version
+                    && Objects.equals(executionId, execution) && Objects.equals(executionStep, step);
         }
     }
 

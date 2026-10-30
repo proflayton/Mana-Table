@@ -140,8 +140,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         final Map<String, SourceActions.Catalog> sourceActions = new HashMap<>();
         final Set<String> poolManaColors = new HashSet<>();
         final List<java.util.function.Consumer<Map<String, Object>>> contextProjections = new ArrayList<>();
-        List<Map<String, Object>> optionSemantics = List.of();
-        Map<String, Object> orderingSemantics = Map.of();
+        List<?> offeredChoices;
+        boolean orderedChoices;
         SpellAbility announcedAbility;
         String executionId;
         Input colorPaymentOwner;
@@ -718,7 +718,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 // that mixed read, including newly allocated offers, is usable.
                 if (pending != observedOwner || sourceActionVersion.get() != version || revision != observedRevision
                         || payment != null && current.payment != payment
-                        || selection != null && current.selection != selection
+                        || selection != null && (current.selection != selection || !selectionOwnerCurrent(current))
                         || numeric != null && (current.announcement != numeric || !numericAnnouncementCurrent(current))
                         || current != null && current.kind.equals("input")
                             && (inputActionQueued || human.getInputQueue().getInput() != current.input
@@ -765,8 +765,6 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (current == null) return result;
         result.putAll(selection != null ? selection.automatedFacts()
                 : DecisionSemantics.describe(current.input, game, human.getPlayer(), this::semanticCardId));
-        result.put("options", current.optionSemantics);
-        result.putAll(current.orderingSemantics);
         if (numeric != null) result.put("numeric", numeric.facts());
         if (payment != null) result.putAll(payment.automatedFacts());
         // A published prompt UUID can change after every gesture while the
@@ -817,11 +815,26 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 : input instanceof InputSelectManyBase<?> many && many.isSelectionActive();
     }
 
+    private static boolean selectionDialog(Pending current) {
+        return current != null && current.input == null && current.offeredChoices != null
+                && (current.kind.equals("choice") || current.kind.equals("reveal"));
+    }
+
+    private boolean selectionOwnerCurrent(Pending current) {
+        if (!selectionDialog(current)) return selectionInputCurrent(current);
+        // Synchronous dialogs can suspend queued actions and parent inputs.
+        // Their exact unfinished response, not the queue/proxy, owns this scope.
+        return !closed && error == null && !conceded && !viewer.getHasLost() && !game.isGameOver()
+                && pending == current && !current.response.isDone();
+    }
+
     private SelectionDecisionProjection.Capture currentSelectionCapture(Pending current) {
-        if (current == null || !isSelectionInput(current.input)) return null;
+        if (current == null || !isSelectionInput(current.input) && !selectionDialog(current)) return null;
         var selection = current.selection;
         if (selection == null || !(latest.get("boardRevision") instanceof Number board)
-                || !selection.matches(current.id, board.longValue(), sourceActionVersion.get()) || !selectionInputCurrent(current))
+                || !selection.matches(current.id, board.longValue(), sourceActionVersion.get(),
+                        (String)current.prompt.get("executionId"), (String)current.prompt.get("executionStep"))
+                || !selectionOwnerCurrent(current))
             throw new StaleObservationException();
         return selection;
     }
@@ -1813,6 +1826,36 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 promptFacts, automatedFacts, playerChoices);
     }
 
+    private SelectionDecisionProjection.Capture captureChoice(Pending prompt, long boardRevision, long sourceVersion,
+                                                             ExecutionTracker.Reference execution, Map<String, Object> projectedPrompt) {
+        if (!selectionDialog(prompt) || !selectionOwnerCurrent(prompt) || !table.currentPublication(boardRevision)
+                || sourceActionVersion.get() != sourceVersion) return null;
+        String decisionId = prompt.id;
+        var choices = prompt.offeredChoices;
+        boolean ordered = prompt.orderedChoices;
+        int minimum = prompt.min, maximum = prompt.max;
+        var paying = game.costPaymentStack.peek();
+        var base = DecisionSemantics.describeChoice(paying);
+        var options = DecisionSemantics.options(choices, human::getDecisionAbility, human.getPlayer(), this::semanticCardId);
+        var ordering = DecisionSemantics.ordering(choices, ordered, minimum, maximum);
+        // The offered indices and response still belong to this dialog when
+        // an ambient cost changes during a query. Withhold its unproved cost
+        // classification instead of discarding the outstanding response future.
+        var automatedFacts = new LinkedHashMap<>(game.costPaymentStack.peek() == paying ? base
+                : map("intent", "Unknown", "amount", null, "selectionIsCost", false, "counterType", ""));
+        automatedFacts.put("options", options);
+        automatedFacts.putAll(ordering);
+        if (projectedPrompt.containsKey("counterPaymentChoice")) {
+            automatedFacts.put("intent", "RemoveCounters"); automatedFacts.put("selectionIsCost", true);
+        }
+        if (!table.currentPublication(boardRevision) || sourceActionVersion.get() != sourceVersion
+                || !selectionOwnerCurrent(prompt) || prompt.offeredChoices != choices
+                || prompt.orderedChoices != ordered || prompt.min != minimum || prompt.max != maximum) return null;
+        return new SelectionDecisionProjection.Capture(decisionId, boardRevision, sourceVersion,
+                execution == null ? null : execution.id(), execution == null ? null : execution.step(),
+                Map.of(), automatedFacts, List.of());
+    }
+
     private void withdrawSelection(Pending prompt, SelectionDecisionProjection.Capture observed, long boardRevision, long sourceVersion) {
         if (closed || error != null || game.isGameOver() || !table.currentPublication(boardRevision) || pending != prompt
                 || sourceActionVersion.get() != sourceVersion || prompt.selection != observed) return;
@@ -2018,15 +2061,17 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 projectedPrompt.put("executionId", payment.executionId());
                 projectedPrompt.put("executionStep", payment.executionStep());
             }
-            if (isSelectionInput(prompt.input)) {
-                projectedPrompt.remove("playerChoices");
+            if (isSelectionInput(prompt.input) || selectionDialog(prompt)) {
+                if (isSelectionInput(prompt.input)) projectedPrompt.remove("playerChoices");
                 if (prompt.input instanceof InputSelectTargets) {
                     projectedPrompt.remove("min"); projectedPrompt.remove("max");
                     projectedPrompt.remove("effect"); projectedPrompt.remove("librarySearch");
                     selection = captureTargets(prompt, boardRevision, publicationSourceVersion, execution);
-                } else {
+                } else if (prompt.input instanceof InputSelectManyBase<?>) {
                     projectedPrompt.remove("manaReduction"); projectedPrompt.remove("counterPayment");
                     selection = captureMany(prompt, boardRevision, publicationSourceVersion, execution);
+                } else {
+                    selection = captureChoice(prompt, boardRevision, publicationSourceVersion, execution, projectedPrompt);
                 }
                 if (selection == null || !table.currentPublication(boardRevision) || pending != prompt
                         || sourceActionVersion.get() != publicationSourceVersion) return;
@@ -2065,7 +2110,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "ignoredPriorityAbilities", priorityAbilities(human.getIgnoredPriorityAbilities(), prompt),
                 "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries(), "executions", publication.executions());
         if (!table.currentPublication(boardRevision) || pending != prompt || sourceActionVersion.get() != publicationSourceVersion
-                || selection != null && !selectionInputCurrent(prompt)
+                || selection != null && !selectionOwnerCurrent(prompt)
                 || numeric != null && !numericAnnouncementCurrent(prompt)) return;
         String quietToken = quietYield.observe(snapshot, activity.quietSequence());
         if (prompt != null) {
@@ -2075,7 +2120,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             snapshot.put("prompt", quietPrompt);
         }
         if (!table.currentPublication(boardRevision) || pending != prompt || sourceActionVersion.get() != publicationSourceVersion
-                || selection != null && !selectionInputCurrent(prompt)
+                || selection != null && !selectionOwnerCurrent(prompt)
                 || numeric != null && !numericAnnouncementCurrent(prompt)) return;
         if (prompt != null) {
             prompt.prompt = projectedPrompt; prompt.payment = payment; prompt.selection = selection; prompt.announcement = numeric;
@@ -2685,9 +2730,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     private Pending choicePrompt(String kind, String title, List<?> choices, int min, int max, boolean ordered, FSerializableFunction<Object, String> display) {
         Pending next = new Pending(kind, null);
-        next.orderingSemantics = DecisionSemantics.ordering(choices, ordered, min, max);
-        next.contextProjections.add(projected -> next.optionSemantics = DecisionSemantics.options(choices,
-                human::getDecisionAbility, human.getPlayer(), this::semanticCardId));
+        // Preserve every original index, including a legitimate null option.
+        next.offeredChoices = Collections.unmodifiableList(new ArrayList<>(choices));
+        next.orderedChoices = ordered;
         next.size = choices.size(); next.min = min; next.max = max;
         var items = new ArrayList<Map<String, Object>>();
         for (int i = 0; i < choices.size(); i++) {
