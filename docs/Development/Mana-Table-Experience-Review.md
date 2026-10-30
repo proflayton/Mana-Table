@@ -462,7 +462,7 @@ an empty string starts from zero on a deliberate step, using the engine's bounds
 Nonempty invalid text, including whitespace, remains available for editing.
 The existing widened arithmetic and explicit confirmation route remain intact.
 
-**Local candidate checks and human review: pending for the first-step journey.**
+**Human review: pending for the first-step journey.**
 The authored pointer regression is separate from real-engine casting evidence;
 this finding does not establish the cause of the secondhand target-selection report.
 
