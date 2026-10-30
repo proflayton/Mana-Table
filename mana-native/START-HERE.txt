@@ -574,6 +574,10 @@ All players should use the same package. Deck files persist in
 %LOCALAPPDATA%\ManaTableNative. That directory also holds logs and the image cache.
 Broad card interactions still need playtesting. Preserve client.log and engine.log
 if you hit a blocked decision. Closing the host ends the network game.
+Source versions after 0.2.290 also retain bounded local decision summaries in
+diagnostics/client-decisions.jsonl and one previous file. They include build
+identity and the currently disclosed source portrait's name, which can be a card
+you chose from your hand. Review excerpts before sharing; nothing uploads itself.
 
 DEVELOPMENT
 For native source prerequisites, isolated profiles and build/run commands, see

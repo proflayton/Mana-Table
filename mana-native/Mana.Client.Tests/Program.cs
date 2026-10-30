@@ -198,6 +198,8 @@ await LobbyStateRegression.RunAsync(Check);
 await InteractionContractMatrix.RunAsync(Check);
 AllocationRegression.Run(Check);
 await RecoveryRegression.RunAsync(Check);
+await ClientDiagnosticRegression.RunAsync(Check);
+await ClientDiagnosticJournalRegression.RunAsync(Check);
 await MatchCompletionRegression.RunAsync(Check);
 await GameplayUndoRegression.RunAsync(Check);
 await AiRestorationRegression.RunAsync(Check);

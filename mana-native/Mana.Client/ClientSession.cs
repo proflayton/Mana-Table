@@ -15,6 +15,7 @@ public sealed partial class ClientSession
     private SessionReplica<Lobby> lobbyReplica = new(s => s.TableId, s => s.Revision);
     private readonly ExecutionCursor executions = new();
     private readonly DecisionAdvance advance;
+    private readonly ClientCommandDiagnostics diagnostics;
     private readonly TimeProvider time;
     private readonly object observationGate = new();
     private ObservationIngress? observationIngress;
@@ -32,7 +33,8 @@ public sealed partial class ClientSession
         this.connection = connection;
         this.setup = setup;
         time = clock ?? TimeProvider.System;
-        advance = new(connection);
+        diagnostics = new(RecordDiagnostic, () => replica.Epoch, () => DiagnosticRecorded != null);
+        advance = new(connection, diagnostics);
         SourceActions = new(sourceActions, Post);
         ObservationDelivery = observationDelivery;
     }
@@ -57,6 +59,16 @@ public sealed partial class ClientSession
     public event Action? Completed;
     public event Action<GameSnapshot?, GameSnapshot?>? Changed;
     public event Action? Recovered;
+    /// <summary>May run on the owner thread or a dispatch worker. Subscribers
+    /// must be fast and thread-safe; their exceptions cannot interrupt play.</summary>
+    public event Action<ClientDiagnostic>? DiagnosticRecorded;
+    private void RecordDiagnostic(ClientDiagnostic diagnostic)
+    {
+        if (DiagnosticRecorded is not { } recorded) return;
+        foreach (Action<ClientDiagnostic> subscriber in recorded.GetInvocationList()) {
+            try { subscriber(diagnostic); } catch { /* A failed observer cannot interrupt play or another observer. */ }
+        }
+    }
     public void Post(Action action) => completions.Enqueue(action);
     public void Pump()
     {
@@ -159,12 +171,16 @@ public sealed partial class ClientSession
     public bool AcceptLobby(Lobby state) => !Closed && Lobby != null && state.TableId == Lobby.TableId
         && lobbyReplica.Accept(state, lobbyReplica.Epoch);
     public void Reset() { RevokeObservationIngress(); StopFiniteIntent(); CancelAdvance(); SourceActions.Clear(); pendingSettings.Clear(); LastFailureWasCommand = false; BeginCommand(); Accept(null); }
-    private bool Accept(GameSnapshot? state, long epoch, ObservationIngress? ingress = null)
+    private bool Accept(GameSnapshot? state, long epoch, ObservationIngress? ingress = null, bool commandObservation = false)
     {
+        bool diagnosticAccepted = false, diagnosticAudience = false, diagnosticReported = false;
+        GameSnapshot? diagnosticPrevious = State;
+        try {
         GameSnapshot? previous;
         bool recovered, restored;
         try { lock (observationGate) {
             previous = State;
+            diagnosticAudience = previous == null || state == null || state.Id == previous.Id && state.ViewerId == previous.ViewerId;
             if (Closed || ingress != null && !ingress.Active || epoch != replica.Epoch
                 || state != null && previous != null && state.Id == previous.Id && state.Revision < previous.Revision) return false;
             UndoFacts.ValidateProgress(previous, state);
@@ -204,9 +220,15 @@ public sealed partial class ClientSession
         } } catch (FiniteYieldOwnershipException error) { ReportFailure(error, true); return false; }
         // Revocation and state commit share one boundary. Notification runs
         // outside it, so callbacks cannot block a background source on the gate.
+        diagnosticAccepted = true;
+        diagnosticReported = true;
+        diagnostics.Publication(diagnosticPrevious, state, true, diagnosticAudience, commandObservation);
         Changed?.Invoke(previous, state);
         if (recovered) Recovered?.Invoke();
         return true;
+        } finally {
+            if (!diagnosticReported) diagnostics.Publication(diagnosticPrevious, state, diagnosticAccepted, diagnosticAudience, commandObservation);
+        }
     }
     public void Run(Func<Task> operation)
     {
@@ -270,14 +292,25 @@ public sealed partial class ClientSession
     }
     public bool Submit(GameCommand command)
     {
-        if (Busy || Closed || NeedsRecovery || State == null || !GameCommandPermissions.Allows(State, command)) return false;
+        ClientDiagnosticFailure? decline = Busy ? ClientDiagnosticFailure.Busy : Closed ? ClientDiagnosticFailure.Closed
+            : NeedsRecovery ? ClientDiagnosticFailure.RecoveryRequired : State == null ? ClientDiagnosticFailure.MissingState
+            : !GameCommandPermissions.Allows(State, command) ? ClientDiagnosticFailure.NotOffered : null;
+        if (decline is { } failure) { diagnostics.Decline(State, command, failure); return false; }
         if (command is UseOfferedAction offered && (CurrentSourceContext(State, offered.Card) is not { } context
-            || SourceActions.TryCreateCommand(context, offered.ActionId) != offered)) return false;
+            || SourceActions.TryCreateCommand(context, offered.ActionId) != offered)) {
+            diagnostics.Decline(State, command, ClientDiagnosticFailure.SourceOfferChanged); return false;
+        }
         command.Validate();
         StopFiniteIntent();
-        if (finiteRevocations.Count > 0) return false;
+        if (finiteRevocations.Count > 0) { diagnostics.Decline(State, command, ClientDiagnosticFailure.FiniteRevocationPending); return false; }
         if (command is RestorePriorityAbility restore) activeSetting = restore;
-        Run(async epoch => { await connection.ExecuteAsync(command); var state = await connection.ObserveAsync(); Post(() => Accept(state, epoch)); });
+        var initial = State!;
+        Run(async epoch => {
+            var attempt = diagnostics.Begin(initial, command, ClientDiagnosticOrigin.Direct, epoch);
+            await diagnostics.ExecuteAsync(connection, command, attempt);
+            var state = await diagnostics.ObserveAsync(connection, attempt);
+            Post(() => Accept(state, epoch, commandObservation: true));
+        });
         return true;
     }
     // Undo is a match preference, so it can be submitted while another player
@@ -326,13 +359,14 @@ public sealed partial class ClientSession
         var cancellation = advancing = new CancellationTokenSource();
         Run(async epoch => {
             try {
+                advance.SetDiagnosticEpoch(epoch);
                 GameSnapshot? lastPosted = streamObservations ? initial : null;
-                void Observed(GameSnapshot state) { lastPosted = state; Post(() => Accept(state, epoch)); }
+                void Observed(GameSnapshot state) { lastPosted = state; Post(() => Accept(state, epoch, commandObservation: true)); }
                 var state = await operation(initial, cancellation.Token, streamObservations ? Observed : null);
                 if (!streamObservations || state == null && lastPosted != null
                     || state != null && (lastPosted == null || state.Id != lastPosted.Id || state.ViewerId != lastPosted.ViewerId
                         || state.Revision != lastPosted.Revision || state.Decision?.Id != lastPosted.Decision?.Id))
-                    Post(() => Accept(state, epoch));
+                    Post(() => Accept(state, epoch, commandObservation: true));
             } finally {
                 Post(() => { if (advancing == cancellation) advancing = null; cancellation.Dispose(); });
             }

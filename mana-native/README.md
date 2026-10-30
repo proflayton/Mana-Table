@@ -292,6 +292,15 @@ Keep player profiles, caches, packages and test output out of commits.
 Retain `native-error.log`, `client.log` and `engine.log` from the test profile when
 present, plus the exact revision, package/JAR, window size, cards and pending
 decision. A protocol mismatch requires a complete compatible client/engine build.
+The source implementation after 0.2.290 adds a bounded local command journal at
+`diagnostics/client-decisions.jsonl`, retaining one previous file. It records
+build identity, command stages, submitted numbers, target progress and remaining
+mana facts. A disclosed current decision portrait can contribute its card name,
+including a card the local player chose from their hand; review excerpts before
+sharing. It does not export zone collections, chat, raw snapshots or live action
+handles, and never uploads automatically. See the
+[testing guide](../docs/Development/Mana-Table-Testing.md#local-command-diagnostics)
+for bounds and interpretation. This is not in the 0.2.290 installer.
 Native previews have `release:false` metadata and do not join the stable update
 channel. Released packages check for updates without downloading application
 content. Download and preparation require an explicit click; restart waits until

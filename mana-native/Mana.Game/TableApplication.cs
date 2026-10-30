@@ -123,6 +123,7 @@ internal sealed partial class TableApplication : IDisposable
         this.clock = clock ?? TimeProvider.System;
         this.restartedAfterUpdate = restartedAfterUpdate;
         session = new(matchConnection, tables, this.clock, services.SourceActions, observationDelivery); updates = new(session);
+        if (services.Diagnostics is { } diagnostics) session.DiagnosticRecorded += diagnostics;
         catalogRead = new(updates.Enqueue); printingRead = new(updates.Enqueue);
         deckTokensRead = new(updates.Enqueue); tokenPrintingsRead = new(updates.Enqueue);
         deckWorkspace = new(services.Workshop, services.Analysis, updates.Enqueue);

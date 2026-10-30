@@ -1791,6 +1791,44 @@ scope, stale publications, cancellation and both delayed and hung observations.
 Real native journeys retain their original watchdogs while waiting for actual
 departure or completion, including conformance-to-rematch and workshop returns.
 
+## Local command diagnostics
+
+The source implementation after 0.2.290 adds a journal for ordinary `Submit`
+and `DecisionAdvance` commands; connection, lobby and internal finite-revocation
+cleanup operations are outside its coverage. The files are
+`<profile>/diagnostics/client-decisions.jsonl` and one previous file. A new run
+records a schema/build header. Events include a local sequence and timestamp,
+command family and outcome stage, submitted numeric value, current target
+progress, counted remaining mana and execution step when disclosed. The source
+name is only the current decision's visible portrait; this can be a card the
+local player chose from their hand. Review excerpts before sharing them.
+
+The journal does not collect complete zones, raw snapshots, live action handles,
+chat, arbitrary text replies or exception messages. Nothing uploads automatically.
+Unknown or truncated bill evidence remains labelled unknown. Retention is bounded
+to 64 event records and 256 KiB per file, with at most one previous file; each
+encoded event is capped at 8 KiB. A 64-entry background queue may drop older
+records under load, recording loss and sequence gaps. The background writer
+flushes each record's application buffer; it does not guarantee disk persistence
+after power loss. Closing drains only within
+a bounded grace period; a crash or storage failure can lose the tail. Absence of
+an event never proves that nothing happened.
+
+`ProviderReturned` describes dispatch acknowledgement, not an applied effect.
+`ProviderObservationReturned` is not replica acceptance. Accepted/discarded
+publications are separate, uncorrelated facts, and identical polling is coalesced.
+Only a rejection from dispatch is labelled a provider rejection; a later failed
+observation cannot retroactively reject an acknowledged command. Observations
+returned after their epoch retires do not supply new decision/source facts.
+
+The existing `Mana.Client.Tests` runner includes `ClientDiagnosticRegression`
+and `ClientDiagnosticJournalRegression`. They cover command stages, unchanged
+polls, definite/uncertain failures, stale completion, automatic dispatch,
+subscriber containment, sparse disclosure, real-file retention, loss accounting
+and harmless storage failure. These are client/fake-provider and local-file
+checks; they do not establish a real Forge cast, human UX acceptance or recovery
+of a historic incident which was never recorded.
+
 ## Profiles and artifacts
 
 The normal app profile is `%LOCALAPPDATA%\ManaTableNative`. Development and test
@@ -1803,6 +1841,7 @@ base commit and retained diff identity; the base commit alone cannot identify
 the tested binary. Useful artifacts include:
 
 - `native-error.log`, `client.log`, and `engine.log` in the selected profile;
+- bounded `diagnostics/client-decisions*.jsonl` excerpts when that build records them;
 - the journey's result, observation or semantic-trace JSON;
 - physical-window captures or a recording for visual/input failures;
 - Maven Surefire reports and engine decision traces for Java failures.
