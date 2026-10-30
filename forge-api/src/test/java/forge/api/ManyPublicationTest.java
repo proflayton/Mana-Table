@@ -204,7 +204,30 @@ public class ManyPublicationTest {
                         "The callback's owner view and current retained decision authority must describe the same committed frame");
                 assertThrows(IllegalArgumentException.class, () -> fixture.table.automatedSeat(fixture.player(1).getId())
                         .action(request(input(observed), Map.of("action", "player", "playerId", fixture.player(1).getId()))));
-                return observed;
+                var outerFrames = new ArrayList<JsonObject>(); var nextObserver = new ArrayList<JsonObject>();
+                boolean[] reenter = { false }, collect = { false };
+                fixture.session().observePlaytest(ignored -> {
+                    if (!reenter[0]) return;
+                    reenter[0] = false;
+                    outerFrames.add(JSON.toJsonTree(fixture.session().state()).getAsJsonObject());
+                    fixture.table.publish();
+                });
+                fixture.session().observePlaytest(ignored -> {
+                    if (collect[0]) nextObserver.add(JSON.toJsonTree(fixture.session().state()).getAsJsonObject());
+                });
+                reenter[0] = true; collect[0] = true;
+                fixture.session().publishInput();
+                collect[0] = false;
+                assertFalse(reenter[0]); assertEquals(outerFrames.size(), 1);
+                assertEquals(nextObserver.size(), 1,
+                        "The second observer receives the nested completion once, never the superseded outer callback");
+                var nested = nextObserver.get(0);
+                assertTrue(nested.get("boardRevision").getAsLong() > outerFrames.get(0).get("boardRevision").getAsLong());
+                assertCohort(fixture.table, nested.get("boardRevision").getAsLong());
+                assertEquals(JSON.toJsonTree(fixture.session().state()), nested);
+                var recovered = fixture.observation(); assertEquals(recovered.get("state"), nested);
+                fixture.record("observer-reentrant-outer", outerFrames.get(0)); fixture.record("observer-reentrant-current", nested);
+                return recovered;
             });
             var selected = fixture.answer(current, Map.of("action", "player", "playerId", fixture.player(1).getId()));
             assertEquals(selected.getAsJsonObject("semantics").get("selectedPlayers"), JSON.toJsonTree(List.of(fixture.player(1).getId())));

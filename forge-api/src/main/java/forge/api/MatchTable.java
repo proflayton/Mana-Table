@@ -14,6 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 
 /** The sole owner of a Forge game. Seats, projections and decisions never depend on transport. */
@@ -217,20 +218,28 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
             if (faulted) return;
             observeStackChoices();
             long revision = ++boardRevision;
+            boolean publicationClosed = closed;
             // Rules rollback can restore a card directly to a hidden zone
             // without a movement event. Revoke every audience's previous view
             // before any seat allocates IDs for this publication, regardless
             // of which seat owns the newly private occurrence.
             for (var seat : seats.values()) seat.refreshVisibility();
             for (var seat : seats.values()) {
-                seat.publishView(revision);
-                if (!currentPublication(revision)) return;
+                if (!seat.publishView(revision) || !currentPublication(revision)) return;
             }
             refreshDecisionState();
             if (!currentPublication(revision)) return;
             if (automatedOnly) {
                 var spectator = SpectatorObservation.project(this, revision, spectatorError);
                 if (currentPublication(revision)) spectatorState = spectator;
+            }
+            // Observers can inspect every audience or publish reentrantly. No
+            // normal completion may expose a partially projected table, and a
+            // newer publication owns all remaining callbacks and queued passes.
+            BooleanSupplier current = () -> currentPublication(revision) && !faulted && closed == publicationClosed;
+            for (var seat : seats.values()) {
+                if (!current.getAsBoolean()) return;
+                seat.completePublication(current);
             }
         } });
     }
