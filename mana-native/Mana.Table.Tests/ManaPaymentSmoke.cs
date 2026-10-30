@@ -475,6 +475,30 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             Check(geometry.Clear, "The complete physical reader footer and shadow stay clear of the phase arc, current actions, cards and bill");
             Check(geometry.FooterOwnsCenter && geometry.PhaseOwnCenters && SameCurrentReader(),
                 "The physical reader footer and phase centers keep separate current targets with the exact pinned card, bill and zero commands");
+            var frame = view.Frame!;
+            var metrics = new Mana.Renderer.TextMetrics();
+            var readouts = frame.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Text>()
+                .Where(text => text.Value is { } value && (value.EndsWith(" land", StringComparison.Ordinal)
+                    || value.EndsWith(" lands", StringComparison.Ordinal)
+                    || value.Contains(" untapped", StringComparison.Ordinal) && value.Contains(" tapped", StringComparison.Ordinal)))
+                .Select(text => {
+                    var size = metrics.TextSize(text.Value!, text.Size, text.Width, text.MaxLines, text.Bold, frame.Drawing.TextScale);
+                    return new { text.Value, bounds = new Microsoft.Xna.Framework.Rectangle(text.X, text.Y, size.X, size.Y),
+                        text.Size, text.Width, text.MaxLines, text.Bold, frame.Drawing.TextScale };
+                }).ToArray();
+            var nameplates = frame.Hits.Where(hit => hit.Id.StartsWith("focus:", StringComparison.Ordinal)
+                    && hit.Intent is MatchIntent.OpenZone { Zone: "Battlefield" })
+                .Select(hit => new { hit.Id, hit.Bounds, intent = hit.Intent.ToString() }).ToArray();
+            var bill = view.ManaJourney;
+            File.WriteAllText(Path.Combine(view.Profile, "reader-bill-public-readouts-" + label + ".json"),
+                JsonSerializer.Serialize(new { state = view.Match, frame = frame.Observe(), readouts, nameplates,
+                    currentBill = bill, currentReader = SameCurrentReader(), replies = engine.Replies.Count,
+                    scope = "Measured current emitted land text and current focus/nameplate hits; no World position or placement formula."
+                }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+            Check(readouts.Length == view.Match!.Players.Length * 2 && nameplates.Length == view.Match.Players.Length - 1
+                && bill != null && readouts.All(text => !bill.Bounds.Intersects(text.bounds))
+                && nameplates.All(hit => !bill.Bounds.Intersects(hit.Bounds)),
+                "The current exact printed-cost bill stays clear of the measured land summaries and current player nameplate targets");
         }
         void CheckReaderBodyPhase() {
             var frame = view.Frame!;
