@@ -263,7 +263,161 @@ test('GitHub JSON writes use stdin and structured arguments, never shell-interpo
   await api(`/repos/${REPO}/releases`, { method: 'POST', input: body });
   assert.equal(calls[0].program, 'gh'); assert.deepEqual(calls[0].args.slice(-2), ['--input', '-']);
   assert.deepEqual(JSON.parse(calls[0].options.input), body);
+  await api(`/repos/${REPO}/releases`, { input: body });
+  assert.deepEqual(calls[1].args, ['api', `/repos/${REPO}/releases`, '--input', '-']);
+  assert.deepEqual(JSON.parse(calls[1].options.input), body);
   await assert.rejects(api('/repos/other/repo/releases'));
+});
+function useReadTransport(f, intercept = () => null) {
+  const semanticApi = f.args.deps.api, upload = f.args.deps.run;
+  const transport = { requests: [], fetches: [], commands: [], sleeps: [], timeouts: [], reports: [], clock: 0 };
+  async function read(resource) {
+    transport.requests.push(resource);
+    const failure = intercept(resource, transport);
+    if (failure) return new Response(failure.body || 'upstream-error-body-secret', { status: failure.status, headers: failure.headers });
+    const value = await semanticApi(resource);
+    return value === null ? new Response('not-found-body-secret', { status: 404 })
+      : new Response(JSON.stringify(value), { status: 200 });
+  }
+  f.args.deps.api = githubApi(async (program, args, options) => {
+    if (args[0] !== 'api') return upload(program, args, options);
+    transport.commands.push({ program, args, options });
+    if (transport.commandFailure && args.includes(transport.commandFailure))
+      return { code: 1, stdout: Buffer.alloc(0), stderr: Buffer.from('HTTP 502 upstream-write-body-secret') };
+    const resource = args[1], methodIndex = args.indexOf('--method');
+    if (methodIndex >= 0 || args.includes('Accept: application/octet-stream')) {
+      const value = await semanticApi(resource, { method: methodIndex >= 0 ? args[methodIndex + 1] : undefined,
+        raw: args.includes('Accept: application/octet-stream'),
+        input: options.input ? JSON.parse(options.input) : undefined });
+      return { code: 0, stdout: Buffer.isBuffer(value) ? value : json(value), stderr: Buffer.alloc(0) };
+    }
+    const response = await read(resource);
+    return { code: response.ok ? 0 : 1, stdout: Buffer.from(await response.text()), stderr: Buffer.from('HTTP ' + response.status) };
+  }, { token: 'release-transport-test-secret', now: () => transport.clock,
+    sleep: async ms => { transport.sleeps.push(ms); transport.clock += ms; },
+    signalTimeout: ms => { transport.timeouts.push(ms); return undefined; }, report: item => transport.reports.push(item),
+    fetchImpl: async (url, options) => {
+      assert.equal(options.method, 'GET'); assert.equal(options.redirect, 'error');
+      assert.equal(options.headers['Cache-Control'], 'no-cache');
+      assert.equal(options.headers.Authorization, 'Bearer release-transport-test-secret');
+      transport.fetches.push({ url, options });
+      return read(url.slice('https://api.github.com'.length));
+    } });
+  return transport;
+}
+
+test('publisher retries a transient native-gate JSON read before its single public write', async t => {
+  const f = await fixture(t); await stage(f.args);
+  let nativeReads = 0;
+  const transport = useReadTransport(f, resource => resource.endsWith('/jobs?filter=latest&per_page=100')
+    && ++nativeReads === 1 ? { status: 502 } : null);
+  assert.equal((await promote(f.args)).state, 'published');
+  assert.equal(nativeReads, 2); assert.deepEqual(transport.sleeps, [1000]);
+  assert.equal(f.state.publications, 1);
+  assert.equal(transport.commands.filter(call => call.args.includes('PATCH')).length, 1);
+  assert.ok(transport.commands.every(call => call.args.includes('PATCH') || call.args.includes('Accept: application/octet-stream')),
+    'JSON reads use the shared read transport; raw bytes and writes keep their command owner.');
+  assert.doesNotMatch(JSON.stringify(transport.reports), /test-secret|error-body-secret/);
+});
+
+test('exhausted, unauthorized and malformed JSON reads cannot publish or retry a write', async t => {
+  for (const failure of [{ status: 502 }, { status: 401 }, { status: 403 }, { status: 200, body: '{' }]) {
+    const f = await fixture(t); await stage(f.args);
+    const transport = useReadTransport(f, resource => resource.endsWith('/jobs?filter=latest&per_page=100') ? failure : null);
+    await assert.rejects(promote(f.args), error => {
+      if (failure.status !== 200) assert.equal(error.status, failure.status);
+      assert.doesNotMatch(error.message, /test-secret|error-body-secret/); return true;
+    });
+    assert.equal(transport.requests.filter(resource => resource.endsWith('/jobs?filter=latest&per_page=100')).length,
+      failure.status === 502 ? 3 : 1);
+    assert.deepEqual(transport.sleeps, failure.status === 502 ? [1000, 2000] : []);
+    assert.equal(f.state.publications, 0); assert.equal(f.state.release.draft, true);
+    assert.ok(transport.commands.every(call => !call.args.includes('PATCH')));
+  }
+});
+
+test('each later lookup gets a fresh deadline but its rate-limit retries share that bound', async t => {
+  const f = await fixture(t); await stage(f.args);
+  let nativeReads = 0;
+  const transport = useReadTransport(f, resource => resource.endsWith('/jobs?filter=latest&per_page=100')
+    && ++nativeReads === 1 ? { status: 429, headers: { 'retry-after': '80' } } : null);
+  f.state.duringGate = () => { transport.clock += 70 * 60 * 1000; };
+  assert.equal((await promote(f.args)).state, 'published');
+  assert.deepEqual(transport.sleeps, [80000]); assert.ok(transport.timeouts.includes(10000));
+  assert.equal(f.state.publications, 1);
+
+  const blocked = await fixture(t); await stage(blocked.args);
+  const limited = useReadTransport(blocked, resource => resource.endsWith('/jobs?filter=latest&per_page=100')
+    ? { status: 429, headers: { 'retry-after': '60' } } : null);
+  await assert.rejects(promote(blocked.args), /deadline/);
+  assert.deepEqual(limited.sleeps, [60000]);
+  assert.equal(limited.requests.filter(resource => resource.endsWith('/jobs?filter=latest&per_page=100')).length, 2);
+  assert.equal(blocked.state.publications, 0); assert.equal(blocked.state.release.draft, true);
+});
+
+test('successful HTTP cannot retry or conceal wrong provenance and diagnostics stay bounded', async t => {
+  for (const mutation of [{ run_attempt: 2 }, { head_sha: OTHER }, { status: 'queued', conclusion: null },
+    { id: [123456], head_sha: [SHA], path: ['remote-secret-workflow'] },
+    { event: 'remote-secret-event', head_branch: 'remote-secret-branch', repository: { full_name: 'remote-secret-repo' },
+      path: 'remote-secret-workflow', status: 'remote-secret-status', conclusion: 'remote-secret-conclusion',
+      extra: 'remote-secret-body' }]) {
+    const f = await fixture(t); await stage(f.args); f.state.runMutation = mutation;
+    const transport = useReadTransport(f);
+    await assert.rejects(promote(f.args), error => {
+      assert.match(error.message, /Workflow provenance/); assert.ok(error.message.length < 2048);
+      assert.doesNotMatch(error.message, /remote-secret|test-secret|body-secret/);
+      const diagnostic = JSON.parse(error.message.slice(error.message.indexOf('{')));
+      assert.equal(diagnostic.expected.run_attempt, 1);
+      assert.equal(diagnostic.observed.run_attempt, mutation.run_attempt || 1);
+      assert.equal(diagnostic.observed.head_sha, mutation.head_sha
+        ? typeof mutation.head_sha === 'string' ? mutation.head_sha : '<invalid>' : SHA);
+      assert.equal(typeof diagnostic.observed.head_sha, 'string');
+      if (Array.isArray(mutation.id)) assert.equal(diagnostic.observed.id, '<invalid>');
+      if (mutation.status === 'queued') assert.equal(diagnostic.observed.status, 'queued');
+      return true;
+    });
+    assert.equal(transport.requests.filter(resource => resource.endsWith('/actions/runs/' + f.ctx.runId)).length, 1);
+    assert.deepEqual(transport.sleeps, []); assert.equal(f.state.publications, 0); assert.equal(f.state.release.draft, true);
+  }
+});
+
+test('optional tag absence stays a typed single 404 while metadata bytes keep their digest-checked owner', async t => {
+  const f = await fixture(t), transport = useReadTransport(f, resource => resource.endsWith('/missing') ? { status: 404 } : null);
+  assert.equal((await stage(f.args)).state, 'staged');
+  assert.equal(transport.requests.filter(resource => resource.endsWith('/git/ref/tags/' + f.ctx.tag)).length, 1);
+  assert.deepEqual(transport.sleeps, []);
+  assert.ok(f.state.metadataReads.length > 0);
+  assert.ok(transport.commands.filter(call => call.args.includes('Accept: application/octet-stream'))
+    .every(call => call.options.maximumBytes > 0 && call.options.maximumBytes <= 4 * 1024 * 1024));
+  const reads = transport.requests.length;
+  await assert.rejects(f.args.deps.api(`/repos/${REPO}/missing`), { status: 404 });
+  assert.equal(transport.requests.length, reads + 1);
+});
+
+test('a successful JSON response for a failed native gate is never a transport retry', async t => {
+  const f = await fixture(t); await stage(f.args); f.state.nativeResult = 'failure';
+  const transport = useReadTransport(f);
+  await assert.rejects(promote(f.args), /exact-source native aggregate has not passed/);
+  assert.equal(transport.requests.filter(resource => resource.endsWith('/jobs?filter=latest&per_page=100')).length, 1);
+  assert.deepEqual(transport.sleeps, []); assert.equal(f.state.publications, 0); assert.equal(f.state.release.draft, true);
+});
+
+test('POST, PATCH and raw sidecar failures remain one-shot commands', async t => {
+  for (const command of ['POST', 'PATCH', 'Accept: application/octet-stream']) {
+    const f = await fixture(t);
+    if (command !== 'POST') await stage(f.args);
+    const transport = useReadTransport(f); transport.commandFailure = command;
+    await assert.rejects((command === 'POST' ? stage : promote)(f.args), /GitHub release request failed/);
+    const attempts = transport.commands.filter(call => call.args.includes(command)).map(call => call.args[1]);
+    if (command === 'Accept: application/octet-stream') {
+      const expected = ['installer-manifest.json', 'releases.win-x64.json', 'update-manifest.json']
+        .map(name => `/repos/${REPO}/releases/assets/${f.state.release.assets.find(asset => asset.name === name).id}`);
+      assert.deepEqual(attempts.slice().sort(), expected.sort());
+      assert.equal(new Set(attempts).size, attempts.length, 'Each distinct concurrent sidecar read is attempted once.');
+    } else assert.equal(attempts.length, 1);
+    assert.deepEqual(transport.sleeps, []); assert.equal(f.state.publications, 0);
+    assert.ok(f.state.release === null || f.state.release.draft);
+  }
 });
 test('helper CLI rejects ambiguous flags and promotion with full-download inputs', async () => {
   await assert.rejects(main(['stage', '--receipt', 'a', '--receipt', 'b']));

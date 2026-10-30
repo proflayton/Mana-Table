@@ -42,13 +42,14 @@ function githubRead({ token, repo, userAgent, fetchImpl = fetch, now = Date.now,
         response = await fetchImpl('https://api.github.com' + resource, {
           method: 'GET',
           headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json',
-            'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': userAgent },
+            'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': userAgent, 'Cache-Control': 'no-cache' },
           redirect: 'error', signal: signalTimeout(Math.min(20000, Math.ceil(remaining))),
         });
         if (!response.ok) {
           // Never parse or retain remote error bodies (which may contain secrets).
           await response.body?.cancel();
           failure = new Error('Read-only GitHub request failed (HTTP ' + response.status + ').');
+          failure.status = response.status;
           if (!TRANSIENT_HTTP.has(response.status)) throw failure;
         } else {
           const chunks = []; let bytes = 0;
