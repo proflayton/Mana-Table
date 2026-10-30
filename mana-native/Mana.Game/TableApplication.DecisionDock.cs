@@ -10,6 +10,9 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private DecisionDockView? decisionDock;
+    private bool DecisionDockCanPaint => !AbilityActionPending && (BattlefieldFocused
+        ? !DecisionModal && !CardCollectionOpen
+        : !OverlayOpen && (!CardCollectionOpen || EmptyPublicCollection));
 
     // One local gate owns both automatic advancement and its explanation. A
     // background observation is deliberately absent: it does not change intent.

@@ -32,7 +32,7 @@ internal sealed class BattlefieldLayoutContext
         return new(obstacles, RoleLaneAvoidance.Arrange(ordinary, obstacles, separate));
     }
 
-    internal static IEnumerable<Rectangle> ReserveObjects(GameSnapshot state, IReadOnlyList<SeatGeometry> seats)
+    internal static IEnumerable<Rectangle> ReserveObjects(GameSnapshot state, IReadOnlyList<SeatGeometry> seats, bool includeDecisionDock = true)
     {
         for (int playerIndex = 0; playerIndex < state.Players.Length; playerIndex++) {
             var player = state.Players[playerIndex];
@@ -75,7 +75,7 @@ internal sealed class BattlefieldLayoutContext
         }
         if (state.Stack.Length > 0 || state.Decision?.Context.Source?.Card != null && !DecisionLayout.UsesSourceWorkspace(state.Decision))
             yield return new(545, 285, 435, state.Stack.Length > 1 ? 400 : 265);
-        yield return new(1240, 550, 350, 245);
+        if (includeDecisionDock) yield return new(1240, 550, 350, 245);
         if (state.Decision is { Payload: OptionsPayload or AbilityChoicePayload or OrderingPayload }) yield return new(350, 714, 370, 50);
     }
 }

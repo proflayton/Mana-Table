@@ -344,6 +344,8 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             });
         }
         bool previewKnown = true;
+        string inspectedHandKey = "";
+        string inspectedDecision = "";
         Step(() => {
             engine.SourceActionRead = (game, decision, key) => {
                 var state = engine.State;
@@ -377,6 +379,11 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
                 pool = view.ManaPoolBadge(0), viewport, view.TextScale, replies = engine.Replies.Count,
                 scope = "Actual GPU hand-hover preview with loaded Magic card artwork; nominal witness, no payment or human UX approval."
             }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+            MoveCard(ManaPaymentScenario.Spell);
+        }); Click();
+        Wait(() => ReaderReady(ManaPaymentScenario.Spell), () => {
+            Check(view.ManaJourney is { Payment: false } && engine.Replies.Count == 0,
+                "The physical hand-card click pins the actual current cost reader before inspecting its floating mana");
             previewKnown = false; engine.Present(engine.State); view.Accept(engine.State);
         });
         Wait(() => view.Match?.Revision == engine.State.Revision && view.ManaJourney is { FundingStatus: null, Advice: "Choose an action" }, () => {
@@ -395,12 +402,33 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
                 pool = view.ManaPoolBadge(0), viewport, view.TextScale, replies = engine.Replies.Count,
                 scope = "Current-frame physical face and bill geometry after metadata withdrawal; sparse authored table, no packed-table guarantee or human approval."
             }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+            inspectedHandKey = view.Frame.Cards.Single(card => card.Id == ManaPaymentScenario.Spell && card.Focused).Card.Key;
+            inspectedDecision = view.Match!.Decision!.Id;
             Capture("pool-preview-withdrawn"); MoveHit("mana-pool:0:C");
         }); Click();
         Wait(() => view.ManaPoolDetail != null, () => {
-            Check(view.ManaPoolDetail is { Total: 4 } && engine.Replies.Count == 0,
-                "The physical portrait pip still opens its full actual-pool inspection after preview withdrawal without submitting a game command");
+            var currentFrame = view.Frame ?? throw new InvalidOperationException("Mana reading has no current presentation frame.");
+            Check(view.ManaPoolDetail is { Total: 4 } && ReaderReady(ManaPaymentScenario.Spell)
+                && currentFrame.Cards.Single(card => card.Id == ManaPaymentScenario.Spell && card.Focused).Card.Key == inspectedHandKey
+                && view.Match!.Decision!.Id == inspectedDecision && view.ManaJourney is { Payment: false, FundingStatus: null, Advice: "Choose an action" }
+                && currentFrame.Cards.Any(card => card.Id == ManaPaymentScenario.Island && card.Zone == "Battlefield")
+                && PoolReadingClearsContext(view) && PoolReadingIsolated(view) && engine.Replies.Count == 0,
+                "The physical C4 inspection expands beside its own portrait while the exact pinned hand occurrence, physical Island and current unknown-funding bill remain visible with passive hits and zero commands");
+            File.WriteAllText(Path.Combine(view.Profile, "pool-preview-inspect.json"), JsonSerializer.Serialize(new {
+                state = view.Match, frame = currentFrame.Observe(), view.ManaJourney,
+                pool = view.ManaPoolDetail, pinnedKey = inspectedHandKey, viewport, view.TextScale, replies = engine.Replies.Count,
+                scope = "Current expanded same-seat mana, retained current reader and bill, measured physical geometry and isolated input; authored presentation, no human acceptance."
+            }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
             Capture("pool-preview-inspect");
+            MoveHit("close-overlay");
+        }); Click();
+        Wait(() => view.Overlay.Length == 0, () => {
+            Check(ReaderReady(ManaPaymentScenario.Spell)
+                && view.Frame!.Cards.Single(card => card.Id == ManaPaymentScenario.Spell && card.Focused).Card.Key == inspectedHandKey
+                && view.Match!.Decision!.Id == inspectedDecision && view.ManaJourney is { Payment: false, Advice: "Choose an action" }
+                && engine.Replies.Count == 0,
+                "Dismissing physical mana reading preserves the same valid pinned card and bill without a second hand click or any game command");
+            Capture("pool-preview-after-close");
         });
         Step(() => { finished = true; Save(null); window.Exit(); });
     }
@@ -464,11 +492,18 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             Capture("04a-colorless-cannot-pay-blue");
         }); Click();
         Wait(() => view.ManaPoolDetail != null, () => {
-            Check(lab.StageIndex == 2 && lab.ManaPaymentReplies.Count == 2 && view.ManaPoolDetail is { Total: 1 },
-                "An unusable payment pip keeps its existing read-only pool inspection; opening it submits no game action");
+            Check(lab.StageIndex == 2 && lab.ManaPaymentReplies.Count == 2 && view.ManaPoolDetail is { Total: 1 }
+                && view.ManaJourney is { Payment: true, SourceId: ManaPaymentScenario.Spell } current
+                && current.Symbols.SequenceEqual(["{U}"]) && PoolReadingClearsContext(view) && PoolReadingIsolated(view),
+                "An excluded C1 payment pip expands in place with the same unpaid blue bill and physical source visible while payment actions stay passive");
             Capture("04b-read-unspent-colorless"); MoveHit("close-overlay");
         }); Click();
-        Wait(() => view.Overlay.Length == 0, () => MoveCard(ManaPaymentScenario.Dual)); Click();
+        Wait(() => view.Overlay.Length == 0, () => {
+            Check(lab.StageIndex == 2 && lab.ManaPaymentReplies.Count == 2
+                && view.ManaJourney is { Payment: true } current && current.Symbols.SequenceEqual(["{U}"]),
+                "Closing the contextual pool reading preserves the same unpaid blue decision before the existing source-payment journey continues");
+            MoveCard(ManaPaymentScenario.Dual);
+        }); Click();
         Wait(() => ReaderReady(ManaPaymentScenario.Dual) && view.Hits.Any(hit => hit.Id == "read-card-action"), () => {
             Check(view.Frame!.Drawing!.Commands.OfType<Mana.Renderer.DrawCommand.Text>().Any(text => text.Value?.Contains("Add") == true),
                 "A flexible mana source exposes its current symbol-bearing choices on its own readable card");
@@ -682,6 +717,50 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
     private bool ReaderReady(string id) => view.DisplayedPose(id) is { Size.X: >= 300 } pose
         && view.Frame!.Cards.Any(card => card.Id == id && card.Focused && Vector2.Distance(card.Display.Center, (card.ReaderTarget ?? card.Rest).Center) < 2);
     private bool HasText(string value) => view.Frame!.Drawing!.Commands.OfType<Mana.Renderer.DrawCommand.Text>().Any(text => text.Value == value);
+    internal static bool PoolReadingIsolated(TableApplication.Probe view) => view.Overlay == "mana"
+        && view.Hits.Count(hit => hit.Intent is MatchIntent.CloseView) == 1
+        && view.Hits.All(hit => hit.Intent is UiIntent.NoInteraction or MatchIntent.CloseView);
+
+    // Read the current rendered tokens and physical context, independently of
+    // the expansion's placement rule. These sparse authored frames are not a
+    // guarantee that a fully packed table always contains a clear region.
+    internal static bool PoolReadingClearsContext(TableApplication.Probe view, int playerId = 0)
+    {
+        if (view.Frame is not { Scene: { } scene } frame || view.Match is not { } state
+            || view.ManaPoolDetail is not { } detail || detail.Parts.Length < 6) return false;
+        var selected = state.Players.SingleOrDefault(player => player.Id == playerId && PublicResources.ManaTotal(player) == detail.Total
+            && PublicResources.Mana(player, includeEmpty: true).Select(part => (part.Key, part.Name, Amount: part.Amount.ToString()))
+                .SequenceEqual(detail.Parts.Select(part => (part.Key, part.Name, part.Amount))));
+        if (selected == null) return false;
+        var viewport = new Microsoft.Xna.Framework.Rectangle(0, 0, 1600, view.DesignHeight);
+        var obstacles = frame.Cards.Select(card => card.Display.Bounds).ToList();
+        if (view.ManaJourney is { } bill) { obstacles.Add(bill.Bounds); obstacles.Add(bill.SourceBounds); }
+        obstacles.AddRange(view.ManaSources.SelectMany(source => new[] { source.Bounds, source.OutputBounds }));
+        foreach (var player in state.Players) {
+            var hero = scene.Seat(player.Id).Geometry.Hero;
+            obstacles.Add(new((int)hero.X - 58, (int)hero.Y - 58, 116, 116));
+            obstacles.AddRange(Mana.Renderer.TurnControlLayout.For(hero).Reservations);
+            if (player.Id != selected.Id && view.ManaPoolBadge(player.Id) is { } other) obstacles.Add(other.Bounds);
+        }
+        var texts = frame.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Text>().ToArray();
+        var metrics = new Mana.Renderer.TextMetrics();
+        bool Fits(Mana.Renderer.DrawCommand.Text text, Microsoft.Xna.Framework.Rectangle? token = null) {
+            var measured = metrics.TextSize(text.Value!, text.Size, text.Width, text.MaxLines, text.Bold, frame.Drawing.TextScale);
+            var bounds = new Microsoft.Xna.Framework.Rectangle(text.X, text.Y, measured.X, measured.Y);
+            return metrics.TextWidth(text.Value!, text.Size, text.Bold, frame.Drawing.TextScale) <= text.Width
+                && viewport.Contains(bounds) && (token == null || token.Value.Contains(bounds));
+        }
+        var anchor = scene.Seat(selected.Id).Geometry.Hero;
+        return texts.Any(text => text.Value == "Unspent mana" && Fits(text))
+            && !texts.Any(text => text.Value == PublicResources.ManaDetail || text.Value?.Contains("READ ONLY") == true || text.Value?.Contains("CURRENT POOL") == true)
+            && detail.Parts.All(part => viewport.Contains(part.Bounds) && part.MeasuredWidth <= part.AvailableWidth
+                && Vector2.Distance(part.Bounds.Center.ToVector2(), anchor) < 500
+                && obstacles.Where(area => !area.IsEmpty).All(area => !area.Intersects(part.Bounds))
+                && texts.Any(text => text.Value == part.Name && Fits(text, part.Bounds))
+                && texts.Any(text => text.Value == part.Amount && Fits(text, part.Bounds)))
+            && detail.Parts.SelectMany((part, index) => detail.Parts.Skip(index + 1).Select(other => (part, other)))
+                .All(pair => !pair.part.Bounds.Intersects(pair.other.Bounds));
+    }
     internal static bool PoolCaptionClearsPayment(TableApplication.Probe view, string heading, string guidance,
         out Microsoft.Xna.Framework.Rectangle caption)
     {
@@ -747,13 +826,44 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
         using var stream = File.Create(Path.Combine(view.Profile, name + ".png")); window.Surface.SaveAsPng(stream, window.Surface.Width, window.Surface.Height);
         window.CaptureWindow(Path.Combine(view.Profile, name + "-window.png"));
     }
-    private void Save(string? error) => File.WriteAllText(Path.Combine(view.Profile, "mana-payment-results.json"), JsonSerializer.Serialize(new {
-        passed = error == null, error, checks, observations, currentManaJourney = view.ManaJourney, currentManaColors = view.ManaColors.ToArray(),
-        replies = recordedReplies.Concat(lab.ManaPaymentReplies).Select(reply => new {
-            kind = reply.GetType().Name, payload = JsonSerializer.SerializeToElement(reply, reply.GetType())
-        }).ToArray(),
-        scope = "Production pointer/composition journey over authored payment checkpoints, not a rules simulation or human UX approval.", realArtwork = window != null
-    }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+    private void Save(string? error)
+    {
+        object? failure = null;
+        if (error != null) {
+            var frame = view.Frame;
+            var metrics = new Mana.Renderer.TextMetrics();
+            failure = new {
+                lab.StageIndex, view.Now, view.Overlay, view.Busy, view.NeedsRecovery, viewport, state = view.Match,
+                frame = frame?.Observe(), currentManaJourney = view.ManaJourney,
+                detail = view.ManaPoolDetail is { } detail ? detail with { Parts = detail.Parts.ToArray() } : null,
+                sources = view.ManaSources.ToArray(), colors = view.ManaColors.ToArray(),
+                cards = frame?.Cards.Select(card => new { card.Id, card.Zone, card.Card.Key, card.Focused,
+                    bounds = card.Display.Bounds, card.ReaderTarget }).ToArray(),
+                hits = view.Hits.Select(hit => new { hit.Id, hit.Bounds, intent = hit.Intent.GetType().Name }).ToArray(),
+                texts = frame is { } currentFrame ? currentFrame.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Text>().Select(text => {
+                    var measured = metrics.TextSize(text.Value ?? "", text.Size, text.Width, text.MaxLines, text.Bold, currentFrame.Drawing.TextScale);
+                    return new { text.Value, text.X, text.Y, text.Width, text.Size, text.MaxLines, text.Bold,
+                        currentFrame.Drawing.TextScale, bounds = new Microsoft.Xna.Framework.Rectangle(text.X, text.Y, measured.X, measured.Y),
+                        naturalWidth = metrics.TextWidth(text.Value ?? "", text.Size, text.Bold, currentFrame.Drawing.TextScale) };
+                }).ToArray() : null,
+                seats = frame?.Scene is { } scene && view.Match is { } state ? state.Players.Select(player => {
+                    var hero = scene.Seat(player.Id).Geometry.Hero;
+                    return new { player.Id, hero, portrait = new Microsoft.Xna.Framework.Rectangle((int)hero.X - 58, (int)hero.Y - 58, 116, 116),
+                        controls = Mana.Renderer.TurnControlLayout.For(hero).Reservations.ToArray(),
+                        badge = view.ManaPoolBadge(player.Id) is { } badge ? badge with { Parts = badge.Parts.ToArray() } : null };
+                }).ToArray() : null,
+                poolReadingClearsContext = PoolReadingClearsContext(view), poolReadingIsolated = PoolReadingIsolated(view)
+            };
+        }
+        File.WriteAllText(Path.Combine(view.Profile, "mana-payment-results.json"), JsonSerializer.Serialize(new {
+            passed = error == null, error, checks, observations, currentManaJourney = view.ManaJourney, currentManaColors = view.ManaColors.ToArray(),
+            failure,
+            replies = recordedReplies.Concat(lab.ManaPaymentReplies).Select(reply => new {
+                kind = reply.GetType().Name, payload = JsonSerializer.SerializeToElement(reply, reply.GetType())
+            }).ToArray(),
+            scope = "Production pointer/composition journey over authored payment checkpoints, not a rules simulation or human UX approval.", realArtwork = window != null
+        }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+    }
     private void Advance()
     {
         if (view.Error.Length > 0) throw new InvalidOperationException(view.Error);

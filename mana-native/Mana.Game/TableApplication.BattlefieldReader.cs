@@ -17,7 +17,7 @@ internal sealed partial class TableApplication
 
     private bool IsStudyBattlefieldReader(PresentedCard entry) => TableStudyEnabled && entry.Zone == "Battlefield"
         && entry.Focused && entry.ChoiceSlot < 0 && !entry.Card.FaceDown && entry.Display.Size.X >= 300
-        && CardContext.CanRead(entry);
+        && CardContext.CanRetainPinned(entry);
 
     private static string BattlefieldReaderBinding(PresentedCard entry) => entry.Id + "\n" + entry.Zone;
 
@@ -107,7 +107,7 @@ internal sealed partial class TableApplication
 
     private bool ScrollBattlefieldReaderState(int direction)
     {
-        if (matchPresentation.Cards.Pinned is not { } entry || !IsStudyBattlefieldReader(entry)
+        if (matchPresentation.Cards.Pinned is not { } entry || !IsStudyBattlefieldReader(entry) || !CardContext.CanRead(entry)
             || battlefieldReaderStateBinding != (match?.Id ?? "") + "\n" + BattlefieldReaderBinding(entry)
             || !battlefieldReaderStateBounds.Contains(pointer)) return false;
         battlefieldReaderStateScroll = Math.Clamp(battlefieldReaderStateScroll - direction * 28, 0, battlefieldReaderStateScrollMax);

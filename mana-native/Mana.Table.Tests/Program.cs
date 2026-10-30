@@ -45,7 +45,8 @@ internal static class Program
             if (args.Contains("--smoke-advance")) { AdvanceRegression.RunAsync(profile).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-social")) { SocialRegression.Run(profile); return 0; }
             if (args.Contains("--smoke-presentation")) { PresentationSmoke.Run(profile); return 0; }
-            if (args.Contains("--smoke-headless-presentation")) { HeadlessPresentationSmoke.Run(profile); return 0; }
+            if (args.Contains("--smoke-headless-presentation")) { HeadlessPresentationSmoke.Run(profile,
+                args.Contains("--presentation-group") ? Arg("--presentation-group") ?? "" : null); return 0; }
             if (args.Contains("--smoke-headless-clutter")) { ClutteredChangesSmoke.RunHeadless(profile); return 0; }
             if (args.Contains("--smoke-headless-priority-flow")) { PriorityFlowSmoke.RunHeadless(profile); return 0; }
             Microsoft.Xna.Framework.Point? size = null;

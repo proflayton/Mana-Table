@@ -13,7 +13,7 @@ internal sealed partial class TableApplication
     {
         if (!SourceActionsSupported || busy || session.NeedsRecovery || match is not { Decision: { } decision }
             || decision.Payload is not (PriorityPayload or PaymentPayload)) return null;
-        var current = ReleasedPlaySource() ?? (matchPresentation.Cards.Pinned is { ChoiceSlot: < 0, Zone: not "Stack" } entry && CardContext.CanRead(entry)
+        var current = ReleasedPlaySource() ?? (matchPresentation.Cards.Pinned is { ChoiceSlot: < 0, Zone: not "Stack" } entry && CardContext.CanRetainPinned(entry)
             ? CardContext.CurrentOccurrence(entry) : dragging && dragSource != null ? CurrentDragCard(dragSource) : HoverManaSource());
         return current is { FaceDown: false, Key.Length: > 0 } ? current : null;
     }

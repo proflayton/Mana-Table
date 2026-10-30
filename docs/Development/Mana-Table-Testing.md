@@ -1512,6 +1512,9 @@ For a relevant graphical regression, use the same test driver, for example:
 dotnet $driver --smoke-card-reading --size 1000x740 --profile '<fresh-profile>'
 dotnet $driver --smoke-mana-payment --size 1000x740 --profile '<fresh-profile>'
 dotnet $driver --smoke-mana-payment --headless --profile '<fresh-profile>'
+dotnet $driver --smoke-headless-presentation --presentation-group mana-pool --profile '<fresh-profile>'
+dotnet $driver --smoke-headless-presentation --presentation-group match-header --profile '<fresh-profile>'
+dotnet $driver --smoke-headless-presentation --profile '<fresh-profile>'
 ```
 
 The mana journey includes hovering one floating colorless mana while blue remains
@@ -1535,11 +1538,14 @@ ordinary pointer journey, with loaded card artwork, fitted-surface and physical
 window images, and matching state/frame observations in `counted-outputs-*`.
 Each of those windows then hovers an actual {1}{U} hand card with C4 floating
 and one Island, captures the quiet pool/source estimate, replaces the exact
-offer with an unreported cost and captures withdrawal, then opens the unchanged
-read-only pool. Captures are `pool-preview-funded`, `pool-preview-withdrawn` and
-`pool-preview-inspect`; the funded frame also records state and composition in
-`pool-preview-funded.json`. The full actual C4 quantity and inspection intent
-must survive all three gestures with zero commands. The headless journey
+offer with an unreported cost and captures withdrawal, then expands that same
+seat's resources and dismisses the reading. The card is pinned before inspection;
+opening and closing must retain that exact current key/occurrence and bill
+without another hand click. Captures are `pool-preview-funded`,
+`pool-preview-withdrawn`, `pool-preview-inspect` and `pool-preview-after-close`;
+the funded and inspection frames also record state and composition in matching
+JSON files. The full actual C4 quantity and inspection intent survive the entire
+continuation with zero commands. The headless journey
 enables the shared table and compares the unknown-cost bill with actual current
 frame card bounds. Each GPU withdrawal checkpoint makes the same independent
 viewport/face assertion and records `pool-preview-withdrawn.json`, preserving
@@ -1550,6 +1556,63 @@ unrelated positive colors/seats, ambiguous modes, missing/unsupported/X/bounded
 previews, stale revisions, hidden sources, empty pools and foreign/unknown priority.
 Beginning the current cast must retire the estimate; the actual payment's
 existing Spend ring and permission then take over with its full actual count.
+The contextual-reading candidate additionally checks the excluded C1/unpaid-blue
+payment continuation, current pinned reader and chosen rules face through
+CloseView and Escape, exact
+full-name/count text bounds and separation from physical cards and turn controls.
+Same-decision authored publications exercise mixed colors and 1024, literal
+extra keys, decreases, removed colors and an empty pool. Privacy loss retires
+the old reader without restoration. Remote-seat loss closes its reading while
+preserving a still-valid owned source; actual game/viewer/decision changes revoke
+their old scopes. A real polled observation failure covers recovery without a
+new accepted snapshot. A connected variant in the existing header checks uses
+the real late Social painter with an open drawer and unsent text. An exposed
+remote-seat pip must close that drawer/focus while preserving the draft, current
+owned reader and bill. Dismissal returns the chat toggle without reopening the
+drawer; only a new deliberate chat click opens the preserved text. Typing/Enter
+while reading cannot capture or send that draft. F1 guide takeover verifies the input filter
+runs after every producer while higher views retain their own close controls.
+These checks reuse existing runners and keep geometry, final-hit isolation and
+old-action/ResolveHit assertions separate. The geometry oracle measures complete
+name/count text inside each resource token, reserves actual current card and
+bill bounds, and retains the same 500-pixel seat-proximity requirement.
+The generic bounded workspace prefers fully clear candidates before its weighted
+collision fallback. Its five preferred placements can project horizontally and
+vertically into clear intervals: two solid-axis sorts and ten linear scans, then
+the original nearest 24 edges and viewport endpoints, at most 681 scored slots.
+One generic decision-dock visibility predicate owns both existing draw gates and
+both reservation copies. Renderer defaults still reserve the dock for ordinary
+board arrangement and camera calculations; a suppressed painter contributes no
+phantom dock. Physical cards, bills, resources, portraits, turn controls, piles
+and command areas retain their reservations. This remains a finite heuristic;
+a fully packed table may have no clear nearby region.
+For a focused iteration, append `--presentation-group mana-pool` or
+`--presentation-group match-header` to the existing `--smoke-headless-presentation`
+invocation. These call the same pool/payment clarity and lifecycle group or the
+same connected header/Social group, respectively, with that exact receipt label.
+An omitted selector runs the unchanged full sequence labeled `all`. Unknown
+selectors fail. CI retains its literal full invocation, protected by the existing
+exact argument-array check in `ci/test-native-verification.ps1`; focused receipts
+are partial evidence and cannot replace the required full suite.
+Failure-only mana-runner snapshots preserve the current frame, measured text,
+resource parts, physical and control reservations, and final hit intent types
+without composing a new frame or invoking actions. The connected Social fixture
+also copies its checkpoint before the first assertion or old-hit activation.
+It checks the real centered button label inside its original bounds, then
+drawer/draft, current reader/bill, final isolation and stale-hit behavior.
+Local code candidate `e289982fdbfc4359f697684b9c13aab60df58c5b` passed 2606 full
+headless checks (`all`) and 68 focused header checks (`match-header`). Its
+unchanged production predecessor passed 88 pool-group and 44 pointer/payment
+checks. The two actual window suites passed 62 canonical checks each: 44 ordinary
+payment checks and nine counted/preview checks at each text scale. Both sizes
+cover C4 inspection and dismissal at 100% and 130%; the ordinary C1 payment
+capture is 100% only. Social/guide and lifecycle coverage is headless.
+Source/compiled hashes, first logs, images and receipts remain in the ignored
+`contextual-mana-reading-checks-20261030` evidence directory, including
+`candidatee289-first.json`. The original old-production bill-continuity failure,
+later first failures and `offline-c4-correction-addendum-first.json` remain
+unchanged; offline reconstructed scenes are not passing integration evidence.
+Final exact-head CI and human UX acceptance remain separate and pending.
 The normal native UI inventory runs this window journey at 1000 x 740, including
 both text scales. Only after the ordinary journey and both counted-source/preview
 windows finish does the producer write `mana-payment-ci-results.json`: one

@@ -66,14 +66,14 @@ internal sealed partial class TableApplication
         DrawOptionalPaymentMarkers();
         // Decision text and its controls have priority over card readers and
         // held cards. Their input regions are registered last for the same reason.
-        if (!BattlefieldFocused && !OverlayOpen && !AbilityActionPending && (!CardCollectionOpen || EmptyPublicCollection)) { DrawDecisionDock(); }
+        if (!BattlefieldFocused && DecisionDockCanPaint) { DrawDecisionDock(); }
         if (!BattlefieldFocused) DrawChangeCallout();
         if (!BattlefieldFocused) { DrawAbilityActions(); DrawSourceTargeting(); }
         if (!CardCollectionOpen) DrawOverlays();
         if (BattlefieldFocused) DrawEffectTransitions();
         DrawLiftedCards();
         DrawActualImpacts();
-        if (BattlefieldFocused && !DecisionModal && !AbilityActionPending && !CardCollectionOpen) { DrawDecisionDock(); DrawChangeCallout(); }
+        if (BattlefieldFocused && DecisionDockCanPaint) { DrawDecisionDock(); DrawChangeCallout(); }
         if (BattlefieldFocused) { DrawAbilityActions(); DrawSourceTargeting(); }
         if (!CardCollectionOpen && (ReadingGalleryOpen || BattlefieldFocused || ZoneReadingOpen)) DrawReaderControls();
         if (ReadingGalleryOpen) hovered = HitAt(pointer)?.Card;
