@@ -11,6 +11,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
 using Point = Microsoft.Xna.Framework.Point;
+using Keys = Microsoft.Xna.Framework.Input.Keys;
 
 namespace Mana.Table;
 
@@ -41,10 +42,20 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
         var size = dimensions ?? new Point(1000, 740); Prepare(profile);
         var lab = new ExperienceLabSession(ManaPaymentScenario.Id);
         var engine = new ExperienceLabEngine(lab);
-        using var app = new TableWindow(TestTableServices.For(engine), profile, null, null, size,
-            initialState: lab.State, artSource: new MagicArtSource(profile), enableLiveTableStudy: true);
-        app.Automation = new ManaPaymentSmoke(app.TestPort, lab, size, app.TestPort);
-        app.Run();
+        using (var app = new TableWindow(TestTableServices.For(engine), profile, null, null, size,
+            initialState: lab.State, artSource: new MagicArtSource(profile), enableLiveTableStudy: true)) {
+            app.Automation = new ManaPaymentSmoke(app.TestPort, lab, size, app.TestPort);
+            app.Run();
+        }
+        foreach (float scale in new[] { 1f, 1.3f }) {
+            string directory = Path.Combine(profile, "counted-outputs-" + (int)(scale * 100)); Prepare(directory);
+            (PlayPreferences.Load(directory) with { TextScale = scale }).Save(directory);
+            var counted = new InteractionScenarioEngine(); counted.Present(CountedSourceOutput(100, false));
+            using var app = new TableWindow(TestTableServices.For(counted), directory, null, "controlled-frames", size,
+                initialState: counted.State, artSource: new MagicArtSource(profile), enableLiveTableStudy: true);
+            app.Automation = new ManaPaymentSmoke(app.TestPort, new ExperienceLabSession(ManaPaymentScenario.Id), size, counted);
+            app.Run();
+        }
     }
 
     internal static void RunHeadless(string profile, Action<bool, string> check)
@@ -65,6 +76,7 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             }
             foreach (string description in driver.checks) check(true, description);
             CheckCountedBills(directory, check);
+            CheckCountedSourceOutputs(directory, check);
             var child = ManaPaymentScenario.Snapshot(9);
             var options = (OptionsPayload)child.Decision!.Payload;
             var controls = new DecisionDockControlFacts { Automatic = false };
@@ -157,10 +169,157 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             "An exact zero contribution bill remains readable but cannot fabricate Done authority when the current completion reply is disabled");
     }
 
+    private static GameSnapshot CountedSourceOutput(int count, bool mixed)
+    {
+        var original = ManaPaymentScenario.Snapshot(1) with { DecisionOwnerId = 0 };
+        string id = "counted-source-" + count + (mixed ? "-mixed" : "");
+        var producer = original.Viewer!.Zone("Battlefield").Cards[0] with {
+            VisualId = id, CombatId = id, Name = mixed ? "Empowered mana source" : "Everflowing Chalice",
+            ArtName = mixed ? "Sol Ring" : "Everflowing Chalice", Selectable = true, Tapped = false,
+            Counters = ImmutableDictionary<string, int>.Empty.Add("CHARGE", count)
+        };
+        var output = ImmutableDictionary<string, int>.Empty.Add("C", count);
+        if (mixed) output = output.Add("U", 3);
+        var funding = new ManaFundingContext(SemanticKnowledge.Known, ImmutableDictionary<string, int>.Empty,
+            [new(id, [new([new(ActionCostKind.Tap, 1, true, "")],
+                new(SemanticKnowledge.Known, [new(output)]), SemanticKnowledge.Known)])]);
+        return original with {
+            Players = original.Players.Select(player => player.Id != 0 ? player : player with {
+                Zones = player.Zones.Select(zone => zone.Name == "Battlefield" ? zone with { Count = 1, Cards = [producer] } : zone).ToImmutableArray()
+            }).ToImmutableArray(),
+            Decision = original.Decision! with { Payload = ((PaymentPayload)original.Decision!.Payload) with {
+                UnpaidMana = [], UnpaidManaParts = mixed ? [new("{1}", 1), new("{U}", 1)] : [new("{1}", 1)],
+                FundingContext = funding, PayerId = 0, UsablePoolManaColors = []
+            } }
+        };
+    }
+
+    private static void CheckCountedSourceOutputs(string profile, Action<bool, string> check)
+    {
+        var metrics = new Mana.Renderer.TextMetrics();
+        foreach (var viewport in new[] { new Point(1000, 740), new Point(1600, 900) })
+        foreach (float scale in new[] { 1f, 1.3f }) {
+            string directory = Path.Combine(profile, $"source-outputs-{viewport.X}x{viewport.Y}-{(int)(scale * 100)}");
+            Prepare(directory);
+            (PlayPreferences.Load(directory) with { TextScale = scale }).Save(directory);
+            var engine = new InteractionScenarioEngine();
+            engine.Present(CountedSourceOutput(100, false));
+            using var run = new PresentationRun(TestTableServices.For(engine), directory, engine.State, viewport);
+            run.EnableLiveTableStudy();
+            var trace = new List<object>();
+            try {
+                foreach (var example in new[] { (Count: 100, Mixed: false), (Count: 1024, Mixed: false), (Count: 129, Mixed: true) }) {
+                    if (example.Count != 100) { engine.Present(CountedSourceOutput(example.Count, example.Mixed)); run.QueueObservation(engine.State); }
+                    var ready = Stopwatch.StartNew();
+                    do {
+                        run.Tick(TimeSpan.FromSeconds(1.0 / 60), new()); Thread.Yield();
+                    } while ((!run.View.Loaded || run.View.Match?.Revision != engine.State.Revision || run.View.ManaJourney == null)
+                        && ready.Elapsed < TimeSpan.FromSeconds(5));
+                    for (int frame = 0; frame < 10; frame++) run.Tick(TimeSpan.FromSeconds(1.0 / 60), new());
+                    var view = run.View;
+                    var drawing = run.Frame.Drawing;
+                    string label = $"{example.Count}{(example.Mixed ? "+U3" : "")} at {scale:P0}, {viewport.X}x{viewport.Y}";
+                    var expected = ((PaymentPayload)engine.State.Decision!.Payload).FundingContext!.Sources.Single();
+                    check(view.ManaJourney is { Payment: true, FundingStatus: ManaFundingStatus.Funded }
+                        && view.ManaSources.Count == 1 && view.ManaSources[0].SourceId == expected.SourceCardId
+                        && view.ManaSources[0].Output.OrderBy(part => part.Key).SequenceEqual(expected.Routes[0].Production.Alternatives[0].Colors.OrderBy(part => part.Key)),
+                        "The current small bill retains one exact full-output source witness: " + label);
+                    var source = view.ManaSources[0];
+                    var amounts = drawing.Commands.OfType<Mana.Renderer.DrawCommand.Text>()
+                        .Where(text => text.Bold && text.Size == .64f && source.OutputBounds.Contains(new Point(text.X, text.Y))).ToArray();
+                    var counts = source.Output.Values.Where(amount => amount > 1).Select(amount => amount.ToString()).ToArray();
+                    var textBounds = amounts.Select(text => {
+                        int natural = metrics.TextWidth(text.Value!, text.Size, text.Bold, drawing.TextScale);
+                        var measured = metrics.TextSize(text.Value!, text.Size, natural, text.MaxLines, text.Bold, drawing.TextScale);
+                        return new Microsoft.Xna.Framework.Rectangle(text.X, text.Y, measured.X, measured.Y);
+                    }).ToArray();
+                    var glyphs = drawing.Commands.Select(command => command switch {
+                        Mana.Renderer.DrawCommand.Circle circle when circle.Radius == 13 => new Mana.Renderer.Pose(circle.Center, new Vector2(26)).Bounds,
+                        Mana.Renderer.DrawCommand.Sprite sprite when sprite.Size == new Vector2(26) => new Mana.Renderer.Pose(sprite.Center, sprite.Size).Bounds,
+                        _ => Microsoft.Xna.Framework.Rectangle.Empty
+                    }).Where(bounds => !bounds.IsEmpty && source.OutputBounds.Contains(bounds)).ToArray();
+                    var footprints = glyphs.Concat(textBounds).ToArray();
+                    trace.Add(new { label, source, counts, amounts, glyphs, textBounds, bill = view.ManaJourney, engine.State.Revision, replies = engine.Replies.Count });
+                    check(drawing.TextScale == scale && counts.Order().SequenceEqual(amounts.Select(text => text.Value!).Order())
+                        && amounts.All(text => text.Width >= metrics.TextWidth(text.Value!, text.Size, text.Bold, drawing.TextScale))
+                        && textBounds.All(source.OutputBounds.Contains),
+                        "Every full source quantity fits its actual painted text allocation and reserved output footprint: " + label);
+                    check(glyphs.Length == source.Output.Count && footprints.SelectMany((bounds, index) => footprints.Skip(index + 1)
+                            .Select(other => !bounds.Intersects(other))).All(clear => clear),
+                        "Current output glyphs and complete quantity labels remain distinct without overlap: " + label);
+                    var visible = new Microsoft.Xna.Framework.Rectangle(0, 0, 1600, view.DesignHeight);
+                    var fitted = Mana.Renderer.RenderViewport.Fit(viewport, view.DesignHeight);
+                    var topLeft = fitted.ToPhysical(source.OutputBounds.Location.ToVector2());
+                    var bottomRight = fitted.ToPhysical(new Vector2(source.OutputBounds.Right, source.OutputBounds.Bottom));
+                    check(visible.Contains(source.OutputBounds) && topLeft.X >= 0 && topLeft.Y >= 0
+                        && bottomRight.X <= viewport.X && bottomRight.Y <= viewport.Y
+                        && !view.ManaJourney!.Bounds.Intersects(source.OutputBounds),
+                        "The current full output stays inside the fitted viewport and outside the exact bill: " + label);
+                    check(engine.Replies.Count == 0 && view.Match!.Decision!.Id == engine.State.Decision!.Id
+                        && view.Match.Viewer!.Mana.Count == 0 && view.Match.Viewer.Zone("Battlefield").Cards.All(card => !card.Tapped),
+                        "Reading and refreshing the current source witness submits no command and spends no resources: " + label);
+                    if (example.Mixed && scale == 1.3f && viewport.X == 1000) {
+                        var beforeCamera = view.Match;
+                        for (int step = 0; step < 40 && view.ManaSources.Single().Bounds.Right <= visible.Right; step++)
+                            run.Tick(TimeSpan.FromSeconds(.05), new(), new(Keys.A, Keys.LeftShift));
+                        run.Tick(TimeSpan.FromSeconds(1.0 / 60), new());
+                        var edge = view.ManaSources.Single();
+                        trace.Add(new { label = "partly-visible-source", source = edge, view.BoardView, state = view.Match });
+                        check(edge.Bounds.Left < visible.Right && edge.Bounds.Right > visible.Right
+                            && visible.Contains(edge.OutputBounds),
+                            "Panning a current source partly past the right edge keeps its complete mixed output inside the viewport");
+                        for (int step = 0; step < 10 && visible.Intersects(view.ManaSources.Single().Bounds); step++)
+                            run.Tick(TimeSpan.FromSeconds(.05), new(), new(Keys.A, Keys.LeftShift));
+                        run.Tick(TimeSpan.FromSeconds(1.0 / 60), new());
+                        var offscreen = view.ManaSources.Single();
+                        trace.Add(new { label = "offscreen-source", source = offscreen, view.BoardView, state = view.Match });
+                        check(!visible.Intersects(offscreen.Bounds) && !visible.Intersects(offscreen.OutputBounds)
+                            && offscreen.OutputBounds.Left >= visible.Right,
+                            "Continuing the same camera pan moves a fully offscreen source's output with it instead of pinning an orphan label to the edge");
+                        check(ReferenceEquals(view.Match, beforeCamera) && engine.Replies.Count == 0,
+                            "The edge and offscreen output journey changes only the presentation camera, preserving the exact current observation and zero commands");
+                    }
+                }
+            } finally {
+                File.WriteAllText(Path.Combine(directory, "counted-source-output-diagnostic.json"), JsonSerializer.Serialize(trace,
+                    new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+            }
+        }
+    }
+
     private static void Prepare(string profile)
     {
         Directory.CreateDirectory(profile);
         (PlayPreferences.Load(profile) with { Automatic = false, Sounds = false, ReducedMotion = true }).Save(profile);
+    }
+
+    private ManaPaymentSmoke(TableWindow.Probe view, ExperienceLabSession lab, Point viewport, InteractionScenarioEngine engine)
+    {
+        this.view = view; this.lab = lab; this.viewport = viewport; window = view;
+        Move(new(12, 65));
+        foreach (var example in new[] { (Count: 100, Mixed: false), (Count: 1024, Mixed: false), (Count: 129, Mixed: true) }) {
+            Step(() => { engine.Present(CountedSourceOutput(example.Count, example.Mixed)); view.Accept(engine.State); });
+            Wait(() => view.Loaded && view.Match?.Revision == engine.State.Revision && view.ManaJourney != null
+                && view.Match.Viewer!.Zones.SelectMany(zone => zone.Cards).All(card => view.Art(card) != null)
+                && view.Match.Decision!.Context.Source?.Card is { } pendingCard && view.Art(pendingCard) != null
+                && view.Now - lastStep >= .3, () => {
+                var output = ((PaymentPayload)engine.State.Decision!.Payload).FundingContext!.Sources.Single();
+                Check(view.ManaJourney is { FundingStatus: ManaFundingStatus.Funded }
+                    && view.ManaSources.Count == 1 && view.ManaSources[0].SourceId == output.SourceCardId
+                    && view.ManaSources[0].Output.OrderBy(part => part.Key)
+                        .SequenceEqual(output.Routes[0].Production.Alternatives[0].Colors.OrderBy(part => part.Key))
+                    && engine.Replies.Count == 0,
+                    "The GPU capture paints the current complete source output without submitting a command: " + example.Count);
+                string name = "source-output-" + example.Count + (example.Mixed ? "-blue3" : "");
+                Capture(name);
+                File.WriteAllText(Path.Combine(view.Profile, name + ".json"), JsonSerializer.Serialize(new {
+                    state = view.Match, frame = view.Frame!.Observe(), source = view.ManaSources.Single(), view.ManaJourney,
+                    viewport, view.TextScale, view.TableStudyEnabled, replies = engine.Replies.Count,
+                    scope = "Actual GPU surface and full window with loaded Magic card artwork; authored output, no rules simulation or human approval."
+                }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+            });
+        }
+        Step(() => { finished = true; Save(null); window.Exit(); });
     }
 
     private ManaPaymentSmoke(TableApplication.Probe view, ExperienceLabSession lab, Point viewport, TableWindow.Probe? window = null)

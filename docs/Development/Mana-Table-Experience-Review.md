@@ -31,6 +31,17 @@ The caption composes after the actual current funding symbols and bill. Their
 measured paint bounds reserve space beside the pip; prior-frame geometry and
 source-card bounds alone cannot protect a contribution symbol above that card.
 
+The next source iteration also measures each complete contribution quantity
+before placing its neighbor. A mana source with 100 or 1024 charge counters must
+keep its full output readable at enlarged text; a fixed label width or fixed
+advance can clip the amount or cover the next color. The measured strip stays
+beside the same source card and inside the viewport, with its actual paint
+reserved against the pending bill. Panning a source partly past an edge keeps
+its complete output visible; moving the source fully offscreen takes its
+annotation with it. This extends the source-attached resource
+arrangement in the supplied Arena references; those stills do not demonstrate
+these large values or this exact spacing. Reading changes no payment or source.
+
 Review `mana-payment.v1` at its colorless-floating/blue-remaining checkpoint and
 its exact colorless payment. Inspect actual windows at 1000 x 740 and a larger
 size with 130% text: the caption, pending card, bill, pips and portrait controls
