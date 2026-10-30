@@ -1626,10 +1626,22 @@ horizontal/vertical gap projections: two solid-axis sorts and ten linear
 interval scans. It retains the original 24-edge grid, clear-first score and safe
 cutoff, and the corrected dock visibility. The 52-row/column and 676-probe sweep
 implementations remain only in retained commits/evidence, not current code.
-For a focused iteration, append `--presentation-group mana-pool` to the existing
-`--smoke-headless-presentation` invocation. It calls the same pool/payment clarity
-and lifecycle group and writes the same receipts labeled `mana-pool`; an omitted
-selector runs the unchanged full sequence labeled `all`. Unknown selectors fail.
+For a focused iteration, append `--presentation-group mana-pool` or
+`--presentation-group match-header` to the existing `--smoke-headless-presentation`
+invocation. These call the same pool/payment clarity and lifecycle group or the
+same connected header/Social group, respectively, with that exact receipt label.
+An omitted selector runs the unchanged full sequence labeled `all`. Unknown
+selectors fail. CI retains its literal full invocation, protected by the existing
+exact argument-array check in `ci/test-native-verification.ps1`; focused receipts
+are partial evidence and cannot replace the required full suite.
+The first minimal-projection candidate passed the 88-check pool group and
+44-check pointer/payment journey, then stopped after 1951 full-suite checks at
+the connected Social fixture. Its first conjunct incorrectly searched ordinary
+text for a button painted as centered text. No post-pip snapshot was saved, so
+its later conjuncts remain unobserved. The corrected fixture checks the actual
+centered label inside the original button bounds, copies its current checkpoint
+before asserting, and separates paint, drawer/draft, reader/bill, isolation and
+stale-hit checks without changing the gestures or production bytes.
 Failure-only mana-runner snapshots preserve the current frame, measured text,
 resource parts, physical and control reservations, and final hit intent types
 without composing a new frame or invoking actions. Later cases and physical

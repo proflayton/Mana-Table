@@ -106,13 +106,35 @@ internal static class MatchHeaderInteractionChecks
         // The left seat's public pip remains exposed beside the open drawer.
         Click("mana-pool:1:C"); frame = Tick();
         var reading = frame.Observe();
-        check(frame.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Text>().Any(text => text.Value == "Table chat")
-            && !view.ChatOpen && view.ChatDraft == "Unsent table draft" && !frame.Hits.Any(hit => hit.Id == "chat-background")
-            && view.ManaPoolDetail is { Total: 9 } && frame.Cards.Any(card => card.Id == ManaPaymentScenario.Spell && card.Card.Key == pinnedKey && card.Focused)
-            && view.ManaJourney is { } current && current.SourceId == bill.SourceId && current.Symbols.SequenceEqual(bill.Symbols)
-            && ManaPaymentSmoke.PoolReadingIsolated(view) && !view.Activate(chat)
-            && view.HitAt(chat.Bounds.Center)?.Intent is Mana.Table.Interaction.UiIntent.NoInteraction && engine.Replies.Count == 0,
-            "Opening the real exposed mana pip dismisses chat focus/drawer, preserves its unsent draft and the valid reader/bill, and isolates the late chat toggle");
+        bool lateTogglePainted = frame.Drawing.Commands.OfType<DrawCommand.CenterText>()
+            .Any(text => text.Value == "Table chat" && chat.Bounds.Contains(text.Bounds));
+        bool drawerRetired = !view.ChatOpen && view.ChatDraft == "Unsent table draft"
+            && !frame.Hits.Any(hit => hit.Id == "chat-background");
+        bool readerAndBillRetained = view.ManaPoolDetail is { Total: 9 }
+            && frame.Cards.Any(card => card.Id == ManaPaymentScenario.Spell && card.Card.Key == pinnedKey && card.Focused)
+            && view.ManaJourney is { } current && current.SourceId == bill.SourceId && current.Symbols.SequenceEqual(bill.Symbols);
+        bool isolated = ManaPaymentSmoke.PoolReadingIsolated(view);
+        File.WriteAllText(Path.Combine(path, "mana-reading-chat-checkpoint.json"), System.Text.Json.JsonSerializer.Serialize(new {
+            stage = "after-real-remote-pip-before-chat-activation-probe", reading, state = view.Match, view.Overlay,
+            view.ChatOpen, view.ChatDraft, view.SocialSending, pinnedKey, beforeReading = bill, currentJourney = view.ManaJourney,
+            detail = view.ManaPoolDetail is { } detail ? detail with { Parts = detail.Parts.ToArray() } : null,
+            sources = view.ManaSources.ToArray(), colors = view.ManaColors.ToArray(),
+            cards = frame.Cards.Select(card => new { card.Id, card.Zone, card.Card.Key, card.Focused,
+                bounds = card.Display.Bounds, card.ReaderTarget }).ToArray(),
+            hits = frame.Hits.Select(hit => new { hit.Id, hit.Bounds, intent = hit.Intent.GetType().Name }).ToArray(),
+            chat = new { chat.Id, chat.Bounds, intent = chat.Intent.GetType().Name,
+                resolvedIntent = view.HitAt(chat.Bounds.Center)?.Intent.GetType().Name },
+            lateTogglePainted, drawerRetired, readerAndBillRetained, isolated,
+            poolReadingClearsContext = ManaPaymentSmoke.PoolReadingClearsContext(view, 1), replies = engine.Replies.Count,
+            focusEvidence = "Private focus is not exposed; subsequent real typing and Enter check retired focus without inspecting implementation state."
+        }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+        check(lateTogglePainted, "The real late chat toggle remains painted with its complete centered label inside its original button bounds");
+        check(drawerRetired, "Opening the exposed mana pip retires the chat drawer while preserving its unsent draft");
+        check(readerAndBillRetained, "The remote C9 inspection preserves the exact current pinned hand occurrence and bill");
+        check(isolated, "The completed connected mana-reading frame isolates the late chat toggle after Social paints it");
+        check(!view.Activate(chat) && view.HitAt(chat.Bounds.Center)?.Intent is Mana.Table.Interaction.UiIntent.NoInteraction
+            && engine.Replies.Count == 0,
+            "An old chat hit and its current coordinate cannot reopen the drawer or submit commands through mana reading");
         view.TypeText(" must not append"); frame = Tick(keys: new(Microsoft.Xna.Framework.Input.Keys.Enter)); frame = Tick();
         check(view.ChatDraft == "Unsent table draft" && !view.ChatOpen && !view.SocialSending && engine.Replies.Count == 0,
             "Passive mana reading cannot capture typing or send the retired chat draft through Enter");

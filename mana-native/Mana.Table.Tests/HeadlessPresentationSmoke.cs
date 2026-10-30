@@ -32,8 +32,9 @@ internal static partial class HeadlessPresentationSmoke
         }
         try {
             if (group != null) {
-                if (group != "mana-pool") throw new ArgumentException("Unknown headless presentation group: " + group);
-                CheckManaPoolPaymentClarity(profile, Check, trace, performance);
+                if (group == "mana-pool") CheckManaPoolPaymentClarity(profile, Check, trace, performance);
+                else if (group == "match-header") MatchHeaderInteractionChecks.Run(profile, Check);
+                else throw new ArgumentException("Unknown headless presentation group: " + group);
                 return;
             }
             PresentationRunChecks.Run(profile, Check);
