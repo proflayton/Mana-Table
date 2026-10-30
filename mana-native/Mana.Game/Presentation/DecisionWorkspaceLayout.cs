@@ -43,17 +43,25 @@ internal static class DecisionWorkspaceLayout
 
     // Move a retained physical object at its complete size. Unlike a decision
     // workspace, the object is not an obstacle to itself and cannot be resized.
-    internal static Rectangle? Translate(Rectangle bounds, Rectangle viewport, IReadOnlyList<Rectangle> occupied)
+    internal static Rectangle? Translate(IReadOnlyList<Rectangle> pieces, Rectangle viewport, IReadOnlyList<Rectangle> occupied)
     {
+        if (pieces.Count == 0) return null;
+        var bounds = pieces.Aggregate(Rectangle.Union);
         if (bounds.Width <= 0 || bounds.Height <= 0 || bounds.Width > viewport.Width || bounds.Height > viewport.Height) return null;
         var candidate = new Rectangle(Math.Clamp(bounds.X, viewport.Left, viewport.Right - bounds.Width),
             Math.Clamp(bounds.Y, viewport.Top, viewport.Bottom - bounds.Height), bounds.Width, bounds.Height);
-        int? x = NearestGap(viewport.Left, viewport.Right, bounds.Width, bounds.Center.X, occupied
-            .Where(area => area.Top < candidate.Bottom + 8 && area.Bottom > candidate.Top - 8)
-            .OrderBy(area => area.Left).Select(area => (area.Left - 8, area.Right + 8)));
-        int? y = NearestGap(viewport.Top, viewport.Bottom, bounds.Height, bounds.Center.Y, occupied
-            .Where(area => area.Left < candidate.Right + 8 && area.Right > candidate.Left - 8)
-            .OrderBy(area => area.Top).Select(area => (area.Top - 8, area.Bottom + 8)));
+        // Project the rigid pieces onto allowed origin intervals, rather than
+        // treating empty corners of their union as painted material. The scene
+        // supplies padded control reservations, so do not pad them again here.
+        int dx = candidate.X - bounds.X, dy = candidate.Y - bounds.Y;
+        var horizontalBlocked = from piece in pieces from area in occupied
+            where area.Top < piece.Bottom + dy && area.Bottom > piece.Top + dy
+            select (Start: area.Left - (piece.Right - bounds.Left), End: area.Right - (piece.Left - bounds.Left));
+        var verticalBlocked = from piece in pieces from area in occupied
+            where area.Left < piece.Right + dx && area.Right > piece.Left + dx
+            select (Start: area.Top - (piece.Bottom - bounds.Top), End: area.Bottom - (piece.Top - bounds.Top));
+        int? x = NearestGap(viewport.Left, viewport.Right - bounds.Width, 0, bounds.Left, horizontalBlocked.OrderBy(interval => interval.Start));
+        int? y = NearestGap(viewport.Top, viewport.Bottom - bounds.Height, 0, bounds.Top, verticalBlocked.OrderBy(interval => interval.Start));
         Rectangle? horizontal = x is { } left ? new Rectangle(left, candidate.Y, bounds.Width, bounds.Height) : null;
         Rectangle? vertical = y is { } top ? new Rectangle(candidate.X, top, bounds.Width, bounds.Height) : null;
         if (horizontal is not { } h) return vertical;

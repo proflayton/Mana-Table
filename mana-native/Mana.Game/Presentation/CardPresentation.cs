@@ -137,11 +137,12 @@ internal readonly record struct CardPaintGeometry(Pose Face)
     };
     public Pose Backing => Face with { Size = Face.Size + new Vector2(4) };
     public Pose FocusFrame => Backing;
-    public Rectangle Bounds {
+    public Rectangle FrameBounds {
         get {
             var frame = FocusFrame.Bounds;
             frame.Inflate(FocusFrameWidth / 2, FocusFrameWidth / 2);
-            return Rectangle.Union(Rectangle.Union(Face.Bounds, Shadow.Bounds), frame);
+            return frame;
         }
     }
+    public Rectangle Bounds => Rectangle.Union(FrameBounds, Shadow.Bounds);
 }

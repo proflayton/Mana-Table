@@ -237,11 +237,15 @@ internal sealed class CardPresentationController
     private Pose ClearReaderControls(Pose reader, bool study)
     {
         if (context.ReaderControls is not { Count: > 0 } controls) return reader;
-        var footprint = new CardPaintGeometry(reader).Bounds;
-        if (!controls.Any(footprint.Intersects)) return reader;
-        int details = study ? StudyDetailsGap + StudyDetailsWidth : 0;
+        var body = new CardPaintGeometry(reader);
+        Rectangle[] pieces = [body.FrameBounds, body.Shadow.Bounds];
+        if (!pieces.Any(piece => controls.Any(piece.Intersects))) return reader;
+        var footprint = body.Bounds;
+        // The shadow already occupies part of the space reserved beside the
+        // face for its state column; reserve that column once, from the face.
+        int details = study ? Math.Max(0, StudyDetailsGap + StudyDetailsWidth - (footprint.Right - reader.Bounds.Right)) : 0;
         var viewport = new Rectangle(20, 64, 1560 - details, 696);
-        return DecisionWorkspaceLayout.Translate(footprint, viewport, controls) is { } clear
+        return DecisionWorkspaceLayout.Translate(pieces, viewport, controls) is { } clear
             ? reader with { Center = reader.Center + (clear.Location - footprint.Location).ToVector2() }
             : reader;
     }

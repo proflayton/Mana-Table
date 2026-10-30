@@ -19,8 +19,9 @@ internal sealed partial class TableApplication
         get {
             if (!PortraitTurnControlsCanPaint) return [];
             var layout = TurnControlLayout.For(SeatHero(match!.ViewerId));
-            return SelectingActionTarget ? [layout.ArcBounds]
-                : [layout.ArcBounds, layout.AutoBounds, layout.HoldBounds, layout.AlertBounds];
+            var phases = layout.PhaseBounds.Take(turnProgress!.Markers.Length).ToArray();
+            return SelectingActionTarget ? phases
+                : [.. phases, layout.AutoBounds, layout.HoldBounds, layout.AlertBounds];
         }
     }
 
