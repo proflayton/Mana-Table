@@ -37,6 +37,18 @@ pool inspection in the normal mana-payment smoke at 1000 x 740 and a larger
 window, including 130% text. Automation and agent captures do not supply human
 acceptance of how clearly the estimate reads.
 
+The bill also reserves current displayed battlefield faces when its funding
+metadata disappears. A physical card keeps its space independently of whether
+the planner knows how it could contribute. The existing bounded workspace
+search uses the measured bill width and nearby source/obstacle positions; on a
+fully packed table its existing fallback still cannot guarantee a clear region.
+The sparse C4/Island withdrawal review must keep the printed-cost bill separate
+from that Island, the actual pool and portrait controls at both text scales.
+
+Separate future audit: the existing read-only mana inspector is a broad generic
+modal. Its game-feel redesign remains pending; this cue does not redesign or
+establish acceptance of that inspection surface.
+
 ## Floating mana during payment: 30 October 2026
 
 The player's supplied MTG Arena mana references place floating mana symbols and

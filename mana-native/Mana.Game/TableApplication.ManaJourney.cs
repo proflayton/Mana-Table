@@ -194,8 +194,10 @@ internal sealed partial class TableApplication
         if (matchPresentation.Cards.Pinned is { } pinned && !CardViews.Same(pinned.Card, journey.Source)) occupied.Add(pinned.Display.Bounds);
         // During a color callback the producer owns a separate nearby gesture.
         // Keep the original bill beside its own card, away from that producer.
+        // A preview also reserves the physical table when funding is unknown.
         bool sourceWorkspace = match.Decision?.Payload is OptionsPayload { ManaPaymentContext: not null } || reducing;
-        var room = DecisionActionArea(face, width, height, reserveBattlefield: sourceWorkspace, additionalReservations: occupied);
+        var room = DecisionActionArea(face, width, height, reserveBattlefield: sourceWorkspace || !journey.Payment,
+            additionalReservations: occupied, minimumWidth: journey.Payment ? 320 : width);
         if (room.Width < width || room.Height < height) return;
         int x = room.X;
         int y = Math.Clamp(entry.Display.Size.X >= 300 ? face.Top + 12 : face.Top - height - 10, room.Top, room.Bottom - height);

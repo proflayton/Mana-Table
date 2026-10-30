@@ -139,6 +139,7 @@ internal static partial class HeadlessPresentationSmoke
         ManaCostPreview? preview = funded;
         bool ambiguous = false, stale = false;
         using var run = new Runner(profile, "floating-mana-cost-preview", initial, trace, performance);
+        run.View.SetTableStudy(true);
         run.Engine.SourceActionRead = (game, decision, key) => {
             var state = run.Engine.State;
             var source = state.Viewer!.Zone("Hand").Cards.Single(card => card.Key == key);
@@ -173,6 +174,20 @@ internal static partial class HeadlessPresentationSmoke
             && run.Hit("mana-pool:0:C").Intent is MatchIntent.OpenManaPool
             && run.Engine.Replies.Count == 0 && !run.Engine.State.Viewer!.Zone("Battlefield").Cards.Single().Tapped,
             "Hovering a funded {1}{U} cost connects the actual C4 portrait pip and one Island without changing counts, taps, inspection intent or commands");
+        preview = null; run.Present(initial);
+        run.Until(() => run.View.ManaJourney is { FundingStatus: null, Advice: "Choose an action" }, "hover-unreported-cost");
+        var unknownBill = run.View.ManaJourney!;
+        var field = run.Frame.Cards.Where(card => card.Zone == "Battlefield").ToArray();
+        trace.Add(new { scenario = "floating-mana-cost-preview-geometry", label = "hover-unreported-cost",
+            bill = unknownBill.Bounds, battlefield = field.Select(card => new { card.Id, Bounds = card.Display.Bounds }).ToArray(),
+            run.View.TableStudyEnabled, replies = run.Engine.Replies.Count });
+        check(run.View.TableStudyEnabled && field.Length > 0
+            && new Rectangle(0, 0, 1600, run.View.DesignHeight).Contains(unknownBill.Bounds)
+            && field.All(card => !unknownBill.Bounds.Intersects(card.Display.Bounds))
+            && run.View.ManaPoolBadge(0) is { Total: 4 } && run.Hit("mana-pool:0:C").Intent is MatchIntent.OpenManaPool
+            && run.Engine.Replies.Count == 0,
+            "An unreported hover cost stays inside the viewport and clear of every current physical battlefield face without borrowing funding geometry");
+        preview = funded; run.Present(initial); Ready("restore-funded-hover");
         run.Input(new(20, 60), label: "leave-cost-source"); run.Settle("cost-preview-withdrawn");
         check(run.View.ManaJourney == null && Rings(0, "C").Length == 0 && run.Engine.Replies.Count == 0,
             "Leaving the unpinned hand source withdraws its pool estimate in the current frame");

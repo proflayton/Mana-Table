@@ -383,6 +383,18 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             Check(!PoolAccent() && view.ManaSources.Count == 0 && view.ManaPoolBadge(0) is { Total: 4, Parts: [{ Amount: "4" }] }
                 && view.Hits.Single(hit => hit.Id == "mana-pool:0:C").Intent is MatchIntent.OpenManaPool && engine.Replies.Count == 0,
                 "Replacing that exact cost preview with an unreported cost withdraws the pool and source estimates while preserving the actual C4 count and read-only pip action");
+            var bill = view.ManaJourney!;
+            var field = view.Frame!.Cards.Where(card => card.Zone == "Battlefield").ToArray();
+            Check(view.TableStudyEnabled && field.Length > 0
+                && new Microsoft.Xna.Framework.Rectangle(0, 0, 1600, view.DesignHeight).Contains(bill.Bounds)
+                && field.All(card => !bill.Bounds.Intersects(card.Display.Bounds)),
+                "The unreported-cost bill reserves every current physical battlefield face and stays inside the viewport after its funding metadata disappears");
+            File.WriteAllText(Path.Combine(view.Profile, "pool-preview-withdrawn.json"), JsonSerializer.Serialize(new {
+                state = view.Match, frame = view.Frame!.Observe(), bill,
+                battlefield = field.Select(card => new { card.Id, Bounds = card.Display.Bounds }).ToArray(),
+                pool = view.ManaPoolBadge(0), viewport, view.TextScale, replies = engine.Replies.Count,
+                scope = "Current-frame physical face and bill geometry after metadata withdrawal; sparse authored table, no packed-table guarantee or human approval."
+            }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
             Capture("pool-preview-withdrawn"); MoveHit("mana-pool:0:C");
         }); Click();
         Wait(() => view.ManaPoolDetail != null, () => {
