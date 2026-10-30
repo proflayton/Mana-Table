@@ -417,6 +417,20 @@ test('private staging runs during verification with release access confined to t
   assert.doesNotMatch(publish, /mana-native-windows-x64-|gh release upload|path: downloads/);
 });
 
+test('previous update discovery receives the existing token only in its lookup step', () => {
+  const production = nativeJobs('mana-table-native-installer.yml').get('build');
+  assert.doesNotMatch(production.slice(0, production.indexOf('    steps:')), /GH_TOKEN:/,
+    'The installer job must not expose its credential to every step.');
+  const steps = jobSteps(production), lookup = steps.filter(step => /run: \.\/mana-native\/ci\/previous-update\.ps1 /.test(step));
+  assert.equal(lookup.length, 1);
+  assert.match(lookup[0], /^        env:\n          GH_TOKEN: \$\{\{ github.token \}\}$/m);
+  const authenticated = steps.filter(step => /^          GH_TOKEN:/m.test(step));
+  assert.deepEqual(authenticated.map(step => step.match(/^      - name: (.+)$/m)?.[1]), [
+    'Find the verified previous published update base', 'Stage verified release assets privately while checks finish'
+  ], 'Only the releases lookup and the existing explicit staging step receive a token.');
+  for (const step of authenticated) assert.match(step, /^          GH_TOKEN: \$\{\{ github.token \}\}$/m);
+});
+
 test('publication follows a successful aggregate despite its intentionally skipped installer ancestor', () => {
   const jobs = nativeJobs(), publish = jobs.get('publish');
   const expression = publish.match(/^    if:\s*(.+)$/m)[1].replace(/^\$\{\{\s*|\s*\}\}$/g, '');

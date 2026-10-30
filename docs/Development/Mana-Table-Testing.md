@@ -1574,6 +1574,13 @@ inject a foreign result and reject failed/cancelled/skipped matrix results. They
 exercise release staging/promotion failures through injected API fixtures.
 Private drafts do not establish a successful release or bypass final source CI.
 
+`test-previous-update.ps1` exercises actual request construction without network
+access: only the fixed release-list API request receives the supplied token,
+public assets remain anonymous, and foreign or credential-bearing URLs fail.
+Its existing fixtures retain previous-package identity, source, size and hash
+rejection. These checks run in the required native logic job; they do not replace
+the production discovery and installer journey.
+
 The existing repository lane also exercises the shared read-only GitHub transport
 with fake clocks and responses: timeout recovery, bounded transient HTTP/socket
 retries, rate-limit pauses, original-deadline exhaustion, and immediate rejection

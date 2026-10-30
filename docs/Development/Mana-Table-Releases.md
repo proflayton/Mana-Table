@@ -137,6 +137,14 @@ repository, source, run, attempt or artifact evidence still fail immediately.
 Release mutations never use this transport. The rate-limit handling follows
 [GitHub's REST guidance](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api#handle-rate-limit-errors-appropriately).
 
+Previous-update discovery supplies the job token only to the fixed repository's
+release-list API request. The installer workflow scopes that environment value
+to the discovery step; it grants no additional permissions. Authenticated API
+requests cannot follow redirects. Public release manifests and package downloads
+remain anonymous and keep their canonical-URL, size, source and hash checks.
+Local invocation of `mana-native/ci/previous-update.ps1` requires `GH_TOKEN` for
+that API lookup. Authentication failures remain failures, not an absent base.
+
 The [production installer workflow](../../.github/workflows/mana-table-native-installer.yml)
 has separate callers: PRs and non-master builds have read-only permissions;
 trusted master builds can upload verified downloads into a private release draft
