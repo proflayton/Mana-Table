@@ -1514,6 +1514,7 @@ dotnet $driver --smoke-mana-payment --size 1000x740 --profile '<fresh-profile>'
 dotnet $driver --smoke-mana-payment --headless --profile '<fresh-profile>'
 dotnet $driver --smoke-headless-presentation --presentation-group mana-pool --profile '<fresh-profile>'
 dotnet $driver --smoke-headless-presentation --presentation-group match-header --profile '<fresh-profile>'
+dotnet $driver --smoke-headless-presentation --presentation-group attachment-stack --profile '<fresh-profile>'
 dotnet $driver --smoke-headless-presentation --profile '<fresh-profile>'
 ```
 
@@ -1601,10 +1602,11 @@ board arrangement and camera calculations; a suppressed painter contributes no
 phantom dock. Physical cards, bills, resources, portraits, turn controls, piles
 and command areas retain their reservations. This remains a finite heuristic;
 a fully packed table may have no clear nearby region.
-For a focused iteration, append `--presentation-group mana-pool` or
-`--presentation-group match-header` to the existing `--smoke-headless-presentation`
-invocation. These call the same pool/payment clarity and lifecycle group or the
-same connected header/Social group, respectively, with that exact receipt label.
+For a focused iteration, append `--presentation-group mana-pool`,
+`--presentation-group match-header` or `--presentation-group attachment-stack`
+to the existing `--smoke-headless-presentation` invocation. These call the same
+pool/payment clarity and lifecycle group, connected header/Social group or
+attachment pointer group, respectively, with that exact receipt label.
 An omitted selector runs the unchanged full sequence labeled `all`. Unknown
 selectors fail. CI retains its literal full invocation, protected by the existing
 exact argument-array check in `ci/test-native-verification.ps1`; focused receipts
@@ -1625,8 +1627,8 @@ the ordinary C1 payment capture is 100% only. The reader continuation sends no
 engine reply; the ordinary payment journey retains its 21 authored replies.
 Social/guide and lifecycle coverage is headless. All eight new Rules/Artwork
 window images received agent visual review; human acceptance remains pending.
-The footer clears the phase arc in these scenes. Unchanged large-card body
-clipping at the upper phase markers remains a separate queued audit.
+The footer clears the phase arc in those scenes. The separate full-card body
+audit and its subsequent candidate are recorded below.
 Source/compiled hashes, first logs, 44 capture pairs per window and receipts
 remain in the ignored `reader-control-layout-checks-20261030` evidence directory,
 including `candidate7b34-first.json` and the original `baseline624d-first.json`.
@@ -1635,6 +1637,33 @@ in `contextual-mana-reading-checks-20261030`; reconstructed scenes are not passi
 integration evidence. These bounded placements do not guarantee a clear footer
 on a fully packed table: the retained-region fallback can still overlap.
 Final exact-head CI and human UX acceptance remain separate and pending.
+
+The full-body continuation copies the actual loaded artwork, contiguous
+backing/shadow surfaces and emitted frame-stroke bounds before its first
+clearance assertion. It checks the phase arc and actual phase hits, retaining
+the exact card, bill and zero-reply boundary. Its test-only baseline `d798ec8f`
+failed against unchanged production. An initial union-based correction also
+failed the existing attachment pointer assertion; failure-only copied facts
+identified the retained reader covering another card's physical target.
+The original assertion remains intact; the focused attachment selector exercises
+that same group without replacing full-suite CI.
+
+Each after-close, Rules and Artwork checkpoint also independently measures the
+actual emitted land text and current player-nameplate targets against the bill.
+It saves those facts before asserting. Test-only baseline `b15a6673` reproduced
+the enlarged-text bill overlap after the body correction; its original failure
+and the earlier body/pointer failures remain preserved, without retries.
+Executable candidate `0f5c3d63dddada13e8749df75944f197c5b84237` passed 2623 full
+headless checks, 101 focused pool checks and 280 focused attachment checks.
+Each actual 1000 x 740 and 1600 x 900 window passed 94 canonical checks:
+44 ordinary payment checks and 25 counted/reading checks at each text scale.
+The reading continuation retained zero replies; ordinary payment retained 21.
+Current source and compiled-output hashes stayed unchanged across those runs.
+The earlier 45-check ordinary-motion reading run belongs to `1d7d9df4`, before
+the two-file bill/readout correction; it does not prove body clearance throughout
+animation. Human review remains pending for the exact candidate. Sparse-scene
+clearance does not establish universally clear packed placement.
+
 The normal native UI inventory runs this window journey at 1000 x 740, including
 both text scales. Only after the ordinary journey and both counted-source/preview
 windows finish does the producer write `mana-payment-ci-results.json`: one

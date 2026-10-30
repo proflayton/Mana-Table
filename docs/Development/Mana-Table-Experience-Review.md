@@ -382,6 +382,40 @@ journeys at 1000x740 and 1540x980, enlarged text and reduced motion check the
 whole source/answer/marker/reader/Ask journey and Take control. They are separate
 from real-engine funding tests and from whether people find the controls clear.
 
+## Full reader clearance: 30 October 2026 (source candidate)
+
+Wizards' [January 2021 Arena article](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-january-2021-01-21)
+distinguishes holding a card to read its detail from dragging it to cast. Its
+[official gameplay image](https://media.wizards.com/2020/images/daily/m7g4ren4_gameplay.png)
+keeps a full Mire's Grasp above separate phase and Resolve controls. These mobile
+references ground full-card inspection and separation of play controls. Our
+precise clearance and four-seat placement are adaptations, not observations of
+current Arena desktop behavior.
+
+After dismissing floating-mana inspection, the player keeps the same current
+pinned card and bill. Rules/Artwork flips that occurrence; a deliberate phase
+click changes its own saved stop. Reading submits no engine reply. Current
+snapshot visibility and decision scope continue to govern retention and actions.
+
+The card keeps its full dimensions. Its owner moves a colliding target along the
+nearest clear row or column using separate frame/shadow pieces and individual
+visible phase reservations. Their empty bounding-box corners are usable space.
+The study state column is reserved once beside the face. A clear target stays
+fixed; if neither axis fits, the full-size target remains. Existing motion still
+connects the displayed card to its target; settled clearance does not establish
+clearance throughout animation or on every packed table.
+
+The bill also reserves the current painted land summaries and player nameplates,
+using measured land text at the current scale and painted nameplate bounds.
+Those footprints belong to this frame
+and are passed by the bill's painter into the existing workspace placement.
+This keeps the enlarged-text bill from covering another player's resources.
+
+**Human review: pending for executable candidate `0f5c3d63dddada13e8749df75944f197c5b84237`.**
+Both actual window sizes and both text scales cover the full card, bill,
+Rules/Artwork and phase-stop continuation with zero reading replies. Automated
+checks and agent visual review are separate from player acceptance.
+
 ## Design rules learned from player feedback
 
 1. **Design the journey before its controls.** Identify the player's intent,
