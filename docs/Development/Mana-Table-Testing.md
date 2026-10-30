@@ -1162,6 +1162,13 @@ Cleanup tests exercise the actual discard input's waiting callback and require
 completion before highlight cleanup without duplicate notifications. Existing
 Evangel, Convoke/nested-color and counter-cost journeys retain real payment and
 resolution coverage; allocated counters remain distinct from unique donors.
+`ChoicePublicationTest` enters actual controller choice callbacks to check copied
+option facts, retained-read purity, deep immutability and a superseded option
+query across all seat and spectator views. A choice nested inside a real cost
+payment checks that replacing the active cost entry yields Unknown classification
+without stranding its response future; answering still resumes the actual payment.
+Existing cost-order, library-search, physical hand-choice, counter-type and nested
+color journeys retain their original index, privacy and resolution assertions.
 The existing native headless presentation lane also follows an inspected source
 through activation/payment and a keyless historical source face: missing physical
 candidate permission stays read-only; an authoritative candidate enables only

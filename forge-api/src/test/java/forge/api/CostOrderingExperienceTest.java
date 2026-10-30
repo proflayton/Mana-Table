@@ -57,7 +57,17 @@ public class CostOrderingExperienceTest {
             assertTrue(game.answer(main, Map.of("action", "useSourceAction", "key", text(offered, "sourceCardKey"),
                     "actionId", text(route, "actionId"), "manaOutput", Map.of("colors", Map.of("C", 2)))));
             var order = game.until(i -> i.seat() == 0 && ordered(i));
-            var orderObservation = observation(game);
+            var orderObservation = game.table.game.getAction().readState(() -> {
+                var raw = game.session(0).automatedObservation();
+                var current = JSON.toJsonTree(raw).getAsJsonObject();
+                assertEquals(current.get("state"), JSON.toJsonTree(game.session(0).state()),
+                        "The real cost ordering and its human-compatible prompt share one published frame");
+                var facts = (Map<?, ?>)raw.get("semantics");
+                assertThrows(UnsupportedOperationException.class, ((List<?>)facts.get("defaultOrder"))::clear);
+                assertThrows(UnsupportedOperationException.class, ((List<?>)facts.get("options"))::clear);
+                assertEquals(observation(game), current, "Reading cost-order metadata does not pay or reorder its parts");
+                return current;
+            });
             assertEquals(text(orderObservation.getAsJsonObject("state").getAsJsonObject("prompt"), "id"), text(order.prompt(), "id"));
             var semantics = orderObservation.getAsJsonObject("semantics");
             assertEquals(text(semantics, "orderingPurpose"), "CostPayment");
@@ -82,7 +92,6 @@ public class CostOrderingExperienceTest {
                 assertNotEquals(text(other.getAsJsonObject("semantics"), "orderingPurpose"), "CostPayment",
                         "Another seat does not receive this private ordering callback");
             }
-            assertEquals(observation(game), orderObservation, "Reading cost-order metadata does not pay or reorder its parts");
             Files.writeString(game.evidence.resolve("cost-order.json"), JSON.toJson(orderObservation));
             assertTrue(game.answer(order, Map.of("choices", useDefault ? defaults : List.of(defaults.get(1), defaults.get(2), defaults.get(0)))));
             var completed = game.until(i -> i.seat() == 0 && priority(i));
@@ -102,6 +111,8 @@ public class CostOrderingExperienceTest {
             assertNotEquals(text(observation(game).getAsJsonObject("semantics"), "orderingPurpose"), "CostPayment",
                     "Ordering purpose ends with the exact callback that owned it");
             assertThrows(IllegalArgumentException.class, () -> game.session(0).action(request(order, Map.of("choices", defaults))));
+            assertEquals(orderObservation.getAsJsonObject("semantics").getAsJsonArray("defaultOrder"), JSON.toJsonTree(defaults),
+                    "Actually paying or refusing the ordered costs cannot rewrite the retained original order");
         }
     }
 
