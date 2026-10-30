@@ -1154,6 +1154,12 @@ MonoGame, GPU textures, sound, input sampling, letterboxing and captures.
 policy. Feature lifecycles have explicit owners; render partials consume their
 views rather than independently accepting asynchronous results.
 
+Floating-mana hover captions derive from the currently accepted payment payload.
+A negative explanation requires an explicit own payer and usable-color set;
+missing facts remain unknown. The existing positive spend route and scoped input
+admission retain their authority, including legacy compatibility. Captions add
+no commands or retained payment state and use the existing portrait reservations.
+
 | Owner | Authority and lifetime |
 | --- | --- |
 | `ClientSession` | Accepted engine observations, current command scopes, serialized commands and recovery. |

@@ -13,7 +13,10 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     internal sealed record ManaSourcePaint(string SourceId, Rectangle Bounds,
-        ImmutableDictionary<string, int> Output, bool Suggested);
+        ImmutableDictionary<string, int> Output, bool Suggested)
+    {
+        public Rectangle OutputBounds { get; init; }
+    }
     internal sealed record ManaJourneyPaint(string SourceId, bool Payment, Rectangle Bounds,
         ImmutableArray<ManaBillPart> Parts, string Advice, ManaFundingStatus? FundingStatus, string SourceZone, Rectangle SourceBounds)
     {
@@ -253,12 +256,22 @@ internal sealed partial class TableApplication
             canvas.CardFrame(pose with { Size = pose.Size + new Vector2(9) }, accent * .92f, 2);
             var point = pose.Point(.5f, -.1f);
             int offset = 0;
+            var outputBounds = Rectangle.Empty;
             foreach (var part in output.OrderBy(part => part.Key, StringComparer.Ordinal)) {
-                PaintManaSymbol(part.Key, point + new Vector2(offset, 0), 26);
-                if (part.Value > 1) canvas.Text(part.Value.ToString(), (int)point.X + offset + 16, (int)point.Y - 12, Ink, .64f, 34, 1, true);
+                var center = point + new Vector2(offset, 0);
+                PaintManaSymbol(part.Key, center, 26);
+                var glyph = new Pose(center, new Vector2(26)).Bounds;
+                outputBounds = outputBounds.IsEmpty ? glyph : Rectangle.Union(outputBounds, glyph);
+                if (part.Value > 1) {
+                    string amount = part.Value.ToString();
+                    int x = (int)point.X + offset + 16, y = (int)point.Y - 12;
+                    canvas.Text(amount, x, y, Ink, .64f, 34, 1, true);
+                    var measured = canvas.TextSize(amount, .64f, 34, 1, true);
+                    outputBounds = Rectangle.Union(outputBounds, new(x, y, measured.X, measured.Y));
+                }
                 offset += part.Value > 1 ? 52 : 31;
             }
-            foreach (var source in group) manaSourcePaint.Add(new(source.SourceCardId, pose.Bounds, source.Output, confident));
+            foreach (var source in group) manaSourcePaint.Add(new(source.SourceCardId, pose.Bounds, source.Output, confident) { OutputBounds = outputBounds });
         }
     }
 

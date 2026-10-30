@@ -16,6 +16,10 @@ Colored indicators around each player's icon show unspent mana with exact counts
 including during payment. Gains pulse and losses fade; reduced motion shows the
 current values immediately. Pool inspection explains the current totals without
 changing a game decision; step changes never clear a pool locally.
+Hovering a floating pip shows its full color name and amount. During your payment,
+an explicit engine exclusion explains that this mana cannot pay the remaining
+cost; clicking still opens pool inspection. A usable pip retains Spend. Missing
+eligibility facts show the mana identity without guessing an exclusion reason.
 Check a package's `SOURCE.txt` and `build.json` for its exact revision.
 For playing instructions, use [START-HERE.txt](START-HERE.txt).
 

@@ -64,7 +64,7 @@ public static class ManaPaymentScenario
             : new("", new(Source: new(source.VisualId, source, 0, "Hand")),
                 new PaymentPayload(new("Auto", true), new("Cancel", true)) {
                     UnpaidManaParts = bill.Select(symbol => new ManaBillPart(symbol, 1)).ToImmutableArray(),
-                    FundingContext = Funding(bf, pool, stage == 7), UsablePoolManaColors = stage == 5 ? ["C"] : [] });
+                    FundingContext = Funding(bf, pool, stage == 7), PayerId = 0, UsablePoolManaColors = stage == 5 ? ["C"] : [] });
         return new("authored-mana-payment", "playing", null, null, 0, 9, "Main phase", "MAIN1", 0, players,
             stage == 3 ? [new("Faerie Vandal", spell.Text, StackActionKind.Spell, spell) { Id = "mana-faerie-stack", ControllerId = 0 }] : [], null, decision);
     }
