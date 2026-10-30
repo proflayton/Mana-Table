@@ -752,16 +752,23 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return current == null ? emptyDecisionSemantics() : captured.automatedFacts();
     }
 
+    /** Actual controller ownership is separate from command scheduling. A
+     * queued action alone does not retire its still-current rules input. */
+    private boolean inputOwnerCurrent(Input input) {
+        if (input == null || human.getInputQueue().getInput() != input || human.getInputProxy().getInput() != input) return false;
+        if (input instanceof InputPassPriority || input instanceof InputPayMana) return sourceInputActive(input);
+        return !isSelectionInput(input) || selectionInputActive(input);
+    }
+
     private boolean sourceInputCurrent(Pending current) {
         return !closed && error == null && !conceded && !viewer.getHasLost() && !game.isGameOver() && !inputActionQueued
-                && current.kind.equals("input") && sourceInputActive(current.input)
-                && human.getInputQueue().getInput() == current.input && human.getInputProxy().getInput() == current.input;
+                && current.kind.equals("input") && (current.input instanceof InputPassPriority || current.input instanceof InputPayMana)
+                && inputOwnerCurrent(current.input);
     }
 
     private boolean selectionInputCurrent(Pending current) {
         return !closed && error == null && !conceded && !viewer.getHasLost() && !game.isGameOver() && !inputActionQueued
-                && current.kind.equals("input") && selectionInputActive(current.input)
-                && human.getInputQueue().getInput() == current.input && human.getInputProxy().getInput() == current.input;
+                && current.kind.equals("input") && isSelectionInput(current.input) && inputOwnerCurrent(current.input);
     }
 
     private static boolean isSelectionInput(Input input) {
@@ -796,10 +803,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             return !current.response.isDone() && (current.colorPaymentOwner == null
                     || human.getInputQueue().getInput() == current.colorPaymentOwner);
         }
-        return current.kind.equals("input") && !inputActionQueued
-                && human.getInputQueue().getInput() == current.input && human.getInputProxy().getInput() == current.input
-                && (!(current.input instanceof InputPassPriority || current.input instanceof InputPayMana) || sourceInputCurrent(current))
-                && (!isSelectionInput(current.input) || selectionInputCurrent(current))
+        return current.kind.equals("input") && !inputActionQueued && inputOwnerCurrent(current.input)
                 && (!(current.input instanceof InputAttack || current.input instanceof InputBlock) || currentCombatChoices(current) != null);
     }
 
@@ -1950,12 +1954,15 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (old != null) old.response.completeExceptionally(new CancellationException("Match ended"));
         }
         Pending available = pending;
-        if (available != null && isSelectionInput(available.input) && !selectionInputCurrent(available)) {
-            available.publishedDecision = null;
-            pending = null; available = null;
-        }
         if (available != null && (available.input instanceof InputAttack || available.input instanceof InputBlock) && currentCombatChoices(available) == null) {
             queueCombatRefresh(available.input); pending = null; available = null;
+        }
+        if (available != null && available.kind.equals("input") && !inputOwnerCurrent(available.input)) {
+            // A stopped/replaced input cannot supply decision facts, but its
+            // audience still needs the new board and matching execution frame.
+            // Required dialog futures remain owned independently of inputs.
+            available.publishedDecision = null; available.poolManaColors.clear();
+            pending = null; available = null;
         }
         final Pending prompt = available;
         final long publicationSourceVersion = sourceActionVersion.get();

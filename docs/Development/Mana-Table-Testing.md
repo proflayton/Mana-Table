@@ -1162,6 +1162,13 @@ Cleanup tests exercise the actual discard input's waiting callback and require
 completion before highlight cleanup without duplicate notifications. Existing
 Evangel, Convoke/nested-color and counter-cost journeys retain real payment and
 resolution coverage; allocated counters remain distinct from unique donors.
+`SourceActionsTest` also exercises a real stopped-priority handoff under the
+existing state boundary. Its actual waiting callback invokes the global table
+publisher before the successor display runs. Every seat and the spectator must
+advance to the same fresh board, retire the old prompt and source actions, and
+resume ordinary next-seat priority without spending mana. This distinguishes
+input retirement from queued-work scheduling and catches an audience silently
+retaining an older board while execution facts advance.
 The complete decision context uses one retained publication owner, including
 ordinary number, numeric-text and allocation callbacks. Three parameterized
 `ChoicePublicationTest` cases open actual GUI callbacks inside a genuine

@@ -56,6 +56,11 @@ funding witness; command admission and execution still validate live rules state
 The existing table board generation fences publication too: a superseded outer
 publication cannot overwrite a newer seat capture or finish an older spectator
 cohort. Rejecting a superseded AI read preserves the newer published capture.
+A stopped or replaced controller input retires its question without withholding
+that audience's fresh passive board and matching execution frame. Source,
+selection and publication guards share the actual queue/proxy and active-input
+check. A queued action alone is not proof that its input has retired; required
+dialog futures and combat refresh keep their separate ownership.
 
 Targets, multiple-entity selections, indexed choice/reveal dialogs and ordinary
 confirmations stage their family facts in that same publication.
