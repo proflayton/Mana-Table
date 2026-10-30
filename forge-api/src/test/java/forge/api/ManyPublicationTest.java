@@ -141,6 +141,103 @@ public class ManyPublicationTest {
     }
 
     @Test(timeOut = 30000)
+    public void publicationObserversSeeTheCompleteSelectionCohortAndItsCurrentAuthority() throws Exception {
+        try (var fixture = new Fixture("observer-cohort", false)) {
+            var current = HeadlessPlatform.query(fixture.table, () -> {
+                var handNames = List.of("Island", "Mountain", "Swamp", "Plains");
+                for (int seat = 0; seat < handNames.size(); seat++) {
+                    var owner = fixture.player(seat);
+                    owner.getZone(ZoneType.Hand).add(Card.fromPaperCard(
+                            StaticData.instance().getCommonCards().getCard(handNames.get(seat)), owner));
+                }
+                fixture.session().publishInput();
+                var before = fixture.observation();
+                long previousBoard = before.getAsJsonObject("state").get("boardRevision").getAsLong();
+                var cohorts = new ArrayList<List<JsonObject>>();
+                var spectators = new ArrayList<JsonObject>();
+                boolean[] armed = { false };
+                fixture.session().observePlaytest(ignored -> {
+                    if (!armed[0]) return;
+                    armed[0] = false;
+                    cohorts.add(fixture.table.automatedSeats().stream()
+                            .map(audience -> JSON.toJsonTree(audience.state()).getAsJsonObject()).toList());
+                    spectators.add(JSON.toJsonTree(fixture.table.spectatorState()).getAsJsonObject());
+                });
+                assertTrue(cohorts.isEmpty(), "The immediate subscription frame is deliberately disarmed");
+                armed[0] = true;
+                fixture.session().publishInput();
+                assertFalse(armed[0], "The actual owned input publication must notify its observer");
+                assertEquals(cohorts.size(), 1); assertEquals(spectators.size(), 1);
+                var views = cohorts.get(0); var spectator = spectators.get(0);
+                for (var view : views) fixture.record("observer-seat-" + view.get("viewerId"), view);
+                fixture.record("observer-spectator", spectator); fixture.record("before-observer", before);
+                assertEquals(views.size(), 4);
+                long board = views.get(0).get("boardRevision").getAsLong();
+                assertTrue(board > previousBoard, "The callback must describe this new input publication");
+                for (int seat = 0; seat < views.size(); seat++) {
+                    var view = views.get(seat); int viewerId = fixture.player(seat).getId();
+                    assertEquals(text(view, "id"), fixture.table.id);
+                    assertEquals(view.get("viewerId").getAsInt(), viewerId);
+                    assertEquals(view.get("boardRevision").getAsLong(), board,
+                            "An observer must not receive one new audience beside retained older audiences");
+                    assertEquals(view.get("prompt").isJsonNull(), seat != 0,
+                            "Only the actual selection controller receives its question");
+                    for (int owner = 0; owner < handNames.size(); owner++) {
+                        var hand = zone(player(view, fixture.player(owner).getId()), "Hand");
+                        assertEquals(hand.get("count").getAsInt(), 1);
+                        assertEquals(hand.getAsJsonArray("cards").size(), owner == seat ? 1 : 0,
+                                "A complete cohort still filters each other seat's real hand");
+                        if (owner == seat) assertEquals(text(hand.getAsJsonArray("cards").get(0).getAsJsonObject(), "name"), handNames.get(owner));
+                    }
+                }
+                assertEquals(spectator.get("boardRevision").getAsLong(), board,
+                        "The public spectator must commit before publication observers run");
+                assertEquals(spectator.get("viewerId").getAsInt(), -1); assertTrue(spectator.get("prompt").isJsonNull());
+                for (int owner = 0; owner < handNames.size(); owner++) {
+                    var hand = zone(player(spectator, fixture.player(owner).getId()), "Hand");
+                    assertEquals(hand.get("count").getAsInt(), 1); assertTrue(hand.getAsJsonArray("cards").isEmpty());
+                }
+                assertSame(fixture.controller().getInputQueue().getInput(), fixture.input);
+                assertSame(fixture.controller().getInputProxy().getInput(), fixture.input); assertTrue(fixture.input.isSelectionActive());
+                var observed = fixture.observation();
+                assertEquals(observed.get("state"), views.get(0),
+                        "The callback's owner view and current retained decision authority must describe the same committed frame");
+                assertThrows(IllegalArgumentException.class, () -> fixture.table.automatedSeat(fixture.player(1).getId())
+                        .action(request(input(observed), Map.of("action", "player", "playerId", fixture.player(1).getId()))));
+                var outerFrames = new ArrayList<JsonObject>(); var nextObserver = new ArrayList<JsonObject>();
+                boolean[] reenter = { false }, collect = { false };
+                fixture.session().observePlaytest(ignored -> {
+                    if (!reenter[0]) return;
+                    reenter[0] = false;
+                    outerFrames.add(JSON.toJsonTree(fixture.session().state()).getAsJsonObject());
+                    fixture.table.publish();
+                });
+                fixture.session().observePlaytest(ignored -> {
+                    if (collect[0]) nextObserver.add(JSON.toJsonTree(fixture.session().state()).getAsJsonObject());
+                });
+                reenter[0] = true; collect[0] = true;
+                fixture.session().publishInput();
+                collect[0] = false;
+                assertFalse(reenter[0]); assertEquals(outerFrames.size(), 1);
+                assertEquals(nextObserver.size(), 1,
+                        "The second observer receives the nested completion once, never the superseded outer callback");
+                var nested = nextObserver.get(0);
+                assertTrue(nested.get("boardRevision").getAsLong() > outerFrames.get(0).get("boardRevision").getAsLong());
+                assertCohort(fixture.table, nested.get("boardRevision").getAsLong());
+                assertEquals(JSON.toJsonTree(fixture.session().state()), nested);
+                var recovered = fixture.observation(); assertEquals(recovered.get("state"), nested);
+                fixture.record("observer-reentrant-outer", outerFrames.get(0)); fixture.record("observer-reentrant-current", nested);
+                return recovered;
+            });
+            var selected = fixture.answer(current, Map.of("action", "player", "playerId", fixture.player(1).getId()));
+            assertEquals(selected.getAsJsonObject("semantics").get("selectedPlayers"), JSON.toJsonTree(List.of(fixture.player(1).getId())));
+            assertEquals(fixture.input.getSelected().size(), 1); assertTrue(fixture.input.getSelected().contains(fixture.player(1)));
+            assertFalse(fixture.forest.isTapped()); assertEquals(fixture.actor().getManaPool().totalMana(), 0);
+            fixture.record("after-observer-selection", selected);
+        }
+    }
+
+    @Test(timeOut = 30000)
     public void anEqualReplacementCostEntryCannotAdoptAnInFlightSelectionsFacts() throws Exception {
         try (var fixture = new Fixture("cost-entry", true)) {
             var opened = new CountDownLatch(1);
