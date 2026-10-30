@@ -416,6 +416,37 @@ Both actual window sizes and both text scales cover the full card, bill,
 Rules/Artwork and phase-stop continuation with zero reading replies. Automated
 checks and agent visual review are separate from player acceptance.
 
+## Optional target selection: 30 October 2026 (source candidate)
+
+A player reported selecting Crackle with Power targets with no apparent result;
+the precise stalled step is unknown. A real-engine reproduction chose X=2,
+selected one player, explicitly confirmed that subset, paid eight mana and dealt
+ten damage. This matches the [official Strixhaven ruling](https://magic.wizards.com/en/news/feature/strixhaven-school-mages-and-commander-2021-edition-release-notes-2021-04-16),
+but does not establish the cause of the reported failure.
+
+The observed game reference is Forge's actual
+[`InputSelectTargets` gesture and prompt](https://github.com/proflayton/Mana-Table/blob/a9dda0790a855f1edad456a69dfa8d200338c7ba/forge-gui/src/main/java/forge/gamemodes/match/input/InputSelectTargets.java):
+selecting a player updates its named targeted list and remaining capacity, while
+OK finishes a valid subset. Our damage-focused presentation hid that prose and
+had no structured replacement for its selection summary. This adapts that game's
+staged-choice information into our existing completion area; it does not claim
+an observed Arena multi-target layout.
+
+The player's intent is to choose recipients for the current spell's announced
+damage, then finish the chosen subset. The current source, legal card/player
+targets and confirmation remain engine-owned. A target click refreshes the same
+choice's progress. The dock shows, for example, **1 of up to 2 targets**,
+**Selected: Targeted opponent** and **Confirm 1 target**. A reported optional zero
+uses **Choose no targets**. Names wrap fully. Reading, polling and the first target
+click do not imply completion; a deliberate current confirmation advances the
+engine to its next cost or stack step. Older engines retain their existing labels
+when progress is unavailable. Staged choices stay private to their controller.
+
+**Human review: pending for this source candidate and the optional-subset journey.**
+Real-engine resolution, schema checks, authored pointer journeys and actual-window
+review are separate forms of evidence. The original secondhand failure remains
+unconfirmed; improved feedback is not proof that every reported cast now works.
+
 ## Design rules learned from player feedback
 
 1. **Design the journey before its controls.** Identify the player's intent,

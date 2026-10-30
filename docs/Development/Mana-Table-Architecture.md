@@ -2074,6 +2074,16 @@ source is highlighted on the table, pointer aiming links it to legal cards or
 portraits, and the dock retains engine-permitted cancellation without calling a
 mixed card/player decision "Choose a player" or synthesizing a stack card.
 
+Its optional immutable `TargetSelectionProgress` reports the exact selected count
+and selected public player IDs inside the controller's private prompt. Forge
+copies those facts from the actual target collection into the existing decision
+capture; the native decoder validates their shape and registered player IDs.
+Missing progress remains unknown. The existing dock projects the current
+count/range, selected names and explicit completion label without a local target
+draft or a private AI observation. The engine's completion and eligibility gates
+retain command authority; even known zero does not complete an optional choice.
+Payment, resolution and other decisions carry no target-progress object.
+
 Counter-cost selection can carry a validated `CounterPaymentContext` with total
 and remaining allocation. A subsequent `OptionsPayload.CounterPayment` describes
 the exact donor separately from the activating source, the debit of that one

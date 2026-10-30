@@ -1679,6 +1679,28 @@ Other focused modes include `--smoke-priority-flow`,
 [native guide](../../mana-native/README.md#focused-verification) and driver rather
 than running every mode for every change.
 
+The existing `TargetSelectionProgressTest` casts the real Crackle with Power at
+X=2, selects a legal one-of-two player subset and confirms it explicitly. It
+checks the actual eight-mana payment, stack entry and ten-damage result. Progress
+coverage adds selection/deselection and retirement; `TargetPublicationTest`
+checks the same decision cut, immutable retained values and private audiences.
+The first unchanged-production cast passed. This is a bounded reproduction,
+not proof of the cause of a secondhand player report.
+
+`PendingEffectPresentationChecks` follows a real exposed player click through
+an authored current prompt refresh and a separate confirmation-center click.
+Its test-only baseline `962af4eb` fed the new optional progress field through the
+old decoder and failed the missing-summary assertion after 2480 prior checks;
+the captured frame retained one SelectPlayer and no CompleteSelection. The
+original failure and pre-assert state/frame/hit facts remain preserved. Schema
+checks distinguish unknown from zero and reject malformed or misplaced facts.
+Use the existing full headless lane for these checks; no focused receipt can
+replace it. The existing `--smoke-state-clarity` window journey exercises the
+staged-target summary and explicit completion at both text scales. Run it once
+at 1000 x 740 and a larger window, then review the actual captures. Those authored
+GPU scenes establish presentation and gestures, not a second rules engine or
+human acceptance.
+
 For layout/input changes, inspect the smallest supported physical window and a
 larger window, including affected text-size and motion settings. Look at actual
 `-window.png` captures and perform the relevant clicks, not only the design

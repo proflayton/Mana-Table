@@ -1321,6 +1321,19 @@ when its human concedes or loses, using the engine's `AllHumansLost` termination
 Input prompts can include `playerChoices` for required selections such as
 choosing the starting player. Dispatch those through the usual `action: player`.
 
+A current target-selection prompt can also include optional
+`targetSelectionProgress: {selectedCount, selectedPlayers}`. The count comes from
+the active ability's actual target collection; the player IDs describe its
+staged player targets. This is private to the choosing controller's prompt,
+captured with its current decision, visibility and publication fences. Other
+seats and spectators do not receive the unfinished selection. Missing/null means
+unknown, distinct from a reported zero. Existing highlighted cards still describe
+selected card targets. Progress grants no command permission: `playerChoices`,
+current card eligibility and `okEnabled` remain authoritative. An optional subset
+needs the current `action: ok`; selection progress does not submit that action.
+The field is additive within protocol 1; older clients ignore it, and newer
+clients retain the prior presentation when an older engine omits it.
+
 `deckPresets` returns four attributed offline Commander precons with card counts,
 commander entries, and source links. `presetImport {id}` validates the complete
 list before creating a new saved Commander deck; existing decks are never replaced.
