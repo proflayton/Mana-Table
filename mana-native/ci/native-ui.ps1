@@ -14,7 +14,7 @@ $suites = @(
   @{ Name='loading'; Mode='--smoke-loading'; Result='loading-results.json' },
   @{ Name='audio-settings-1000'; Mode='--smoke-audio-settings'; Result='audio-settings-results.json'; Size='1000x740' },
   @{ Name='audio-settings-1540'; Mode='--smoke-audio-settings'; Result='audio-settings-results.json'; Size='1540x980' },
-  @{ Name='mana-payment-1000'; Mode='--smoke-mana-payment'; Result='mana-payment-ci-results.json'; Size='1000x740' },
+  @{ Name='mana-payment-1000'; Mode='--smoke-mana-payment'; Result='mana-payment-ci-results.json'; Size='1000x740'; Arguments=@('--fixture-art') },
   @{ Name='recovery-1000'; Mode='--smoke-recovery'; Result='recovery-results.json'; Size='1000x740' },
   @{ Name='recovery-1540'; Mode='--smoke-recovery'; Result='recovery-results.json'; Size='1540x980' },
   @{ Name='state-clarity-1000'; Mode='--smoke-state-clarity'; Result='state-clarity-results.json'; Size='1000x740' },
@@ -86,7 +86,9 @@ if ($ListOnly) {
     $inventory = for ($index=0; $index -lt $partitions.Count; $index++) {
         foreach ($name in $partitions[$index]) {
             $suite = @($suites | Where-Object { $_.Name -ceq $name })[0]
-            [pscustomobject]@{ shard=$index+1; name=$name; mode=$suite.Mode; size=$(if ($suite.ContainsKey('Size')) { $suite.Size } else { '1280x720' }); result=$suite.Result }
+            $suiteArguments = @()
+            if ($suite.ContainsKey('Arguments')) { $suiteArguments = @($suite.Arguments) }
+            [pscustomobject]@{ shard=$index+1; name=$name; mode=$suite.Mode; size=$(if ($suite.ContainsKey('Size')) { $suite.Size } else { '1280x720' }); result=$suite.Result; arguments=$suiteArguments }
         }
     }
     $inventory | ConvertTo-Json
@@ -105,6 +107,7 @@ foreach ($name in $partitions[$Shard-1]) {
     New-Item -ItemType Directory -Path $profile | Out-Null
     $size = if ($suite.ContainsKey('Size')) { $suite.Size } else { '1280x720' }
     $arguments = @($suite.Mode,'--engine-resources',('"' + $engine + '"'),'--profile',('"' + $profile + '"'),'--size',$size)
+    if ($suite.ContainsKey('Arguments')) { $arguments += $suite.Arguments }
     $timer = [Diagnostics.Stopwatch]::StartNew()
     $process = Start-Process -FilePath $test -ArgumentList $arguments -WindowStyle Hidden -PassThru
     if (-not $process.WaitForExit(600000)) { $process.Kill($true); throw "Native suite timed out: $($suite.Name)" }

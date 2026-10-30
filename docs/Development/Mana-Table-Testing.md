@@ -1522,6 +1522,7 @@ For a relevant graphical regression, use the same test driver, for example:
 ```powershell
 dotnet $driver --smoke-card-reading --size 1000x740 --profile '<fresh-profile>'
 dotnet $driver --smoke-mana-payment --size 1000x740 --profile '<fresh-profile>'
+dotnet $driver --smoke-mana-payment --fixture-art --size 1000x740 --profile '<fresh-profile>'
 dotnet $driver --smoke-mana-payment --headless --profile '<fresh-profile>'
 dotnet $driver --smoke-headless-presentation --presentation-group mana-pool --profile '<fresh-profile>'
 dotnet $driver --smoke-headless-presentation --presentation-group match-header --profile '<fresh-profile>'
@@ -1538,6 +1539,13 @@ changed bills/scopes and an exhausted pool at 130% text. The scenario supplies
 authored eligibility; real engine mana-availability journeys retain rule authority.
 For actual-window review, also run the same smoke at a larger size with an
 isolated profile's text scale set to 1.3; preparation preserves that setting.
+The default window run loads real Magic artwork through `MagicArtSource`.
+The CI inventory explicitly passes `--fixture-art` to use the existing encoded-image
+`CardReadingArtFixture` in the ordinary window and both counted windows. All
+texture-readiness, pointer and geometry checks remain required, without a live
+artwork-service dependency. Results and capture metadata identify the artwork
+source; fixture pixels establish decoded/GPU-backed geometry, not printed-card
+legibility. Use the default real-art mode for that separate visual review.
 The source-output checks also use funded public-counter values of 100 and 1024
 on Everflowing Chalice, plus a simultaneous C129/U3 bundle, with small remaining
 bills. They compare complete measured quantities and adjacent symbols with the
