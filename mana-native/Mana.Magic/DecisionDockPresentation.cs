@@ -166,9 +166,9 @@ public static class DecisionDockPresentation
         };
         var actorRole = status switch { DecisionDockStatus.Attack => DecisionDockActorRole.Attacking,
             DecisionDockStatus.Block => DecisionDockActorRole.Blocking, _ => DecisionDockActorRole.Choosing };
-        string caption = decision.Payload is TargetSelectionPayload { Progress: { SelectedPlayers.Length: > 0 } progress }
+        string targetCaption = decision.Payload is TargetSelectionPayload { Progress: { SelectedPlayers.Length: > 0 } progress }
             ? "Selected: " + string.Join(", ", progress.SelectedPlayers.Select(id => Name(state, id))) : "";
-        return View(status, heading, caption, instruction: decision.Context.Message, role: actorRole, actor: state.ViewerId,
+        return View(status, heading, targetCaption, instruction: decision.Context.Message, role: actorRole, actor: state.ViewerId,
             action: TurnGuide.Confirm(state));
     }
 
