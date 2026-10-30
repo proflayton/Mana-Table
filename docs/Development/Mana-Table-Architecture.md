@@ -40,8 +40,8 @@ The existing table board generation fences publication too: a superseded outer
 publication cannot overwrite a newer seat capture or finish an older spectator
 cohort. Rejecting a superseded AI read preserves the newer published capture.
 
-Targets, multiple-entity selections and indexed choice/reveal dialogs share one
-selection publication boundary.
+Targets, multiple-entity selections, indexed choice/reveal dialogs and ordinary
+confirmations share one selection publication boundary.
 The current input's existing player choices, staged selections, effect or cost
 context and private AI semantics are copied together after visibility
 reconciliation. Target limits, Convoke progress and counter-payment allocations
@@ -68,6 +68,14 @@ Option descriptions retain their own operation graph scope without running
 discarded affordability or funding probes.
 Decision classification uses the existing effect and literal-amount classifiers
 without repeating a source action's cost, affordability and funding analysis.
+Ordinary confirmations stage their actual ability, current cost classification
+and library-search descriptor in that same capture. Cost-entry classification
+keeps precedence over ability classification; a changed entry becomes Unknown
+without dropping the question. A readable source portrait is still distinct
+from a current semantic entity. Finishing the confirmation retires its existing
+input flag before waiting/cleanup callbacks. Accepted queued OK/Cancel commands
+recheck the exact active input and cannot restore a consumed question. Mulligan
+inputs retain their separate lifecycle.
 
 ## AI policy boundary
 

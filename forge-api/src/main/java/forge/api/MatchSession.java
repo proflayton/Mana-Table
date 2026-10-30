@@ -453,11 +453,6 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     "canAttackAll", current instanceof InputAttack, "playerChoices", List.of(),
                     "canAutoPass", canAutoPass(current));
             projectPriorityAlternative(next.prompt, current);
-            if (current instanceof InputConfirm confirmation && confirmation.getLibrarySearchOffer() != null) {
-                next.prompt.put("librarySearch", librarySearch(confirmation.getLibrarySearchOffer(), confirmation.getSpellAbility()));
-                next.prompt.put("ok", "Search library");
-                next.prompt.put("cancel", "Don’t search");
-            }
             if (current instanceof InputConfirmMulligan mulligan && mulligan.getOpeningHandOffer() != null) {
                 var offer = mulligan.getOpeningHandOffer();
                 next.prompt.put("openingHand", map("handSize", offer.handSize(), "nextHandSize", offer.nextHandSize(),
@@ -807,12 +802,13 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private static boolean isSelectionInput(Input input) {
-        return input instanceof InputSelectTargets || input instanceof InputSelectManyBase<?>;
+        return input instanceof InputSelectTargets || input instanceof InputSelectManyBase<?> || input instanceof InputConfirm;
     }
 
     private static boolean selectionInputActive(Input input) {
         return input instanceof InputSelectTargets targets ? targets.isTargetSelectionActive()
-                : input instanceof InputSelectManyBase<?> many && many.isSelectionActive();
+                : input instanceof InputSelectManyBase<?> many ? many.isSelectionActive()
+                : input instanceof InputConfirm confirmation && confirmation.isConfirmationActive();
     }
 
     private static boolean selectionDialog(Pending current) {
@@ -1155,6 +1151,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 try {
                     if (closed || conceded || viewer.getHasLost() || game.isGameOver() || human.getInputQueue().getInput() != next.input
                             || human.getInputProxy().getInput() != next.input) return;
+                    // Admission intentionally queued this action. Recheck the
+                    // exact confirmation's own flag without the !queued gate,
+                    // and never restore an already completed question's scope.
+                    if ((action.equals("ok") || action.equals("cancel")) && next.input instanceof InputConfirm confirmation
+                            && !confirmation.isConfirmationActive()) return;
                     switch (action) {
                         case "autoPayOptionalPayment" -> {
                             var input = (InputPayMana) next.input;
@@ -1826,6 +1827,32 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 promptFacts, automatedFacts, playerChoices);
     }
 
+    private SelectionDecisionProjection.Capture captureConfirm(Pending prompt, long boardRevision, long sourceVersion,
+                                                              ExecutionTracker.Reference execution) {
+        if (!(prompt.input instanceof InputConfirm confirmation) || !selectionInputCurrent(prompt)
+                || !table.currentPublication(boardRevision) || sourceActionVersion.get() != sourceVersion) return null;
+        String decisionId = prompt.id;
+        var paying = game.costPaymentStack.peek();
+        var ability = confirmation.getSpellAbility();
+        var offer = confirmation.getLibrarySearchOffer();
+        var promptFacts = new LinkedHashMap<String, Object>();
+        promptFacts.put("playerChoices", List.of());
+        if (offer != null) {
+            promptFacts.put("librarySearch", librarySearch(offer, ability));
+            promptFacts.put("ok", "Search library"); promptFacts.put("cancel", "Don’t search");
+        }
+        var base = DecisionSemantics.describeConfirmation(ability, paying, human.getPlayer(), this::semanticCardId);
+        // The Yes/No question still belongs to this input if an ambient cost
+        // changes during projection; its old classification is no longer known.
+        var automatedFacts = game.costPaymentStack.peek() == paying ? base
+                : map("intent", "Unknown", "amount", null, "selectionIsCost", false, "counterType", "");
+        if (!table.currentPublication(boardRevision) || sourceActionVersion.get() != sourceVersion
+                || pending != prompt || !selectionInputCurrent(prompt)) return null;
+        return new SelectionDecisionProjection.Capture(decisionId, boardRevision, sourceVersion,
+                execution == null ? null : execution.id(), execution == null ? null : execution.step(),
+                promptFacts, automatedFacts, List.of());
+    }
+
     private SelectionDecisionProjection.Capture captureChoice(Pending prompt, long boardRevision, long sourceVersion,
                                                              ExecutionTracker.Reference execution, Map<String, Object> projectedPrompt) {
         if (!selectionDialog(prompt) || !selectionOwnerCurrent(prompt) || !table.currentPublication(boardRevision)
@@ -2070,6 +2097,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 } else if (prompt.input instanceof InputSelectManyBase<?>) {
                     projectedPrompt.remove("manaReduction"); projectedPrompt.remove("counterPayment");
                     selection = captureMany(prompt, boardRevision, publicationSourceVersion, execution);
+                } else if (prompt.input instanceof InputConfirm) {
+                    projectedPrompt.remove("librarySearch");
+                    selection = captureConfirm(prompt, boardRevision, publicationSourceVersion, execution);
                 } else {
                     selection = captureChoice(prompt, boardRevision, publicationSourceVersion, execution, projectedPrompt);
                 }

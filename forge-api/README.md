@@ -194,6 +194,14 @@ response future still own the answer. A changed ambient cost entry makes its
 classification Unknown without removing the required dialog or inventing a
 payment outcome. Nested color and counter-type choices retain their separate
 payment context and current choice semantics.
+Ordinary `InputConfirm` questions share this capture for their existing ability
+and cost semantics and library-search descriptor. Retained observations do not
+reopen the ability or consult a newer ambient cost. An entry changed during
+projection yields Unknown classification while preserving the actual question.
+Search labels and source visibility remain unchanged; a readable internal source
+portrait does not grant a current semantic entity. Completion retires the input
+before cleanup callbacks, and queued OK/Cancel commands recheck its exact active
+ownership without reopening a consumed question. Mulligan inputs remain separate.
 Current mana inputs can add `payment` provenance: `purpose` (`SpellCost`,
 `ActivatedAbilityCost`, `TriggeredAbilityCost`, `EffectCost` or `Unknown`), actual
 `payerId`, entitled `sourceCardId` and the input's `mandatory` fact. The current

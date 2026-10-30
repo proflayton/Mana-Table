@@ -51,6 +51,7 @@ public class InputConfirm extends InputSyncronizedBase {
 
     public final SpellAbility getSpellAbility() { return sa; }
     public final LibrarySearchOffer getLibrarySearchOffer() { return librarySearchOffer; }
+    public final boolean isConfirmationActive() { return !isFinished(); }
 
     // simple interface to hide ugliness deciding how to confirm
     public static ImmutableList<String> defaultOptions = ImmutableList.of(Localizer.getInstance().getMessage("lblYes"), Localizer.getInstance().getMessage("lblNo"));
@@ -139,6 +140,14 @@ public class InputConfirm extends InputSyncronizedBase {
     @Override
     protected final boolean allowAwaitNextInput() {
         return true;
+    }
+
+    @Override
+    protected final void onStop() {
+        // Await/queue cleanup may publish while this is still the top input.
+        // Retire the existing authority before any of those callbacks run.
+        setFinished();
+        super.onStop();
     }
 
     /** {@inheritDoc} */
