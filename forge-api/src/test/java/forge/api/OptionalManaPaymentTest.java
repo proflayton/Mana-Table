@@ -220,6 +220,169 @@ public class OptionalManaPaymentTest {
         }
     }
 
+    @Test public void publishedPaymentFactsRemainReadableWithoutReopeningTheInputAndRefreshOnItsNextPublication() throws Exception {
+        try (var fixture = new Fixture(true)) {
+            var payment = fixture.payment(2);
+            var forest = fixture.add("Forest", ZoneType.Battlefield);
+            var controller = (PlayerControllerHuman)fixture.actor().getController();
+            var session = fixture.table.automatedSeat(fixture.actor().getId());
+            controller.getInputQueue().setInput(payment);
+            HeadlessPlatform.query(fixture.table, () -> {
+                fixture.table.publish();
+                // Warm the legal action domain before forbidding another read of
+                // the cost. Discovery remains a separate live rules operation.
+                var raw = session.automatedObservation();
+                var retained = JSON.toJsonTree(raw).getAsJsonObject();
+                var prompt = retained.getAsJsonObject("state").getAsJsonObject("prompt");
+                assertEquals(prompt.get("payerId").getAsInt(), fixture.actor().getId());
+                assertEquals(prompt.get("unpaidManaParts"), JSON.toJsonTree(List.of(Map.of("symbol", "{2}", "count", 1))));
+                assertEquals(retained.getAsJsonObject("semantics").get("unpaidMana"), JSON.toJsonTree(List.of("{1}", "{1}")));
+                assertEquals(retained.getAsJsonObject("semantics").getAsJsonObject("payment").get("sourceCardId"),
+                        prompt.getAsJsonObject("sourceCard").get("combatId"));
+                var rawPrompt = (Map<?, ?>)((Map<?, ?>)raw.get("state")).get("prompt");
+                var sources = (List<?>)((Map<?, ?>)rawPrompt.get("fundingContext")).get("sources");
+                assertEquals(sources.size(), 1, "The real Forest supplies the published nominal funding route");
+                var routes = (List<?>)((Map<?, ?>)sources.get(0)).get("routes");
+                var costs = (List<?>)((Map<?, ?>)routes.get(0)).get("costs");
+                var tap = (Map<?, ?>)costs.get(0);
+                assertEquals(tap.get("kind"), "Tap");
+                assertThrows("A consumer cannot rewrite a nested published resource cost",
+                        UnsupportedOperationException.class, tap::clear);
+                assertEquals(JSON.toJsonTree(session.automatedObservation()), retained);
+                var publicState = JSON.toJsonTree(fixture.table.spectatorState()).getAsJsonObject();
+                for (String field : List.of("prompt", "actionSources", "semantics", "payment", "manaPaymentContext",
+                        "optionalDecline", "optionalPaymentSupport", "unpaidManaParts", "fundingContext"))
+                    assertFalse(publicState.has(field), "A public spectator cannot inherit private " + field);
+                var other = JSON.toJsonTree(fixture.table.automatedSeat(fixture.table.game.getRegisteredPlayers().get(1).getId())
+                        .automatedObservation()).getAsJsonObject();
+                assertFalse(other.getAsJsonObject("semantics").has("payment"));
+                payment.rejectProjectionReads = true;
+                try {
+                    for (int read = 0; read < 3; read++) {
+                        assertEquals(JSON.toJsonTree(session.automatedObservation()), retained,
+                                "The accepted payment observation must not reopen the live payment to reconstruct its facts");
+                        assertEquals(JSON.toJsonTree(session.state()).getAsJsonObject().get("prompt"), prompt);
+                    }
+                } finally { payment.rejectProjectionReads = false; }
+
+                payment.setRemaining(1);
+                fixture.table.publish();
+                var refreshed = JSON.toJsonTree(session.automatedObservation()).getAsJsonObject();
+                var next = refreshed.getAsJsonObject("state").getAsJsonObject("prompt");
+                assertEquals(next.get("id"), prompt.get("id"), "This is a new publication of the same unanswered rules input");
+                assertTrue(refreshed.getAsJsonObject("state").get("boardRevision").getAsLong()
+                        > retained.getAsJsonObject("state").get("boardRevision").getAsLong());
+                assertEquals(next.get("unpaidManaParts"), JSON.toJsonTree(List.of(Map.of("symbol", "{1}", "count", 1))));
+                assertEquals(refreshed.getAsJsonObject("semantics").get("unpaidMana"), JSON.toJsonTree(List.of("{1}")));
+                assertEquals(prompt.get("unpaidManaParts"), JSON.toJsonTree(List.of(Map.of("symbol", "{2}", "count", 1))),
+                        "A retained human-compatible payment snapshot cannot shrink with a later publication");
+                assertEquals(fixture.actor().getManaPool().totalMana(), 0);
+                assertFalse(forest.isTapped(), "Inspecting or attempting to mutate retained facts cannot spend their source");
+                return null;
+            });
+        }
+    }
+
+    @Test public void aSupersededPaymentReadCannotDeleteTheNewPublicationItInterrupted() throws Exception {
+        try (var fixture = new Fixture(true)) {
+            var payment = fixture.payment(2);
+            var forest = fixture.add("Forest", ZoneType.Battlefield);
+            fixture.actor().getManaPool().addMana(new Mana(MagicColor.GREEN, forest, null, fixture.actor()));
+            var controller = (PlayerControllerHuman)fixture.actor().getController();
+            var session = fixture.table.automatedSeat(fixture.actor().getId());
+            controller.getInputQueue().setInput(payment);
+            HeadlessPlatform.query(fixture.table, () -> {
+                fixture.table.publish();
+                var previous = JSON.toJsonTree(session.state()).getAsJsonObject();
+                var previousPrompt = previous.getAsJsonObject("prompt");
+                // Actual source discovery reenters publication while this read
+                // still owns the previous bill. No rules input is replaced.
+                payment.beforeNextSourceRead = () -> {
+                    payment.setRemaining(1);
+                    fixture.table.publish();
+                };
+                assertThrows(StaleObservationException.class, session::automatedObservation);
+                assertNull(payment.beforeNextSourceRead, "The source query must actually exercise the reentrant publication");
+
+                var published = JSON.toJsonTree(session.state()).getAsJsonObject();
+                var prompt = published.getAsJsonObject("prompt");
+                assertEquals(prompt.get("id"), previousPrompt.get("id"));
+                assertTrue(published.get("boardRevision").getAsLong() > previous.get("boardRevision").getAsLong());
+                // The next read must recover from the already published cohort;
+                // a refresh here would conceal destruction of its retained facts.
+                var recovered = JSON.toJsonTree(session.automatedObservation()).getAsJsonObject();
+                assertEquals(recovered.get("state"), published);
+                assertEquals(prompt.get("unpaidManaParts"), JSON.toJsonTree(List.of(Map.of("symbol", "{1}", "count", 1))));
+                assertEquals(recovered.getAsJsonObject("semantics").get("unpaidMana"), JSON.toJsonTree(List.of("{1}")));
+                assertEquals(prompt.get("payerId").getAsInt(), fixture.actor().getId());
+                assertEquals(recovered.getAsJsonObject("semantics").getAsJsonObject("payment").get("sourceCardId"),
+                        prompt.getAsJsonObject("sourceCard").get("combatId"));
+                assertEquals(prompt.get("usablePoolManaColors"), JSON.toJsonTree(List.of("G")));
+                assertEquals(recovered.getAsJsonObject("domain").get("poolManaColors"), prompt.get("usablePoolManaColors"));
+                assertEquals(previousPrompt.get("unpaidManaParts"), JSON.toJsonTree(List.of(Map.of("symbol", "{2}", "count", 1))));
+
+                String key = text(card(published, "Forest"), "key");
+                assertThrows(IllegalArgumentException.class, () -> session.sourceActions(request(
+                        new Input(0, previous, previousPrompt), Map.of("key", key, "expectedRevision", previous.get("revision").getAsLong()))));
+                var catalog = JSON.toJsonTree(session.sourceActions(request(new Input(0, published, prompt),
+                        Map.of("key", key, "expectedRevision", published.get("revision").getAsLong())))).getAsJsonObject();
+                assertEquals(catalog.get("decisionId"), prompt.get("id"));
+                assertFalse(catalog.getAsJsonArray("actions").isEmpty(), "The newly published source remains answerable");
+                assertEquals(JSON.toJsonTree(session.automatedObservation()), recovered);
+                assertEquals(fixture.actor().getManaPool().totalMana(), 1);
+                assertFalse(forest.isTapped());
+                return null;
+            });
+        }
+    }
+
+    @Test public void aReentrantPaymentPublicationCannotOverwriteTheNewAllAudienceCohort() throws Exception {
+        try (var fixture = new Fixture(true)) {
+            var payment = fixture.payment(2);
+            var forest = fixture.add("Forest", ZoneType.Battlefield);
+            fixture.actor().getManaPool().addMana(new Mana(MagicColor.GREEN, forest, null, fixture.actor()));
+            var controller = (PlayerControllerHuman)fixture.actor().getController();
+            var session = fixture.table.automatedSeat(fixture.actor().getId());
+            controller.getInputQueue().setInput(payment);
+            HeadlessPlatform.query(fixture.table, () -> {
+                fixture.table.publish();
+                var previous = JSON.toJsonTree(session.state()).getAsJsonObject();
+                var inner = new ArrayList<com.google.gson.JsonObject>();
+                payment.beforeNextRemainingRead = () -> {
+                    payment.setRemaining(1);
+                    fixture.table.publish();
+                    inner.add(JSON.toJsonTree(session.state()).getAsJsonObject());
+                };
+                fixture.table.publish();
+                assertNull(payment.beforeNextRemainingRead);
+                assertEquals(inner.size(), 1, "A real bill projection must exercise the nested publication");
+                var published = inner.get(0);
+                long board = published.get("boardRevision").getAsLong();
+                assertTrue(board > previous.get("boardRevision").getAsLong());
+                for (var audience : fixture.table.automatedSeats())
+                    assertEquals(((Number)audience.state().get("boardRevision")).longValue(), board,
+                            "An obsolete outer publication cannot replace any newer seat's board cohort");
+                assertEquals(((Number)fixture.table.spectatorState().get("boardRevision")).longValue(), board,
+                        "The public spectator must retain the same new cohort as the private seats");
+                assertEquals(JSON.toJsonTree(session.state()), published);
+                var recovered = JSON.toJsonTree(session.automatedObservation()).getAsJsonObject();
+                assertEquals(recovered.get("state"), published, "The inner capture remains readable without another publication");
+                var prompt = published.getAsJsonObject("prompt");
+                assertEquals(prompt.get("id"), previous.getAsJsonObject("prompt").get("id"));
+                assertEquals(prompt.get("unpaidManaParts"), JSON.toJsonTree(List.of(Map.of("symbol", "{1}", "count", 1))));
+                assertEquals(recovered.getAsJsonObject("semantics").get("unpaidMana"), JSON.toJsonTree(List.of("{1}")));
+                assertEquals(prompt.get("usablePoolManaColors"), JSON.toJsonTree(List.of("G")));
+                assertEquals(recovered.getAsJsonObject("domain").get("poolManaColors"), prompt.get("usablePoolManaColors"));
+                assertEquals(prompt.get("payerId").getAsInt(), fixture.actor().getId());
+                assertEquals(recovered.getAsJsonObject("semantics").getAsJsonObject("payment").get("sourceCardId"),
+                        prompt.getAsJsonObject("sourceCard").get("combatId"));
+                assertEquals(fixture.actor().getManaPool().totalMana(), 1);
+                assertFalse(forest.isTapped());
+                return null;
+            });
+        }
+    }
+
     private static boolean priority(Input input) { return text(input.prompt(), "inputType").equals("InputPassPriority"); }
     private static List<Mana> pool(Player actor) {
         var values = new ArrayList<Mana>(); actor.getManaPool().forEach(values::add); return List.copyOf(values);
@@ -233,11 +396,14 @@ public class OptionalManaPaymentTest {
         final MatchTable table;
         final Card source;
         final SpellAbility ability;
-        Fixture() throws Exception {
+        Fixture() throws Exception { this(false); }
+        Fixture(boolean automated) throws Exception {
             var resources = Path.of("../forge-gui/res");
             if (StaticData.instance() == null) EngineResources.load(resources);
-            table = new MatchTable("Constructed", List.of(MatchTable.human(new Deck(), "Constructed", "Actor"),
-                    MatchTable.human(new Deck(), "Constructed", "Opponent")), resources, Files.createTempDirectory("optional-mana"));
+            var players = automated ? List.of(MatchTable.automated(new Deck(), "Constructed", "Actor"),
+                    MatchTable.automated(new Deck(), "Constructed", "Opponent"))
+                    : List.of(MatchTable.human(new Deck(), "Constructed", "Actor"), MatchTable.human(new Deck(), "Constructed", "Opponent"));
+            table = new MatchTable("Constructed", players, resources, Files.createTempDirectory("optional-mana"), automated);
             HeadlessPlatform.activate(table);
             source = add("Mind's Eye", ZoneType.Battlefield);
             ability = AbilityFactory.getAbility(source.getSVar("TrigDraw"), source);
@@ -259,12 +425,33 @@ public class OptionalManaPaymentTest {
         @Override public void close() { table.close(); }
     }
     private static final class Probe extends InputPayMana {
+        boolean rejectProjectionReads;
+        Runnable beforeNextRemainingRead;
+        Runnable beforeNextSourceRead;
         Probe(PlayerControllerHuman controller, SpellAbility ability, Player player, int generic, boolean capture) {
             super(controller, ability, player, false); manaCost = new ManaCostBeingPaid(ManaCost.get(generic));
             if (capture) captureOriginalManaCost();
         }
         void setRemaining(int generic) { manaCost = new ManaCostBeingPaid(ManaCost.get(generic)); }
         void requirePayment() { mandatory = true; }
+        private void requireProjectionRead() {
+            if (rejectProjectionReads) throw new AssertionError("A retained payment projection reopened the live input");
+        }
+        @Override public ManaCostBeingPaid getRemainingManaCost() {
+            requireProjectionRead();
+            var remaining = super.getRemainingManaCost();
+            var callback = beforeNextRemainingRead; beforeNextRemainingRead = null;
+            if (callback != null) callback.run();
+            return remaining;
+        }
+        @Override public SpellAbility getPaidForAbility() { requireProjectionRead(); return super.getPaidForAbility(); }
+        @Override public Player getPayer() { requireProjectionRead(); return super.getPayer(); }
+        @Override public Set<Byte> getUsablePoolManaColors() { requireProjectionRead(); return super.getUsablePoolManaColors(); }
+        @Override public List<SpellAbility> getSourceActions(Card card) {
+            var callback = beforeNextSourceRead; beforeNextSourceRead = null;
+            if (callback != null) callback.run();
+            return super.getSourceActions(card);
+        }
         @Override protected void done() { }
         @Override protected String getMessage() { return ""; }
     }

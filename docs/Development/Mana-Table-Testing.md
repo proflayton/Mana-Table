@@ -355,6 +355,12 @@ then pay blue and observe the same source on the stack and resolved battlefield.
 Immediate spending can consume produced mana before the next publication, so a
 transient floating red pool is not required. The fixture supplies only declared
 pregame permanents; no test driver answers the policy's choices.
+Cast-offer witnesses also retain the accepted command's exact source, seat,
+active player, first own turn and main phase. A slower outer poll can miss the
+policy's pre-command frame; it cannot invalidate that copied offer witness.
+The existing headless receipt checks reject foreign, missing and later-turn
+evidence while the unfunded journey still requires land play, passing, the
+declared turn ending and no cast or X selection.
 The contribution journey casts Kasla through actual convoke with six selected
 creatures and a seventh unused creature. It requires positive then exact-empty
 progress, current Done, no further contribution offer from the unused creature,
@@ -478,6 +484,13 @@ Real Java payment journeys exercise manual source use and floating-pool spending
 checking that each publication shrinks the unpaid bill without mutating it during
 a source-catalog read. The authored `mana-payment.v1` presentation journey uses
 those contracts and ordinary pointer input; it is not a second rules simulator.
+`OptionalManaPaymentTest` also forbids live payment-fact reads after publication,
+then republishes a changed bill on the same input to require fresh human and AI
+facts while preserving the earlier snapshot. `AutomatedPaymentJourneyTest`
+checks their agreement through real optional payments and nested color choices.
+These purity comparisons run inside one existing input/state boundary.
+Controlled reentrant reads and publications check that the newer seat/spectator
+cohort survives and the next observation succeeds without another publication.
 Its geometry and interaction assertions support actual rendered review at both
 small and large windows, which remains necessary to assess readability.
 The real two-color source journey also checks explicit output intent through
@@ -1436,6 +1449,13 @@ The existing headless presentation lane separately runs
 keep both host and guest watching the active table, with private hands filtered
 and table departure still explicit. These checks do not establish human UX
 acceptance or reproduce an unrecorded player's exact match.
+`StartupLifecycleTest` controls the existing rules-state boundary to hold queued
+startup while the table closes or a real seat concedes. It waits for the actual
+queued worker, checks departed in-game zones stay empty and surviving players
+retain their registered decks, then answers current decisions until normal play.
+Companion checks retain the original outside-game sideboard object and reject
+resumed setup or stale answers. The tests also preserve unexpected setup failures
+and require no timing race or retry.
 `MatchCompletionRegression` runs in the existing client suite and uses a
 controlled clock to verify the dependent local-return barrier, exact game/viewer
 scope, stale publications, cancellation and both delayed and hung observations.

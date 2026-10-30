@@ -1,9 +1,10 @@
 package forge.api;
 
-import forge.card.MagicColor;
 import forge.card.mana.ManaCostShard;
 import forge.game.card.CardView;
 import forge.game.mana.ManaCostBeingPaid;
+import forge.game.player.Player;
+import forge.game.spellability.SpellAbility;
 import forge.gamemodes.match.input.InputPayMana;
 
 import java.util.ArrayList;
@@ -14,7 +15,10 @@ import java.util.function.Function;
 /** Fresh remaining-bill facts, copied only at the current input's state boundary. */
 final class ManaPaymentFacts {
     static List<String> unpaid(InputPayMana payment) {
-        var remaining = payment.getRemainingManaCost();
+        return unpaid(payment.getRemainingManaCost());
+    }
+
+    static List<String> unpaid(ManaCostBeingPaid remaining) {
         if (remaining == null) return List.of();
         var result = new ArrayList<String>();
         for (var shard : remaining.getDistinctShards()) {
@@ -39,12 +43,12 @@ final class ManaPaymentFacts {
         return List.copyOf(result);
     }
 
-    static Map<String, Object> describe(InputPayMana payment, Function<CardView, String> identity) {
-        var ability = payment.getPaidForAbility();
-        if (!payment.isPaymentActive() || ability == null || payment.getPayer() == null) return Map.of();
-        return Map.of("payerId", payment.getPayer().getId(), "unpaidManaParts", parts(payment.getRemainingManaCost()),
-                "fundingContext", NumericDecisionProjection.funding(ability, payment.getPayer(), identity),
-                "usablePoolManaColors", payment.getUsablePoolManaColors().stream().map(MagicColor::toShortString).toList());
+    static Map<String, Object> describe(SpellAbility ability, Player payer, ManaCostBeingPaid remaining,
+                                        List<String> usablePoolManaColors, Function<CardView, String> identity) {
+        if (ability == null || payer == null) return Map.of();
+        return Map.of("payerId", payer.getId(), "unpaidManaParts", parts(remaining),
+                "fundingContext", NumericDecisionProjection.funding(ability, payer, identity),
+                "usablePoolManaColors", List.copyOf(usablePoolManaColors));
     }
 
     private ManaPaymentFacts() { }

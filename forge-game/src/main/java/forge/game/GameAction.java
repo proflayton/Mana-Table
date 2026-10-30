@@ -76,6 +76,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.function.Consumer;
 
 /**
  * Methods for common actions performed during a game.
@@ -2344,23 +2345,28 @@ public class GameAction {
     }
 
     public void revealUnplayableByAI(String title, Map<Player, Map<DeckSection, List<? extends PaperCard>>> unplayableCards) {
-        // Notify both players
-        for (Player p : game.getPlayers()) {
-            p.getController().revealAISkipCards(title, unplayableCards);
-        }
+        revealPreparationNotice(controller -> controller.revealAISkipCards(title, unplayableCards));
     }
 
     public void revealAnte(String title, Multimap<Player, PaperCard> removedAnteCards) {
-        // Notify both players
-        for (Player p : game.getPlayers()) {
-            p.getController().revealAnte(title, removedAnteCards);
-        }
+        revealPreparationNotice(controller -> controller.revealAnte(title, removedAnteCards));
     }
 
     public void revealUnsupported(Map<Player, List<PaperCard>> unsupported) {
-        // Notify players
-        for (Player p : game.getPlayers()) {
-            p.getController().revealUnsupported(unsupported);
+        revealPreparationNotice(controller -> controller.revealUnsupported(unsupported));
+    }
+
+    private void revealPreparationNotice(Consumer<PlayerController> notice) {
+        // Deck notices can wait for acknowledgement and release rules-state
+        // ownership. A departed recipient is not another live controller wait.
+        for (Player p : new PlayerCollection(game.getPlayers())) {
+            if (game.isGameOver()) { return; }
+            if (p.hasLost()) { continue; }
+            try {
+                notice.accept(p.getController());
+            } catch (CancellationException cancellation) {
+                if (!p.hasLost() && !game.isGameOver()) { throw cancellation; }
+            }
         }
     }
 

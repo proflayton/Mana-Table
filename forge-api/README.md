@@ -129,6 +129,12 @@ response's `revision` identifies the published frame; an optional request
 mana-payment prompt freshly publishes actual `payerId`, `unpaidManaParts`, `fundingContext` and
 `usablePoolManaColors`, so manual payments shrink the displayed bill and consumed
 inputs cannot retain those facts. The final adjusted bill remains authoritative.
+These prompt fields and private automated payment facts share one per-seat
+publication capture, made after all-audience visibility reconciliation. AI
+observation does not reopen the live payment to reconstruct its bill or source.
+A new publication replaces the capture even when the same input remains pending;
+an outdated capture is not an empty cost. Current command checks still use live
+authority and funding support. The wire fields and command scopes are unchanged.
 Each unpaid part is `{symbol,count}`: generic mana uses one numeric symbol such
 as `{129}`, while colored and hybrid symbols retain their exact multiplicity.
 Projection visits distinct shard kinds without allocating one object per unpaid

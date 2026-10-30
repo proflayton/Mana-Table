@@ -28,6 +28,7 @@ import forge.game.card.Card;
 import forge.game.card.CounterType;
 import forge.game.combat.BlockRemovalRepair;
 import forge.game.combat.CombatInputState;
+import forge.game.mana.ManaCostBeingPaid;
 import forge.game.player.*;
 import forge.game.spellability.SpellAbilityView;
 import forge.game.spellability.SpellAbility;
@@ -144,6 +145,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         SpellAbility announcedAbility;
         String executionId;
         Input colorPaymentOwner;
+        PaymentDecisionProjection.Capture payment;
         String announcedSymbol = "";
         Map<String, Object> cachedDomain;
         long cachedDomainVersion = -1;
@@ -551,11 +553,15 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return List.copyOf(members);
     }
 
-    @SuppressWarnings("unchecked")
     private void refreshFiniteStackYield() {
+        refreshFiniteStackYield(pending == null ? null : pending.prompt);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void refreshFiniteStackYield(Map<String, Object> projectedPrompt) {
         if (activity.finiteOverflow() || executions.finiteOverflow()) finiteStackYield.revoke("history-overflow");
         if (!finiteStackYield.active()) return;
-        Map<String, Object> optional = pending != null && pending.prompt.get("optionalDecline") instanceof Map<?, ?> offer
+        Map<String, Object> optional = projectedPrompt != null && projectedPrompt.get("optionalDecline") instanceof Map<?, ?> offer
                 ? (Map<String, Object>) offer : null;
         var phase = game.getPhaseHandler().getPhase();
         finiteStackYield.update(table.stackInterruption.actionVersion(), resolutionChoiceVersion, game.getPhaseHandler().getTurn(),
@@ -673,6 +679,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 }
                 Pending observedOwner = pending;
                 long version = sourceActionVersion.get();
+                var payment = currentPaymentCapture(current);
                 boolean discovered = false;
                 Map<String, Object> domain = map("version", version, "coverage", "NotApplicable", "sources", List.of(), "actions", List.of());
                 if (current != null && sourceInputCurrent(current)) {
@@ -705,22 +712,20 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         }
                         domain = map("version", version, "coverage", complete ? "Complete" : "Unsupported",
                                 "sources", complete ? sources : List.of(), "actions", complete ? semantics : List.of());
-                        current.poolManaColors.clear();
-                        if (current.input instanceof InputPayMana mana) {
-                            current.poolManaColors.addAll(mana.getUsablePoolManaColors().stream().map(MagicColor::toShortString).toList());
-                            domain.put("poolManaColors", List.copyOf(current.poolManaColors));
-                        }
+                        if (current.input instanceof InputPayMana)
+                            domain.put("poolManaColors", payment.poolManaColors());
                         discovered = true;
                     }
                 }
                 var snapshot = automatedState(current);
                 long observedRevision = revision;
-                var semantics = automatedSemantics(current);
+                var semantics = automatedSemantics(current, payment);
                 // Also fence cached catalogs and the decision metadata read.
                 // A reentrant callback can replace ownership while a rules
                 // query temporarily yields the state boundary. No part of
                 // that mixed read, including newly allocated offers, is usable.
                 if (pending != observedOwner || sourceActionVersion.get() != version || revision != observedRevision
+                        || payment != null && current.payment != payment
                         || current != null && current.kind.equals("input")
                             && (inputActionQueued || human.getInputQueue().getInput() != current.input
                                 || human.getInputProxy().getInput() != current.input
@@ -730,7 +735,12 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         current.cachedDomain = null;
                         current.cachedDomainVersion = -1;
                         current.sourceActions.clear(); current.additionalCards.clear(); current.additionalSources.clear();
-                        current.poolManaColors.clear();
+                        // A reentrant publication can retain this Pending while
+                        // replacing its payment cohort. Revoke only the facts
+                        // this read observed, never that newer publication.
+                        if (current.payment == payment) {
+                            current.poolManaColors.clear(); current.payment = null;
+                        }
                     }
                     throw new StaleObservationException();
                 }
@@ -751,7 +761,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return Collections.unmodifiableMap(enriched);
     }
 
-    private Map<String, Object> automatedSemantics(Pending current) {
+    private Map<String, Object> automatedSemantics(Pending current, PaymentDecisionProjection.Capture payment) {
         var result = map("intent", "Unknown", "amount", null, "options", List.of(), "legalTextValues", List.of(), "selectionIsCost", false);
         if (current == null) return result;
         result.putAll(DecisionSemantics.describe(current.input, game, human.getPlayer(), this::semanticCardId));
@@ -760,10 +770,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (current.announcedAbility != null)
             result.put("numeric", NumericDecisionProjection.describe(current.announcedAbility, current.announcedSymbol,
                     human.getPlayer(), card -> numericSourceId(card)));
-        if (current.input instanceof InputPayMana payment) {
-            var provenance = PaymentDecisionProjection.describe(payment, this::numericSourceId);
-            if (provenance != null) result.put("payment", provenance);
-        }
+        if (payment != null) result.putAll(payment.automatedFacts());
         // A published prompt UUID can change after every gesture while the
         // controller still owns the same rules input. Its work allowance must
         // follow that actual input, including its nested required GUI choices.
@@ -781,10 +788,19 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (current.prompt.containsKey("counterPayment") || current.prompt.containsKey("counterPaymentChoice")) {
             result.put("intent", "RemoveCounters"); result.put("selectionIsCost", true);
         }
-        var payingInput = current.input instanceof InputPayMana ? current.input
-                : "colorChoice".equals(current.prompt.get("context")) ? human.getInputQueue().getInput() : null;
-        if (payingInput instanceof InputPayMana mana) result.put("unpaidMana", ManaPaymentFacts.unpaid(mana));
         return result;
+    }
+
+    private PaymentDecisionProjection.Capture currentPaymentCapture(Pending current) {
+        if (current == null || !(current.input instanceof InputPayMana)
+                && !(current.colorPaymentOwner != null && current.kind.equals("choice")
+                    && "colorChoice".equals(current.prompt.get("context")))) return null;
+        var payment = current.payment;
+        if (payment == null || !(latest.get("boardRevision") instanceof Number board)
+                || !payment.matches(current.id, board.longValue(), sourceActionVersion.get())
+                || current.colorPaymentOwner != null && human.getInputQueue().getInput() != current.colorPaymentOwner)
+            throw new StaleObservationException();
+        return payment;
     }
 
     private boolean sourceInputCurrent(Pending current) {
@@ -1208,6 +1224,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         finiteStackYield.revoke("action-restored");
         if (pending != null) {
             pending.sourceActions.clear(); pending.additionalCards.clear(); pending.additionalSources.clear();
+            pending.payment = null; pending.poolManaColors.clear();
             if (viewer.getId() == restored.actorId()) pending = null;
         }
         Player actor = game.getRegisteredPlayers().stream().filter(player -> player.getId() == restored.actorId()).findFirst().orElse(null);
@@ -1450,6 +1467,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private void markBusy(Pending consumed) {
+        if (consumed != null) { consumed.payment = null; consumed.poolManaColors.clear(); }
         var next = new LinkedHashMap<>(latest);
         next.put("revision", ++revision); next.put("prompt", null); next.put("status", "resolving");
         next.put("undo", undoProjection(null));
@@ -1578,6 +1596,59 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return offer;
     }
 
+    private PaymentDecisionProjection.Capture capturePayment(Pending prompt, long boardRevision, long sourceVersion,
+                                                              ExecutionTracker.Reference execution, MatchExecutions.Frame frame) {
+        // Capture the scope before a funding query. Those queries may yield the
+        // rules boundary; a later owner/version must not label their old facts.
+        String decisionId = prompt.id;
+        boolean direct = prompt.input instanceof InputPayMana && sourceInputCurrent(prompt);
+        boolean nested = prompt.colorPaymentOwner != null && prompt.kind.equals("choice")
+                && "colorChoice".equals(prompt.prompt.get("context"))
+                && human.getInputQueue().getInput() == prompt.colorPaymentOwner;
+        Input owner = direct ? prompt.input : nested ? prompt.colorPaymentOwner : null;
+        var promptFacts = new LinkedHashMap<String, Object>();
+        var automatedFacts = new LinkedHashMap<String, Object>();
+        List<String> poolColors = List.of();
+        SpellAbility ability = null;
+        Player payer = null;
+        ManaCostBeingPaid remaining = null;
+        if (owner instanceof InputPayMana payment) {
+            ability = payment.getPaidForAbility();
+            payer = payment.getPayer();
+            // Both the counted public bill and the policy's compatibility bill
+            // describe this one detached value, including nested color choices.
+            remaining = payment.getRemainingManaCost();
+            if (remaining != null) automatedFacts.put("unpaidMana", ManaPaymentFacts.unpaid(remaining));
+            if (direct) {
+                var provenance = PaymentDecisionProjection.describe(ability, payer, payment.isPaymentMandatory(),
+                        payment.isEffectPayment(), this::numericSourceId);
+                if (provenance != null) automatedFacts.put("payment", provenance);
+                poolColors = payment.getUsablePoolManaColors().stream().map(MagicColor::toShortString).toList();
+                promptFacts.putAll(ManaPaymentFacts.describe(ability, payer, remaining, poolColors, this::semanticCardId));
+            }
+        } else if (owner instanceof InputSelectCardsForConvokeOrImprovise reduction) {
+            ability = reduction.getSpellAbility(); payer = reduction.getPayer();
+            remaining = reduction.getRemainingManaCost();
+        }
+        if (nested && payer != null && remaining != null)
+            promptFacts.put("manaPaymentContext", colorPaymentContext(ability, payer, remaining));
+        // This also records non-equivalent required choices exactly once, just
+        // as ordinary publications do when there is no optional payment offer.
+        var declineOffer = optionalDecline(prompt, frame);
+        if (declineOffer != null) {
+            promptFacts.put("optionalDecline", Collections.unmodifiableMap(new LinkedHashMap<>(declineOffer)));
+            var support = OptionalManaPayment.describe((InputPayMana) prompt.input, declineOffer);
+            if (support != null) promptFacts.put("optionalPaymentSupport", support);
+        }
+        if (owner == null || payer == null || remaining == null || !table.currentPublication(boardRevision)
+                || pending != prompt || sourceActionVersion.get() != sourceVersion
+                || direct && !sourceInputCurrent(prompt)
+                || nested && human.getInputQueue().getInput() != owner) return null;
+        return new PaymentDecisionProjection.Capture(decisionId, boardRevision, sourceVersion,
+                execution == null ? null : execution.id(), execution == null ? null : execution.step(),
+                promptFacts, automatedFacts, poolColors);
+    }
+
     void updatePublicDecision(Integer owner, String actionClass) {
         // Only ownership/class is public. Another seat choosing attackers is
         // observed until an attack actually exists; choosing none stays quiet.
@@ -1640,7 +1711,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     void publishView(long boardRevision) {
         // Failure retains the last published board. The table aborts rules work
         // and releases waiters without manufacturing player concessions.
-        if (error != null) return;
+        if (error != null || !table.currentPublication(boardRevision)) return;
         if (viewer.getHasLost() || game.isGameOver()) {
             Pending old = pending;
             pending = null;
@@ -1651,6 +1722,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             queueCombatRefresh(available.input); pending = null; available = null;
         }
         final Pending prompt = available;
+        final long paymentSourceVersion = sourceActionVersion.get();
         if (prompt != null) { prompt.cards.clear(); prompt.attackPairs.clear(); prompt.blockPairs.clear(); }
         var view = game.getView();
         var players = new ArrayList<Object>();
@@ -1736,8 +1808,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var publication = MatchActivity.capture(activity::frame, executions::frame);
         var activityFrame = publication.activity();
         activityRevision = activityFrame.revision();
+        Map<String, Object> projectedPrompt = null;
+        PaymentDecisionProjection.Capture payment = null;
         if (prompt != null) {
-            var projectedPrompt = new LinkedHashMap<>(prompt.prompt);
+            projectedPrompt = new LinkedHashMap<>(prompt.prompt);
             // Identity-bearing dialog facts belong to this reconciled board.
             // Constructing them before the all-audience visibility prepass can
             // leave a frozen portrait on a revoked occurrence generation.
@@ -1755,28 +1829,19 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             projectedPrompt.remove("manaPaymentContext");
             projectedPrompt.remove("optionalDecline");
             projectedPrompt.remove("optionalPaymentSupport");
-            prompt.poolManaColors.clear();
-            if (prompt.input instanceof InputPayMana payment && sourceInputCurrent(prompt)) {
-                projectedPrompt.putAll(ManaPaymentFacts.describe(payment, this::semanticCardId));
-                prompt.poolManaColors.addAll(payment.getUsablePoolManaColors().stream().map(MagicColor::toShortString).toList());
+            payment = capturePayment(prompt, boardRevision, paymentSourceVersion, execution, publication.executions());
+            if (!table.currentPublication(boardRevision) || pending != prompt || sourceActionVersion.get() != paymentSourceVersion) return;
+            if (payment != null) {
+                projectedPrompt.putAll(payment.promptFacts());
+                projectedPrompt.put("executionId", payment.executionId());
+                projectedPrompt.put("executionStep", payment.executionStep());
             }
-            var declineOffer = optionalDecline(prompt, publication.executions());
-            if (declineOffer != null) {
-                projectedPrompt.put("optionalDecline", declineOffer);
-                var support = OptionalManaPayment.describe((InputPayMana)prompt.input, declineOffer);
-                if (support != null) projectedPrompt.put("optionalPaymentSupport", support);
-            }
-            if (prompt.colorPaymentOwner != null && prompt.kind.equals("choice")
-                    && "colorChoice".equals(prompt.prompt.get("context"))
-                    && human.getInputQueue().getInput() == prompt.colorPaymentOwner)
-                projectedPrompt.put("manaPaymentContext", colorPaymentContext(prompt.colorPaymentOwner));
             if (prompt.input instanceof InputPassPriority) {
                 projectedPrompt.put("priorityAbilities", priorityAbilities(human.getPriorityAbilities(), prompt));
                 projectPriorityAlternative(projectedPrompt, prompt.input);
             }
-            prompt.prompt = projectedPrompt;
         }
-        refreshFiniteStackYield();
+        refreshFiniteStackYield(projectedPrompt);
         var snapshot = map("id", id, "revision", ++revision, "boardRevision", boardRevision, "format", format, "status", error != null ? "error" : game.isGameOver() ? "finished" : "playing",
                 "stackInterruptionVersion", table.stackInterruption.version(),
                 "stackActionVersion", table.stackInterruption.actionVersion(), "resolutionChoiceVersion", resolutionChoiceVersion,
@@ -1786,7 +1851,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "activePlayerId", view.getPlayerTurn() == null ? null : view.getPlayerTurn().getId(), "players", players,
                 "priorityPlayerId", allPlayers.stream().filter(p -> !p.getHasLost() && p.getHasPriority()).map(PlayerView::getId).findFirst().orElse(null),
                 "decisionOwnerId", null, "actionClass", "resolving",
-                "stack", stack, "combat", combatState(prompt), "prompt", prompt == null ? null : prompt.prompt,
+                "stack", stack, "combat", combatState(prompt), "prompt", projectedPrompt,
                 "undo", undoProjection(prompt),
                 "states", PublicStates.of(forge.game.PublicTableStates.snapshot(game)),
                 "playAccesses", playAccess.project(human.getPlayer(), allPlayers,
@@ -1794,15 +1859,27 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         human::getCard, activity::visualId, publishedAccessCards),
                 "ignoredPriorityAbilities", priorityAbilities(human.getIgnoredPriorityAbilities(), prompt),
                 "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries(), "executions", publication.executions());
+        if (!table.currentPublication(boardRevision) || pending != prompt || sourceActionVersion.get() != paymentSourceVersion) return;
         String quietToken = quietYield.observe(snapshot, activity.quietSequence());
         if (prompt != null) {
-            var projectedPrompt = new LinkedHashMap<>(prompt.prompt);
-            projectedPrompt.put("quietYieldToken", canQuietYield(prompt.input) ? quietToken : "");
-            prompt.prompt = projectedPrompt;
-            snapshot.put("prompt", projectedPrompt);
+            var quietPrompt = new LinkedHashMap<>(projectedPrompt);
+            quietPrompt.put("quietYieldToken", canQuietYield(prompt.input) ? quietToken : "");
+            projectedPrompt = quietPrompt;
+            snapshot.put("prompt", quietPrompt);
+        }
+        if (!table.currentPublication(boardRevision) || pending != prompt || sourceActionVersion.get() != paymentSourceVersion) return;
+        if (prompt != null) {
+            prompt.prompt = projectedPrompt; prompt.payment = payment;
+            prompt.poolManaColors.clear();
+            if (payment != null) {
+                prompt.poolManaColors.addAll(payment.poolManaColors());
+                // The same rules input can publish a smaller bill without a
+                // new object identity. Rebuild its bill-dependent domain once.
+                prompt.cachedDomain = null; prompt.cachedDomainVersion = -1;
+            }
         }
         latest = Collections.unmodifiableMap(snapshot);
-        publishedSourceActionVersion = sourceActionVersion.get();
+        publishedSourceActionVersion = paymentSourceVersion;
         notifyPlaytest();
         queueFiniteStackPass();
     }
@@ -2318,23 +2395,20 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return eligibleColors.get(answer.getAsJsonArray("choices").get(0).getAsInt());
     }
 
-    private Map<String, Object> colorPaymentContext(Input owner) {
-        var ability = owner instanceof InputPayMana payment ? payment.getPaidForAbility()
-                : ((InputSelectCardsForConvokeOrImprovise)owner).getSpellAbility();
-        var payer = owner instanceof InputPayMana payment ? payment.getPayer() : ((InputSelectCardsForConvokeOrImprovise)owner).getPayer();
-        var remaining = owner instanceof InputPayMana payment ? payment.getRemainingManaCost() : ((InputSelectCardsForConvokeOrImprovise)owner).getRemainingManaCost();
+    private Map<String, Object> colorPaymentContext(SpellAbility ability, Player payer, ManaCostBeingPaid remaining) {
         var source = ability == null || ability.getHostCard() == null ? null : ability.getHostCard().getView();
         boolean visible = source != null && source.canBeShownTo(viewer);
         Map<String, Object> card = visible ? cardState(source, null) : null;
         if (card != null) {
             card.put("key", ""); card.put("selectable", false); card.put("highlighted", false);
+            card = Collections.unmodifiableMap(card);
         }
         String sourceId = card == null ? "" : Objects.toString(card.get("visualId"), "");
         if (sourceId.isEmpty() && card != null) sourceId = Objects.toString(card.get("combatId"), "");
-        return map("payerId", payer.getId(), "unpaidManaParts", ManaPaymentFacts.parts(remaining),
-                "source", map("cardId", sourceId, "card", card,
+        return Collections.unmodifiableMap(map("payerId", payer.getId(), "unpaidManaParts", ManaPaymentFacts.parts(remaining),
+                "source", Collections.unmodifiableMap(map("cardId", sourceId, "card", card,
                         "controllerId", visible && source.getController() != null ? source.getController().getId() : null,
-                        "zone", visible && source.getZone() != null ? source.getZone().name() : ""));
+                        "zone", visible && source.getZone() != null ? source.getZone().name() : ""))));
     }
 
     private CounterType chooseCounterTypeForPayment(String message, CardView permanent, int amount,

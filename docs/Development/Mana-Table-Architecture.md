@@ -24,6 +24,20 @@ serialized finite runner owns dispatch and reconciliation. Source preferences do
 not grant priority yields, persist across matches or authorize arbitrary choices.
 The game projects those preferences onto the actual source and reader controls.
 
+Current payment facts have one publication owner. After all seats reconcile
+visibility, `MatchSession` captures a per-seat copied payment value for the exact
+decision, board cohort and source-action version. Human prompt fields, AI payment
+provenance, the remaining bill and pool-color facts derive from that value.
+Republishing the same input replaces its capture; an outdated capture cannot
+establish a zero bill or certify an unpayable cost. A nested color choice retains
+its explicit parent payment context without inheriting the parent's commands.
+Transient source portraits and physical funding-source identities retain their
+separate visibility rules. Captures contain projected values, never a stored
+funding witness; command admission and execution still validate live rules state.
+The existing table board generation fences publication too: a superseded outer
+publication cannot overwrite a newer seat capture or finish an older spectator
+cohort. Rejecting a superseded AI read preserves the newer published capture.
+
 ## AI policy boundary
 
 AI seats use `Mana.AI` through the same scoped decisions as human players;
@@ -112,6 +126,14 @@ Backend failure is a table interruption, separate from a player's concession.
 The provider revokes all seat inputs before terminalizing rules work and
 releasing waits. It cannot start new reveal acknowledgements during abort or
 publish a victory/defeat result for that failure; original errors stay private.
+
+Queued match startup uses that same rules-state boundary. Closing the table or
+ending the game revokes preparation that has not started. Zone preparation uses
+each player's retained registration, rather than indexing a shrinking live seat
+list against the original roster. A departure during a setup choice ends that
+player's remaining setup work; it cannot repopulate their in-game zones or move
+another seat's deck into their place. Their existing outside-game sideboard keeps
+its actual identity. Unexpected setup faults still interrupt the table.
 
 The private automated observation port reads under the same rules-state boundary,
 without joining the UI queue. A nested choice can be published by a UI callback

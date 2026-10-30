@@ -23,11 +23,11 @@ import forge.game.zone.ZoneType;
 import forge.item.PaperCard;
 import forge.util.Localizer;
 import forge.util.MyRandom;
-import forge.util.collect.FCollectionView;
 import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.concurrent.CancellationException;
 
 public class Match {
     private List<PaperCard> removedCards = Lists.newArrayList();
@@ -78,7 +78,9 @@ public class Match {
     }
 
     public void startGame(final Game game, Runnable startGameHook) {
+        if (game.isGameOver()) { return; }
         prepareAllZones(game);
+        if (game.isGameOver()) { return; }
         if (rules.useAnte()) {  // Deciding which cards go to ante
             Multimap<Player, Card> list = game.chooseCardsForAnte(rules.getMatchAnteRarity(), rules.getAnteIncludeBasicLands());
             for (Entry<Player, Card> kv : list.entries()) {
@@ -227,8 +229,10 @@ public class Match {
         Multimap<Player, PaperCard> removedAnteCards = ArrayListMultimap.create();
         Map<Player, List<PaperCard>> unsupported = new HashMap<>();
 
-        final FCollectionView<Player> players = game.getPlayers();
-        final List<RegisteredPlayer> playersConditions = game.getMatch().getPlayers();
+        // Registered identities remain stable when an input yields to a loss.
+        // The live membership list must never be joined to deck registrations
+        // by index: an earlier departure shifts every following player's deck.
+        final List<Player> players = new ArrayList<>(game.getRegisteredPlayers());
 
         boolean isFirstGame = gameOutcomes.isEmpty();
         boolean canSideBoard = !isFirstGame && rules.getGameType().isSideboardingAllowed();
@@ -239,110 +243,133 @@ public class Match {
         if (canSideBoard && sideboardForAIs) {
             for (int i = 0; i < players.size(); i++) {
                 final Player player = players.get(i);
-                //final RegisteredPlayer psc = playersConditions.get(i);
-                if (!player.getController().isAI()) {
+                if (canPrepare(player) && !player.getController().isAI()) {
                     sideboardProxy = player.getController();
                     break;
                 }
             }
         }
 
-        for (int i = 0; i < playersConditions.size(); i++) {
-            final Player player = players.get(i);
-            final RegisteredPlayer psc = playersConditions.get(i);
-            PlayerController person = player.getController();
+        for (final Player player : players) {
+            if (game.isGameOver()) { return; }
+            if (!canPrepare(player)) { continue; }
+            final RegisteredPlayer psc = player.getRegisteredPlayer();
+            try {
+                PlayerController person = player.getController();
 
-            if (canSideBoard) {
-                if (sideboardProxy != null && person.isAI()) {
-                    person = sideboardProxy;
+                if (canSideBoard) {
+                    if (sideboardProxy != null && canPrepare(sideboardProxy.getPlayer()) && person.isAI()) {
+                        person = sideboardProxy;
+                    }
+
+                    Deck toChange = psc.getDeck();
+                    if (!getRemovedCards().isEmpty()) {
+                        CardPool main = new CardPool();
+                        main.addAll(toChange.get(DeckSection.Main));
+                        CardPool sideboard = new CardPool();
+                        sideboard.addAll(toChange.getOrCreate(DeckSection.Sideboard));
+                        for (PaperCard c : removedCards) {
+                            if (main.contains(c)) {
+                                main.remove(c, 1);
+                            } else if (sideboard.contains(c)) {
+                                sideboard.remove(c, 1);
+                            }
+                        }
+                        toChange.getMain().clear();
+                        toChange.getMain().addAll(main);
+                        toChange.get(DeckSection.Sideboard).clear();
+                        toChange.get(DeckSection.Sideboard).addAll(sideboard);
+                    }
+                    List<PaperCard> newMain;
+                    try {
+                        newMain = person.sideboard(toChange, rules.getGameType(), player.getName());
+                    } catch (CancellationException cancellation) {
+                        // A human proxy can depart while sideboarding for an AI.
+                        if (canPrepare(person.getPlayer())) { throw cancellation; }
+                        newMain = null;
+                    }
+                    if (!canPrepare(player)) { continue; }
+                    if (!canPrepare(person.getPlayer())) {
+                        newMain = null;
+                        person = player.getController();
+                    }
+                    if (null != newMain) {
+                        CardPool allCards = new CardPool();
+                        allCards.addAll(toChange.get(DeckSection.Main));
+                        allCards.addAll(toChange.getOrCreate(DeckSection.Sideboard));
+                        for (PaperCard c : newMain) {
+                            allCards.remove(c);
+                        }
+                        toChange.getMain().clear();
+                        toChange.getMain().add(newMain);
+                        toChange.get(DeckSection.Sideboard).clear();
+                        toChange.get(DeckSection.Sideboard).addAll(allCards);
+                    }
                 }
 
-                Deck toChange = psc.getDeck();
-                if (!getRemovedCards().isEmpty()) {
-                    CardPool main = new CardPool();
-                    main.addAll(toChange.get(DeckSection.Main));
-                    CardPool sideboard = new CardPool();
-                    sideboard.addAll(toChange.getOrCreate(DeckSection.Sideboard));
-                    for (PaperCard c : removedCards) {
-                        if (main.contains(c)) {
-                            main.remove(c, 1);
-                        } else if (sideboard.contains(c)) {
-                            sideboard.remove(c, 1);
+                Deck toCheck = psc.getDeck();
+                if (toCheck == null) {
+                    try {
+                        System.err.println(psc.getPlayer().getName() + " Deck is NULL...");
+                        int val = rules.getGameType().getDeckFormat().getMainRange().getMinimum();
+                        toCheck = new Deck("NULL");
+                        if (val > 0)
+                            toCheck.getMain().add("Wastes", val);
+                    } catch (Exception ignored) {}
+                }
+                Pair<Deck, List<PaperCard>> myDeck = toCheck.getValid();
+                player.setDraftNotes(myDeck.getLeft().getDraftNotes());
+
+                Set<PaperCard> myRemovedAnteCards = null;
+                if (!rules.useAnte()) {
+                    myRemovedAnteCards = getRemovedAnteCards(myDeck.getLeft());
+                    for (PaperCard cp: myRemovedAnteCards) {
+                        for (Entry<DeckSection, CardPool> ds : myDeck.getLeft()) {
+                            ds.getValue().removeAll(cp);
                         }
                     }
-                    toChange.getMain().clear();
-                    toChange.getMain().addAll(main);
-                    toChange.get(DeckSection.Sideboard).clear();
-                    toChange.get(DeckSection.Sideboard).addAll(sideboard);
                 }
-                List<PaperCard> newMain = person.sideboard(toChange, rules.getGameType(), player.getName());
-                if (null != newMain) {
-                    CardPool allCards = new CardPool();
-                    allCards.addAll(toChange.get(DeckSection.Main));
-                    allCards.addAll(toChange.getOrCreate(DeckSection.Sideboard));
-                    for (PaperCard c : newMain) {
-                        allCards.remove(c);
+
+                preparePlayerZone(player, ZoneType.Library, myDeck.getLeft().getMain(), psc.useRandomFoil());
+                if (myDeck.getLeft().has(DeckSection.Sideboard)) {
+                    preparePlayerZone(player, ZoneType.Sideboard, myDeck.getLeft().get(DeckSection.Sideboard), psc.useRandomFoil());
+
+                    player.assignCompanion(game, person);
+                    if (!canPrepare(player)) { continue; }
+                }
+
+                player.initVariantsZones(psc);
+                if (!canPrepare(player)) { continue; }
+
+                player.shuffle(null);
+                if (!canPrepare(player)) { continue; }
+
+                if (isFirstGame) {
+                    Map<DeckSection, List<? extends PaperCard>> cardsComplained = player.getController().complainCardsCantPlayWell(myDeck.getLeft());
+                    if (!canPrepare(player)) { continue; }
+                    if (cardsComplained != null && !cardsComplained.isEmpty()) {
+                        rAICards.put(player, cardsComplained);
                     }
-                    toChange.getMain().clear();
-                    toChange.getMain().add(newMain);
-                    toChange.get(DeckSection.Sideboard).clear();
-                    toChange.get(DeckSection.Sideboard).addAll(allCards);
-                }
-            }
-
-            Deck toCheck = psc.getDeck();
-            if (toCheck == null) {
-                try {
-                    System.err.println(psc.getPlayer().getName() + " Deck is NULL...");
-                    int val = rules.getGameType().getDeckFormat().getMainRange().getMinimum();
-                    toCheck = new Deck("NULL");
-                    if (val > 0)
-                        toCheck.getMain().add("Wastes", val);
-                } catch (Exception ignored) {}
-            }
-            Pair<Deck, List<PaperCard>> myDeck = toCheck.getValid();
-            player.setDraftNotes(myDeck.getLeft().getDraftNotes());
-
-            Set<PaperCard> myRemovedAnteCards = null;
-            if (!rules.useAnte()) {
-                myRemovedAnteCards = getRemovedAnteCards(myDeck.getLeft());
-                for (PaperCard cp: myRemovedAnteCards) {
-                    for (Entry<DeckSection, CardPool> ds : myDeck.getLeft()) {
-                        ds.getValue().removeAll(cp);
+                } else {
+                    //reset cards to fix weird issues on netplay nextgame client
+                    for (Card c : player.getCardsIn(ZoneType.Library)) {
+                        c.setTapped(false);
+                        c.resetActivationsPerTurn();
                     }
                 }
-            }
 
-            preparePlayerZone(player, ZoneType.Library, myDeck.getLeft().getMain(), psc.useRandomFoil());
-            if (myDeck.getLeft().has(DeckSection.Sideboard)) {
-                preparePlayerZone(player, ZoneType.Sideboard, myDeck.getLeft().get(DeckSection.Sideboard), psc.useRandomFoil());
-
-                player.assignCompanion(game, person);
-            }
-
-            player.initVariantsZones(psc);
-
-            player.shuffle(null);
-
-            if (isFirstGame) {
-                Map<DeckSection, List<? extends PaperCard>> cardsComplained = player.getController().complainCardsCantPlayWell(myDeck.getLeft());
-                if (cardsComplained != null && !cardsComplained.isEmpty()) {
-                    rAICards.put(player, cardsComplained);
+                if (myRemovedAnteCards != null && !myRemovedAnteCards.isEmpty()) {
+                    removedAnteCards.putAll(player, myRemovedAnteCards);
                 }
-            } else {
-                //reset cards to fix weird issues on netplay nextgame client
-                for (Card c : player.getCardsIn(ZoneType.Library)) {
-                    c.setTapped(false);
-                    c.resetActivationsPerTurn();
-                }
+                unsupported.put(player, myDeck.getRight());
+            } catch (CancellationException cancellation) {
+                // A departing actor can release a synchronous preparation
+                // choice. Every unrelated controller failure remains fatal.
+                if (canPrepare(player)) { throw cancellation; }
             }
-
-            if (myRemovedAnteCards != null && !myRemovedAnteCards.isEmpty()) {
-                removedAnteCards.putAll(player, myRemovedAnteCards);
-            }
-            unsupported.put(player, myDeck.getRight());
         }
 
+        if (game.isGameOver()) { return; }
         final Localizer localizer = Localizer.getInstance();
         if (!rAICards.isEmpty() && !rules.getGameType().isCardPoolLimited() && rules.warnAboutAICards()) {
             game.getAction().revealUnplayableByAI(localizer.getMessage("lblAICantPlayCards"), rAICards);
@@ -355,6 +382,10 @@ public class Match {
         if (!unsupported.isEmpty()) {
             game.getAction().revealUnsupported(unsupported);
         }
+    }
+
+    private static boolean canPrepare(final Player player) {
+        return !player.hasLost() && !player.getGame().isGameOver();
     }
 
     private void executeOwnershipChanges(Game lastGame) {
