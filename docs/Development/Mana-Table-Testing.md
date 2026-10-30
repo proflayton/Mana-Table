@@ -990,6 +990,14 @@ The decision checks also replace payload families, option bounds, numeric bounds
 initial values, recipient identities and disclosed face sets under the same prompt
 ID. Incompatible drafts and private readers must retire; unchanged observations
 must preserve the player's edits. `DecisionSession` owns that local state.
+Its numeric-step cases cover an empty first step, an explicit initial value,
+nonzero minima, bounded maxima, integer limits, invalid intermediate text and
+ordinary text payloads in the existing `--smoke-presentation` lane.
+The full `--smoke-headless-presentation` journey also decodes Crackle's actual
+announcement shape (no initial value, range 0 through `int.MaxValue`), clicks
+plus twice and submits exactly one current `ChooseNumber(2)` only after Confirm.
+It retains the raw prompt, current painted value, hit ownership and commands
+before each assertion, then continues the existing target-selection journey.
 The window only reads the prepared frame. Headless timing measures Update,
 including frame preparation; reading the cached frame is not a new composition
 or an FPS measurement. These checks supply behavior evidence, not UX acceptance.

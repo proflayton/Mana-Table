@@ -77,8 +77,7 @@ internal sealed partial class TableApplication
             case MatchIntent.ChooseAbility choice when match?.Decision is { } decision && decision.Payload is AbilityChoicePayload:
                 SubmitAbilityChoice(match, decision, choice.Index); break;
             case MatchIntent.FocusInput input: textFocus = true; decisions.Filtering = input.Filter; break;
-            case MatchIntent.AdjustNumber step when decisions.Payload is NumberPayload number && int.TryParse(decisions.Input, out int value):
-                decisions.Input = Math.Clamp((long)value + step.Delta, number.Range?.Min ?? int.MinValue, number.Range?.Max ?? int.MaxValue).ToString(); break;
+            case MatchIntent.AdjustNumber step: decisions.AdjustNumber(step.Delta); break;
             case MatchIntent.ConfirmValue when match?.Decision != null:
                 textFocus = false; Send(DecisionCommands.Value(match, decisions.Input)); break;
             case MatchIntent.OpenAllocationSource: OpenAllocationSource(); break;
