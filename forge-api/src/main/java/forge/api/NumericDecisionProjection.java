@@ -16,18 +16,6 @@ import java.util.function.Function;
 final class NumericDecisionProjection {
     private static final int MAX_SOURCES = 128, MAX_ROUTES = 32;
 
-    /** A nullable projection is still a completed capture: unavailable source
-     * knowledge must not be confused with a missing or superseded publication. */
-    record Capture(String decisionId, long boardRevision, long sourceVersion,
-                   String executionId, String executionStep, Map<String, Object> facts) {
-        Capture { facts = facts == null ? null : PublishedDecisionFacts.freeze(facts); }
-
-        boolean matches(String decision, long board, long version, String execution, String step) {
-            return Objects.equals(decisionId, decision) && boardRevision == board && sourceVersion == version
-                    && Objects.equals(executionId, execution) && Objects.equals(executionStep, step);
-        }
-    }
-
     static Map<String, Object> describe(SpellAbility announced, String symbol, Player actor,
                                         Function<CardView, String> identity) {
         var source = announced.getHostCard();

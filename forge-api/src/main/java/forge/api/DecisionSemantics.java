@@ -1,6 +1,5 @@
 package forge.api;
 
-import forge.game.Game;
 import forge.game.card.CardView;
 import forge.game.cost.*;
 import forge.game.player.Player;
@@ -15,29 +14,18 @@ import java.util.function.Function;
 
 /** Exact operation context for policy decisions, never a classifier of prompt wording. */
 final class DecisionSemantics {
-    static Map<String, Object> describe(Input input, Game game) {
-        return describe(input, game, null, null);
+    /** The explicit ambient part is copied during publication, never rediscovered by a consumer. */
+    static Map<String, Object> describeContext(CostPaymentStack.Entry paying) {
+        return describe(null, paying, null, null, null);
     }
 
-    static Map<String, Object> describe(Input input, Game game, Player viewer, Function<CardView, String> identity) {
-        var paying = game.costPaymentStack.peek();
-        SpellAbility ability = paying != null ? null : input instanceof InputSelectTargets targets ? targets.getSpellAbility()
-                : input instanceof InputSelectManyBase<?> many ? many.getSpellAbility()
-                : input instanceof InputConfirm confirm ? confirm.getSpellAbility() : null;
-        return describe(input, paying, viewer, identity, ability);
-    }
-
-    static Map<String, Object> describeTargets(SpellAbility ability, Game game, Player viewer, Function<CardView, String> identity) {
-        return describe(null, game.costPaymentStack.peek(), viewer, identity, ability);
+    static Map<String, Object> describeTargets(SpellAbility ability, CostPaymentStack.Entry paying, Player viewer, Function<CardView, String> identity) {
+        return describe(null, paying, viewer, identity, ability);
     }
 
     static Map<String, Object> describeSelection(InputSelectManyBase<?> input, SpellAbility ability, CostPaymentStack.Entry paying,
                                                 Player viewer, Function<CardView, String> identity) {
         return describe(input, paying, viewer, identity, ability);
-    }
-
-    static Map<String, Object> describeChoice(CostPaymentStack.Entry paying) {
-        return describe(null, paying, null, null, null);
     }
 
     static Map<String, Object> describeConfirmation(SpellAbility ability, CostPaymentStack.Entry paying,

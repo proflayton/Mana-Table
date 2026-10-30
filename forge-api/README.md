@@ -116,6 +116,14 @@ read-only `funding`. Funding groups production routes by physical source, with
 pool counts and explicit knowledge/eligibility. It contains no action IDs or
 card keys. The initial own-battlefield/unrestricted-pool projection is partial;
 it can witness nominal funding but cannot certify that no other resources exist.
+All current decision families share one retained, per-seat publication owner,
+including plain number, text and allocation callbacks and ordinary priority,
+combat and opening-hand inputs. The complete AI cost context is copied with the
+human board; an observation cannot reread a later global cost entry or mutable
+cost amount. Payment, selection and numeric projection helpers feed that same
+owner rather than maintaining separate stamped captures. Live answer eligibility,
+source-action discovery and exact unfinished response futures retain their own
+existing authority. This changes no wire fields or command permissions.
 An announcement's private numeric facts share its audience publication and
 visibility reconciliation. Retained observation reads a frozen copy, scoped to
 the current dialog, board and source version, without reopening abilities or

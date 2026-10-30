@@ -145,9 +145,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         SpellAbility announcedAbility;
         String executionId;
         Input colorPaymentOwner;
-        PaymentDecisionProjection.Capture payment;
-        SelectionDecisionProjection.Capture selection;
-        NumericDecisionProjection.Capture announcement;
+        CurrentDecisionProjection.Capture publishedDecision;
         String announcedSymbol = "";
         Map<String, Object> cachedDomain;
         long cachedDomainVersion = -1;
@@ -664,9 +662,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 }
                 Pending observedOwner = pending;
                 long version = sourceActionVersion.get();
-                var payment = currentPaymentCapture(current);
-                var selection = currentSelectionCapture(current);
-                var numeric = currentNumericCapture(current);
+                var captured = currentDecisionCapture(current);
                 boolean discovered = false;
                 Map<String, Object> domain = map("version", version, "coverage", "NotApplicable", "sources", List.of(), "actions", List.of());
                 if (current != null && sourceInputCurrent(current)) {
@@ -700,21 +696,19 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         domain = map("version", version, "coverage", complete ? "Complete" : "Unsupported",
                                 "sources", complete ? sources : List.of(), "actions", complete ? semantics : List.of());
                         if (current.input instanceof InputPayMana)
-                            domain.put("poolManaColors", payment.poolManaColors());
+                            domain.put("poolManaColors", captured.poolManaColors());
                         discovered = true;
                     }
                 }
                 var snapshot = automatedState(current);
                 long observedRevision = revision;
-                var semantics = automatedSemantics(current, payment, selection, numeric);
+                var semantics = automatedSemantics(current, captured);
                 // Also fence cached catalogs and the decision metadata read.
                 // A reentrant callback can replace ownership while a rules
                 // query temporarily yields the state boundary. No part of
                 // that mixed read, including newly allocated offers, is usable.
                 if (pending != observedOwner || sourceActionVersion.get() != version || revision != observedRevision
-                        || payment != null && current.payment != payment
-                        || selection != null && (current.selection != selection || !selectionOwnerCurrent(current))
-                        || numeric != null && (current.announcement != numeric || !numericAnnouncementCurrent(current))
+                        || captured != null && (current.publishedDecision != captured || !decisionOwnerCurrent(current))
                         || current != null && current.kind.equals("input")
                             && (inputActionQueued || human.getInputQueue().getInput() != current.input
                                 || human.getInputProxy().getInput() != current.input
@@ -725,14 +719,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         current.cachedDomain = null;
                         current.cachedDomainVersion = -1;
                         current.sourceActions.clear(); current.additionalCards.clear(); current.additionalSources.clear();
-                        // A reentrant publication can retain this Pending while
-                        // replacing its payment cohort. Revoke only the facts
-                        // this read observed, never that newer publication.
-                        if (current.payment == payment) {
-                            current.poolManaColors.clear(); current.payment = null;
+                        // Revoke only the publication this read observed; a
+                        // newer cohort can retain this same Pending.
+                        if (current.publishedDecision == captured) {
+                            current.poolManaColors.clear(); current.publishedDecision = null;
                         }
-                        if (current.selection == selection) current.selection = null;
-                        if (current.announcement == numeric) current.announcement = null;
                     }
                     throw new StaleObservationException();
                 }
@@ -753,40 +744,12 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return Collections.unmodifiableMap(enriched);
     }
 
-    private Map<String, Object> automatedSemantics(Pending current, PaymentDecisionProjection.Capture payment,
-                                                  SelectionDecisionProjection.Capture selection,
-                                                  NumericDecisionProjection.Capture numeric) {
-        var result = map("intent", "Unknown", "amount", null, "options", List.of(), "legalTextValues", List.of(), "selectionIsCost", false);
-        if (current == null) return result;
-        result.putAll(selection != null ? selection.automatedFacts()
-                : DecisionSemantics.describe(current.input, game, human.getPlayer(), this::semanticCardId));
-        if (numeric != null) result.put("numeric", numeric.facts());
-        if (payment != null) result.putAll(payment.automatedFacts());
-        // A published prompt UUID can change after every gesture while the
-        // controller still owns the same rules input. Its work allowance must
-        // follow that actual input, including its nested required GUI choices.
-        Input episodeOwner = current.input != null ? current.input : human.getInputQueue().getInput();
-        if (episodeOwner != null) result.put("episodeId", inputEpisodes.computeIfAbsent(episodeOwner,
-                ignored -> id + ":input:" + UUID.randomUUID()));
-        if (current.input instanceof InputAttack || current.input instanceof InputBlock)
-            result.put("episodeId", combatDeclarationId());
-        if (current.input instanceof InputLondonMulligan) result.put("intent", "Discard");
-        if (selection == null && (current.prompt.containsKey("counterPayment") || current.prompt.containsKey("counterPaymentChoice"))) {
-            result.put("intent", "RemoveCounters"); result.put("selectionIsCost", true);
-        }
-        return result;
+    private static Map<String, Object> emptyDecisionSemantics() {
+        return map("intent", "Unknown", "amount", null, "options", List.of(), "legalTextValues", List.of(), "selectionIsCost", false);
     }
 
-    private PaymentDecisionProjection.Capture currentPaymentCapture(Pending current) {
-        if (current == null || !(current.input instanceof InputPayMana)
-                && !(current.colorPaymentOwner != null && current.kind.equals("choice")
-                    && "colorChoice".equals(current.prompt.get("context")))) return null;
-        var payment = current.payment;
-        if (payment == null || !(latest.get("boardRevision") instanceof Number board)
-                || !payment.matches(current.id, board.longValue(), sourceActionVersion.get())
-                || current.colorPaymentOwner != null && human.getInputQueue().getInput() != current.colorPaymentOwner)
-            throw new StaleObservationException();
-        return payment;
+    private Map<String, Object> automatedSemantics(Pending current, CurrentDecisionProjection.Capture captured) {
+        return current == null ? emptyDecisionSemantics() : captured.automatedFacts();
     }
 
     private boolean sourceInputCurrent(Pending current) {
@@ -824,33 +787,30 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 && pending == current && !current.response.isDone();
     }
 
-    private SelectionDecisionProjection.Capture currentSelectionCapture(Pending current) {
-        if (current == null || !isSelectionInput(current.input) && !selectionDialog(current)) return null;
-        var selection = current.selection;
-        if (selection == null || !(latest.get("boardRevision") instanceof Number board)
-                || !selection.matches(current.id, board.longValue(), sourceActionVersion.get(),
-                        (String)current.prompt.get("executionId"), (String)current.prompt.get("executionStep"))
-                || !selectionOwnerCurrent(current))
-            throw new StaleObservationException();
-        return selection;
+    private boolean decisionOwnerCurrent(Pending current) {
+        if (current == null || closed || error != null || conceded || viewer.getHasLost() || game.isGameOver()
+                || pending != current) return false;
+        if (current.input == null) {
+            // Required dialogs may suspend a queued action or parent input.
+            // Their exact unfinished response owns the answer, not that input.
+            return !current.response.isDone() && (current.colorPaymentOwner == null
+                    || human.getInputQueue().getInput() == current.colorPaymentOwner);
+        }
+        return current.kind.equals("input") && !inputActionQueued
+                && human.getInputQueue().getInput() == current.input && human.getInputProxy().getInput() == current.input
+                && (!(current.input instanceof InputPassPriority || current.input instanceof InputPayMana) || sourceInputCurrent(current))
+                && (!isSelectionInput(current.input) || selectionInputCurrent(current))
+                && (!(current.input instanceof InputAttack || current.input instanceof InputBlock) || currentCombatChoices(current) != null);
     }
 
-    private boolean numericAnnouncementCurrent(Pending current) {
-        // Required number dialogs can suspend a queued action or parent input.
-        // Their response future, not that input's queue/proxy, owns the answer.
-        return !closed && error == null && !conceded && !viewer.getHasLost() && !game.isGameOver()
-                && pending == current && current.kind.equals("number") && current.announcedAbility != null
-                && !current.response.isDone();
-    }
-
-    private NumericDecisionProjection.Capture currentNumericCapture(Pending current) {
-        if (current == null || current.announcedAbility == null) return null;
-        var numeric = current.announcement;
-        if (numeric == null || !(latest.get("boardRevision") instanceof Number board)
-                || !numeric.matches(current.id, board.longValue(), sourceActionVersion.get(),
+    private CurrentDecisionProjection.Capture currentDecisionCapture(Pending current) {
+        if (current == null) return null;
+        var captured = current.publishedDecision;
+        if (captured == null || !(latest.get("boardRevision") instanceof Number board)
+                || !captured.matches(current.id, board.longValue(), sourceActionVersion.get(),
                         (String)current.prompt.get("executionId"), (String)current.prompt.get("executionStep"))
-                || !numericAnnouncementCurrent(current)) throw new StaleObservationException();
-        return numeric;
+                || !decisionOwnerCurrent(current)) throw new StaleObservationException();
+        return captured;
     }
 
     private String semanticCardId(CardView card) {
@@ -1316,7 +1276,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         finiteStackYield.revoke("action-restored");
         if (pending != null) {
             pending.sourceActions.clear(); pending.additionalCards.clear(); pending.additionalSources.clear();
-            pending.payment = null; pending.poolManaColors.clear(); pending.selection = null; pending.announcement = null;
+            pending.publishedDecision = null; pending.poolManaColors.clear();
             if (viewer.getId() == restored.actorId()) pending = null;
         }
         Player actor = game.getRegisteredPlayers().stream().filter(player -> player.getId() == restored.actorId()).findFirst().orElse(null);
@@ -1559,7 +1519,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private void markBusy(Pending consumed) {
-        if (consumed != null) { consumed.payment = null; consumed.poolManaColors.clear(); consumed.selection = null; consumed.announcement = null; }
+        if (consumed != null) { consumed.publishedDecision = null; consumed.poolManaColors.clear(); }
         var next = new LinkedHashMap<>(latest);
         next.put("revision", ++revision); next.put("prompt", null); next.put("status", "resolving");
         next.put("undo", undoProjection(null));
@@ -1688,49 +1648,105 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return offer;
     }
 
-    private NumericDecisionProjection.Capture captureNumeric(Pending prompt, long boardRevision, long sourceVersion,
-                                                              ExecutionTracker.Reference execution) {
-        if (!numericAnnouncementCurrent(prompt) || !table.currentPublication(boardRevision)
+    private CurrentDecisionProjection.Capture captureDecision(Pending prompt, long boardRevision, long sourceVersion,
+                                                              ExecutionTracker.Reference execution, MatchExecutions.Frame frame,
+                                                              Map<String, Object> projectedPrompt) {
+        if (!decisionOwnerCurrent(prompt) || !table.currentPublication(boardRevision)
                 || sourceActionVersion.get() != sourceVersion) return null;
         String decisionId = prompt.id;
+        var promptFacts = new LinkedHashMap<String, Object>();
+        var automatedFacts = emptyDecisionSemantics();
+        var playerChoices = new ArrayList<Integer>();
+        var poolColors = new ArrayList<String>();
+        boolean selection = isSelectionInput(prompt.input) || selectionDialog(prompt);
+        // Residual inputs and plain dialogs retain the same ambient cost
+        // classification as selections, copied at this publication boundary.
+        var paying = selection ? null : game.costPaymentStack.peek();
+        if (!capturePayment(prompt, boardRevision, sourceVersion, frame, promptFacts, automatedFacts, poolColors)) return null;
+        if (selection) {
+            if (isSelectionInput(prompt.input)) projectedPrompt.remove("playerChoices");
+            boolean captured;
+            if (prompt.input instanceof InputSelectTargets) {
+                projectedPrompt.remove("min"); projectedPrompt.remove("max");
+                projectedPrompt.remove("effect"); projectedPrompt.remove("librarySearch");
+                captured = captureTargets(prompt, boardRevision, sourceVersion, promptFacts, automatedFacts, playerChoices);
+            } else if (prompt.input instanceof InputSelectManyBase<?>) {
+                projectedPrompt.remove("manaReduction"); projectedPrompt.remove("counterPayment");
+                captured = captureMany(prompt, boardRevision, sourceVersion, promptFacts, automatedFacts, playerChoices);
+            } else if (prompt.input instanceof InputConfirm) {
+                projectedPrompt.remove("librarySearch");
+                captured = captureConfirm(prompt, boardRevision, sourceVersion, promptFacts, automatedFacts);
+            } else {
+                captured = captureChoice(prompt, boardRevision, sourceVersion, projectedPrompt, automatedFacts);
+            }
+            if (!captured) return null;
+        }
+        if (!captureNumeric(prompt, boardRevision, sourceVersion, automatedFacts)) return null;
+        if (!selection) {
+            // A changed ambient part cannot label a still-current response.
+            // Preserve that response and its typed facts with unknown context.
+            // Read the scalar context after typed queries so a same-entry
+            // amount change cannot leave the earlier value in this new cut.
+            var base = DecisionSemantics.describeContext(paying);
+            automatedFacts.putAll(game.costPaymentStack.peek() == paying ? base
+                    : map("intent", "Unknown", "amount", null, "selectionIsCost", false, "counterType", ""));
+            if (projectedPrompt.containsKey("counterPayment") || projectedPrompt.containsKey("counterPaymentChoice")) {
+                automatedFacts.put("intent", "RemoveCounters"); automatedFacts.put("selectionIsCost", true);
+            }
+        }
+        // Work allowances follow the actual input, including its nested GUI
+        // dialogs, rather than each transport prompt UUID.
+        Input episodeOwner = prompt.input != null ? prompt.input : human.getInputQueue().getInput();
+        if (episodeOwner != null) automatedFacts.put("episodeId", inputEpisodes.computeIfAbsent(episodeOwner,
+                ignored -> id + ":input:" + UUID.randomUUID()));
+        if (prompt.input instanceof InputAttack || prompt.input instanceof InputBlock)
+            automatedFacts.put("episodeId", combatDeclarationId());
+        if (prompt.input instanceof InputLondonMulligan) automatedFacts.put("intent", "Discard");
+        if (!table.currentPublication(boardRevision) || sourceActionVersion.get() != sourceVersion
+                || pending != prompt || !decisionOwnerCurrent(prompt)) return null;
+        return new CurrentDecisionProjection.Capture(decisionId, boardRevision, sourceVersion,
+                execution == null ? null : execution.id(), execution == null ? null : execution.step(),
+                promptFacts, automatedFacts, playerChoices, poolColors);
+    }
+
+    private boolean captureNumeric(Pending prompt, long boardRevision, long sourceVersion, Map<String, Object> automatedFacts) {
         var ability = prompt.announcedAbility;
+        if (ability == null) return true;
+        if (!prompt.kind.equals("number") || !decisionOwnerCurrent(prompt) || !table.currentPublication(boardRevision)
+                || sourceActionVersion.get() != sourceVersion) return false;
         String symbol = prompt.announcedSymbol;
         var facts = NumericDecisionProjection.describe(ability, symbol, human.getPlayer(), this::numericSourceId);
         if (!table.currentPublication(boardRevision) || sourceActionVersion.get() != sourceVersion
-                || !numericAnnouncementCurrent(prompt) || prompt.announcedAbility != ability
-                || !Objects.equals(prompt.announcedSymbol, symbol)) return null;
-        return new NumericDecisionProjection.Capture(decisionId, boardRevision, sourceVersion,
-                execution == null ? null : execution.id(), execution == null ? null : execution.step(), facts);
+                || !decisionOwnerCurrent(prompt) || prompt.announcedAbility != ability
+                || !Objects.equals(prompt.announcedSymbol, symbol)) return false;
+        // Null is a completed, unavailable source projection. Plain numbers
+        // have no numeric key, and must not acquire announcement metadata.
+        automatedFacts.put("numeric", facts);
+        return true;
     }
 
-    private PaymentDecisionProjection.Capture capturePayment(Pending prompt, long boardRevision, long sourceVersion,
-                                                              ExecutionTracker.Reference execution, MatchExecutions.Frame frame) {
-        // Capture the scope before a funding query. Those queries may yield the
-        // rules boundary; a later owner/version must not label their old facts.
-        String decisionId = prompt.id;
+    private boolean capturePayment(Pending prompt, long boardRevision, long sourceVersion, MatchExecutions.Frame frame,
+                                   Map<String, Object> promptFacts, Map<String, Object> automatedFacts, List<String> poolColors) {
         boolean direct = prompt.input instanceof InputPayMana && sourceInputCurrent(prompt);
         boolean nested = prompt.colorPaymentOwner != null && prompt.kind.equals("choice")
                 && "colorChoice".equals(prompt.prompt.get("context"))
                 && human.getInputQueue().getInput() == prompt.colorPaymentOwner;
         Input owner = direct ? prompt.input : nested ? prompt.colorPaymentOwner : null;
-        var promptFacts = new LinkedHashMap<String, Object>();
-        var automatedFacts = new LinkedHashMap<String, Object>();
-        List<String> poolColors = List.of();
         SpellAbility ability = null;
         Player payer = null;
         ManaCostBeingPaid remaining = null;
         if (owner instanceof InputPayMana payment) {
             ability = payment.getPaidForAbility();
             payer = payment.getPayer();
-            // Both the counted public bill and the policy's compatibility bill
-            // describe this one detached value, including nested color choices.
+            // Counted public parts and policy compatibility strings describe
+            // this one detached bill, including nested color choices.
             remaining = payment.getRemainingManaCost();
             if (remaining != null) automatedFacts.put("unpaidMana", ManaPaymentFacts.unpaid(remaining));
             if (direct) {
                 var provenance = PaymentDecisionProjection.describe(ability, payer, payment.isPaymentMandatory(),
                         payment.isEffectPayment(), this::numericSourceId);
                 if (provenance != null) automatedFacts.put("payment", provenance);
-                poolColors = payment.getUsablePoolManaColors().stream().map(MagicColor::toShortString).toList();
+                poolColors.addAll(payment.getUsablePoolManaColors().stream().map(MagicColor::toShortString).toList());
                 promptFacts.putAll(ManaPaymentFacts.describe(ability, payer, remaining, poolColors, this::semanticCardId));
             }
         } else if (owner instanceof InputSelectCardsForConvokeOrImprovise reduction) {
@@ -1739,68 +1755,55 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         if (nested && payer != null && remaining != null)
             promptFacts.put("manaPaymentContext", colorPaymentContext(ability, payer, remaining));
-        // This also records non-equivalent required choices exactly once, just
-        // as ordinary publications do when there is no optional payment offer.
+        // Also record non-equivalent required choices exactly once when no
+        // optional payment is currently offered.
         var declineOffer = optionalDecline(prompt, frame);
         if (declineOffer != null) {
             promptFacts.put("optionalDecline", Collections.unmodifiableMap(new LinkedHashMap<>(declineOffer)));
             var support = OptionalManaPayment.describe((InputPayMana) prompt.input, declineOffer);
             if (support != null) promptFacts.put("optionalPaymentSupport", support);
         }
-        if (owner == null || payer == null || remaining == null || !table.currentPublication(boardRevision)
-                || pending != prompt || sourceActionVersion.get() != sourceVersion
-                || direct && !sourceInputCurrent(prompt)
-                || nested && human.getInputQueue().getInput() != owner) return null;
-        return new PaymentDecisionProjection.Capture(decisionId, boardRevision, sourceVersion,
-                execution == null ? null : execution.id(), execution == null ? null : execution.step(),
-                promptFacts, automatedFacts, poolColors);
+        return (owner == null || payer != null && remaining != null)
+                && table.currentPublication(boardRevision) && pending == prompt && sourceActionVersion.get() == sourceVersion
+                && (!direct || sourceInputCurrent(prompt)) && (!nested || human.getInputQueue().getInput() == owner);
     }
 
-    private SelectionDecisionProjection.Capture captureTargets(Pending prompt, long boardRevision, long sourceVersion,
-                                                            ExecutionTracker.Reference execution) {
-        if (!(prompt.input instanceof InputSelectTargets targeting) || !selectionInputCurrent(prompt)) return null;
-        String decisionId = prompt.id;
+    private boolean captureTargets(Pending prompt, long boardRevision, long sourceVersion,
+                                   Map<String, Object> promptFacts, Map<String, Object> automatedFacts, List<Integer> playerChoices) {
+        if (!(prompt.input instanceof InputSelectTargets targeting) || !selectionInputCurrent(prompt)) return false;
         var ability = targeting.getSpellAbility();
-        var promptFacts = new LinkedHashMap<String, Object>();
-        promptFacts.put("min", targeting.getMinTargets());
-        promptFacts.put("max", targeting.getMaxTargets());
+        promptFacts.put("min", targeting.getMinTargets()); promptFacts.put("max", targeting.getMaxTargets());
         var effect = pendingEffect(ability);
         if (effect != null) promptFacts.put("effect", effect);
         if (ability.getTargetRestrictions().canTgtPlayer()) {
             var search = librarySearch(LibrarySearchOffer.targeting(ability), ability);
             if (search != null) promptFacts.put("librarySearch", search);
         }
-        var playerChoices = java.util.stream.StreamSupport.stream(game.getPlayers().threadSafeIterable().spliterator(), false)
-                .filter(targeting::canSelectPlayer).map(Player::getId).toList();
+        playerChoices.addAll(java.util.stream.StreamSupport.stream(game.getPlayers().threadSafeIterable().spliterator(), false)
+                .filter(targeting::canSelectPlayer).map(Player::getId).toList());
         promptFacts.put("playerChoices", playerChoices);
-        var automatedFacts = new LinkedHashMap<>(DecisionSemantics.describeTargets(ability, game, human.getPlayer(), this::semanticCardId));
+        automatedFacts.putAll(DecisionSemantics.describeTargets(ability, game.costPaymentStack.peek(), human.getPlayer(), this::semanticCardId));
         automatedFacts.put("selectedPlayers", java.util.stream.StreamSupport.stream(
                 ability.getTargets().getTargetPlayers().spliterator(), false).map(Player::getId).toList());
-        if (!table.currentPublication(boardRevision) || pending != prompt || sourceActionVersion.get() != sourceVersion
-                || !selectionInputCurrent(prompt)) return null;
-        return new SelectionDecisionProjection.Capture(decisionId, boardRevision, sourceVersion,
-                execution == null ? null : execution.id(), execution == null ? null : execution.step(),
-                promptFacts, automatedFacts, playerChoices);
+        return table.currentPublication(boardRevision) && pending == prompt && sourceActionVersion.get() == sourceVersion
+                && selectionInputCurrent(prompt);
     }
 
-    private SelectionDecisionProjection.Capture captureMany(Pending prompt, long boardRevision, long sourceVersion,
-                                                           ExecutionTracker.Reference execution) {
-        if (!(prompt.input instanceof InputSelectManyBase<?> many) || !selectionInputCurrent(prompt)) return null;
-        String decisionId = prompt.id;
-        var observed = prompt.selection;
+    private boolean captureMany(Pending prompt, long boardRevision, long sourceVersion,
+                                Map<String, Object> promptFacts, Map<String, Object> automatedFacts, List<Integer> playerChoices) {
+        if (!(prompt.input instanceof InputSelectManyBase<?> many) || !selectionInputCurrent(prompt)) return false;
+        var observed = prompt.publishedDecision;
         // The active part, not the initiating spell, owns a cost selection.
         // Keep this exact entry through queries without retaining it in a view.
         var paying = game.costPaymentStack.peek();
         var ability = many.getSpellAbility();
-        var promptFacts = new LinkedHashMap<String, Object>();
-        List<Integer> playerChoices = List.of();
         if (many instanceof InputSelectEntitiesFromList<?> list) {
             var selectable = many.getSelectableEntitiesSnapshot();
-            // Preserve the provider's choice order and exact occurrences. A
-            // subclass may narrow click membership without changing its list.
-            playerChoices = list.getValidChoices().stream().filter(Player.class::isInstance)
+            // Preserve provider order and exact occurrences; a subclass may
+            // narrow click membership without changing its supplied list.
+            playerChoices.addAll(list.getValidChoices().stream().filter(Player.class::isInstance)
                     .filter(entity -> selectable.stream().anyMatch(candidate -> candidate == entity))
-                    .map(entity -> ((Player) entity).getId()).toList();
+                    .map(entity -> ((Player) entity).getId()).toList());
         }
         promptFacts.put("playerChoices", playerChoices);
         if (many instanceof InputSelectCardsForConvokeOrImprovise reduction)
@@ -1809,8 +1812,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             var payment = counters.getCounterPayment();
             if (payment.amount() > 0) promptFacts.put("counterPayment", map("amount", payment.amount(), "remaining", payment.remaining()));
         }
-        var automatedFacts = new LinkedHashMap<>(DecisionSemantics.describeSelection(many, ability, paying,
-                human.getPlayer(), this::semanticCardId));
+        automatedFacts.putAll(DecisionSemantics.describeSelection(many, ability, paying, human.getPlayer(), this::semanticCardId));
         automatedFacts.put("selectedPlayers", many.getSelected().stream().filter(Player.class::isInstance)
                 .map(entity -> ((Player) entity).getId()).toList());
         if (promptFacts.containsKey("counterPayment")) {
@@ -1818,80 +1820,64 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         if (game.costPaymentStack.peek() != paying) {
             withdrawSelection(prompt, observed, boardRevision, sourceVersion);
-            return null;
+            return false;
         }
-        if (!table.currentPublication(boardRevision) || pending != prompt || sourceActionVersion.get() != sourceVersion
-                || !selectionInputCurrent(prompt)) return null;
-        return new SelectionDecisionProjection.Capture(decisionId, boardRevision, sourceVersion,
-                execution == null ? null : execution.id(), execution == null ? null : execution.step(),
-                promptFacts, automatedFacts, playerChoices);
+        return table.currentPublication(boardRevision) && pending == prompt && sourceActionVersion.get() == sourceVersion
+                && selectionInputCurrent(prompt);
     }
 
-    private SelectionDecisionProjection.Capture captureConfirm(Pending prompt, long boardRevision, long sourceVersion,
-                                                              ExecutionTracker.Reference execution) {
+    private boolean captureConfirm(Pending prompt, long boardRevision, long sourceVersion,
+                                   Map<String, Object> promptFacts, Map<String, Object> automatedFacts) {
         if (!(prompt.input instanceof InputConfirm confirmation) || !selectionInputCurrent(prompt)
-                || !table.currentPublication(boardRevision) || sourceActionVersion.get() != sourceVersion) return null;
-        String decisionId = prompt.id;
+                || !table.currentPublication(boardRevision) || sourceActionVersion.get() != sourceVersion) return false;
         var paying = game.costPaymentStack.peek();
         var ability = confirmation.getSpellAbility();
         var offer = confirmation.getLibrarySearchOffer();
-        var promptFacts = new LinkedHashMap<String, Object>();
         promptFacts.put("playerChoices", List.of());
         if (offer != null) {
             promptFacts.put("librarySearch", librarySearch(offer, ability));
-            promptFacts.put("ok", "Search library"); promptFacts.put("cancel", "Don’t search");
+            promptFacts.put("ok", "Search library"); promptFacts.put("cancel", "Don\u2019t search");
         }
         var base = DecisionSemantics.describeConfirmation(ability, paying, human.getPlayer(), this::semanticCardId);
-        // The Yes/No question still belongs to this input if an ambient cost
-        // changes during projection; its old classification is no longer known.
-        var automatedFacts = game.costPaymentStack.peek() == paying ? base
-                : map("intent", "Unknown", "amount", null, "selectionIsCost", false, "counterType", "");
-        if (!table.currentPublication(boardRevision) || sourceActionVersion.get() != sourceVersion
-                || pending != prompt || !selectionInputCurrent(prompt)) return null;
-        return new SelectionDecisionProjection.Capture(decisionId, boardRevision, sourceVersion,
-                execution == null ? null : execution.id(), execution == null ? null : execution.step(),
-                promptFacts, automatedFacts, List.of());
+        // A changed ambient cost does not discard the actual Yes/No question.
+        automatedFacts.putAll(game.costPaymentStack.peek() == paying ? base
+                : map("intent", "Unknown", "amount", null, "selectionIsCost", false, "counterType", ""));
+        return table.currentPublication(boardRevision) && sourceActionVersion.get() == sourceVersion
+                && pending == prompt && selectionInputCurrent(prompt);
     }
 
-    private SelectionDecisionProjection.Capture captureChoice(Pending prompt, long boardRevision, long sourceVersion,
-                                                             ExecutionTracker.Reference execution, Map<String, Object> projectedPrompt) {
+    private boolean captureChoice(Pending prompt, long boardRevision, long sourceVersion,
+                                  Map<String, Object> projectedPrompt, Map<String, Object> automatedFacts) {
         if (!selectionDialog(prompt) || !selectionOwnerCurrent(prompt) || !table.currentPublication(boardRevision)
-                || sourceActionVersion.get() != sourceVersion) return null;
-        String decisionId = prompt.id;
+                || sourceActionVersion.get() != sourceVersion) return false;
         var choices = prompt.offeredChoices;
         boolean ordered = prompt.orderedChoices;
         int minimum = prompt.min, maximum = prompt.max;
         var paying = game.costPaymentStack.peek();
-        var base = DecisionSemantics.describeChoice(paying);
+        var base = DecisionSemantics.describeContext(paying);
         var options = DecisionSemantics.options(choices, human::getDecisionAbility, human.getPlayer(), this::semanticCardId);
         var ordering = DecisionSemantics.ordering(choices, ordered, minimum, maximum);
-        // The offered indices and response still belong to this dialog when
-        // an ambient cost changes during a query. Withhold its unproved cost
-        // classification instead of discarding the outstanding response future.
-        var automatedFacts = new LinkedHashMap<>(game.costPaymentStack.peek() == paying ? base
+        // Offered indices remain answerable when an ambient cost changes.
+        automatedFacts.putAll(game.costPaymentStack.peek() == paying ? base
                 : map("intent", "Unknown", "amount", null, "selectionIsCost", false, "counterType", ""));
         automatedFacts.put("options", options);
         automatedFacts.putAll(ordering);
         if (projectedPrompt.containsKey("counterPaymentChoice")) {
             automatedFacts.put("intent", "RemoveCounters"); automatedFacts.put("selectionIsCost", true);
         }
-        if (!table.currentPublication(boardRevision) || sourceActionVersion.get() != sourceVersion
-                || !selectionOwnerCurrent(prompt) || prompt.offeredChoices != choices
-                || prompt.orderedChoices != ordered || prompt.min != minimum || prompt.max != maximum) return null;
-        return new SelectionDecisionProjection.Capture(decisionId, boardRevision, sourceVersion,
-                execution == null ? null : execution.id(), execution == null ? null : execution.step(),
-                Map.of(), automatedFacts, List.of());
+        return table.currentPublication(boardRevision) && sourceActionVersion.get() == sourceVersion
+                && selectionOwnerCurrent(prompt) && prompt.offeredChoices == choices
+                && prompt.orderedChoices == ordered && prompt.min == minimum && prompt.max == maximum;
     }
 
-    private void withdrawSelection(Pending prompt, SelectionDecisionProjection.Capture observed, long boardRevision, long sourceVersion) {
+    private void withdrawSelection(Pending prompt, CurrentDecisionProjection.Capture observed, long boardRevision, long sourceVersion) {
         if (closed || error != null || game.isGameOver() || !table.currentPublication(boardRevision) || pending != prompt
-                || sourceActionVersion.get() != sourceVersion || prompt.selection != observed) return;
-        // No newer publisher owns this scope. Withhold its old prompt and cost
-        // facts; returning null alone would leave that old cohort actionable.
+                || sourceActionVersion.get() != sourceVersion || prompt.publishedDecision != observed) return;
+        // Withhold only this observed owner, not a newer reentrant publication.
         pending = null;
         markBusy(prompt);
-        // Earlier seats may already have projected the aborted cohort. Publish
-        // all audiences without this Pending; do not retry its unstable query.
+        // Earlier seats may have projected this aborted cohort. Republish all
+        // audiences without retrying the unstable selection query.
         table.publish();
     }
 
@@ -1965,7 +1951,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         Pending available = pending;
         if (available != null && isSelectionInput(available.input) && !selectionInputCurrent(available)) {
-            available.selection = null;
+            available.publishedDecision = null;
             pending = null; available = null;
         }
         if (available != null && (available.input instanceof InputAttack || available.input instanceof InputBlock) && currentCombatChoices(available) == null) {
@@ -2059,9 +2045,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var activityFrame = publication.activity();
         activityRevision = activityFrame.revision();
         Map<String, Object> projectedPrompt = null;
-        PaymentDecisionProjection.Capture payment = null;
-        SelectionDecisionProjection.Capture selection = null;
-        NumericDecisionProjection.Capture numeric = null;
+        CurrentDecisionProjection.Capture captured = null;
         if (prompt != null) {
             projectedPrompt = new LinkedHashMap<>(prompt.prompt);
             // Identity-bearing dialog facts belong to this reconciled board.
@@ -2081,41 +2065,12 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             projectedPrompt.remove("manaPaymentContext");
             projectedPrompt.remove("optionalDecline");
             projectedPrompt.remove("optionalPaymentSupport");
-            payment = capturePayment(prompt, boardRevision, publicationSourceVersion, execution, publication.executions());
-            if (!table.currentPublication(boardRevision) || pending != prompt || sourceActionVersion.get() != publicationSourceVersion) return;
-            if (payment != null) {
-                projectedPrompt.putAll(payment.promptFacts());
-                projectedPrompt.put("executionId", payment.executionId());
-                projectedPrompt.put("executionStep", payment.executionStep());
-            }
-            if (isSelectionInput(prompt.input) || selectionDialog(prompt)) {
-                if (isSelectionInput(prompt.input)) projectedPrompt.remove("playerChoices");
-                if (prompt.input instanceof InputSelectTargets) {
-                    projectedPrompt.remove("min"); projectedPrompt.remove("max");
-                    projectedPrompt.remove("effect"); projectedPrompt.remove("librarySearch");
-                    selection = captureTargets(prompt, boardRevision, publicationSourceVersion, execution);
-                } else if (prompt.input instanceof InputSelectManyBase<?>) {
-                    projectedPrompt.remove("manaReduction"); projectedPrompt.remove("counterPayment");
-                    selection = captureMany(prompt, boardRevision, publicationSourceVersion, execution);
-                } else if (prompt.input instanceof InputConfirm) {
-                    projectedPrompt.remove("librarySearch");
-                    selection = captureConfirm(prompt, boardRevision, publicationSourceVersion, execution);
-                } else {
-                    selection = captureChoice(prompt, boardRevision, publicationSourceVersion, execution, projectedPrompt);
-                }
-                if (selection == null || !table.currentPublication(boardRevision) || pending != prompt
-                        || sourceActionVersion.get() != publicationSourceVersion) return;
-                projectedPrompt.putAll(selection.promptFacts());
-                projectedPrompt.put("executionId", selection.executionId());
-                projectedPrompt.put("executionStep", selection.executionStep());
-            }
-            if (prompt.announcedAbility != null) {
-                numeric = captureNumeric(prompt, boardRevision, publicationSourceVersion, execution);
-                if (numeric == null || !table.currentPublication(boardRevision) || pending != prompt
-                        || sourceActionVersion.get() != publicationSourceVersion) return;
-                projectedPrompt.put("executionId", numeric.executionId());
-                projectedPrompt.put("executionStep", numeric.executionStep());
-            }
+            captured = captureDecision(prompt, boardRevision, publicationSourceVersion, execution, publication.executions(), projectedPrompt);
+            if (captured == null || !table.currentPublication(boardRevision) || pending != prompt
+                    || sourceActionVersion.get() != publicationSourceVersion) return;
+            projectedPrompt.putAll(captured.promptFacts());
+            projectedPrompt.put("executionId", captured.executionId());
+            projectedPrompt.put("executionStep", captured.executionStep());
             if (prompt.input instanceof InputPassPriority) {
                 projectedPrompt.put("priorityAbilities", priorityAbilities(human.getPriorityAbilities(), prompt));
                 projectPriorityAlternative(projectedPrompt, prompt.input);
@@ -2140,8 +2095,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "ignoredPriorityAbilities", priorityAbilities(human.getIgnoredPriorityAbilities(), prompt),
                 "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries(), "executions", publication.executions());
         if (!table.currentPublication(boardRevision) || pending != prompt || sourceActionVersion.get() != publicationSourceVersion
-                || selection != null && !selectionOwnerCurrent(prompt)
-                || numeric != null && !numericAnnouncementCurrent(prompt)) return;
+                || captured != null && !decisionOwnerCurrent(prompt)) return;
         String quietToken = quietYield.observe(snapshot, activity.quietSequence());
         if (prompt != null) {
             var quietPrompt = new LinkedHashMap<>(projectedPrompt);
@@ -2150,16 +2104,16 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             snapshot.put("prompt", quietPrompt);
         }
         if (!table.currentPublication(boardRevision) || pending != prompt || sourceActionVersion.get() != publicationSourceVersion
-                || selection != null && !selectionOwnerCurrent(prompt)
-                || numeric != null && !numericAnnouncementCurrent(prompt)) return;
+                || captured != null && !decisionOwnerCurrent(prompt)) return;
         if (prompt != null) {
-            prompt.prompt = projectedPrompt; prompt.payment = payment; prompt.selection = selection; prompt.announcement = numeric;
-            if (selection != null) {
-                prompt.players.clear(); prompt.players.addAll(selection.playerChoices());
+            prompt.prompt = projectedPrompt; prompt.publishedDecision = captured;
+            if (isSelectionInput(prompt.input) || selectionDialog(prompt)) {
+                prompt.players.clear(); prompt.players.addAll(captured.playerChoices());
             }
             prompt.poolManaColors.clear();
-            if (payment != null) {
-                prompt.poolManaColors.addAll(payment.poolManaColors());
+            prompt.poolManaColors.addAll(captured.poolManaColors());
+            if (prompt.input instanceof InputPayMana || prompt.colorPaymentOwner != null
+                    && prompt.kind.equals("choice") && "colorChoice".equals(prompt.prompt.get("context"))) {
                 // The same rules input can publish a smaller bill without a
                 // new object identity. Rebuild its bill-dependent domain once.
                 prompt.cachedDomain = null; prompt.cachedDomainVersion = -1;
