@@ -44,7 +44,11 @@ final class RulesScenario implements AutoCloseable {
     }
 
     static RulesScenario automated(String name, Map<Integer, List<String>> battlefield, String mainCard, String commander) throws Exception {
-        return new RulesScenario(name, battlefield, mainCard, List.of(commander), false, 4, DecisionTempo.Settings.off(),
+        return automated(name, battlefield, mainCard, commander, false);
+    }
+    static RulesScenario automated(String name, Map<Integer, List<String>> battlefield, String mainCard, String commander,
+                                   boolean enableEtbCounters) throws Exception {
+        return new RulesScenario(name, battlefield, mainCard, List.of(commander), enableEtbCounters, 4, DecisionTempo.Settings.off(),
                 () -> System.nanoTime() / 1_000_000, Map.of(), true);
     }
 

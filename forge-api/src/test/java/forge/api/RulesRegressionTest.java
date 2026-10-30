@@ -1,6 +1,11 @@
 package forge.api;
 
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
+import forge.gamemodes.match.input.InputSelectCardsFromList;
+import forge.player.PlayerControllerHuman;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 import static forge.api.RulesScenario.*;
@@ -51,7 +56,37 @@ public class RulesRegressionTest {
             assertEquals(cleanup.seat(), 0);
             int ownerId = cleanup.state().get("viewerId").getAsInt();
             var discard = zone(viewer(cleanup.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
-            assertTrue(game.answer(cleanup, Map.of("action", "card", "key", text(discard, "key"))));
+            var waits = new AtomicInteger(); var cleanupFrames = new ArrayList<JsonObject>();
+            var controller = (PlayerControllerHuman)game.table.game.getRegisteredPlayers().get(0).getController();
+            var originalGui = controller.getGui();
+            var input = HeadlessPlatform.query(game.table, () -> {
+                var actual = (InputSelectCardsFromList)controller.getInputQueue().getInput();
+                assertEquals(actual.getClass().getSuperclass(), InputSelectCardsFromList.class,
+                        "This is the real cleanup input whose allowAwaitNextInput override protects the next turn");
+                controller.setGui(ManyPublicationTest.intercept(originalGui, (name, args) -> {
+                    if (name.equals("awaitNextInput")) {
+                        assertFalse(actual.isSelectionActive()); waits.incrementAndGet();
+                    }
+                    if (controller.getInputQueue().getInput() == actual
+                            && (name.equals("setHighlighted") && Boolean.FALSE.equals(args[1]) || name.equals("clearSelectables"))) {
+                        assertFalse(actual.isSelectionActive(), "Completion must precede highlight and selectable cleanup");
+                        game.session(0).publishInput();
+                        cleanupFrames.add(new GsonBuilder().serializeNulls().create().toJsonTree(game.session(0).state()).getAsJsonObject());
+                    }
+                }));
+                return actual;
+            });
+            try {
+                assertTrue(game.answer(cleanup, Map.of("action", "card", "key", text(discard, "key"))));
+                HeadlessPlatform.query(game.table, () -> {
+                    assertFalse(input.isSelectionActive());
+                    assertEquals(waits.get(), 1, "Early retirement plus stop's scheduled finish invokes awaitNextInput exactly once");
+                    assertFalse(cleanupFrames.isEmpty());
+                    for (var frame : cleanupFrames) assertTrue(frame.get("prompt").isJsonNull());
+                    assertThrows(IllegalArgumentException.class, () -> game.session(0).action(request(cleanup, Map.of("action", "cancel"))));
+                    return null;
+                });
+            } finally { controller.setGui(originalGui); }
             Set<Integer> responders = new HashSet<>();
             game.until(i -> {
                 if (text(i.state(), "phaseKey").equals("CLEANUP") && i.state().getAsJsonArray("stack").size() == 1) {

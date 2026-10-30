@@ -40,14 +40,23 @@ The existing table board generation fences publication too: a superseded outer
 publication cannot overwrite a newer seat capture or finish an older spectator
 cohort. Rejecting a superseded AI read preserves the newer published capture.
 
-Target selection follows the same publication boundary. The exact target input's
-limits, legal player choices, staged selections, effect context and private AI
-semantics are copied together after visibility reconciliation. Observation reads
-that capture rather than reconstructing a second target decision from live rules.
-Selecting or deselecting on the same input replaces its capture while retaining
-the input episode. Card offers remain part of that published board; command
-admission and queued execution recheck current target legality. A projected
-operation graph describes an effect, not permission to select its future targets.
+Targets and multiple-entity selections share one selection publication boundary.
+The current input's existing player choices, staged selections, effect or cost
+context and private AI semantics are copied together after visibility
+reconciliation. Target limits, Convoke progress and counter-payment allocations
+retain their separate meanings. Observation reads that capture rather than
+reconstructing a second selection from live rules. Refreshing the same input
+replaces its capture while retaining the input episode. Card offers remain part
+of that published board; command admission and queued execution recheck the
+actual input's current selectable membership. Counter-payment source counts do
+not stand in for allocated counter quantities or authorize deselection.
+A projected operation graph describes an effect, not permission to select its
+future targets. Cost facts follow the exact current cost-stack entry across
+funding queries. A changed entry withdraws the old scope coherently; it cannot
+reuse an earlier capture or relabel the old query with a new cost. Nested color
+choices retain their separate payment ownership. Selection completion retires
+the existing input flag before cleanup callbacks and starts its waiting
+transition once.
 Decision classification uses the existing effect and literal-amount classifiers
 without repeating a source action's cost, affordability and funding analysis.
 
