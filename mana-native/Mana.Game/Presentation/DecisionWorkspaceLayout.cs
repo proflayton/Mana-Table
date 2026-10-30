@@ -6,9 +6,10 @@ namespace Mana.Table.Presentation;
 // Geometry only: the current scene owner supplies actual occupied rectangles.
 internal static class DecisionWorkspaceLayout
 {
-    internal static Rectangle Place(Rectangle anchor, int requestedWidth, int requestedHeight, IReadOnlyList<Rectangle> occupied, bool bounded, int minimumWidth = 320)
+    internal static Rectangle Place(Rectangle anchor, int requestedWidth, int requestedHeight, IReadOnlyList<Rectangle> occupied, bool bounded,
+        int minimumWidth = 320, int minimumHeight = 100)
     {
-        if (bounded) return PlaceWorkspace(anchor, requestedWidth, requestedHeight, occupied, minimumWidth);
+        if (bounded) return PlaceWorkspace(anchor, requestedWidth, requestedHeight, occupied, minimumWidth, minimumHeight);
         var free = new List<Rectangle> { new(20, 64, 1560, 696) };
         foreach (var obstacle in occupied) {
             for (int index = free.Count - 1; index >= 0; index--) {
@@ -40,10 +41,11 @@ internal static class DecisionWorkspaceLayout
             .ThenByDescending(area => area.Width * area.Height).FirstOrDefault();
     }
 
-    private static Rectangle PlaceWorkspace(Rectangle anchor, int width, int height, IReadOnlyList<Rectangle> occupied, int minimumWidth)
+    private static Rectangle PlaceWorkspace(Rectangle anchor, int width, int height, IReadOnlyList<Rectangle> occupied, int minimumWidth, int minimumHeight)
     {
         var viewport = new Rectangle(20, 64, 1560, 696);
-        width = Math.Clamp(width, Math.Clamp(minimumWidth, 1, viewport.Width), viewport.Width); height = Math.Clamp(height, 100, viewport.Height);
+        width = Math.Clamp(width, Math.Clamp(minimumWidth, 1, viewport.Width), viewport.Width);
+        height = Math.Clamp(height, Math.Clamp(minimumHeight, 1, viewport.Height), viewport.Height);
         Rectangle At(int x, int y) => new(Math.Clamp(x, viewport.Left, viewport.Right - width),
             Math.Clamp(y, viewport.Top, viewport.Bottom - height), width, height);
         long Overlap(Rectangle candidate, bool bestClear, long ceiling, out bool clear)

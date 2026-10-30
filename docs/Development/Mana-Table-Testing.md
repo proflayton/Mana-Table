@@ -1566,6 +1566,21 @@ owned reader and bill. Dismissal returns the chat toggle without reopening the
 drawer; only a new deliberate chat click opens the preserved text. Typing/Enter
 while reading cannot capture or send that draft. F1 guide takeover verifies the input filter
 runs after every producer while higher views retain their own close controls.
+The same after-close continuation also checks the entire current Rules/Artwork
+button and its actual panel shadow against the visible phase arc, current cards,
+source actions and bill. It copies the completed frame before asserting, then
+uses the actual footer center to flip to complete rules and back. A real phase
+click toggles and restores its own saved stop while the exact card key, decision,
+bill and zero-reply boundary remain intact. The existing Loch Mare reader repeats
+the same frame oracle with its current live-state/ability column before and after
+its rules flip. No new fixture or CI mode is needed. The counted physical windows
+reuse that oracle and gesture continuation at both text scales, saving
+`reader-controls-rules` and `reader-controls-artwork` images and checkpoint JSON.
+The test-only baseline at `624dc0bff6f1dd2b6fe5c665da3d29fff1af715f` compiled
+against unchanged production and failed the first whole-footer clearance check
+after nine prior checks. Its center diagnostics were true; the later new flip
+and phase gestures were unexecuted. Candidate validation remains pending.
+
 These checks reuse existing runners and keep geometry, final-hit isolation and
 old-action/ResolveHit assertions separate. The geometry oracle measures complete
 name/count text inside each resource token, reserves actual current card and

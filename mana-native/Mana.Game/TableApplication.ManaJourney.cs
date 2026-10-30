@@ -191,6 +191,7 @@ internal sealed partial class TableApplication
         foreach (var resource in journey.Funding?.Sources ?? [])
             if (matchPresentation.Cards.TryGetPose(resource.SourceCardId, out var resourcePose)) occupied.Add(resourcePose.Bounds);
         if (!sourceReaderActionsBounds.IsEmpty) occupied.Add(sourceReaderActionsBounds);
+        occupied.AddRange(hits.Where(hit => hit.Id == "read-card-rules").Select(hit => ReaderControlPaintBounds(hit.Bounds)));
         if (matchPresentation.Cards.Pinned is { } pinned && !CardViews.Same(pinned.Card, journey.Source)) occupied.Add(pinned.Display.Bounds);
         // During a color callback the producer owns a separate nearby gesture.
         // Keep the original bill beside its own card, away from that producer.
