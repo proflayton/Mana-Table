@@ -47,16 +47,33 @@ public class TargetSelectionProgressTest {
             var number = game.until(input -> input.seat() == 0 && text(input.prompt(), "kind").equals("number"));
             Files.writeString(game.evidence.resolve("01-announce-x.json"), JSON.toJson(number.state()));
             assertEquals(text(number.prompt().getAsJsonObject("sourceCard"), "name"), "Crackle with Power");
+            assertFalse(number.prompt().has("targetSelectionProgress"));
             assertTrue(game.answer(number, Map.of("action", "number", "value", 2)));
             var selection = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputSelectTargets"));
             Files.writeString(game.evidence.resolve("02-targets.json"), JSON.toJson(selection.state()));
             assertEquals(selection.prompt().get("min").getAsInt(), 0);
             assertEquals(selection.prompt().get("max").getAsInt(), 2);
+            assertTargetProgress(selection.prompt(), 0, List.of());
             assertTrue(selection.prompt().getAsJsonArray("playerChoices").asList().stream()
                     .anyMatch(value -> value.getAsInt() == recipient));
             assertTrue(game.answer(selection, Map.of("action", "player", "playerId", recipient)));
             var subset = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputSelectTargets"));
             Files.writeString(game.evidence.resolve("03-selected-subset.json"), JSON.toJson(subset.state()));
+            assertTargetProgress(subset.prompt(), 1, List.of(recipient));
+            for (int seat = 1; seat < 4; seat++) {
+                var other = game.state(seat);
+                assertTrue(!other.has("prompt") || other.get("prompt").isJsonNull()
+                        || !other.getAsJsonObject("prompt").has("targetSelectionProgress"));
+            }
+            assertTrue(game.answer(subset, Map.of("action", "player", "playerId", recipient)));
+            var undone = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputSelectTargets"));
+            Files.writeString(game.evidence.resolve("03a-deselected.json"), JSON.toJson(undone.state()));
+            assertTargetProgress(undone.prompt(), 0, List.of());
+            assertTargetProgress(subset.prompt(), 1, List.of(recipient));
+            assertTrue(game.answer(undone, Map.of("action", "player", "playerId", recipient)));
+            var reselected = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputSelectTargets"));
+            Files.writeString(game.evidence.resolve("03b-reselected.json"), JSON.toJson(reselected.state()));
+            assertTargetProgress(reselected.prompt(), 1, List.of(recipient));
             HeadlessPlatform.query(game.table, () -> {
                 var controller = (PlayerControllerHuman)game.table.game.getRegisteredPlayers().get(0).getController();
                 var current = (InputSelectTargets)controller.getInputQueue().getInput();
@@ -67,10 +84,11 @@ public class TargetSelectionProgressTest {
                 assertTrue(current.isTargetSelectionActive());
                 return null;
             });
-            assertTrue(subset.prompt().get("okEnabled").getAsBoolean(), "A valid subset must expose its explicit completion");
-            assertTrue(game.answer(subset, Map.of("action", "ok")));
+            assertTrue(reselected.prompt().get("okEnabled").getAsBoolean(), "A valid subset must expose its explicit completion");
+            assertTrue(game.answer(reselected, Map.of("action", "ok")));
             var payment = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").startsWith("InputPayMana"));
             Files.writeString(game.evidence.resolve("04-payment.json"), JSON.toJson(payment.state()));
+            assertFalse(payment.prompt().has("targetSelectionProgress"));
             HeadlessPlatform.query(game.table, () -> {
                 var controller = (PlayerControllerHuman)game.table.game.getRegisteredPlayers().get(0).getController();
                 var current = (InputPayMana)controller.getInputQueue().getInput();
@@ -85,11 +103,13 @@ public class TargetSelectionProgressTest {
             assertTrue(game.answer(payment, Map.of("action", "ok")));
             var stacked = game.until(input -> input.seat() == 0 && priority(input) && input.state().getAsJsonArray("stack").size() == 1);
             Files.writeString(game.evidence.resolve("05-stacked.json"), JSON.toJson(stacked.state()));
+            assertFalse(stacked.prompt().has("targetSelectionProgress"));
             assertEquals(cards(stacked.state(), 0).stream().filter(card -> text(card, "name").equals("Mountain")
                     && card.get("tapped").getAsBoolean()).count(), 8L);
             assertEquals(text(stacked.state().getAsJsonArray("stack").get(0).getAsJsonObject(), "name"), "Crackle with Power");
             var resolved = game.until(input -> input.seat() == 0 && priority(input) && input.state().getAsJsonArray("stack").isEmpty());
             Files.writeString(game.evidence.resolve("06-resolved.json"), JSON.toJson(resolved.state()));
+            assertFalse(resolved.prompt().has("targetSelectionProgress"));
             assertEquals(player(resolved.state(), recipient).get("life").getAsInt(), 30,
                     "The real spell resolves for five times the announced X against its one confirmed player");
             for (var value : resolved.state().getAsJsonArray("players")) {
@@ -99,6 +119,10 @@ public class TargetSelectionProgressTest {
             assertEquals(viewer(resolved.state()).get("id").getAsInt(), actor);
             assertTrue(zone(viewer(resolved.state()), "Graveyard").getAsJsonArray("cards").asList().stream()
                     .anyMatch(value -> text(value.getAsJsonObject(), "name").equals("Crackle with Power")));
+            var nextPhase = game.until(input -> input.seat() == 0 && priority(input)
+                    && !text(input.state(), "phaseKey").equals("MAIN1"));
+            Files.writeString(game.evidence.resolve("07-next-phase.json"), JSON.toJson(nextPhase.state()));
+            assertFalse(nextPhase.prompt().has("targetSelectionProgress"));
         }
     }
 
@@ -188,6 +212,10 @@ public class TargetSelectionProgressTest {
     }
 
     private static boolean priority(Input input) { return text(input.prompt(), "inputType").equals("InputPassPriority"); }
+    private static void assertTargetProgress(JsonObject prompt, int selectedCount, List<Integer> selectedPlayers) {
+        assertEquals(prompt.get("targetSelectionProgress"), JSON.toJsonTree(Map.of(
+                "selectedCount", selectedCount, "selectedPlayers", selectedPlayers)));
+    }
     private static List<JsonObject> cards(JsonObject state, int seat) {
         return zone(player(state, seat), "Battlefield").getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject()).toList();
     }
@@ -204,6 +232,9 @@ public class TargetSelectionProgressTest {
             assertEquals(prompt.get("id"), current.prompt().get("id"));
             assertEquals(prompt.get("min"), current.prompt().get("min"));
             assertEquals(prompt.get("max"), current.prompt().get("max"));
+            var actual = (InputSelectTargets)((PlayerControllerHuman)table.game.getRegisteredPlayers().get(0).getController())
+                    .getInputQueue().getInput();
+            assertTargetProgress(prompt, actual.getSpellAbility().getTargets().size(), List.of());
             var semantics = observation.getAsJsonObject("semantics");
             assertEquals(text(semantics, "episodeId"), episode);
             assertEquals(text(semantics, "intent"), "Exile");
