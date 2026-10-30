@@ -1579,12 +1579,28 @@ same-seat proximity assertion remains unchanged. This is a bounded heuristic,
 not a guarantee of a nearby clear region on every table.
 The next actual run passed the C1 journey but that balanced quota still omitted
 a nearby gap for the pinned C4 reader. The quota change was removed. Each of the
-five existing preferred rectangles now projects onto the nearest clear interval
+five existing preferred rectangles projected onto the nearest clear interval
 on its row and column, choosing the closer clear result or retaining the original
 when neither exists. The original nearest 24 edges and viewport endpoints remain
 the fallback: at most 681 scored candidate slots, with up to ten additional
 interval sorts/scans and five projection comparisons. Both saved scenes have
 separate offline predictions; these do not establish a passing candidate run.
+That preferred-seed candidate passed the focused payment journey but the full
+run still placed two pinned C4 tokens beyond the same-seat bound. Its current
+bill had also moved, which the earlier fixed-bill offline prediction did not
+model. The C4 reconstruction additionally overincluded a stack reservation and
+misplaced two compact remote halos; retained correction notes separate those
+inferences from actual frame evidence.
+The current candidate instead replaces one existing grid slot per sampled row
+and column with its nearest feasible interval. It keeps the original five seeds
+and nearest-edge fallback, at most 681 score evaluations, and no larger grid.
+Positive obstacles sort once by each axis, followed by at most 52 linear interval
+scans. The geometry, final-hit isolation and old-action/ResolveHit assertions
+report separately without changing their order, gestures or required facts.
+For a focused iteration, append `--presentation-group mana-pool` to the existing
+`--smoke-headless-presentation` invocation. It calls the same pool/payment clarity
+and lifecycle group and writes the same receipts labeled `mana-pool`; an omitted
+selector runs the unchanged full sequence labeled `all`. Unknown selectors fail.
 Failure-only mana-runner snapshots preserve the current frame, measured text,
 resource parts, physical and control reservations, and final hit intent types
 without composing a new frame or invoking actions. Later cases and physical

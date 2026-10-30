@@ -217,10 +217,13 @@ internal static partial class HeadlessPresentationSmoke
             && run.Frame.Cards.Any(card => card.Id == ManaPaymentScenario.Island && card.Zone == "Battlefield")
             && run.Engine.Replies.Count == 0,
             "Opening mana reading preserves the exact current pinned hand occurrence, Island and bill instead of collapsing or replacing their table context");
-        check(ManaPaymentSmoke.PoolReadingClearsContext(run.View) && ManaPaymentSmoke.PoolReadingIsolated(run.View)
-            && !run.View.Activate(castBeforeReading) && !run.View.Activate(pinned.Hit)
+        check(ManaPaymentSmoke.PoolReadingClearsContext(run.View),
+            "Expanded full-name mana symbols fit beside the same portrait and stay clear of current card and bill geometry");
+        check(ManaPaymentSmoke.PoolReadingIsolated(run.View),
+            "The completed mana-reading frame contains only its passive surface and existing dismissal hit after every late painter");
+        check(!run.View.Activate(castBeforeReading) && !run.View.Activate(pinned.Hit)
             && run.View.HitAt(pinned.Display.Center.ToPoint())?.Intent is UiIntent.NoInteraction,
-            "Expanded full-name mana symbols fit beside the same portrait and stay clear of current card/bill geometry while late hits and ResolveHit cannot revive table actions");
+            "Direct old actions and ResolveHit cannot revive table commands through the passive retained reader");
         run.Input(new(2, 60), left: ButtonState.Pressed, label: "press-passive-table");
         run.Input(new(2, 60), label: "release-passive-table", keys: new(Microsoft.Xna.Framework.Input.Keys.Space));
         run.Tick("passive-table-key-released");

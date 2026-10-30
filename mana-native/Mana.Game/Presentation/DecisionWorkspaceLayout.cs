@@ -71,7 +71,7 @@ internal static class DecisionWorkspaceLayout
             At(800 - width / 2, 470 - height / 2),
             At(anchor.Center.X - width / 2, anchor.Bottom + 16)
         };
-        int? NearestGap(int low, int high, int extent, int target, IEnumerable<(int Start, int End)> blocked)
+        int? NearestGap(int low, int high, int extent, int target, IEnumerable<(int Start, int End)> orderedBlocked)
         {
             int cursor = low, distance = int.MaxValue; int? best = null;
             void Consider(int end)
@@ -81,7 +81,7 @@ internal static class DecisionWorkspaceLayout
                 int nextDistance = Math.Abs(origin + extent / 2 - target);
                 if (nextDistance < distance) { best = origin; distance = nextDistance; }
             }
-            foreach (var interval in blocked.OrderBy(interval => interval.Start)) {
+            foreach (var interval in orderedBlocked) {
                 if (interval.End <= cursor) continue;
                 Consider(Math.Min(high, interval.Start));
                 cursor = Math.Max(cursor, interval.End);
@@ -89,23 +89,6 @@ internal static class DecisionWorkspaceLayout
             }
             Consider(high); return best;
         }
-        // Project only the five preferred rows/columns onto their nearest clear
-        // gap. Dense obstacle edges cannot prune these intervals from the grid.
-        var solids = occupied.Prepend(anchor).Where(area => area.Width > 0 && area.Height > 0).ToArray();
-        preferred = preferred.Select(candidate => {
-            int? x = NearestGap(viewport.Left, viewport.Right, width, anchor.Center.X, solids
-                .Where(area => area.Top < candidate.Bottom + 8 && area.Bottom > candidate.Top - 8)
-                .Select(area => (area.Left - 8, area.Right + 8)));
-            int? y = NearestGap(viewport.Top, viewport.Bottom, height, anchor.Center.Y, solids
-                .Where(area => area.Left < candidate.Right + 8 && area.Right > candidate.Left - 8)
-                .Select(area => (area.Top - 8, area.Bottom + 8)));
-            var horizontal = x is { } left ? At(left, candidate.Y) : candidate;
-            var vertical = y is { } top ? At(candidate.X, top) : candidate;
-            if (x == null) return y == null ? candidate : vertical;
-            if (y == null) return horizontal;
-            return Vector2.DistanceSquared(horizontal.Center.ToVector2(), anchor.Center.ToVector2())
-                <= Vector2.DistanceSquared(vertical.Center.ToVector2(), anchor.Center.ToVector2()) ? horizontal : vertical;
-        }).ToArray();
         // A fully clear region beats any collision; distance and source/overlap
         // costs still choose between clear regions or the crowded fallback.
         var best = preferred[0]; long bestOverlap = long.MaxValue; bool bestClear = false;
@@ -127,8 +110,27 @@ internal static class DecisionWorkspaceLayout
             .Append(viewport.Top).Append(viewport.Bottom - height).Select(y => At(20, y).Y).Distinct()
             .OrderBy(y => Math.Abs(y + height / 2 - anchor.Center.Y)).Take(24)
             .Append(viewport.Top).Append(viewport.Bottom - height).Distinct().ToArray();
-        foreach (int x in xs) foreach (int y in ys) {
-            var candidate = At(x, y); long overlap = Overlap(candidate, bestClear, bestOverlap, out bool clear);
+        // Replace one slot per sampled row/column with its nearest clear gap.
+        // Sort twice, then scan ordered intervals; never cross all obstacle edges.
+        var solids = occupied.Prepend(anchor).Where(area => area.Width > 0 && area.Height > 0).ToArray();
+        var horizontal = solids.OrderBy(area => area.Left).ToArray();
+        var vertical = solids.OrderBy(area => area.Top).ToArray();
+        var rowGaps = ys.Select(y => NearestGap(viewport.Left, viewport.Right, width, anchor.Center.X, horizontal
+            .Where(area => area.Top < y + height + 8 && area.Bottom > y - 8)
+            .Select(area => (area.Left - 8, area.Right + 8)))).ToArray();
+        var columnGaps = xs.Select(x => NearestGap(viewport.Top, viewport.Bottom, height, anchor.Center.Y, vertical
+            .Where(area => area.Left < x + width + 8 && area.Right > x - 8)
+            .Select(area => (area.Top - 8, area.Bottom + 8)))).ToArray();
+        for (int column = 0; column < xs.Length; column++) for (int row = 0; row < ys.Length; row++) {
+            var candidate = At(xs[column], ys[row]);
+            if (column == 0 && rowGaps[row] is { } left) candidate = At(left, ys[row]);
+            if (row == 0 && columnGaps[column] is { } top) {
+                var alternative = At(xs[column], top);
+                if (column != 0 || rowGaps[row] == null
+                    || Vector2.DistanceSquared(alternative.Center.ToVector2(), anchor.Center.ToVector2())
+                        < Vector2.DistanceSquared(candidate.Center.ToVector2(), anchor.Center.ToVector2())) candidate = alternative;
+            }
+            long overlap = Overlap(candidate, bestClear, bestOverlap, out bool clear);
             if (clear && !bestClear || clear == bestClear && overlap < bestOverlap) {
                 best = candidate; bestOverlap = overlap; bestClear = clear;
             }

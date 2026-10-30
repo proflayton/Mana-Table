@@ -18,7 +18,7 @@ namespace Mana.Table;
 // controlled connection validates scoped commands; it does not simulate rules.
 internal static partial class HeadlessPresentationSmoke
 {
-    internal static void Run(string profile)
+    internal static void Run(string profile, string? group = null)
     {
         Directory.CreateDirectory(profile);
         var checks = new List<string>();
@@ -31,6 +31,11 @@ internal static partial class HeadlessPresentationSmoke
             checks.Add(description);
         }
         try {
+            if (group != null) {
+                if (group != "mana-pool") throw new ArgumentException("Unknown headless presentation group: " + group);
+                CheckManaPoolPaymentClarity(profile, Check, trace, performance);
+                return;
+            }
             PresentationRunChecks.Run(profile, Check);
             CheckFinishedTable(profile, Check, trace, performance);
             ProviderIsolationChecks.Run(Check);
@@ -459,7 +464,7 @@ internal static partial class HeadlessPresentationSmoke
             var options = new JsonSerializerOptions { WriteIndented = true };
             File.WriteAllText(Path.Combine(profile, "headless-presentation-trace.json"), JsonSerializer.Serialize(trace, options));
             File.WriteAllText(Path.Combine(profile, "headless-presentation-results.json"), JsonSerializer.Serialize(new {
-                passed = error == null, checks, error, performance,
+                passed = error == null, checks, error, performance, group = group ?? "all",
                 scope = "Production application composition and pointer input; controlled projected-state connection, no rules simulation or GPU."
             }, options));
         }

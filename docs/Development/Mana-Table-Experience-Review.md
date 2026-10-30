@@ -54,8 +54,9 @@ The complete measured expansion reserves current physical cards, reader,
 bill/source/output footprints, other pips, portraits and turn controls using
 the existing finite workspace search. A fully clear bounded candidate takes
 precedence over a colliding candidate; existing distance and source/overlap
-costs choose within each class. Preferred positions first project into nearby
-clear gaps along their row or column before the bounded obstacle-edge fallback.
+costs choose within each class. The bounded sampled rows and columns include
+their nearest clear intervals, so a dense set of edges cannot alone exclude
+every nearby gap from those rows and columns.
 This sparse authored journey must be
 reviewed at 1000 x 740 and a larger window, at 100% and 130% text and with reduced
 motion. A fully packed battlefield may still have no clear placement. Source,
