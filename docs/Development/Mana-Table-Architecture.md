@@ -24,6 +24,20 @@ serialized finite runner owns dispatch and reconciliation. Source preferences do
 not grant priority yields, persist across matches or authorize arbitrary choices.
 The game projects those preferences onto the actual source and reader controls.
 
+Current payment facts have one publication owner. After all seats reconcile
+visibility, `MatchSession` captures a per-seat copied payment value for the exact
+decision, board cohort and source-action version. Human prompt fields, AI payment
+provenance, the remaining bill and pool-color facts derive from that value.
+Republishing the same input replaces its capture; an outdated capture cannot
+establish a zero bill or certify an unpayable cost. A nested color choice retains
+its explicit parent payment context without inheriting the parent's commands.
+Transient source portraits and physical funding-source identities retain their
+separate visibility rules. Captures contain projected values, never a stored
+funding witness; command admission and execution still validate live rules state.
+The existing table board generation fences publication too: a superseded outer
+publication cannot overwrite a newer seat capture or finish an older spectator
+cohort. Rejecting a superseded AI read preserves the newer published capture.
+
 ## AI policy boundary
 
 AI seats use `Mana.AI` through the same scoped decisions as human players;

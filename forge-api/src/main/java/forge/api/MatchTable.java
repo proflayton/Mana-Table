@@ -172,11 +172,22 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
             // before any seat allocates IDs for this publication, regardless
             // of which seat owns the newly private occurrence.
             for (var seat : seats.values()) seat.refreshVisibility();
-            for (var seat : seats.values()) seat.publishView(revision);
+            for (var seat : seats.values()) {
+                seat.publishView(revision);
+                if (!currentPublication(revision)) return;
+            }
             refreshDecisionState();
-            if (automatedOnly) spectatorState = SpectatorObservation.project(this, revision, spectatorError);
+            if (!currentPublication(revision)) return;
+            if (automatedOnly) {
+                var spectator = SpectatorObservation.project(this, revision, spectatorError);
+                if (currentPublication(revision)) spectatorState = spectator;
+            }
         } });
     }
+
+    /** Called inside the rules-state/table boundary. A reentrant publication
+     * supersedes the whole earlier cohort, including its public observer. */
+    boolean currentPublication(long revision) { return boardRevision == revision; }
 
     /** Public decision ownership only; a seat's options and prompt remain private. */
     void refreshDecisionState() {

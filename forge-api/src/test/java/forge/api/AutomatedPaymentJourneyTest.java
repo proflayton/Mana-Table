@@ -106,6 +106,22 @@ public class AutomatedPaymentJourneyTest {
             assertEquals(text(choice.prompt.getAsJsonObject("manaPaymentContext").getAsJsonObject("source").getAsJsonObject("card"), "name"), "Kasla, the Broken Halo");
             assertEquals(choice.prompt.getAsJsonObject("manaPaymentContext").getAsJsonArray("unpaidManaParts"),
                     reduction.prompt.getAsJsonObject("manaReduction").getAsJsonArray("remainingManaParts"));
+            // The color dialog is waiting on the single UI executor. Read its
+            // retained facts in one rules cut without queuing work behind it.
+            table.game.getAction().readState(() -> {
+                var observed = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()).getAsJsonObject();
+                var published = JSON.toJsonTree(table.automatedSeat(policyId).state()).getAsJsonObject().getAsJsonObject("prompt");
+                assertEquals(observed.getAsJsonObject("state").get("prompt"), published);
+                assertEquals(published.getAsJsonObject("manaPaymentContext").get("payerId").getAsInt(), policyId);
+                assertFalse(published.has("payerId")); assertFalse(published.has("usablePoolManaColors"));
+                assertFalse(published.has("optionalDecline")); assertFalse(published.has("optionalPaymentSupport"));
+                assertFalse(observed.getAsJsonObject("semantics").has("payment"),
+                        "Reading the parent's bill does not turn a color choice into a direct payment decision");
+                assertThrows(IllegalArgumentException.class, () -> table.automatedSeat(policyId).action(request(choice,
+                        Map.of("action", "spendPoolMana", "manaColor", "U"))));
+                assertEquals(JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()), observed);
+                return null;
+            });
             assertTrue(choice.prompt.getAsJsonArray("choices").asList().stream().map(value -> value.getAsJsonObject())
                     .anyMatch(value -> text(value, "mana").equals("{1}")), "Colorless convoke contribution represents a generic reduction, not produced C mana");
             Files.createDirectories(Path.of("target/rules-regressions"));
@@ -115,6 +131,7 @@ public class AutomatedPaymentJourneyTest {
             driver.answer(choice, Map.of("action", "choice", "choices", List.of(white)));
             var resumed = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").equals("InputSelectCardsForConvokeOrImprovise"));
             assertEquals(reductionEpisode(table, policyId), episode);
+            assertFalse(resumed.prompt.has("manaPaymentContext"), "The resumed reduction cannot retain its answered child context");
             assertFalse(resumed.prompt.getAsJsonObject("manaReduction").getAsJsonArray("remainingManaParts").asList().stream()
                     .anyMatch(value -> text(value.getAsJsonObject(), "symbol").equals("{W}")));
             assertThrows(IllegalArgumentException.class, () -> table.automatedSeat(policyId).action(request(choice, Map.of("action", "choice", "choices", List.of(white)))));
@@ -139,8 +156,14 @@ public class AutomatedPaymentJourneyTest {
                     JSON.toJsonTree(List.of(Map.of("symbol", "{U}", "count", 1), Map.of("symbol", "{R}", "count", 1))));
             assertEquals(text(coloredOnly.prompt.getAsJsonObject("manaPaymentContext").getAsJsonObject("source").getAsJsonObject("card"), "name"), "Kasla, the Broken Halo");
             assertEquals(reductionEpisode(table, policyId), episode);
-            var observation = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation());
-            assertEquals(JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()), observation, "Filtering choices and reading the remaining bill cannot contribute, publish or alter the episode");
+            table.game.getAction().readState(() -> {
+                var observation = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation());
+                assertEquals(JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()), observation,
+                        "Filtering choices and reading the remaining bill cannot contribute, publish or alter the episode");
+                assertEquals(observation.getAsJsonObject().getAsJsonObject("state").get("prompt"),
+                        JSON.toJsonTree(table.automatedSeat(policyId).state()).getAsJsonObject().get("prompt"));
+                return null;
+            });
             Files.writeString(Path.of("target/rules-regressions/convoke-colored-only-choice.json"), JSON.toJson(coloredOnly.state));
         }
     }
@@ -362,7 +385,35 @@ public class AutomatedPaymentJourneyTest {
             // payment. No artificial confirm/accept step belongs before it.
             var payment = driver.until(input -> input.playerId == policyId
                     && text(input.prompt, "inputType").startsWith("InputPayMana"));
-            var observation = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()).getAsJsonObject();
+            var observation = HeadlessPlatform.query(table, () -> {
+                var current = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()).getAsJsonObject();
+                var state = current.getAsJsonObject("state"); var prompt = state.getAsJsonObject("prompt");
+                assertEquals(prompt, JSON.toJsonTree(table.automatedSeat(policyId).state()).getAsJsonObject().get("prompt"));
+                assertEquals(prompt.get("payerId").getAsInt(), policyId);
+                assertEquals(prompt.get("unpaidManaParts"), JSON.toJsonTree(List.of(Map.of("symbol", "{1}", "count", 1))));
+                assertEquals(prompt.get("usablePoolManaColors"), current.getAsJsonObject("domain").get("poolManaColors"));
+                var provenance = current.getAsJsonObject("semantics").getAsJsonObject("payment");
+                assertEquals(provenance.get("payerId"), prompt.get("payerId"));
+                assertEquals(provenance.get("sourceCardId"), prompt.getAsJsonObject("sourceCard").get("combatId"));
+                String executionId = text(prompt, "executionId"); assertFalse(executionId.isEmpty());
+                var execution = state.getAsJsonObject("executions").getAsJsonArray("occurrences").asList().stream()
+                        .map(value -> value.getAsJsonObject()).filter(value -> text(value, "id").equals(executionId)).findFirst().orElseThrow();
+                assertEquals(execution.get("actorPlayerId").getAsInt(), policyId);
+                assertEquals(execution.get("sourceCardId"), provenance.get("sourceCardId"));
+                var offer = prompt.getAsJsonObject("optionalDecline"); assertNotNull(offer);
+                assertEquals(offer.get("payerId"), provenance.get("payerId"));
+                assertEquals(offer.get("sourceCardId"), provenance.get("sourceCardId"));
+                assertEquals(offer.get("purpose"), provenance.get("purpose"));
+                assertFalse(text(offer, "offerId").isEmpty());
+                var support = prompt.getAsJsonObject("optionalPaymentSupport"); assertNotNull(support);
+                assertEquals(text(support, "availability"), funded ? "Payable" : "Unpayable");
+                var other = JSON.toJsonTree(table.seat(0).state()).getAsJsonObject();
+                assertTrue(!other.has("prompt") || other.get("prompt").isJsonNull(),
+                        "The other human seat has no private command or bill for the policy's current payment");
+                assertEquals(JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()), current,
+                        "Human-compatible and private policy facts share one current payment publication");
+                return current;
+            });
             assertPaymentOwner(observation, "TriggeredAbilityCost", policyId);
             assertEquals(text(payment.prompt.getAsJsonObject("sourceCard"), "name"), "Mentor of the Meek");
             assertEquals(observation.getAsJsonObject("semantics").getAsJsonArray("unpaidMana").toString(), "[\"{1}\"]");
@@ -398,6 +449,12 @@ public class AutomatedPaymentJourneyTest {
             assertNotNull(card(resolved.state, "Battlefield", "Memnite"));
             var after = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()).getAsJsonObject();
             assertFalse(after.getAsJsonObject("semantics").has("payment"), "Payment provenance ends with its owned input");
+            assertFalse(after.getAsJsonObject("semantics").has("unpaidMana"));
+            for (String field : List.of("payerId", "unpaidManaParts", "fundingContext", "usablePoolManaColors",
+                    "manaPaymentContext", "optionalDecline", "optionalPaymentSupport"))
+                assertFalse(after.getAsJsonObject("state").getAsJsonObject("prompt").has(field), "Settled priority retains no " + field);
+            assertEquals(observation.getAsJsonObject("state").getAsJsonObject("prompt").get("unpaidManaParts"),
+                    JSON.toJsonTree(List.of(Map.of("symbol", "{1}", "count", 1))), "Retained payment facts stay intact after resolution");
             assertThrows(IllegalArgumentException.class,
                     () -> table.automatedSeat(policyId).action(request(payment, Map.of("action", "cancel"))));
         }

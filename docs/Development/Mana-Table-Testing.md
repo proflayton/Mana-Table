@@ -478,6 +478,13 @@ Real Java payment journeys exercise manual source use and floating-pool spending
 checking that each publication shrinks the unpaid bill without mutating it during
 a source-catalog read. The authored `mana-payment.v1` presentation journey uses
 those contracts and ordinary pointer input; it is not a second rules simulator.
+`OptionalManaPaymentTest` also forbids live payment-fact reads after publication,
+then republishes a changed bill on the same input to require fresh human and AI
+facts while preserving the earlier snapshot. `AutomatedPaymentJourneyTest`
+checks their agreement through real optional payments and nested color choices.
+These purity comparisons run inside one existing input/state boundary.
+Controlled reentrant reads and publications check that the newer seat/spectator
+cohort survives and the next observation succeeds without another publication.
 Its geometry and interaction assertions support actual rendered review at both
 small and large windows, which remains necessary to assess readability.
 The real two-color source journey also checks explicit output intent through
