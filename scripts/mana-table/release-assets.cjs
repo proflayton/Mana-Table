@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const { createReadStream } = require('node:fs');
 const { execFile } = require('node:child_process');
 const { main: waitForSourceCI } = require('./wait-release-ci.cjs');
+const { githubRead } = require('./github-read.cjs');
 
 const REPO = 'proflayton/Mana-Table';
 const ROOT = path.resolve(__dirname, '../..');
@@ -48,9 +49,24 @@ async function runCommand(program, args, options = {}) {
     child.stdin.end(options.input || '');
   });
 }
-function githubApi(run) {
+function githubApi(run, { token = process.env.GH_TOKEN, fetchImpl = fetch, now = Date.now,
+  sleep, signalTimeout, report } = {}) {
+  let read;
   return async (resource, options = {}) => {
     assert(resource.startsWith('/repos/' + REPO + '/'), 'Unexpected release API repository.');
+    if ((options.method || 'GET') === 'GET' && !options.raw && options.input === undefined) {
+      read ||= githubRead({ token, repo: REPO, userAgent: 'ManaTable-release-assets',
+        fetchImpl, now, sleep, signalTimeout, report });
+      try {
+        // Each lookup owns one deadline, including its retries. Uploads and the
+        // source-CI wait do not consume a later lookup's budget.
+        return await read(resource, { deadline: now() + 90000 });
+      } catch (error) {
+        if (options.allowNotFound && error.status === 404) return null;
+        throw error;
+      }
+    }
+    // Preserve exact sidecar bytes and one-shot write/upload ownership.
     const args = ['api', resource];
     if (options.method) args.push('--method', options.method);
     if (options.raw) args.push('--header', 'Accept: application/octet-stream');
@@ -84,7 +100,25 @@ async function assertRun(ctx, api) {
   assert(run.id === ctx.runId && run.run_number === ctx.runNumber && run.run_attempt === ctx.attempt
     && run.head_sha === ctx.sha && run.head_branch === 'master' && run.event === ctx.event
     && run.repository?.full_name === REPO && run.path?.split('@')[0] === WORKFLOW
-    && (run.status === 'in_progress' || run.status === 'completed' && run.conclusion === 'success'), 'Workflow provenance does not match this release operation.');
+    && (run.status === 'in_progress' || run.status === 'completed' && run.conclusion === 'success'),
+  'Workflow provenance does not match this release operation. ' + JSON.stringify({
+    expected: { id: ctx.runId, run_number: ctx.runNumber, run_attempt: ctx.attempt, head_sha: ctx.sha,
+      head_branch: 'master', event: ctx.event, repository: REPO, path: WORKFLOW,
+      status: 'in_progress or completed/success' },
+    observed: {
+      id: positive(run.id) ? run.id : '<invalid>',
+      run_number: positive(run.run_number) ? run.run_number : '<invalid>',
+      run_attempt: positive(run.run_attempt) ? run.run_attempt : '<invalid>',
+      head_sha: typeof run.head_sha === 'string' && /^[a-f0-9]{40}$/.test(run.head_sha) ? run.head_sha : '<invalid>',
+      head_branch: run.head_branch === 'master' ? 'master' : '<non-master>',
+      event: ['push', 'workflow_dispatch', 'pull_request', 'pull_request_target', 'workflow_run'].includes(run.event) ? run.event : '<other>',
+      repository: run.repository?.full_name === REPO ? REPO : '<other>',
+      path: typeof run.path === 'string' && run.path.split('@')[0] === WORKFLOW ? WORKFLOW : '<other>',
+      status: ['queued', 'requested', 'waiting', 'pending', 'in_progress', 'completed'].includes(run.status) ? run.status : '<other>',
+      conclusion: run.conclusion === null ? null : ['success', 'failure', 'neutral', 'cancelled', 'skipped', 'timed_out',
+        'action_required', 'stale', 'startup_failure'].includes(run.conclusion) ? run.conclusion : '<other>',
+    },
+  }));
 }
 async function assertNativeGate(ctx, api) {
   const response = await api(`/repos/${REPO}/actions/runs/${ctx.runId}/jobs?filter=latest&per_page=100`);

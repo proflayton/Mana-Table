@@ -30,8 +30,22 @@ test('a timed-out read retries the same GET, with no mutation or token in diagno
   assert.deepEqual(f.sleeps, [1000]);
   assert.equal(f.calls.length, 2);
   assert.ok(f.calls.every(call => call.url === 'https://api.github.com' + resource
-    && call.options.method === 'GET' && call.options.redirect === 'error' && !call.options.body));
+    && call.options.method === 'GET' && call.options.redirect === 'error' && !call.options.body
+    && call.options.headers['Cache-Control'] === 'no-cache'));
   assert.doesNotMatch(JSON.stringify(f.reports), /secret|test-only/);
+});
+
+test('HTTP failures retain only their numeric status and cancel the unread remote body', async () => {
+  let cancelled = 0;
+  const result = response(404);
+  result.body = { cancel: async () => { cancelled++; },
+    [Symbol.asyncIterator]: () => { throw new Error('Remote error body must remain unread.'); } };
+  const f = fixture([result]);
+  await assert.rejects(f.api(resource, { deadline: 480000 }), error => {
+    assert.equal(error.status, 404); assert.equal(error.message, 'Read-only GitHub request failed (HTTP 404).');
+    return true;
+  });
+  assert.equal(cancelled, 1); assert.equal(f.calls.length, 1);
 });
 test('transient HTTP statuses have at most three attempts with bounded exponential backoff', async () => {
   for (const status of [408, 500, 502, 503, 504]) {
