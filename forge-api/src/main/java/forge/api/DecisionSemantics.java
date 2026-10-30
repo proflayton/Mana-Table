@@ -40,6 +40,11 @@ final class DecisionSemantics {
         return describe(null, paying, null, null, null);
     }
 
+    static Map<String, Object> describeConfirmation(SpellAbility ability, CostPaymentStack.Entry paying,
+                                                   Player viewer, Function<CardView, String> identity) {
+        return describe(null, paying, viewer, identity, ability);
+    }
+
     private static Map<String, Object> describe(Input input, CostPaymentStack.Entry paying, Player viewer,
                                                Function<CardView, String> identity, SpellAbility ability) {
         if (input instanceof InputSelectCardsForConvokeOrImprovise)

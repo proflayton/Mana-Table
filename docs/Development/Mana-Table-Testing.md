@@ -1169,6 +1169,14 @@ payment checks that replacing the active cost entry yields Unknown classificatio
 without stranding its response future; answering still resumes the actual payment.
 Existing cost-order, library-search, physical hand-choice, counter-type and nested
 color journeys retain their original index, privacy and resolution assertions.
+`ConfirmationPublicationTest` uses actual controller confirmation callbacks to
+check retained immutable facts, private information and superseded publication
+across the complete audience cohort. Lifecycle cases retire the real input
+before a queued OK or Cancel dispatch and exercise its waiting callback while
+the finished input is still queued: the original default survives, the waiting
+transition occurs once, and neither a stale answer nor trailing publication can
+reopen the question. Existing partner-search, commander-replacement portrait,
+nested payment and observation journeys retain their real rules outcomes.
 The existing native headless presentation lane also follows an inspected source
 through activation/payment and a keyless historical source face: missing physical
 candidate permission stays read-only; an authoritative candidate enables only
