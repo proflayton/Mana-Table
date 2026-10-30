@@ -128,6 +128,21 @@ public sealed record TargetSelectionPayload(DecisionReply Complete, DecisionRepl
     public DecisionReply Cancel { get => cancel; init => cancel = DecisionValue.Required(value, nameof(Cancel)); }
     private ImmutableArray<int> players = Players.IsDefault ? [] : Players;
     public ImmutableArray<int> Players { get => players; init => players = value.IsDefault ? [] : value; }
+    public TargetSelectionProgress? Progress { get; init; }
+}
+/// <summary>The controller's exact staged targets; this grants no selection or completion permission.</summary>
+public sealed record TargetSelectionProgress
+{
+    public int SelectedCount { get; }
+    public ImmutableArray<int> SelectedPlayers { get; }
+    [JsonConstructor]
+    public TargetSelectionProgress(int selectedCount, ImmutableArray<int> selectedPlayers)
+    {
+        var players = selectedPlayers.IsDefault ? ImmutableArray<int>.Empty : selectedPlayers;
+        if (selectedCount < 0 || players.Length > selectedCount || players.Distinct().Count() != players.Length)
+            throw new ArgumentException("Target progress needs a nonnegative count and distinct selected players.");
+        SelectedCount = selectedCount; SelectedPlayers = players;
+    }
 }
 public sealed record EntitySelectionPayload(DecisionReply Complete, DecisionReply Cancel,
     ImmutableArray<int> Players, SelectionRange? Range = null, CounterPaymentContext? CounterPayment = null) : DecisionPayload

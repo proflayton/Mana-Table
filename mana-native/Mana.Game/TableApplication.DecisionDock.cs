@@ -129,7 +129,7 @@ internal sealed partial class TableApplication
         if (following) return;
         switch (view.Payload) {
             case TargetSelectionPayload target:
-                DrawDecisionReplies(target.Complete, target.Cancel); break;
+                DrawDecisionReplies(target.Complete, target.Cancel, completeLabel: view.ActionLabel); break;
             case EntitySelectionPayload entities when !recipientChoice:
                 DrawDecisionReplies(entities.Complete, entities.Cancel, showDisabledComplete: true); break;
             case EntitySelectionPayload: break;
@@ -156,10 +156,10 @@ internal sealed partial class TableApplication
         Button("choicesclear", "Clear", clear, new MatchIntent.ClearSelection(), !busy && decisions.Selections.Count > 0);
     }
 
-    private void DrawDecisionReplies(DecisionReply complete, DecisionReply? cancel, bool showDisabledComplete = false)
+    private void DrawDecisionReplies(DecisionReply complete, DecisionReply? cancel, bool showDisabledComplete = false, string? completeLabel = null)
     {
         bool showComplete = complete.Enabled || showDisabledComplete;
-        if (showComplete) Button("confirm", complete.Label, 1266, DecisionY(799), 296, new MatchIntent.ConfirmDecision(), !busy && complete.Enabled && CombatGuide.CanConfirm(match!), true, 47);
+        if (showComplete) Button("confirm", completeLabel ?? complete.Label, 1266, DecisionY(799), 296, new MatchIntent.ConfirmDecision(), !busy && complete.Enabled && CombatGuide.CanConfirm(match!), true, 47);
         if (cancel?.Enabled == true) Button("cancel", cancel.Label, 1459, DecisionY(showComplete ? 852 : 799), 103, new MatchIntent.CancelDecision(), !busy, height: 32);
     }
 
