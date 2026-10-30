@@ -8,6 +8,10 @@
     </parent>
     <artifactId>forge-api</artifactId>
     <name>Forge Engine API</name>
+    <properties>
+        <mana.tests.apiCiProfile>false</mana.tests.apiCiProfile>
+        <mana.tests.apiTrialProfile>false</mana.tests.apiTrialProfile>
+    </properties>
     <build>
         <plugins>
             <plugin>
@@ -104,10 +108,80 @@
         </dependency>
     </dependencies>
     <profiles>
-        <!-- Opt-in measurement only. Ordinary verification keeps one serial JVM. -->
+        <!-- CI opts in; local/default and upstream-module test methods stay serial. -->
+        <profile>
+            <id>api-ci</id>
+            <properties>
+                <mana.tests.apiCiProfile>true</mana.tests.apiCiProfile>
+                <mana.tests.runRoot>${project.build.directory}/api-test-runs/${mana.tests.trialId}</mana.tests.runRoot>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>default-test</id>
+                                <configuration>
+                                    <forkCount>2</forkCount>
+                                    <reuseForks>true</reuseForks>
+                                    <reportsDirectory>${mana.tests.runRoot}/reports/parallel/fork-${surefire.forkNumber}</reportsDirectory>
+                                    <systemPropertyVariables>
+                                        <mana.tests.mode>parallel</mana.tests.mode>
+                                        <mana.tests.runRoot>${mana.tests.runRoot}</mana.tests.runRoot>
+                                        <mana.tests.trialId>${mana.tests.trialId}</mana.tests.trialId>
+                                        <mana.tests.sourceRevision>${mana.tests.sourceRevision}</mana.tests.sourceRevision>
+                                    </systemPropertyVariables>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>prepare-api-ci</id>
+                                <phase>process-test-classes</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <executable>node</executable>
+                                    <arguments>
+                                        <argument>${project.basedir}/../scripts/mana-table/api-test-ci.cjs</argument><argument>prepare</argument>
+                                        <argument>--root</argument><argument>${mana.tests.runRoot}</argument>
+                                        <argument>--trial-id</argument><argument>${mana.tests.trialId}</argument>
+                                        <argument>--source-revision</argument><argument>${mana.tests.sourceRevision}</argument>
+                                        <argument>--jdk-runtime</argument><argument>${java.runtime.version}</argument>
+                                        <argument>--jdk-vendor</argument><argument>${java.vendor}</argument>
+                                        <argument>--jdk-vm</argument><argument>${java.vm.name}</argument>
+                                        <argument>--trial-profile</argument><argument>${mana.tests.apiTrialProfile}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                            <!-- Declared after Surefire, including for the extended reactor's mvn test. -->
+                            <execution>
+                                <id>certify-api-ci</id>
+                                <phase>test</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <executable>node</executable>
+                                    <arguments>
+                                        <argument>${project.basedir}/../scripts/mana-table/api-test-ci.cjs</argument><argument>finish</argument>
+                                        <argument>--root</argument><argument>${mana.tests.runRoot}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- Opt-in paired measurement; mutually exclusive with normal API CI. -->
         <profile>
             <id>api-test-trial</id>
             <properties>
+                <mana.tests.apiTrialProfile>true</mana.tests.apiTrialProfile>
                 <mana.tests.trialId>trial</mana.tests.trialId>
                 <mana.tests.runRoot>${project.build.directory}/api-test-trials/${mana.tests.trialId}</mana.tests.runRoot>
                 <mana.tests.firstMode>serial</mana.tests.firstMode>
@@ -173,6 +247,7 @@
                                         <argument>--jdk-vm</argument><argument>${java.vm.name}</argument>
                                         <argument>--first-mode</argument><argument>${mana.tests.firstMode}</argument>
                                         <argument>--second-mode</argument><argument>${mana.tests.secondMode}</argument>
+                                        <argument>--ci-profile</argument><argument>${mana.tests.apiCiProfile}</argument>
                                     </arguments>
                                 </configuration>
                             </execution>

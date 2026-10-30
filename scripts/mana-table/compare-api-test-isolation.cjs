@@ -188,70 +188,111 @@ function readFork(root, manifest, mode, forkId, knownPids, knownNonces) {
     heapPoolPeakUsedBytes: receipt.heapPoolPeakUsedBytes, reports: reports(root, mode, forkId, classes) } };
 }
 
-function compareTrial({ root, manifestPath = path.join(root, 'manifest.json') }) {
+function evidence(root, manifestPath, singleMode) {
   root = directory(path.resolve(root));
   manifestPath = path.resolve(manifestPath); contained(root, manifestPath);
   requireFact(manifestPath === path.join(root, 'manifest.json'), 'The trial must use its own manifest.json.');
-  const allowedRoot = ['manifest.json', 'timings', 'comparison.json', 'reports', 'serial', 'parallel'];
+  const allowedRoot = singleMode
+    ? ['manifest.json', 'timings', 'accounting.json', 'retention.json', 'reports', 'parallel']
+    : ['manifest.json', 'timings', 'comparison.json', 'reports', 'serial', 'parallel'];
   for (const name of fs.readdirSync(root)) {
     const stat = fs.lstatSync(path.join(root, name));
     requireFact(allowedRoot.includes(name) && !stat.isSymbolicLink()
-      && (['manifest.json', 'comparison.json'].includes(name) ? stat.isFile() : stat.isDirectory()), 'Foreign root evidence or mode.');
+      && (name.endsWith('.json') ? stat.isFile() : stat.isDirectory()), 'Foreign root evidence or mode.');
   }
   const manifest = json(manifestPath);
   requireFact(object(manifest) && manifest.schemaVersion === 1 && text(manifest.trialId, 128)
     && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(manifest.trialId)
     && /^[a-f0-9]{40}$/.test(manifest.sourceRevision) && HEX.test(manifest.testClassSetSha256)
     && HEX.test(manifest.compiledClassSetSha256) && integer(manifest.createdAtEpochMs, 1)
-    && Array.isArray(manifest.executionOrder) && same([...manifest.executionOrder].sort(), ['parallel', 'serial']),
+    && Array.isArray(manifest.executionOrder) && (singleMode
+      ? manifest.kind === 'api-ci' && same(manifest.executionOrder, ['parallel'])
+      : same([...manifest.executionOrder].sort(), ['parallel', 'serial'])),
     'A complete source-bound trial manifest is required.');
   validateJdk(manifest.jdk);
   requireFact(Array.isArray(manifest.selectedClassNames) && manifest.selectedClassNames.length > 0
     && manifest.selectedClassNames.length <= 10_000 && manifest.selectedClassNames.every(name => typeof name === 'string' && CLASS.test(name))
     && new Set(manifest.selectedClassNames).size === manifest.selectedClassNames.length, 'A unique selected test class inventory is required.');
-  const modes = {}, knownPids = new Set(), knownNonces = new Set();
-  directory(path.join(root, 'reports'));
-  entries(path.join(root, 'reports'), Object.keys(MODE_FORK_COUNTS));
-  for (const [mode, forkCount] of Object.entries(MODE_FORK_COUNTS)) {
-    directory(path.join(root, mode)); directory(path.join(root, 'reports', mode));
-    const owners = fs.readdirSync(path.join(root, mode));
-    requireFact(owners.length === forkCount, 'Missing, foreign or duplicate fork/report ownership.');
-    const forkIds = owners.map(name => {
-      const label = /^fork-([1-9][0-9]{0,8})$/.exec(name);
-      requireFact(label, 'Fork owners require canonical numeric labels.');
-      return Number(label[1]);
-    }).sort((left, right) => left - right);
-    entries(path.join(root, 'reports', mode), forkIds.map(id => 'fork-' + id));
-    const forks = forkIds.map(id => readFork(root, manifest, mode, id, knownPids, knownNonces));
-    const counts = new Map(), classes = new Map();
-    for (const fork of forks) {
-      for (const [key, count] of fork.counts) add(counts, key, count);
-      for (const [name, value] of fork.classes) {
-        requireFact(!classes.has(name), 'A test class cannot be owned by two forks in one mode.');
-        classes.set(name, value);
-      }
+  return { root, manifest };
+}
+
+function readMode(root, manifest, mode, forkCount, knownPids, knownNonces) {
+  directory(path.join(root, mode)); directory(path.join(root, 'reports', mode));
+  const owners = fs.readdirSync(path.join(root, mode));
+  requireFact(owners.length === forkCount, 'Missing, foreign or duplicate fork/report ownership.');
+  const forkIds = owners.map(name => {
+    const label = /^fork-([1-9][0-9]{0,8})$/.exec(name);
+    requireFact(label, 'Fork owners require canonical numeric labels.');
+    return Number(label[1]);
+  }).sort((left, right) => left - right);
+  entries(path.join(root, 'reports', mode), forkIds.map(id => 'fork-' + id));
+  const forks = forkIds.map(id => readFork(root, manifest, mode, id, knownPids, knownNonces));
+  const counts = new Map(), classes = new Map();
+  for (const fork of forks) {
+    for (const [key, count] of fork.counts) add(counts, key, count);
+    for (const [name, value] of fork.classes) {
+      requireFact(!classes.has(name), 'A test class cannot be owned by two forks in one mode.');
+      classes.set(name, value);
     }
-    requireFact(same([...classes.keys()].sort(), [...manifest.selectedClassNames].sort()), 'Selected test classes are missing or foreign.');
-    modes[mode] = { counts, classes, forks };
   }
-  requireFact(same(sorted(modes.serial.counts), sorted(modes.parallel.counts)), 'Serial and parallel invocation multisets differ.');
-  for (const [name, value] of modes.serial.classes)
-    requireFact(modes.parallel.classes.get(name).sha256 === value.sha256, 'Executed class bytes differ between modes.');
+  requireFact(same([...classes.keys()].sort(), [...manifest.selectedClassNames].sort()), 'Selected test classes are missing or foreign.');
+  return { counts, classes, forks };
+}
+
+function requireOverlap(parallel) {
   let overlap;
-  for (const left of modes.parallel.forks[0].classes.values()) {
-    for (const right of modes.parallel.forks[1].classes.values()) {
+  for (const left of parallel.forks[0].classes.values()) {
+    for (const right of parallel.forks[1].classes.values()) {
       const start = Math.max(left.startedAtEpochMs, right.startedAtEpochMs), end = Math.min(left.completedAtEpochMs, right.completedAtEpochMs);
       if (start < end) { overlap = { classes: [left.name, right.name], startedAtEpochMs: start, completedAtEpochMs: end }; break; }
     }
     if (overlap) break;
   }
   requireFact(overlap, 'Two actual processes must demonstrate overlapping class execution.');
+  return overlap;
+}
+
+function compareTrial({ root, manifestPath = path.join(root, 'manifest.json') }) {
+  let manifest;
+  ({ root, manifest } = evidence(root, manifestPath, false));
+  const modes = {}, knownPids = new Set(), knownNonces = new Set();
+  directory(path.join(root, 'reports'));
+  entries(path.join(root, 'reports'), Object.keys(MODE_FORK_COUNTS));
+  for (const [mode, forkCount] of Object.entries(MODE_FORK_COUNTS))
+    modes[mode] = readMode(root, manifest, mode, forkCount, knownPids, knownNonces);
+  requireFact(same(sorted(modes.serial.counts), sorted(modes.parallel.counts)), 'Serial and parallel invocation multisets differ.');
+  for (const [name, value] of modes.serial.classes)
+    requireFact(modes.parallel.classes.get(name).sha256 === value.sha256, 'Executed class bytes differ between modes.');
+  const overlap = requireOverlap(modes.parallel);
   return { schemaVersion: 1, equivalent: true, trialId: manifest.trialId, sourceRevision: manifest.sourceRevision,
     testClassSetSha256: manifest.testClassSetSha256, compiledClassSetSha256: manifest.compiledClassSetSha256,
     jdk: manifest.jdk, executionOrder: manifest.executionOrder, classes: manifest.selectedClassNames.length,
     invocations: totals(modes.serial.counts), overlap,
     serial: { forks: modes.serial.forks.map(fork => fork.metrics) },
     parallel: { forks: modes.parallel.forks.map(fork => fork.metrics) } };
+}
+
+/** Certifies one complete CI schedule; serial/parallel equivalence belongs to compareTrial. */
+function compareMode({ root, manifestPath = path.join(root, 'manifest.json'), mode = 'parallel', expectedForkCount = 2 }) {
+  requireFact(mode === 'parallel' && expectedForkCount === 2, 'API CI requires exactly two parallel process owners.');
+  let manifest;
+  ({ root, manifest } = evidence(root, manifestPath, true));
+  requireFact(Array.isArray(manifest.selectedClasses) && manifest.selectedClasses.length === manifest.selectedClassNames.length,
+    'An independently prepared selected class byte inventory is required.');
+  const expected = new Map();
+  for (const value of manifest.selectedClasses) {
+    requireFact(keys(value, ['name', 'sha256']) && manifest.selectedClassNames.includes(value.name)
+      && HEX.test(value.sha256) && !expected.has(value.name), 'Selected class byte inventory is malformed.');
+    expected.set(value.name, value.sha256);
+  }
+  directory(path.join(root, 'reports')); entries(path.join(root, 'reports'), [mode]);
+  const actual = readMode(root, manifest, mode, expectedForkCount, new Set(), new Set());
+  for (const [name, value] of actual.classes)
+    requireFact(expected.get(name) === value.sha256, 'Executed class bytes differ from the prepared inventory.');
+  return { schemaVersion: 1, complete: true, trialId: manifest.trialId, sourceRevision: manifest.sourceRevision,
+    testClassSetSha256: manifest.testClassSetSha256, compiledClassSetSha256: manifest.compiledClassSetSha256,
+    jdk: manifest.jdk, mode, classes: actual.classes.size, invocations: totals(actual.counts), overlap: requireOverlap(actual),
+    parallel: { forks: actual.forks.map(fork => fork.metrics) } };
 }
 
 if (require.main === module) {
@@ -261,4 +302,4 @@ if (require.main === module) {
     console.log(JSON.stringify(compareTrial({ root, manifestPath })));
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
-module.exports = { compareTrial };
+module.exports = { compareTrial, compareMode };

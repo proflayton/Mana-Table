@@ -9,6 +9,13 @@ Use the package's `SOURCE.txt`/`build.json` and release notes to identify its be
 The [native development guide](../../mana-native/README.md) is the build/run entry
 point for the Windows client.
 
+Java CI isolates API tests in two process-owned workspaces while keeping methods
+and upstream modules serial. Its opt-in Maven profile and shared accounting
+checker bind current compiled inputs, process owners, reports and invocation
+journals; they do not alter shipping rules state or release gate identities.
+Normal accounting and controlled serial/parallel equivalence trials have
+different proof scopes. See the [testing guide](Mana-Table-Testing.md#api-test-process-ownership-ci-and-timing-trial).
+
 ## Optional payment consent
 
 Optional human payment preferences belong to `Mana.Client/ClientSession`, not
