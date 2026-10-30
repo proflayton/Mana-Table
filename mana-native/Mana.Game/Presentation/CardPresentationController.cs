@@ -89,6 +89,7 @@ internal sealed class CardPresentationController
                     Math.Clamp(reader.Center.X, 20 + contentSize.X / 2, 1600 - margin - contentSize.X / 2),
                     Math.Clamp(reader.Center.Y, 65 + contentSize.Y / 2, Math.Max(65 + contentSize.Y / 2, 775 - contentSize.Y / 2))) };
             }
+            readerTarget = ClearReaderControls(readerTarget.Value, context.KeepBattlefieldAnchor && request.Zone == "Battlefield");
         }
         bool revealPlay = !reduced && !focused && !request.Card.FaceDown && request.RevealPlay
             && request.PlayAge is >= 0 and < PlayRevealSeconds;
@@ -231,6 +232,22 @@ internal sealed class CardPresentationController
         context = new(null, "", false, false, false, false);
         boardView = BoardView.Identity; motion.Clear();
         rebaseNextFrame = rebase; rebaseFrame = false;
+    }
+
+    private Pose ClearReaderControls(Pose reader, bool study)
+    {
+        if (context.ReaderControls is not { Count: > 0 } controls) return reader;
+        var body = new CardPaintGeometry(reader);
+        Rectangle[] pieces = [body.FrameBounds, body.Shadow.Bounds];
+        if (!pieces.Any(piece => controls.Any(piece.Intersects))) return reader;
+        var footprint = body.Bounds;
+        // The shadow already occupies part of the space reserved beside the
+        // face for its state column; reserve that column once, from the face.
+        int details = study ? Math.Max(0, StudyDetailsGap + StudyDetailsWidth - (footprint.Right - reader.Bounds.Right)) : 0;
+        var viewport = new Rectangle(20, 64, 1560 - details, 696);
+        return DecisionWorkspaceLayout.Translate(pieces, viewport, controls) is { } clear
+            ? reader with { Center = reader.Center + (clear.Location - footprint.Location).ToVector2() }
+            : reader;
     }
 
     public static Pose ReaderPose(Pose rest, string zone)

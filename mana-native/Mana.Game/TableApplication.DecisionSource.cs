@@ -37,10 +37,8 @@ internal sealed partial class TableApplication
             ?? (zone == "Command" ? tableScene.Seats.FirstOrDefault(seat => seat.PlayerId == owner)?.Geometry.Commanders.FirstOrDefault(card => card.Id == identity) : null));
         Pose? pose = node == null ? null : BoardView.AffectsZone(zone) ? boardView.Apply(node.Pose) : node.Pose;
         if (BattlefieldFocused && zone == "Battlefield" && battlefieldFocusPlan?.Tile(identity) is { } tile) pose = tile.ArtPose;
-        if (pose is not { } rest || matchPresentation.Cards.PinnedId != identity) return pose;
-        return TableStudyEnabled && zone == "Battlefield"
-            ? Mana.Table.Presentation.CardPresentationController.StudyReaderPose(rest, StudyActionArea)
-            : Mana.Table.Presentation.CardPresentationController.ReaderPose(rest, zone);
+        return matchPresentation.Cards.Pinned is { Focused: true, ReaderTarget: { } target } reader
+            && reader.Id == identity && reader.Zone == zone ? target : pose;
     }
 
     private Rectangle DecisionActionArea(Rectangle anchor, int requestedWidth, int requestedHeight, bool reserveBattlefield = false,

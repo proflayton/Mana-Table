@@ -1365,6 +1365,20 @@ occurrences avoid rebuilding layouts or scanning the whole battlefield per card.
 Hit regions use those same displayed poses, including connected metadata and the
 original hand anchor.
 
+The card context supplies current visible local turn-control reservations.
+`CardPresentationController` keeps one full-size `ReaderTarget`, using shared
+`CardPaintGeometry` frame/shadow pieces and rigid row/column translation.
+`TurnControlLayout` exposes individual padded phase bounds while preserving its
+aggregate arc. Targeting omits hidden toggles; suppressed controls reserve no
+reader space. Rendered source anchors reuse the matching prepared reader target;
+the bill follows its current displayed face. Earlier ability-layout preparation
+retains its preparation cut.
+The world painter measures current land text and records painted nameplate
+bounds; only the later bill painter passes those frame-local footprints as
+additional workspace reservations. Prepaint consumers do not borrow this list.
+A new table composition clears it. The fixed-size translation can return no
+placement, retaining the existing target without resizing or new action authority.
+
 Published controls carry closed `MatchIntent`, `DeckIntent` or `ShellIntent`
 records instead of executable callbacks. Their explicit scope kinds select the
 current game/viewer/prompt, source, or feature-modal lifetime. Dispatch requires

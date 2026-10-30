@@ -41,6 +41,53 @@ internal static class DecisionWorkspaceLayout
             .ThenByDescending(area => area.Width * area.Height).FirstOrDefault();
     }
 
+    // Move a retained physical object at its complete size. Unlike a decision
+    // workspace, the object is not an obstacle to itself and cannot be resized.
+    internal static Rectangle? Translate(IReadOnlyList<Rectangle> pieces, Rectangle viewport, IReadOnlyList<Rectangle> occupied)
+    {
+        if (pieces.Count == 0) return null;
+        var bounds = pieces.Aggregate(Rectangle.Union);
+        if (bounds.Width <= 0 || bounds.Height <= 0 || bounds.Width > viewport.Width || bounds.Height > viewport.Height) return null;
+        var candidate = new Rectangle(Math.Clamp(bounds.X, viewport.Left, viewport.Right - bounds.Width),
+            Math.Clamp(bounds.Y, viewport.Top, viewport.Bottom - bounds.Height), bounds.Width, bounds.Height);
+        // Project the rigid pieces onto allowed origin intervals, rather than
+        // treating empty corners of their union as painted material. The scene
+        // supplies padded control reservations, so do not pad them again here.
+        int dx = candidate.X - bounds.X, dy = candidate.Y - bounds.Y;
+        var horizontalBlocked = from piece in pieces from area in occupied
+            where area.Top < piece.Bottom + dy && area.Bottom > piece.Top + dy
+            select (Start: area.Left - (piece.Right - bounds.Left), End: area.Right - (piece.Left - bounds.Left));
+        var verticalBlocked = from piece in pieces from area in occupied
+            where area.Left < piece.Right + dx && area.Right > piece.Left + dx
+            select (Start: area.Top - (piece.Bottom - bounds.Top), End: area.Bottom - (piece.Top - bounds.Top));
+        int? x = NearestGap(viewport.Left, viewport.Right - bounds.Width, 0, bounds.Left, horizontalBlocked.OrderBy(interval => interval.Start));
+        int? y = NearestGap(viewport.Top, viewport.Bottom - bounds.Height, 0, bounds.Top, verticalBlocked.OrderBy(interval => interval.Start));
+        Rectangle? horizontal = x is { } left ? new Rectangle(left, candidate.Y, bounds.Width, bounds.Height) : null;
+        Rectangle? vertical = y is { } top ? new Rectangle(candidate.X, top, bounds.Width, bounds.Height) : null;
+        if (horizontal is not { } h) return vertical;
+        if (vertical is not { } v) return h;
+        return Vector2.DistanceSquared(h.Center.ToVector2(), bounds.Center.ToVector2())
+            <= Vector2.DistanceSquared(v.Center.ToVector2(), bounds.Center.ToVector2()) ? h : v;
+    }
+
+    private static int? NearestGap(int low, int high, int extent, int target, IEnumerable<(int Start, int End)> orderedBlocked)
+    {
+        int cursor = low, distance = int.MaxValue; int? best = null;
+        void Consider(int end) {
+            if (end - cursor < extent) return;
+            int origin = Math.Clamp(target - extent / 2, cursor, end - extent);
+            int nextDistance = Math.Abs(origin + extent / 2 - target);
+            if (nextDistance < distance) { best = origin; distance = nextDistance; }
+        }
+        foreach (var interval in orderedBlocked) {
+            if (interval.End <= cursor) continue;
+            Consider(Math.Min(high, interval.Start));
+            cursor = Math.Max(cursor, interval.End);
+            if (cursor > high) break;
+        }
+        Consider(high); return best;
+    }
+
     private static Rectangle PlaceWorkspace(Rectangle anchor, int width, int height, IReadOnlyList<Rectangle> occupied, int minimumWidth, int minimumHeight)
     {
         var viewport = new Rectangle(20, 64, 1560, 696);
@@ -73,24 +120,6 @@ internal static class DecisionWorkspaceLayout
             At(800 - width / 2, 470 - height / 2),
             At(anchor.Center.X - width / 2, anchor.Bottom + 16)
         };
-        int? NearestGap(int low, int high, int extent, int target, IEnumerable<(int Start, int End)> orderedBlocked)
-        {
-            int cursor = low, distance = int.MaxValue; int? best = null;
-            void Consider(int end)
-            {
-                if (end - cursor < extent) return;
-                int origin = Math.Clamp(target - extent / 2, cursor, end - extent);
-                int nextDistance = Math.Abs(origin + extent / 2 - target);
-                if (nextDistance < distance) { best = origin; distance = nextDistance; }
-            }
-            foreach (var interval in orderedBlocked) {
-                if (interval.End <= cursor) continue;
-                Consider(Math.Min(high, interval.Start));
-                cursor = Math.Max(cursor, interval.End);
-                if (cursor > high) break;
-            }
-            Consider(high); return best;
-        }
         // Project only the five preferred rows/columns onto their nearest clear
         // gap. Dense obstacle edges cannot prune these intervals from the grid.
         var solids = occupied.Prepend(anchor).Where(area => area.Width > 0 && area.Height > 0).ToArray();

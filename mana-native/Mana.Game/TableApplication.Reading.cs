@@ -28,7 +28,7 @@ internal sealed partial class TableApplication
     private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused && !ZoneReadingOpen && !CardCollectionOpen,
         ReadingGalleryOpen, dragging, CompactCardDecision, TableStudyEnabled,
         TableStudyEnabled ? StudyActionArea : null, decisions.Presentation,
-        spreadCollection as CardCollectionTarget.PublicZone, RulesReaderSize(), CurrentManaReading);
+        spreadCollection as CardCollectionTarget.PublicZone, RulesReaderSize(), CurrentManaReading, ReaderControlReservations);
     private string? readingId => matchPresentation.Cards.PinnedId;
     private Rectangle? hoverPreview => matchPresentation.Cards.ReaderBounds;
     internal bool InteractivePointer => !dragging && HitAt(pointer) is { } hit

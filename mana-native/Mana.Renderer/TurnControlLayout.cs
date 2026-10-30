@@ -10,7 +10,8 @@ public sealed record TurnControlLayout(ImmutableArray<Vector2> Markers, Vector2 
 {
     public const int MarkerRadius = 16, ToggleRadius = 16, ManaOffset = 102;
     // Include the saved-pause corner badge and the generous circular hit areas.
-    public Rectangle ArcBounds => Markers.Select(center => Bounds(center, MarkerRadius + 4)).Aggregate(Rectangle.Union);
+    public ImmutableArray<Rectangle> PhaseBounds => Markers.Select(center => Bounds(center, MarkerRadius + 4)).ToImmutableArray();
+    public Rectangle ArcBounds => PhaseBounds.Aggregate(Rectangle.Union);
     public Rectangle AutoBounds => Bounds(AutoCenter, ToggleRadius + 2);
     public Rectangle HoldBounds => Bounds(HoldCenter, ToggleRadius + 2);
     public Vector2 AlertCenter => HoldCenter + new Vector2(-21, -42);
