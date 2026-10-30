@@ -156,10 +156,25 @@ public class ConfirmationPublicationTest {
                 assertCohort(fixture, current.getAsJsonObject("state").get("boardRevision").getAsLong());
                 fixture.record("replacement", current); return current;
             });
-            fixture.answer(replaced, "ok");
+            var parentDisplayed = new CountDownLatch(1);
+            var parent = HeadlessPlatform.query(fixture.table, () -> {
+                var owner = (InputConfirm)fixture.controller().getInputQueue().getRootInput();
+                assertNotSame(owner, replacement); assertTrue(owner.isConfirmationActive());
+                fixture.opened = parentDisplayed; fixture.openedOwner = owner;
+                fixture.answer(replaced, "ok");
+                return owner;
+            });
+            // The accepted reply queues the parent's display after restoring
+            // its input identity. A query already in the UI queue can run
+            // first, so wait for that exact parent's actual display callback.
+            assertTrue(parentDisplayed.await(5, TimeUnit.SECONDS), "The original confirmation must actually be displayed again");
             var resumed = fixture.current();
+            assertSame(fixture.confirmation(), parent);
+            assertSame(fixture.controller().getInputProxy().getInput(), parent);
+            assertTrue(parent.isConfirmationActive());
             assertTrue(replacement.getResult(), "The actual replacement receives its own accepted reply");
             assertEquals(text(prompt(resumed), "message"), "Continue the real draw?");
+            fixture.record("resumed", resumed);
             assertFalse(running.result.isDone()); fixture.answer(resumed, "cancel");
             assertFalse(running.result.get(5, TimeUnit.SECONDS)); fixture.assertUnchangedResources();
         }
@@ -256,7 +271,7 @@ public class ConfirmationPublicationTest {
     private static final class Fixture implements AutoCloseable {
         final MatchTable table; final Card source, forest; final ProbeCost cost = new ProbeCost(); final GuardedAbility draw;
         final List<GuardedAbility> abilities = new ArrayList<>(); final Path evidence; final IGuiGame originalGui; final List<Object> trace = new ArrayList<>();
-        CountDownLatch opened; Runnable onAwait; CompletableFuture<Boolean> worker;
+        CountDownLatch opened; InputConfirm openedOwner; Runnable onAwait; CompletableFuture<Boolean> worker;
         Fixture(String name) throws Exception {
             var resources = Path.of("../forge-gui/res"); if (StaticData.instance() == null) EngineResources.load(resources);
             evidence = ApiTestWorkspace.evidence("confirmation-publication-" + name);
@@ -269,7 +284,8 @@ public class ConfirmationPublicationTest {
                 Object result;
                 try { result = method.invoke(originalGui, args); }
                 catch (InvocationTargetException failure) { throw failure.getCause(); }
-                if (method.getName().equals("updateButtons") && controller().getInputQueue().getInput() instanceof InputConfirm && opened != null) opened.countDown();
+                if (method.getName().equals("updateButtons") && controller().getInputQueue().getInput() instanceof InputConfirm current
+                        && opened != null && (openedOwner == null || openedOwner == current)) opened.countDown();
                 if (method.getName().equals("awaitNextInput") && onAwait != null) onAwait.run();
                 return result;
             }));
@@ -280,7 +296,7 @@ public class ConfirmationPublicationTest {
         InputConfirm confirmation() { return (InputConfirm)controller().getInputQueue().getInput(); }
         Card add(String name, ZoneType zone) { var card = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard(name), actor()); actor().getZone(zone).add(card); return card; }
         Running start(Supplier<Boolean> callback) {
-            opened = new CountDownLatch(1); worker = new CompletableFuture<>(); var result = worker;
+            opened = new CountDownLatch(1); openedOwner = null; worker = new CompletableFuture<>(); var result = worker;
             table.game.getAction().invoke(() -> { try { result.complete(callback.get()); } catch (Throwable failure) { result.completeExceptionally(failure); } });
             return new Running(opened, result);
         }
