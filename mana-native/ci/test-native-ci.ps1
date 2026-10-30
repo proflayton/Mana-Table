@@ -92,14 +92,20 @@ try {
     $env:MANA_RELEASE_VERSION = '0.2.123'
     $env:GITHUB_ENV = Join-Path $TestDirectory 'github-env.txt'
     [object[]]$inventory = & (Join-Path $PSScriptRoot 'native-ui.ps1') -ListOnly | ConvertFrom-Json
-    if ($inventory.Count -ne 14 -or @($inventory.name | Sort-Object -Unique).Count -ne 14 -or @($inventory.shard | Sort-Object -Unique).Count -ne 4 -or
+    $criticalNames = @('startup','loading','analysis-1000','clutter-1000','audio-settings-1000',
+        'deck-experience-1000','equipment-1000','card-states-1000','printings-1000','audio-settings-1540',
+        'lobby-ai-1000','card-reading-1000','mana-payment-1000','lobby-three-1000','full-battlefield-1000')
+    if ($inventory.Count -ne 15 -or @($inventory.name | Sort-Object -Unique).Count -ne 15 -or @($inventory.shard | Sort-Object -Unique).Count -ne 4 -or
+        @(Compare-Object $criticalNames $inventory.name -CaseSensitive).Count -ne 0 -or
         @($inventory | Where-Object name -eq 'card-reading-1000').Count -ne 1 -or
         @($inventory | Where-Object name -eq 'full-battlefield-1000').Count -ne 1 -or
+        @($inventory | Where-Object { $_.name -ceq 'mana-payment-1000' -and $_.mode -ceq '--smoke-mana-payment' -and $_.size -ceq '1000x740' -and $_.result -ceq 'mana-payment-ci-results.json' }).Count -ne 1 -or
         @($inventory | Where-Object { $_.name -eq 'audio-settings-1000' -and $_.shard -eq 1 }).Count -ne 1 -or
         @($inventory | Where-Object { $_.name -eq 'audio-settings-1540' -and $_.shard -eq 2 }).Count -ne 1) { throw 'Critical native suite discovery is incomplete or duplicated.' }
     $checks++
     [object[]]$inventory = & (Join-Path $PSScriptRoot 'native-ui.ps1') -ListOnly -Extended | ConvertFrom-Json
-    if ($inventory.Count -ne 48 -or @($inventory.name | Sort-Object -Unique).Count -ne 48 -or @($inventory.shard | Sort-Object -Unique).Count -ne 12) { throw 'Extended native suite discovery is incomplete or duplicated.' }
+    if ($inventory.Count -ne 49 -or @($inventory.name | Sort-Object -Unique).Count -ne 49 -or @($inventory.shard | Sort-Object -Unique).Count -ne 12 -or
+        @($inventory | Where-Object { $_.name -ceq 'mana-payment-1000' -and $_.mode -ceq '--smoke-mana-payment' -and $_.size -ceq '1000x740' -and $_.result -ceq 'mana-payment-ci-results.json' }).Count -ne 1) { throw 'Extended native suite discovery is incomplete or duplicated.' }
     $checks++
     $valid = New-PackageFixture 'valid' ''
     & (Join-Path $PSScriptRoot 'restore-package.ps1') -Directory $valid -RequireHarness

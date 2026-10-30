@@ -40,12 +40,16 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
     internal static void Run(string profile, Point? dimensions)
     {
         var size = dimensions ?? new Point(1000, 740); Prepare(profile);
+        var completed = new List<string>();
         var lab = new ExperienceLabSession(ManaPaymentScenario.Id);
         var engine = new ExperienceLabEngine(lab);
         using (var app = new TableWindow(TestTableServices.For(engine), profile, null, null, size,
             initialState: lab.State, artSource: new MagicArtSource(profile), enableLiveTableStudy: true)) {
-            app.Automation = new ManaPaymentSmoke(app.TestPort, lab, size, app.TestPort);
+            var driver = new ManaPaymentSmoke(app.TestPort, lab, size, app.TestPort);
+            app.Automation = driver;
             app.Run();
+            if (!driver.finished) throw new InvalidOperationException("The mana pointer journey closed before completing its checks.");
+            completed.AddRange(driver.checks);
         }
         foreach (float scale in new[] { 1f, 1.3f }) {
             string directory = Path.Combine(profile, "counted-outputs-" + (int)(scale * 100)); Prepare(directory);
@@ -53,9 +57,14 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             var counted = new InteractionScenarioEngine(); counted.Present(CountedSourceOutput(100, false));
             using var app = new TableWindow(TestTableServices.For(counted), directory, null, "controlled-frames", size,
                 initialState: counted.State, artSource: new MagicArtSource(profile), enableLiveTableStudy: true);
-            app.Automation = new ManaPaymentSmoke(app.TestPort, new ExperienceLabSession(ManaPaymentScenario.Id), size, counted);
+            var driver = new ManaPaymentSmoke(app.TestPort, new ExperienceLabSession(ManaPaymentScenario.Id), size, counted);
+            app.Automation = driver;
             app.Run();
+            if (!driver.finished) throw new InvalidOperationException("The counted mana output capture closed before completing its checks.");
+            completed.AddRange(driver.checks);
         }
+        File.WriteAllText(Path.Combine(profile, "mana-payment-ci-results.json"), JsonSerializer.Serialize(
+            completed.Select(description => new { description, passed = true }), new JsonSerializerOptions { WriteIndented = true }));
     }
 
     internal static void RunHeadless(string profile, Action<bool, string> check)

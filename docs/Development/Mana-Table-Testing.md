@@ -1503,6 +1503,12 @@ edge and then fully offscreen, keeping the observation and command count intact.
 The same window smoke captures each counted source at both text scales after its
 ordinary pointer journey, with loaded card artwork, fitted-surface and physical
 window images, and matching state/frame observations in `counted-outputs-*`.
+The normal native UI inventory runs this window journey at 1000 x 740, including
+both text scales. Only after the ordinary journey and both counted-source
+windows finish does the producer write `mana-payment-ci-results.json`: one
+ordinary array receipt containing their actual checks. The shared UI runner
+keeps its existing result contract; wrapped per-window diagnostics remain
+separate. Run the larger window locally for the additional scale review.
 These are controlled presentation facts, not another mana rules implementation;
 inspect the physical frames separately and keep human clarity review pending.
 

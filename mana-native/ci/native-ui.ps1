@@ -14,6 +14,7 @@ $suites = @(
   @{ Name='loading'; Mode='--smoke-loading'; Result='loading-results.json' },
   @{ Name='audio-settings-1000'; Mode='--smoke-audio-settings'; Result='audio-settings-results.json'; Size='1000x740' },
   @{ Name='audio-settings-1540'; Mode='--smoke-audio-settings'; Result='audio-settings-results.json'; Size='1540x980' },
+  @{ Name='mana-payment-1000'; Mode='--smoke-mana-payment'; Result='mana-payment-ci-results.json'; Size='1000x740' },
   @{ Name='recovery-1000'; Mode='--smoke-recovery'; Result='recovery-results.json'; Size='1000x740' },
   @{ Name='recovery-1540'; Mode='--smoke-recovery'; Result='recovery-results.json'; Size='1540x980' },
   @{ Name='state-clarity-1000'; Mode='--smoke-state-clarity'; Result='state-clarity-results.json'; Size='1000x740' },
@@ -63,20 +64,20 @@ $partitions = @(
     @('workshop','priority-1200','recovery-1540','commander-tax-1540'),
     @('state-clarity-1000','analysis-1000','deck-experience-1000','updates-1000','printings-1000'),
     @('state-clarity-1540','analysis-1540','deck-experience-1540','updates-1540','printings-1540'),
-    @('hand-placement-1000','allocation-1000','tuning'),
+    @('hand-placement-1000','allocation-1000','tuning','mana-payment-1000'),
     @('hand-placement-1540','allocation-1540','analysis-adapter'),
     @('full-battlefield-1000','import'),
     @('full-battlefield-1540','building','lobby')
 )
 $allNames = @($suites | ForEach-Object { $_.Name })
 $assigned = @($partitions | ForEach-Object { $_ })
-if ($suites.Count -ne 48 -or @($allNames | Sort-Object -Unique).Count -ne 48 -or $assigned.Count -ne 48 -or @($assigned | Sort-Object -Unique).Count -ne 48 -or @(Compare-Object $allNames $assigned).Count -ne 0) { throw 'Native UI partitions must cover all 48 suite/size cases exactly once.' }
+if ($suites.Count -ne 49 -or @($allNames | Sort-Object -Unique).Count -ne 49 -or $assigned.Count -ne 49 -or @($assigned | Sort-Object -Unique).Count -ne 49 -or @(Compare-Object $allNames $assigned).Count -ne 0) { throw 'Native UI partitions must cover all 49 suite/size cases exactly once.' }
 if (-not $Extended) {
     # Fast release gate; the complete inventory remains available on demand.
     $partitions = @(
         @('startup','loading','analysis-1000','clutter-1000','audio-settings-1000'),
         @('deck-experience-1000','equipment-1000','card-states-1000','printings-1000','audio-settings-1540'),
-        @('lobby-ai-1000','card-reading-1000'),
+        @('lobby-ai-1000','card-reading-1000','mana-payment-1000'),
         @('lobby-three-1000','full-battlefield-1000')
     )
 }
