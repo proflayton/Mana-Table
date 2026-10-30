@@ -432,6 +432,7 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
                 "Dismissing physical mana reading preserves the same valid pinned card and bill without a second hand click or any game command");
             Capture("pool-preview-after-close");
             CheckReaderControls("artwork-after-close");
+            CheckReaderBodyPhase();
             CompleteActionLabelChecks.Run(view.Frame!, "read-card-rules", "Rules", Check);
             MoveHit("read-card-rules");
         });
@@ -474,6 +475,73 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             Check(geometry.Clear, "The complete physical reader footer and shadow stay clear of the phase arc, current actions, cards and bill");
             Check(geometry.FooterOwnsCenter && geometry.PhaseOwnCenters && SameCurrentReader(),
                 "The physical reader footer and phase centers keep separate current targets with the exact pinned card, bill and zero commands");
+            var frame = view.Frame!;
+            var metrics = new Mana.Renderer.TextMetrics();
+            var readouts = frame.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Text>()
+                .Where(text => text.Value is { } value && (value.EndsWith(" land", StringComparison.Ordinal)
+                    || value.EndsWith(" lands", StringComparison.Ordinal)
+                    || value.Contains(" untapped", StringComparison.Ordinal) && value.Contains(" tapped", StringComparison.Ordinal)))
+                .Select(text => {
+                    var size = metrics.TextSize(text.Value!, text.Size, text.Width, text.MaxLines, text.Bold, frame.Drawing.TextScale);
+                    return new { text.Value, bounds = new Microsoft.Xna.Framework.Rectangle(text.X, text.Y, size.X, size.Y),
+                        text.Size, text.Width, text.MaxLines, text.Bold, frame.Drawing.TextScale };
+                }).ToArray();
+            var nameplates = frame.Hits.Where(hit => hit.Id.StartsWith("focus:", StringComparison.Ordinal)
+                    && hit.Intent is MatchIntent.OpenZone { Zone: "Battlefield" })
+                .Select(hit => new { hit.Id, hit.Bounds, intent = hit.Intent.ToString() }).ToArray();
+            var bill = view.ManaJourney;
+            File.WriteAllText(Path.Combine(view.Profile, "reader-bill-public-readouts-" + label + ".json"),
+                JsonSerializer.Serialize(new { state = view.Match, frame = frame.Observe(), readouts, nameplates,
+                    currentBill = bill, currentReader = SameCurrentReader(), replies = engine.Replies.Count,
+                    scope = "Measured current emitted land text and current focus/nameplate hits; no World position or placement formula."
+                }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+            Check(readouts.Length == view.Match!.Players.Length * 2 && nameplates.Length == view.Match.Players.Length - 1
+                && bill != null && readouts.All(text => !bill.Bounds.Intersects(text.bounds))
+                && nameplates.All(hit => !bill.Bounds.Intersects(hit.Bounds)),
+                "The current exact printed-cost bill stays clear of the measured land summaries and current player nameplate targets");
+        }
+        void CheckReaderBodyPhase() {
+            var frame = view.Frame!;
+            var reader = frame.Cards.Single(card => card.Id == ManaPaymentScenario.Spell && card.Focused);
+            var commands = frame.Drawing.Commands;
+            var artwork = view.Art(reader.Card);
+            int artIndex = Enumerable.Range(0, commands.Count).FirstOrDefault(index =>
+                commands[index] is Mana.Renderer.DrawCommand.Surface surface
+                    && artwork != null && ReferenceEquals(surface.Texture, artwork) && surface.Pose == reader.Display, -1);
+            var paint = new List<(string Kind, Microsoft.Xna.Framework.Rectangle Bounds)>();
+            if (artIndex >= 0) {
+                paint.Add(("artwork", reader.Display.Bounds));
+                // Read the actual contiguous backing/shadow surfaces emitted
+                // before this artwork; do not duplicate their renderer offsets.
+                for (int index = artIndex - 1; index >= 0
+                    && commands[index] is Mana.Renderer.DrawCommand.Surface { Texture: null } surface; index--)
+                    paint.Add(("backing-or-shadow", surface.Pose.Bounds));
+            }
+            foreach (var border in commands.OfType<Mana.Renderer.DrawCommand.CardFrame>()
+                .Where(border => border.Pose.Center == reader.Display.Center
+                    && border.Pose.Size.X >= reader.Display.Size.X && border.Pose.Size.Y >= reader.Display.Size.Y)) {
+                var bounds = border.Pose.Bounds;
+                bounds.Inflate((border.Width + 1) / 2, (border.Width + 1) / 2);
+                paint.Add(("card-frame", bounds));
+            }
+            var phases = frame.Hits.Where(hit => hit.Intent is MatchIntent.TogglePhaseStop).ToArray();
+            var arc = Mana.Renderer.TurnControlLayout.For(frame.Scene!.Seat(view.Match!.ViewerId).Geometry.Hero).ArcBounds;
+            var fullPaint = paint.Select(part => part.Bounds).DefaultIfEmpty().Aggregate(Microsoft.Xna.Framework.Rectangle.Union);
+            Capture("reader-body-phase-before-assert");
+            File.WriteAllText(Path.Combine(view.Profile, "reader-body-phase-before-assert.json"), JsonSerializer.Serialize(new {
+                state = view.Match, frame = frame.Observe(), reader.Id, reader.Card.Key, reader.Zone, reader.Display, reader.ReaderTarget,
+                artIndex, paint = paint.Select(part => new { part.Kind, part.Bounds }).ToArray(), fullPaint, phaseArc = arc,
+                phases = phases.Select(hit => new { hit.Id, hit.Bounds, centerHit = view.HitAt(hit.Bounds.Center)?.Id }).ToArray(),
+                footer = ReaderControlGeometry(view), currentReader = SameCurrentReader(), view.ManaJourney,
+                viewport, view.TextScale, replies = engine.Replies.Count,
+                scope = "Actual current artwork/backing/shadow surfaces and emitted card-frame strokes versus visible phase controls; no layout formula or human approval."
+            }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+            Check(artIndex >= 0 && paint.Count(part => part.Kind == "backing-or-shadow") >= 2
+                && paint.Any(part => part.Kind == "card-frame") && phases.Length > 0 && SameCurrentReader(),
+                "The phase-clearance checkpoint contains the actual full artwork, backing/shadow and frame of the same current reader with its bill and zero commands");
+            Check(paint.All(part => !part.Bounds.Intersects(arc)
+                    && phases.All(phase => !part.Bounds.Intersects(phase.Bounds))),
+                "The complete current reader artwork, backing/shadow and card-frame paint stay clear of the actual visible phase controls");
         }
     }
 

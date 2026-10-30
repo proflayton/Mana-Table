@@ -190,10 +190,11 @@ internal sealed partial class TableApplication
     }
     private void PaintCard(Card card, Pose pose, bool selected, bool legal, bool focus = false, float opacity = 1)
     {
+        var body = new CardPaintGeometry(pose);
         if (selected) canvas.Glow(pose.Center, pose.Size * 1.2f, Gold * .18f);
-        canvas.Surface(null, pose with { Center = pose.Center + new Vector2(4 + pose.Elevation * .18f, (pose.IsProjected ? 5 : 10) + pose.Elevation), Size = pose.Size + new Vector2(7) }, Color.Black * ((pose.Elevation > 0 ? .27f : .4f) * opacity));
+        canvas.Surface(null, body.Shadow, Color.Black * ((pose.Elevation > 0 ? .27f : .4f) * opacity));
         // The backing must fade too, otherwise the face only darkens against an opaque slab.
-        canvas.Surface(null, pose with { Size = pose.Size + new Vector2(4) }, new Color(9, 13, 18) * opacity);
+        canvas.Surface(null, body.Backing, new Color(9, 13, 18) * opacity);
         if (card.FaceDown) PaintBack(pose, opacity);
         else if (resources.Card(card) is { } image) canvas.Surface(image, pose, Color.White * opacity);
         else {
@@ -235,7 +236,7 @@ internal sealed partial class TableApplication
             canvas.Line(pose.Point(.03f, .01f), pose.Point(.97f, .01f), Ink * light, 1);
             canvas.Line(pose.Point(.99f, .03f), pose.Point(.99f, .5f), Ink * light * .5f, 1);
         }
-        if (focus) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(4) }, Ink * .5f, 2);
+        if (focus) canvas.CardFrame(body.FocusFrame, Ink * .5f, CardPaintGeometry.FocusFrameWidth);
     }
     private void PaintBack(Pose pose, float opacity = 1)
     {

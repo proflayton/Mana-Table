@@ -1,9 +1,11 @@
 using System.Collections.Immutable;
+using System.Text.Json;
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Renderer;
 using Mana.Scenarios;
 using Mana.Table.Presentation;
+using Mana.Table.Interaction;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using Point = Microsoft.Xna.Framework.Point;
@@ -129,6 +131,34 @@ internal static class AttachmentStackChecks
             var node = frame.Scene!.Seats.Single(item => item.Index == seat).Battlefield.SelectMany(cluster => cluster.Cards)
                 .First(card => card.Attachment == null && card.GroupFront && card.Card.AttachedTo == null);
             var point = frame.Cards.Single(card => card.Id == node.Id).Rest.Center.ToPoint();
+            if (view.HitAt(point)?.Card?.VisualId != node.Id) {
+                var actual = view.HitAt(point);
+                File.WriteAllText(Path.Combine(directory, "seat-facing-pointer-failure.json"), JsonSerializer.Serialize(new {
+                    size, seat, point, state = view.Match, frame = frame.Observe(),
+                    expected = new { node.Id, node.Owner, node.Zone, node.Pose, node.GroupFront, node.Attachment },
+                    actual = actual == null ? null : new { actual.Id, actual.Scope, actual.Bounds,
+                        cardId = actual.Card?.VisualId, actual.Zone, actual.PlayerId, intent = actual.Intent.ToString() },
+                    cards = frame.Cards.Select(card => new { card.Id, card.Card.Key, card.Zone, card.Request.Owner,
+                        card.Focused, card.Rest, card.Display, card.ReaderTarget, card.Request.ReadingAnchor,
+                        hit = new { card.Hit.Id, card.Hit.Bounds, intent = card.Hit.Intent.ToString() } }).ToArray(),
+                    seats = frame.Scene.Seats.Select(item => new { item.Index, item.PlayerId, item.Geometry.Hero,
+                        controls = TurnControlLayout.For(item.Geometry.Hero),
+                        cards = item.Battlefield.SelectMany(cluster => cluster.Cards)
+                            .Select(card => new { card.Id, card.Owner, card.Pose, card.GroupFront, card.Attachment }).ToArray() }).ToArray(),
+                    phases = frame.Hits.Where(hit => hit.Intent is MatchIntent.TogglePhaseStop)
+                        .Select(hit => new { hit.Id, hit.Bounds, intent = hit.Intent.ToString() }).ToArray(),
+                    paint = frame.Drawing.Commands.Select((command, index) => command switch {
+                        DrawCommand.Surface surface => new { index, kind = surface.Texture == null ? "backing-or-shadow" : "artwork",
+                            surface.Pose, bounds = surface.Pose.Bounds, strokeWidth = 0 },
+                        DrawCommand.CardFrame border => new { index, kind = "card-frame", border.Pose,
+                            bounds = border.Pose.Bounds, strokeWidth = border.Width },
+                        _ => null
+                    }).OfType<object>().ToArray(),
+                    view.PrioritySeats, view.ManaJourney, sources = view.ManaSources.ToArray(), view.Overlay,
+                    replies = engine.Replies.Count,
+                    scope = "Failure-only copied current composition; no update, pump or gesture before the original assertion."
+                }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+            }
             check(view.HitAt(point)?.Card?.VisualId == node.Id,
                 "A seat-facing battlefield face retains its exact physical pointer target at seat " + seat);
             Tick(point, ButtonState.Pressed); Tick(point); Settle();

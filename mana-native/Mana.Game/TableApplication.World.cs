@@ -12,9 +12,10 @@ internal sealed partial class TableApplication
     // Commander names are public for the whole match. Retain only this public
     // cosmetic identity when the card changes zones, never a decision handle.
     private readonly Dictionary<int, string> seatPortraits = [];
+    private readonly List<Rectangle> seatReadoutBounds = new(12);
     private void DrawTableSurface()
     {
-        manaPoolBadges.Clear(); manaPoolDetail = null; battlefieldStatsBounds.Clear();
+        manaPoolBadges.Clear(); manaPoolDetail = null; battlefieldStatsBounds.Clear(); seatReadoutBounds.Clear();
         // Neutral material studies, drawn in code. An artist can supply the
         // play-surface texture without baking cards, seating, or UI into it.
         canvas.Gradient(new(0, 0, 1600, 900), new(13, 18, 24), new(7, 11, 16));
@@ -184,7 +185,10 @@ internal sealed partial class TableApplication
         var manaHalo = PlanManaHalo(player, own ? 3 : index);
         if (own) { x = Math.Max((int)center.X + 58, manaHalo.Bounds.Right) + 8; nameplate = new(x, y, 100, 24); }
         else if (index == 1) { x = Math.Max((int)center.X + 50, manaHalo.Bounds.Right) + 8; y = 64; nameplate = new(x, y, 188, 24); }
-        if (!own) canvas.CenterText(name + " ↗", nameplate, nameplate.Contains(pointer) ? Blue : Ink, .6f, true);
+        if (!own) {
+            seatReadoutBounds.Add(nameplate);
+            canvas.CenterText(name + " ↗", nameplate, nameplate.Contains(pointer) ? Blue : Ink, .6f, true);
+        }
         int incoming = match.Combat?.Attackers.Count(a => a.HasDefender && a.DefendingPlayerId == player.Id) ?? 0;
         string status = player.Eliminated ? TimedOut(player.Id) ? "TIMED OUT" : "ELIMINATED" : incoming > 0 ? incoming + (own ? " ATTACKING YOU" : " INCOMING")
             : active && !own && match.Turn > 0 ? turnProgress?.PhaseLabel ?? match.Phase : active ? "ACTIVE TURN" : "";
@@ -217,7 +221,12 @@ internal sealed partial class TableApplication
             1 => new Rectangle(nameplate.X, 94, 188, 44),
             _ => new Rectangle(320, 750, 240, 44)
         };
-        canvas.Text(lands.Total + (lands.Total == 1 ? " land" : " lands"), area.X, area.Y, Ink, .75f, area.Width, 1, true);
-        canvas.Text(lands.Untapped + " untapped · " + lands.Tapped + " tapped", area.X, area.Y + 23, Ink, .55f, area.Width, 1);
+        Readout(lands.Total + (lands.Total == 1 ? " land" : " lands"), area.Y, .75f, true);
+        Readout(lands.Untapped + " untapped · " + lands.Tapped + " tapped", area.Y + 23, .55f);
+        void Readout(string text, int y, float size, bool bold = false) {
+            var measured = canvas.TextSize(text, size, area.Width, 1, bold);
+            seatReadoutBounds.Add(new(area.X, y, measured.X, measured.Y));
+            canvas.Text(text, area.X, y, Ink, size, area.Width, 1, bold);
+        }
     }
 }
