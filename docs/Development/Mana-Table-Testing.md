@@ -355,6 +355,12 @@ then pay blue and observe the same source on the stack and resolved battlefield.
 Immediate spending can consume produced mana before the next publication, so a
 transient floating red pool is not required. The fixture supplies only declared
 pregame permanents; no test driver answers the policy's choices.
+Cast-offer witnesses also retain the accepted command's exact source, seat,
+active player, first own turn and main phase. A slower outer poll can miss the
+policy's pre-command frame; it cannot invalidate that copied offer witness.
+The existing headless receipt checks reject foreign, missing and later-turn
+evidence while the unfunded journey still requires land play, passing, the
+declared turn ending and no cast or X selection.
 The contribution journey casts Kasla through actual convoke with six selected
 creatures and a seventh unused creature. It requires positive then exact-empty
 progress, current Done, no further contribution offer from the unused creature,

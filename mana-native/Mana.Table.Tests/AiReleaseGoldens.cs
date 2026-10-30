@@ -184,6 +184,7 @@ internal static class AiReleaseGoldens
                         && reduction.RemainingManaParts.IsEmpty && reduction.UnusedFixtureCreature;
                 }
                 landPlayed |= receipts.Any(item => item.Land);
+                offered |= HasFirstOwnMainOffer(receipts, target, firstTurn);
                 passedOffer |= receipts.Any(item => item.Kind == nameof(PassPriority) && item.TargetOffered);
                 stack |= state.Stack.Any(item => item.Kind == StackActionKind.Spell && item.Card is { } card && CardViews.Identity(card) == target);
                 partnerStack |= partnerTarget.Length > 0 && state.Stack.Any(item => item.Kind == StackActionKind.Spell
@@ -360,6 +361,8 @@ internal static class AiReleaseGoldens
         int? Number, NumericDecisionPurpose? NumericPurpose, PaymentPurpose? PaymentPurpose, int? Payer, int HandCount,
         bool Consumed, bool Land, bool Cast, bool TargetOffered, ManaOutputChoice? ManaOutput, bool CompletedManaReduction)
     {
+        public int? ActivePlayerId { get; init; }
+        public string OfferedTargetId { get; init; } = "";
         public ImmutableArray<ManaBillPart>? PaymentBill { get; init; }
         public ReductionEvidence? ManaReduction { get; init; }
         public CostSelectionEvidence? CostSelection { get; init; }
@@ -386,6 +389,11 @@ internal static class AiReleaseGoldens
             current.Any(card => !card.Highlighted && !card.Tapped && !card.Selectable));
     }
 
+    private static bool HasFirstOwnMainOffer(IReadOnlyList<AcceptedCommand> receipts, string target, int firstTurn) =>
+        firstTurn > 0 && target.Length > 0 && receipts.Any(receipt => receipt.Seat == 0
+            && receipt.ActivePlayerId == receipt.Seat && receipt.Turn == firstTurn && receipt.Phase is "MAIN1" or "MAIN2"
+            && receipt.TargetOffered && receipt.OfferedTargetId == target);
+
     private static bool HasOrderedFlexiblePayment(IReadOnlyList<AcceptedCommand> receipts, string target, string flexible,
         ImmutableArray<string> blueSources)
     {
@@ -409,6 +417,22 @@ internal static class AiReleaseGoldens
 
     internal static void CheckReceiptEvidence(Action<bool, string> check)
     {
+        var passedTargetOffer = new AcceptedCommand(0, nameof(PassPriority), 4, "MAIN1", "", "",
+            null, null, null, null, 7, false, false, false, true, null, false) {
+                ActivePlayerId = 0, OfferedTargetId = "commander"
+            };
+        check(HasFirstOwnMainOffer([passedTargetOffer], "commander", 4),
+            "An accepted first-own-main pass retains its exact commander cast offer even when outer polling observes no offer");
+        foreach (var unrelated in new[] { passedTargetOffer with { Seat = 1 }, passedTargetOffer with { ActivePlayerId = 1 },
+            passedTargetOffer with { ActivePlayerId = null }, passedTargetOffer with { Turn = 8 },
+            passedTargetOffer with { Phase = "UPKEEP" }, passedTargetOffer with { OfferedTargetId = "other-commander" },
+            passedTargetOffer with { OfferedTargetId = "" }, passedTargetOffer with { TargetOffered = false } })
+            check(!HasFirstOwnMainOffer([unrelated], "commander", 4),
+                "A cast-offer receipt cannot substitute another seat, active player, turn, phase or source, or a missing offer");
+        check(!HasFirstOwnMainOffer([passedTargetOffer], "commander", 0)
+            && !HasFirstOwnMainOffer([passedTargetOffer], "", 4),
+            "Receipt evidence cannot invent an unestablished first own turn or target identity");
+
         AcceptedCommand Receipt(string source, string color, ImmutableArray<ManaBillPart> bill) =>
             new(0, nameof(UseOfferedAction), 4, "MAIN1", source, "commander", null, null, PaymentPurpose.SpellCost,
                 0, 7, false, false, false, false, new(ImmutableDictionary<string, int>.Empty.Add(color, 1)), false) {
@@ -481,6 +505,8 @@ internal static class AiReleaseGoldens
             if (owner.Length == 0 && observation.State.Decision?.Context.Source?.Card is { } portrait) owner = CardViews.Identity(portrait);
             var paymentBill = CapturePaymentBill(observation.State);
             var reduction = CaptureReduction(observation.State, ReductionCreatures);
+            var targetOffer = observation.Domain.Sources.FirstOrDefault(set => set.SourceCardId == Target
+                && set.Actions.Any(item => item.Kind == "cast"));
             var costSelection = command is SelectCard selected && observation.Semantics.CostPayment is { } cost
                 ? new CostSelectionEvidence(CardViews.InZones(observation.State).Where(item => item.Card.Key == selected.Card)
                     .Select(item => CardViews.Identity(item.Card)).Single(), cost.PayerId,
@@ -493,9 +519,10 @@ internal static class AiReleaseGoldens
                 observation.Semantics.Payment?.Purpose, observation.Semantics.Payment?.PayerId ?? observation.Semantics.CostPayment?.PayerId,
                 observation.State.Viewer!.Zone("Hand").Count, action?.Costs.Any(cost => cost.Kind == ActionCostKind.Sacrifice && cost.FromSource && cost.Amount == 1) == true,
                 action?.Effect == ActionEffectKind.Land, route?.Kind == "cast",
-                observation.Domain.Sources.Any(set => set.SourceCardId == Target && set.Actions.Any(item => item.Kind == "cast")),
+                targetOffer != null,
                 (command as UseOfferedAction)?.ManaOutput,
                 command is CompleteSelection && reduction is { CompleteEnabled: true, RemainingManaParts.IsEmpty: true }) {
+                ActivePlayerId = observation.State.ActivePlayerId, OfferedTargetId = targetOffer?.SourceCardId ?? "",
                 PaymentBill = paymentBill, ManaReduction = reduction, CostSelection = costSelection
             });
         }
