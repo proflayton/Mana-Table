@@ -50,7 +50,6 @@ jobs:
         run: command -v Xvfb >/dev/null 2>&1 || { sudo apt update && sudo apt install -y xvfb; }
 
       - uses: actions/setup-node@v7
-        if: matrix.java == '17' || github.event_name == 'workflow_dispatch' && inputs.api_test_trial
         with:
           node-version: '24'
 
@@ -77,6 +76,7 @@ jobs:
           overwrite: true
 
       - name: Run tests in virtual framebuffer
+        id: java_tests
         env:
           EXTENDED: ${{ github.event_name == 'workflow_dispatch' && inputs.extended || false }}
           API_TEST_TRIAL: ${{ github.event_name == 'workflow_dispatch' && inputs.api_test_trial || false }}
@@ -95,10 +95,38 @@ jobs:
             fi
             mvn -B -ntp -pl forge-api -am clean verify "${trial_args[@]}"
           elif [ "$EXTENDED" = 'true' ]; then
-            mvn -B -ntp test
+            mvn -B -ntp test -Papi-ci "-Dmana.tests.trialId=$API_TRIAL_ID" "-Dmana.tests.sourceRevision=$GITHUB_SHA"
           else
-            mvn -B -ntp -pl forge-api -am verify
+            mvn -B -ntp -pl forge-api -am verify -Papi-ci "-Dmana.tests.trialId=$API_TRIAL_ID" "-Dmana.tests.sourceRevision=$GITHUB_SHA"
           fi
+
+      - name: Retain complete or incomplete API CI accounting
+        if: always() && !(github.event_name == 'workflow_dispatch' && inputs.api_test_trial)
+        env:
+          API_RUN_ID: github-${{ github.run_id }}-${{ github.run_attempt }}-jdk${{ matrix.java }}
+          MAVEN_OUTCOME: ${{ steps.java_tests.outcome }}
+        run: |
+          node scripts/mana-table/api-test-ci.cjs retain \
+            --root "$GITHUB_WORKSPACE/forge-api/target/api-test-runs/$API_RUN_ID" \
+            --trial-id "$API_RUN_ID" --source-revision "$GITHUB_SHA" --maven-outcome "$MAVEN_OUTCOME"
+
+      - name: Save compact API CI accounting on every outcome
+        if: always() && !(github.event_name == 'workflow_dispatch' && inputs.api_test_trial)
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-ci-java-${{ matrix.java }}-${{ github.run_attempt }}
+          path: |
+            forge-api/target/api-test-runs/*/manifest.json
+            forge-api/target/api-test-runs/*/accounting.json
+            forge-api/target/api-test-runs/*/retention.json
+            forge-api/target/api-test-runs/*/timings/
+            forge-api/target/api-test-runs/*/parallel/fork-*/process-*/process-start.json
+            forge-api/target/api-test-runs/*/parallel/fork-*/process-*/invocations.jsonl
+            forge-api/target/api-test-runs/*/parallel/fork-*/process-*/receipt.json
+            forge-api/target/api-test-runs/*/reports/parallel/fork-*/TEST-*.xml
+            forge-api/target/api-test-runs/*/reports/parallel/fork-*/junitreports/TEST-*.xml
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Retain API trial accounting, reports and first failure evidence
         if: always() && github.event_name == 'workflow_dispatch' && inputs.api_test_trial
@@ -117,5 +145,6 @@ jobs:
           path: |
             forge-*/target/surefire-reports/
             forge-api/target/rules-regressions/
+            forge-api/target/api-test-runs/
           if-no-files-found: ignore
           retention-days: 14

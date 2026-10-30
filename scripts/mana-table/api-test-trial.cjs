@@ -47,7 +47,9 @@ function inventories(repository) {
   const selectedClassNames = testFiles.filter(file => !file.path.includes('$') && /^(?:Test.*|.*Tests?|.*TestCase)\.class$/.test(path.posix.basename(file.path)))
     .map(file => file.path.slice(0, -6).replaceAll('/', '.'));
   if (!selectedClassNames.length) throw new Error('Default Surefire class selection is empty.');
-  return { testClassSetSha256: inventoryHash(testFiles), compiledClassSetSha256: inventoryHash(all), selectedClassNames };
+  const selectedClasses = selectedClassNames.map(name => ({ name,
+    sha256: testFiles.find(file => file.path === name.replaceAll('.', '/') + '.class').sha256 }));
+  return { testClassSetSha256: inventoryHash(testFiles), compiledClassSetSha256: inventoryHash(all), selectedClassNames, selectedClasses };
 }
 function source(repository, expected) {
   if (!/^[0-9a-f]{40}$/.test(expected)) throw new Error('Use the full source revision for the trial.');
@@ -55,11 +57,12 @@ function source(repository, expected) {
   if (git(['rev-parse', 'HEAD']) !== expected || git(['status', '--porcelain=v1', '--untracked-files=normal']))
     throw new Error('The trial requires the exact committed source and a clean worktree.');
 }
-function trialRoot(repository, root, trialId) {
+function ownedRoot(repository, root, trialId, area = 'api-test-trials') {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(trialId) || ['.', '..'].includes(trialId)) throw new Error('Invalid trial identity.');
-  const base = path.join(repository, 'forge-api/target/api-test-trials');
+  if (!['api-test-trials', 'api-test-runs'].includes(area)) throw new Error('Unknown API test workspace kind.');
+  const base = path.join(repository, 'forge-api/target', area);
   contained(base, root);
-  if (path.basename(root) !== trialId || path.dirname(root) !== base) throw new Error('Trial root must match its identity directly below api-test-trials.');
+  if (path.basename(root) !== trialId || path.dirname(root) !== base) throw new Error(`Trial root must match its identity directly below ${area}.`);
   let ancestor = root;
   while (ancestor !== repository) {
     if (fs.existsSync(ancestor) && fs.lstatSync(ancestor).isSymbolicLink()) throw new Error('Trial ancestry cannot contain a symbolic link or junction.');
@@ -72,12 +75,15 @@ function readManifest(root) {
   if (!fs.lstatSync(file).isFile() || fs.lstatSync(file).isSymbolicLink()) throw new Error('Missing regular trial manifest.');
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
-function checkpoint(repository, root, manifest) {
-  trialRoot(repository, root, manifest.trialId);
+function checkpoint(repository, root, manifest, area = 'api-test-trials') {
+  ownedRoot(repository, root, manifest.trialId, area);
   source(repository, manifest.sourceRevision);
   const actual = inventories(repository);
   if (actual.testClassSetSha256 !== manifest.testClassSetSha256 || actual.compiledClassSetSha256 !== manifest.compiledClassSetSha256)
     throw new Error('Compiled classes changed during the trial.');
+  if (JSON.stringify(actual.selectedClassNames) !== JSON.stringify(manifest.selectedClassNames)
+      || JSON.stringify(actual.selectedClasses) !== JSON.stringify(manifest.selectedClasses))
+    throw new Error('Selected class inventory differs from the compiled inputs.');
   return actual;
 }
 function mark(root, mode, event, manifest) {
@@ -87,12 +93,16 @@ function mark(root, mode, event, manifest) {
     testClassSetSha256: manifest.testClassSetSha256, compiledClassSetSha256: manifest.compiledClassSetSha256, mode, event, epochMs: Date.now()
   });
 }
-function prepare({ repository = repoRoot, root, trialId, sourceRevision, jdk, firstMode = 'serial', secondMode = 'parallel' }) {
-  root = path.resolve(root);
-  trialRoot(repository, root, trialId);
-  if (firstMode === secondMode || !MODES.includes(firstMode) || !MODES.includes(secondMode)) throw new Error('Execute exactly the serial and parallel modes.');
+function validateJdk(jdk) {
   for (const key of ['runtimeVersion', 'vendor', 'vmName'])
     if (typeof jdk?.[key] !== 'string' || !jdk[key].trim() || /[\r\n]/.test(jdk[key])) throw new Error('Complete exact JDK identity is required.');
+}
+function prepare({ repository = repoRoot, root, trialId, sourceRevision, jdk, firstMode = 'serial', secondMode = 'parallel', ciProfile = 'false' }) {
+  root = path.resolve(root);
+  if (ciProfile !== 'false') throw new Error('api-ci and api-test-trial profiles are mutually exclusive.');
+  ownedRoot(repository, root, trialId);
+  if (firstMode === secondMode || !MODES.includes(firstMode) || !MODES.includes(secondMode)) throw new Error('Execute exactly the serial and parallel modes.');
+  validateJdk(jdk);
   source(repository, sourceRevision);
   const inventory = inventories(repository);
   fs.mkdirSync(path.dirname(root), { recursive: true });
@@ -116,9 +126,9 @@ function boundary({ repository = repoRoot, root, mode, event }) {
   } else throw new Error('Unexpected trial execution order.');
   mark(root, mode, event, manifest);
 }
-function timings(root, manifest) {
+function modeTimings(root, manifest, modes) {
   const result = {};
-  for (const mode of MODES) {
+  for (const mode of modes) {
     const records = ['start', 'end'].map(event => {
       const file = path.join(root, 'timings', `${mode}-${event}.json`);
       if (!fs.lstatSync(file).isFile() || fs.lstatSync(file).isSymbolicLink()) throw new Error('Timing evidence must be a regular owned file.');
@@ -132,11 +142,15 @@ function timings(root, manifest) {
     if (records[1].epochMs < records[0].epochMs) throw new Error('Trial clock moved backwards.');
     result[mode] = { startedAtEpochMs: records[0].epochMs, completedAtEpochMs: records[1].epochMs, wallSeconds: (records[1].epochMs - records[0].epochMs) / 1000 };
   }
+  return result;
+}
+function timings(root, manifest) {
+  const result = modeTimings(root, manifest, MODES);
   if (result[manifest.executionOrder[0]].completedAtEpochMs > result[manifest.executionOrder[1]].startedAtEpochMs) throw new Error('Serial control and trial windows overlap.');
   return result;
 }
 function requireMeasuredProcesses(comparison, measured) {
-  for (const mode of MODES) for (const fork of comparison[mode].forks)
+  for (const mode of Object.keys(measured)) for (const fork of comparison[mode].forks)
     if (fork.startedAtEpochMs < measured[mode].startedAtEpochMs || fork.completedAtEpochMs > measured[mode].completedAtEpochMs)
       throw new Error('A test JVM executed outside its measured mode window.');
 }
@@ -158,7 +172,7 @@ function finish({ repository = repoRoot, root }) {
 function parse(args) {
   const [command, ...rest] = args;
   if (!['prepare', 'boundary', 'finish'].includes(command)) throw new Error('Expected prepare, boundary or finish.');
-  const allowed = command === 'prepare' ? ['root', 'trial-id', 'source-revision', 'jdk-runtime', 'jdk-vendor', 'jdk-vm', 'first-mode', 'second-mode'] : command === 'boundary' ? ['root', 'mode', 'event'] : ['root'];
+  const allowed = command === 'prepare' ? ['root', 'trial-id', 'source-revision', 'jdk-runtime', 'jdk-vendor', 'jdk-vm', 'first-mode', 'second-mode', 'ci-profile'] : command === 'boundary' ? ['root', 'mode', 'event'] : ['root'];
   const values = {};
   for (let i = 0; i < rest.length; i += 2) {
     const key = rest[i].slice(2);
@@ -172,9 +186,10 @@ if (require.main === module) {
   try {
     const { command, values: v } = parse(process.argv.slice(2));
     const result = command === 'prepare' ? prepare({ root: v.root, trialId: v['trial-id'], sourceRevision: v['source-revision'],
-      jdk: { runtimeVersion: v['jdk-runtime'], vendor: v['jdk-vendor'], vmName: v['jdk-vm'] }, firstMode: v['first-mode'], secondMode: v['second-mode'] })
+      jdk: { runtimeVersion: v['jdk-runtime'], vendor: v['jdk-vendor'], vmName: v['jdk-vm'] }, firstMode: v['first-mode'], secondMode: v['second-mode'], ciProfile: v['ci-profile'] })
       : command === 'boundary' ? boundary({ root: v.root, mode: v.mode, event: v.event }) : finish({ root: v.root });
     console.log(JSON.stringify(result ?? { boundary: 'recorded' }));
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
-module.exports = { prepare, boundary, finish, inventories, inventoryHash, timings, requireMeasuredProcesses, parse };
+module.exports = { prepare, boundary, finish, inventories, inventoryHash, timings, requireMeasuredProcesses, parse,
+  ownedRoot, source, readManifest, checkpoint, mark, modeTimings, writeNew, validateJdk };

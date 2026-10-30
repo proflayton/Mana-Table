@@ -1302,7 +1302,7 @@ Use an immutable engine JAR whose source/hash is known. Rebuilding
 replace a JAR or package while another process uses it. A controlled UI fixture
 cannot substitute for a real engine regression.
 
-### API test process ownership and timing trial
+### API test process ownership, CI and timing trial
 
 The API Surefire listener owns one fresh workspace per JVM. It initializes the
 existing headless services with that workspace's profile and cache before tests
@@ -1311,12 +1311,48 @@ serial inside each process. Fixed scenario traces and profiles use fresh attempt
 below their process owner; existing unique temporary directories remain separate.
 This is test support and does not change the shipping engine's profile contract.
 
-Ordinary verification keeps its serial configuration. Its process records live
+Local verification keeps its serial configuration. Its process records live
 below `forge-api/target/rules-regressions/api-jvms`. Each process writes a new
 `process-start.json`, flushes invocation results to `invocations.jsonl`, and writes
 one final `receipt.json` on JVM shutdown. Reused Surefire forks can create several
 TestNG executions, so ending the first class cannot finalize the process. Failure
 stacks are retained immediately; a crash without a final receipt is incomplete.
+
+The Java workflow enables the separate `api-ci` profile for normal and extended
+verification. Only the API module uses two reused JVMs, with reports separated
+by actual fork owner. Upstream modules and methods within each process stay
+serial. Preparation binds a fresh run to committed source, the exact JDK and
+compiled reactor/test inventories. After Surefire completes, the existing
+accounting machinery validates both actual process owners, complete selected
+class coverage, executed class bytes, receipt/journal equality, report ownership
+and real overlapping class execution. Failed, skipped, incomplete or foreign
+evidence cannot certify the run. This finalizer runs in the test phase, including
+an extended `mvn test`; no second API test execution is added.
+
+Normal accounting trusts TestNG to execute the selected classes, as serial CI
+does. It validates every retained invocation and does not claim an independent
+enumeration of all possible data-provider rows. Same-source serial/parallel
+trials below provide the stronger invocation-multiset equivalence check. A fixed
+case count cannot replace either form of evidence.
+
+CI retains compact accounting even when Surefire fails before the finalizer;
+raw run reports and process evidence are retained on failure. An incomplete
+receipt stays a failure rather than being reconstructed from a test count.
+Local focused `-Dtest` runs remain on the default serial path. The CI and timing
+profiles are mutually exclusive.
+
+Run the complete CI profile from a clean committed worktree with a fresh identity:
+
+```powershell
+$ciRevision = git rev-parse HEAD
+mvn -B -ntp -pl forge-api -am test -Papi-ci '-Dmana.tests.trialId=local-ci-first' "-Dmana.tests.sourceRevision=$ciRevision"
+```
+
+Evidence lives below `forge-api/target/api-test-runs/<trialId>`. The successful
+test-phase finalizer writes `accounting.json`; the workflow's always-run retention
+step writes `retention.json` without promoting an incomplete accounting result.
+Keep this root before changing a failed candidate, and use another fresh identity
+for a cause-directed verification run.
 
 Tests of read-only observation purity must capture both complete batches within
 one existing `HeadlessPlatform.query(table, ...)` state boundary. Comparing
@@ -1368,8 +1404,9 @@ and receipt bound to the same actual label, PID and workspace.
 
 The output records wall time, bootstrap time and per-pool peak heap usage. Heap
 pool peaks are diagnostics, not process RSS or a simultaneous total. Equivalence
-is distinct from a speedup. Keep serial CI until the first pair passes and improves
-on both JDKs, then run an explicit reverse-order confirmation with the same source.
+is distinct from a speedup. Adopting two API processes requires a pair that passes
+and improves on both JDKs, then an explicit reverse-order confirmation with the
+same source. Local default verification remains serial after CI adoption.
 Do not change a timeout or retry a failure into a timing success. Preserve its
 first journal, receipt, reports and failure cause before changing the candidate.
 
