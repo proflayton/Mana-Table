@@ -147,6 +147,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         Input colorPaymentOwner;
         PaymentDecisionProjection.Capture payment;
         SelectionDecisionProjection.Capture selection;
+        NumericDecisionProjection.Capture announcement;
         String announcedSymbol = "";
         Map<String, Object> cachedDomain;
         long cachedDomainVersion = -1;
@@ -670,6 +671,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 long version = sourceActionVersion.get();
                 var payment = currentPaymentCapture(current);
                 var selection = currentSelectionCapture(current);
+                var numeric = currentNumericCapture(current);
                 boolean discovered = false;
                 Map<String, Object> domain = map("version", version, "coverage", "NotApplicable", "sources", List.of(), "actions", List.of());
                 if (current != null && sourceInputCurrent(current)) {
@@ -709,7 +711,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 }
                 var snapshot = automatedState(current);
                 long observedRevision = revision;
-                var semantics = automatedSemantics(current, payment, selection);
+                var semantics = automatedSemantics(current, payment, selection, numeric);
                 // Also fence cached catalogs and the decision metadata read.
                 // A reentrant callback can replace ownership while a rules
                 // query temporarily yields the state boundary. No part of
@@ -717,6 +719,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 if (pending != observedOwner || sourceActionVersion.get() != version || revision != observedRevision
                         || payment != null && current.payment != payment
                         || selection != null && current.selection != selection
+                        || numeric != null && (current.announcement != numeric || !numericAnnouncementCurrent(current))
                         || current != null && current.kind.equals("input")
                             && (inputActionQueued || human.getInputQueue().getInput() != current.input
                                 || human.getInputProxy().getInput() != current.input
@@ -734,6 +737,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                             current.poolManaColors.clear(); current.payment = null;
                         }
                         if (current.selection == selection) current.selection = null;
+                        if (current.announcement == numeric) current.announcement = null;
                     }
                     throw new StaleObservationException();
                 }
@@ -755,16 +759,15 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private Map<String, Object> automatedSemantics(Pending current, PaymentDecisionProjection.Capture payment,
-                                                  SelectionDecisionProjection.Capture selection) {
+                                                  SelectionDecisionProjection.Capture selection,
+                                                  NumericDecisionProjection.Capture numeric) {
         var result = map("intent", "Unknown", "amount", null, "options", List.of(), "legalTextValues", List.of(), "selectionIsCost", false);
         if (current == null) return result;
         result.putAll(selection != null ? selection.automatedFacts()
                 : DecisionSemantics.describe(current.input, game, human.getPlayer(), this::semanticCardId));
         result.put("options", current.optionSemantics);
         result.putAll(current.orderingSemantics);
-        if (current.announcedAbility != null)
-            result.put("numeric", NumericDecisionProjection.describe(current.announcedAbility, current.announcedSymbol,
-                    human.getPlayer(), card -> numericSourceId(card)));
+        if (numeric != null) result.put("numeric", numeric.facts());
         if (payment != null) result.putAll(payment.automatedFacts());
         // A published prompt UUID can change after every gesture while the
         // controller still owns the same rules input. Its work allowance must
@@ -821,6 +824,24 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 || !selection.matches(current.id, board.longValue(), sourceActionVersion.get()) || !selectionInputCurrent(current))
             throw new StaleObservationException();
         return selection;
+    }
+
+    private boolean numericAnnouncementCurrent(Pending current) {
+        // Required number dialogs can suspend a queued action or parent input.
+        // Their response future, not that input's queue/proxy, owns the answer.
+        return !closed && error == null && !conceded && !viewer.getHasLost() && !game.isGameOver()
+                && pending == current && current.kind.equals("number") && current.announcedAbility != null
+                && !current.response.isDone();
+    }
+
+    private NumericDecisionProjection.Capture currentNumericCapture(Pending current) {
+        if (current == null || current.announcedAbility == null) return null;
+        var numeric = current.announcement;
+        if (numeric == null || !(latest.get("boardRevision") instanceof Number board)
+                || !numeric.matches(current.id, board.longValue(), sourceActionVersion.get(),
+                        (String)current.prompt.get("executionId"), (String)current.prompt.get("executionStep"))
+                || !numericAnnouncementCurrent(current)) throw new StaleObservationException();
+        return numeric;
     }
 
     private String semanticCardId(CardView card) {
@@ -1281,7 +1302,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         finiteStackYield.revoke("action-restored");
         if (pending != null) {
             pending.sourceActions.clear(); pending.additionalCards.clear(); pending.additionalSources.clear();
-            pending.payment = null; pending.poolManaColors.clear(); pending.selection = null;
+            pending.payment = null; pending.poolManaColors.clear(); pending.selection = null; pending.announcement = null;
             if (viewer.getId() == restored.actorId()) pending = null;
         }
         Player actor = game.getRegisteredPlayers().stream().filter(player -> player.getId() == restored.actorId()).findFirst().orElse(null);
@@ -1524,7 +1545,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private void markBusy(Pending consumed) {
-        if (consumed != null) { consumed.payment = null; consumed.poolManaColors.clear(); consumed.selection = null; }
+        if (consumed != null) { consumed.payment = null; consumed.poolManaColors.clear(); consumed.selection = null; consumed.announcement = null; }
         var next = new LinkedHashMap<>(latest);
         next.put("revision", ++revision); next.put("prompt", null); next.put("status", "resolving");
         next.put("undo", undoProjection(null));
@@ -1651,6 +1672,21 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         offer.put("offerId", lineage.id()); offer.put("previousOfferId", lineage.previousId());
         return offer;
+    }
+
+    private NumericDecisionProjection.Capture captureNumeric(Pending prompt, long boardRevision, long sourceVersion,
+                                                              ExecutionTracker.Reference execution) {
+        if (!numericAnnouncementCurrent(prompt) || !table.currentPublication(boardRevision)
+                || sourceActionVersion.get() != sourceVersion) return null;
+        String decisionId = prompt.id;
+        var ability = prompt.announcedAbility;
+        String symbol = prompt.announcedSymbol;
+        var facts = NumericDecisionProjection.describe(ability, symbol, human.getPlayer(), this::numericSourceId);
+        if (!table.currentPublication(boardRevision) || sourceActionVersion.get() != sourceVersion
+                || !numericAnnouncementCurrent(prompt) || prompt.announcedAbility != ability
+                || !Objects.equals(prompt.announcedSymbol, symbol)) return null;
+        return new NumericDecisionProjection.Capture(decisionId, boardRevision, sourceVersion,
+                execution == null ? null : execution.id(), execution == null ? null : execution.step(), facts);
     }
 
     private PaymentDecisionProjection.Capture capturePayment(Pending prompt, long boardRevision, long sourceVersion,
@@ -1955,6 +1991,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         Map<String, Object> projectedPrompt = null;
         PaymentDecisionProjection.Capture payment = null;
         SelectionDecisionProjection.Capture selection = null;
+        NumericDecisionProjection.Capture numeric = null;
         if (prompt != null) {
             projectedPrompt = new LinkedHashMap<>(prompt.prompt);
             // Identity-bearing dialog facts belong to this reconciled board.
@@ -1997,6 +2034,13 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 projectedPrompt.put("executionId", selection.executionId());
                 projectedPrompt.put("executionStep", selection.executionStep());
             }
+            if (prompt.announcedAbility != null) {
+                numeric = captureNumeric(prompt, boardRevision, publicationSourceVersion, execution);
+                if (numeric == null || !table.currentPublication(boardRevision) || pending != prompt
+                        || sourceActionVersion.get() != publicationSourceVersion) return;
+                projectedPrompt.put("executionId", numeric.executionId());
+                projectedPrompt.put("executionStep", numeric.executionStep());
+            }
             if (prompt.input instanceof InputPassPriority) {
                 projectedPrompt.put("priorityAbilities", priorityAbilities(human.getPriorityAbilities(), prompt));
                 projectPriorityAlternative(projectedPrompt, prompt.input);
@@ -2021,7 +2065,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "ignoredPriorityAbilities", priorityAbilities(human.getIgnoredPriorityAbilities(), prompt),
                 "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries(), "executions", publication.executions());
         if (!table.currentPublication(boardRevision) || pending != prompt || sourceActionVersion.get() != publicationSourceVersion
-                || selection != null && !selectionInputCurrent(prompt)) return;
+                || selection != null && !selectionInputCurrent(prompt)
+                || numeric != null && !numericAnnouncementCurrent(prompt)) return;
         String quietToken = quietYield.observe(snapshot, activity.quietSequence());
         if (prompt != null) {
             var quietPrompt = new LinkedHashMap<>(projectedPrompt);
@@ -2030,9 +2075,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             snapshot.put("prompt", quietPrompt);
         }
         if (!table.currentPublication(boardRevision) || pending != prompt || sourceActionVersion.get() != publicationSourceVersion
-                || selection != null && !selectionInputCurrent(prompt)) return;
+                || selection != null && !selectionInputCurrent(prompt)
+                || numeric != null && !numericAnnouncementCurrent(prompt)) return;
         if (prompt != null) {
-            prompt.prompt = projectedPrompt; prompt.payment = payment; prompt.selection = selection;
+            prompt.prompt = projectedPrompt; prompt.payment = payment; prompt.selection = selection; prompt.announcement = numeric;
             if (selection != null) {
                 prompt.players.clear(); prompt.players.addAll(selection.playerChoices());
             }

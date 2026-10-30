@@ -464,6 +464,11 @@ Numeric investment checks use typed announcement ownership and read-only
 funding facts. They cover fixed and repeated-X costs, physical-source reuse,
 partial/unsupported funding, bounded work and current source identity. Java's
 `NumericDecisionProjectionTest` exercises real scripts and projection purity;
+`NumericPublicationTest` enters the controller's actual announcement callback
+to check deeply immutable retained facts without live ability/funding reads,
+same-dialog refreshes, reentrant all-audience publication and stale answers
+across sequential numeric owners. It keeps unavailable metadata distinct from
+an unrelated integer dialog and does not turn a funding estimate into authority.
 `AutomatedPaymentJourneyTest` follows an actual variable-cost cast through
 manual payment, the stack and its resolved counters. These checks share the
 existing runners and engine process paths. Campaign numeric records separately

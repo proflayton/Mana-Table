@@ -116,6 +116,15 @@ read-only `funding`. Funding groups production routes by physical source, with
 pool counts and explicit knowledge/eligibility. It contains no action IDs or
 card keys. The initial own-battlefield/unrestricted-pool projection is partial;
 it can witness nominal funding but cannot certify that no other resources exist.
+An announcement's private numeric facts share its audience publication and
+visibility reconciliation. Retained observation reads a frozen copy, scoped to
+the current dialog, board and source version, without reopening abilities or
+funding queries. Republishing refreshes that copy without mutating earlier
+observations; an obsolete reentrant query cannot overwrite the newer capture.
+Unavailable announcement metadata remains `numeric: null`; unrelated integer
+dialogs do not acquire numeric metadata. Missing or stale captures are rejected
+rather than interpreted as zero resources. The dialog's existing scope and
+number bounds own its answer; funding facts grant no payment commands.
 Current mana-bearing action semantics also carry `prospectiveFunding`, using that exact
 bounded funding projection before a payment starts. It contains no future
 decision or action handles. Policies can compare the same source restrictions

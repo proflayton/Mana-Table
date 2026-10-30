@@ -212,6 +212,15 @@ stable combat episode, then completes a valid declaration after accepted repair.
 It does not infer constraints from warning text or claim a complete block solver.
 
 Numeric announcements retain the exact callback's source and declared cost.
+Their private facts are captured once for each audience publication, after
+visibility reconciliation, and committed with the exact pending dialog, board
+cohort and source version. Observation reads the frozen capture rather than
+querying live abilities or funding again. A newer reentrant publication replaces
+the capture without letting the older query overwrite it. Unavailable metadata
+remains a valid null projection, distinct from a missing or stale capture.
+These synchronous dialogs can occur inside a queued action; they do not inherit
+target-input queue checks. The current dialog and its declared number range
+remain response authority, independently of the read-only funding estimate.
 `NumericDecision` distinguishes announcing X from an unrelated number. Its
 `ManaFundingContext` contains read-only physical resources and production
 alternatives, without action keys. The same assignment core evaluates those
