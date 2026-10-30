@@ -56,6 +56,13 @@ funding witness; command admission and execution still validate live rules state
 The existing table board generation fences publication too: a superseded outer
 publication cannot overwrite a newer seat capture or finish an older spectator
 cohort. Rejecting a superseded AI read preserves the newer published capture.
+Normal publication observers and finite-stack pass scheduling run only after all
+seat views, public decision metadata and the spectator have completed. Each
+callback rechecks that publication: a reentrant newer publication supersedes the
+remaining older callbacks and passes. A seat which cannot commit its capture
+does not announce a completed table. This completion boundary does not stage or
+roll back audience writes; arbitrary independent polls can still span publications.
+Lifecycle fault and closure notifications remain separate.
 A stopped or replaced controller input retires its question without withholding
 that audience's fresh passive board and matching execution frame. Source,
 selection and publication guards share the actual queue/proxy and active-input

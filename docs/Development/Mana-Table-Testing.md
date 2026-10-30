@@ -1182,6 +1182,12 @@ pending-effect and occurrence tests retain legality and visibility coverage.
 retained reads avoid live reconstruction, same-input refreshes keep earlier
 copies unchanged, and reentrant publication preserves the newest audience
 cohort. Replacing a cost-stack entry cannot relabel its old funding query.
+Its publication observer case copies four actual controller views and the public
+spectator from one callback, checks distinct real hands remain private, and then
+answers the current selection. A one-shot observer also publishes reentrantly:
+the next observer receives the newer completed cohort once, without an obsolete
+outer notification. These check the internal completion boundary; independent
+transport observations retain their own publication timing.
 Cleanup tests exercise the actual discard input's waiting callback and require
 completion before highlight cleanup without duplicate notifications. Existing
 Evangel, Convoke/nested-color and counter-cost journeys retain real payment and
