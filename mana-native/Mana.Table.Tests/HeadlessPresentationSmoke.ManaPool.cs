@@ -15,6 +15,7 @@ internal static partial class HeadlessPresentationSmoke
         List<object> trace, List<object> performance)
     {
         CheckManaPoolPreviewClarity(profile, check, trace, performance);
+        CheckManaReadingLifecycle(profile, check, trace, performance);
         const string excluded = "Not usable for the remaining cost";
         var original = ManaPaymentScenario.Snapshot(2) with { DecisionOwnerId = 0 };
         var payment = (PaymentPayload)original.Decision!.Payload;
@@ -56,11 +57,18 @@ internal static partial class HeadlessPresentationSmoke
         check(run.View.ManaSources.Any(source => source.SourceId == ManaPaymentScenario.Dual && !source.OutputBounds.IsEmpty)
             && ManaPaymentSmoke.PoolCaptionClearsPayment(run.View, "Colorless mana · 1", excluded, out _),
             "The entire hover backing clears the current source faces and output glyphs as well as the current payment bill and its source card");
+        var unpaid = run.View.ManaJourney!;
         run.ClickHit(oldExcluded.Id); run.Settle("inspect-unusable-pool");
         check(run.View.Overlay == "mana" && run.View.ManaPoolDetail is { Total: 1 }
+            && run.View.ManaJourney is { Payment: true } passive && passive.SourceId == unpaid.SourceId
+            && passive.Symbols.SequenceEqual(unpaid.Symbols) && ManaPaymentSmoke.PoolReadingClearsContext(run.View)
+            && ManaPaymentSmoke.PoolReadingIsolated(run.View)
             && run.Engine.Replies.Count == 0 && run.View.Match!.Decision!.Id == run.Engine.State.Decision!.Id,
-            "Clicking the excluded pip preserves read-only pool inspection and the exact unanswered payment");
+            "Clicking the excluded pip expands the same seat's actual mana while preserving the source and exact unanswered bill with all payment controls passive");
         run.ClickHit("close-overlay"); run.Settle("return-to-current-payment");
+        check(run.View.ManaJourney is { Payment: true } resumed && resumed.SourceId == unpaid.SourceId
+            && resumed.Symbols.SequenceEqual(unpaid.Symbols) && run.Engine.Replies.Count == 0,
+            "Closing mana reading returns to the same unanswered payment without spending, declining or passing");
 
         // Retire a pressed inspection target while the same pip becomes usable.
         oldExcluded = run.Hit("mana-pool:0:C");
@@ -192,10 +200,41 @@ internal static partial class HeadlessPresentationSmoke
         check(run.View.ManaJourney == null && Rings(0, "C").Length == 0 && run.Engine.Replies.Count == 0,
             "Leaving the unpinned hand source withdraws its pool estimate in the current frame");
         run.ClickCard(ManaPaymentScenario.Spell); Ready("read-floating-cost");
+        var pinned = run.Frame.Cards.Single(card => card.Id == ManaPaymentScenario.Spell && card.Focused);
+        var beforeReading = run.View.ManaJourney!;
+        var castBeforeReading = run.Hit("read-card-action");
+        bool SameReader() => run.Frame.Cards.Count(card => card.Id == pinned.Id && card.Zone == pinned.Zone
+            && card.Card.Key == pinned.Card.Key && card.Focused && card.ReaderTarget != null) == 1;
+        bool SameBill() => run.View.ManaJourney is { Payment: false } bill && bill.SourceId == beforeReading.SourceId
+            && bill.SourceZone == beforeReading.SourceZone && bill.Symbols.SequenceEqual(beforeReading.Symbols);
         run.ClickHit("mana-pool:0:C"); run.Settle("inspect-estimated-floating-pool");
-        check(run.View.ManaPoolDetail is { Total: 4 } && Rings(0, "C").Length == 0 && run.Engine.Replies.Count == 0,
-            "A suggested pip opens the existing full actual-pool inspection without spending or retaining the preview over it");
-        run.ClickHit("close-overlay"); run.ClickCard(ManaPaymentScenario.Spell); Ready("return-to-funded-preview");
+        trace.Add(new { scenario = "contextual-mana-reading", label = "inspect-pinned-priority-pool", pinned.Id, pinned.Card.Key,
+            beforeReading, currentJourney = run.View.ManaJourney, cards = run.Frame.Observe().Cards,
+            detail = run.View.ManaPoolDetail is { } detail ? detail with { Parts = detail.Parts.ToArray() } : null,
+            hits = run.Frame.Hits.Select(hit => new { hit.Id, intent = hit.Intent.GetType().Name }).ToArray(), replies = run.Engine.Replies.Count });
+        check(run.View.Overlay == "mana" && run.View.ManaPoolDetail is { Total: 4 } && SameReader() && SameBill()
+            && run.View.ManaSources is [{ SourceId: ManaPaymentScenario.Island }]
+            && run.Frame.Cards.Any(card => card.Id == ManaPaymentScenario.Island && card.Zone == "Battlefield")
+            && run.Engine.Replies.Count == 0,
+            "Opening mana reading preserves the exact current pinned hand occurrence, Island and bill instead of collapsing or replacing their table context");
+        check(ManaPaymentSmoke.PoolReadingClearsContext(run.View) && ManaPaymentSmoke.PoolReadingIsolated(run.View)
+            && !run.View.Activate(castBeforeReading) && !run.View.Activate(pinned.Hit)
+            && run.View.HitAt(pinned.Display.Center.ToPoint())?.Intent is UiIntent.NoInteraction,
+            "Expanded full-name mana symbols fit beside the same portrait and stay clear of current card/bill geometry while late hits and ResolveHit cannot revive table actions");
+        run.Input(new(2, 60), left: ButtonState.Pressed, label: "press-passive-table");
+        run.Input(new(2, 60), label: "release-passive-table", keys: new(Microsoft.Xna.Framework.Input.Keys.Space));
+        run.Tick("passive-table-key-released");
+        check(run.View.Overlay == "mana" && SameReader() && SameBill() && run.Engine.Replies.Count == 0,
+            "A blank-table click and Space cannot collapse the retained reader, confirm, pass or spend during mana reading");
+        run.ClickHit("close-overlay"); run.Settle("close-pool-keeps-current-reader");
+        check(run.View.Overlay.Length == 0 && SameReader() && SameBill() && run.Frame.Hits.Any(hit => hit.Id == "read-card-action")
+            && run.Engine.Replies.Count == 0,
+            "CloseView keeps the same valid pinned reader and bill without another hand click or a restored bookmark");
+        run.ClickHit("mana-pool:0:C"); run.Settle("inspect-before-escape");
+        run.Input(new(2, 60), keys: new(Microsoft.Xna.Framework.Input.Keys.Escape), label: "escape-mana-reading");
+        run.Tick("escape-released");
+        check(run.View.Overlay.Length == 0 && SameReader() && SameBill() && run.Engine.Replies.Count == 0,
+            "Escape dismisses mana reading first and keeps the exact valid pinned card and current bill");
 
         Refresh(funded with { Costs = [new(ActionCostKind.Mana, 1, false, "") { ManaSymbols = ["{C}"] }],
             Funding = funding with { Sources = [] } }, "pool-only-exact-colorless-and-generic");
