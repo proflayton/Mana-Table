@@ -346,6 +346,8 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
         bool previewKnown = true;
         string inspectedHandKey = "";
         string inspectedDecision = "";
+        bool phaseStopped = false;
+        Microsoft.Xna.Framework.Rectangle phaseBounds = default;
         Step(() => {
             engine.SourceActionRead = (game, decision, key) => {
                 var state = engine.State;
@@ -429,8 +431,50 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
                 && engine.Replies.Count == 0,
                 "Dismissing physical mana reading preserves the same valid pinned card and bill without a second hand click or any game command");
             Capture("pool-preview-after-close");
+            CheckReaderControls("artwork-after-close");
+            CompleteActionLabelChecks.Run(view.Frame!, "read-card-rules", "Rules", Check);
+            MoveHit("read-card-rules");
         });
-        Step(() => { finished = true; Save(null); window.Exit(); });
+        Click();
+        Wait(() => ReaderReady(ManaPaymentScenario.Spell) && ReaderShowsRules(view), () => {
+            CheckReaderControls("rules-face");
+            CompleteActionLabelChecks.Run(view.Frame!, "read-card-rules", "Artwork", Check);
+            Capture("reader-controls-rules"); MoveHit("read-card-rules");
+        }); Click();
+        Wait(() => ReaderReady(ManaPaymentScenario.Spell) && !ReaderShowsRules(view), () => {
+            CheckReaderControls("artwork-returned");
+            CompleteActionLabelChecks.Run(view.Frame!, "read-card-rules", "Rules", Check);
+            Capture("reader-controls-artwork");
+            phaseStopped = PlayPreferences.Load(view.Profile).Stops.Contains("MAIN2");
+            phaseBounds = view.Hits.Single(hit => hit.Id == "phase-stop:MAIN2").Bounds;
+            MoveHit("phase-stop:MAIN2");
+        }); Click();
+        Step(() => {
+            Check(PlayPreferences.Load(view.Profile).Stops.Contains("MAIN2") != phaseStopped
+                && view.Hits.Single(hit => hit.Id == "phase-stop:MAIN2").Bounds == phaseBounds && SameCurrentReader(),
+                "The physical phase click changes only its own saved stop while the exact reader and bill remain current");
+            MoveHit("phase-stop:MAIN2");
+        }); Click();
+        Step(() => {
+            Check(PlayPreferences.Load(view.Profile).Stops.Contains("MAIN2") == phaseStopped && SameCurrentReader(),
+                "The physical second phase click restores the saved stop without spending, casting or replacing the pinned occurrence");
+            finished = true; Save(null); window.Exit();
+        });
+        bool SameCurrentReader() => ReaderReady(ManaPaymentScenario.Spell)
+            && view.Frame!.Cards.Single(card => card.Id == ManaPaymentScenario.Spell && card.Focused).Card.Key == inspectedHandKey
+            && view.Match!.Decision!.Id == inspectedDecision
+            && view.ManaJourney is { Payment: false, SourceId: ManaPaymentScenario.Spell, Advice: "Choose an action" } bill
+            && bill.Symbols.SequenceEqual(["{1}", "{U}"])
+            && view.Frame!.Cards.Any(card => card.Id == ManaPaymentScenario.Island && card.Zone == "Battlefield")
+            && engine.Replies.Count == 0;
+        void CheckReaderControls(string label) {
+            File.WriteAllText(Path.Combine(view.Profile, "reader-controls-" + label + ".json"),
+                JsonSerializer.Serialize(ReaderControlFacts(view, engine.Replies.Count), new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+            var geometry = ReaderControlGeometry(view);
+            Check(geometry.Clear, "The complete physical reader footer and shadow stay clear of the phase arc, current actions, cards and bill");
+            Check(geometry.FooterOwnsCenter && geometry.PhaseOwnCenters && SameCurrentReader(),
+                "The physical reader footer and phase centers keep separate current targets with the exact pinned card, bill and zero commands");
+        }
     }
 
     private ManaPaymentSmoke(TableApplication.Probe view, ExperienceLabSession lab, Point viewport, TableWindow.Probe? window = null)
@@ -720,6 +764,52 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
     internal static bool PoolReadingIsolated(TableApplication.Probe view) => view.Overlay == "mana"
         && view.Hits.Count(hit => hit.Intent is MatchIntent.CloseView) == 1
         && view.Hits.All(hit => hit.Intent is UiIntent.NoInteraction or MatchIntent.CloseView);
+
+    // Observe actual control paint and hits, independently of reader placement.
+    // Canvas.Panel paints its shadow two pixels right and five pixels down.
+    internal static (bool Clear, bool FooterOwnsCenter, bool PhaseOwnCenters,
+        Microsoft.Xna.Framework.Rectangle FooterPaint, Microsoft.Xna.Framework.Rectangle PhaseArc) ReaderControlGeometry(TableApplication.Probe view)
+    {
+        if (view.Frame is not { Scene: { } scene } frame || view.Match is not { } state
+            || frame.Hits.SingleOrDefault(hit => hit.Id == "read-card-rules") is not { } footer
+            || frame.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Panel>().FirstOrDefault(command => command.Bounds == footer.Bounds) is not { } panel)
+            return (false, false, false, default, default);
+        var phases = frame.Hits.Where(hit => hit.Id.StartsWith("phase-stop:", StringComparison.Ordinal)).ToArray();
+        if (phases.Length == 0) return (false, false, false, default, default);
+        var paint = Microsoft.Xna.Framework.Rectangle.Union(footer.Bounds,
+            new(panel.Bounds.X + 2, panel.Bounds.Y + 5, panel.Bounds.Width, panel.Bounds.Height));
+        var arc = Mana.Renderer.TurnControlLayout.For(scene.Seat(state.ViewerId).Geometry.Hero).ArcBounds;
+        var occupied = frame.Cards.Select(card => card.Display.Bounds)
+            .Concat(frame.Hits.Where(hit => hit.Id == "read-card-action" || hit.Id == "source-actions-surface"
+                || hit.Id.StartsWith("source-action", StringComparison.Ordinal) || hit.Id.StartsWith("source-placement:", StringComparison.Ordinal)
+                || hit.Id.StartsWith("optional-payment-reset:", StringComparison.Ordinal) || hit.Id.StartsWith("mana-pool:", StringComparison.Ordinal))
+                .Select(hit => hit.Bounds))
+            .Concat(view.ManaSources.SelectMany(source => new[] { source.Bounds, source.OutputBounds }))
+            .Append(view.ManaJourney?.Bounds ?? default).Append(arc).Where(bounds => !bounds.IsEmpty);
+        bool clear = new Microsoft.Xna.Framework.Rectangle(0, 0, 1600, frame.DesignHeight).Contains(paint)
+            && occupied.All(bounds => !paint.Intersects(bounds));
+        return (clear, view.HitAt(footer.Bounds.Center)?.Id == footer.Id
+                && view.HitAt(footer.Bounds.Center)?.Intent is MatchIntent.FlipReaderText,
+            phases.All(phase => view.HitAt(phase.Bounds.Center)?.Id == phase.Id
+                && view.HitAt(phase.Bounds.Center)?.Intent is MatchIntent.TogglePhaseStop), paint, arc);
+    }
+
+    internal static bool ReaderShowsRules(TableApplication.Probe view) => view.Frame is { } frame
+        && frame.Cards.SingleOrDefault(card => card.Focused) is { } reader
+        && new[] { "Flash", "Flying" }.All(value => frame.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Text>()
+            .Any(text => text.Value == value && reader.Display.Bounds.Contains(text.X, text.Y)));
+
+    internal static object ReaderControlFacts(TableApplication.Probe view, int replies)
+    {
+        var frame = view.Frame;
+        var geometry = ReaderControlGeometry(view);
+        return new { frame = frame?.Observe(), state = view.Match, currentJourney = view.ManaJourney,
+            geometry.Clear, geometry.FooterOwnsCenter, geometry.PhaseOwnCenters, geometry.FooterPaint, geometry.PhaseArc, replies,
+            cards = frame?.Cards.Select(card => new { card.Id, card.Zone, card.Card.Key, card.Focused, bounds = card.Display.Bounds, card.ReaderTarget }).ToArray(),
+            panels = frame?.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Panel>().Select(panel => panel.Bounds).ToArray(),
+            sources = view.ManaSources.ToArray(), hits = frame?.Hits.Select(hit => new { hit.Id, hit.Bounds,
+                intent = hit.Intent.GetType().Name, centerHit = view.HitAt(hit.Bounds.Center)?.Id }).ToArray() };
+    }
 
     // Read the current rendered tokens and physical context, independently of
     // the expansion's placement rule. These sparse authored frames are not a
