@@ -142,7 +142,18 @@ Ordinary human `sourceActions` responses expose a closed `costPreview` on those
 same already offered actions: declared `costs`, `manaCostKnowledge` and `funding`.
 The preview has no operation graph, target domain or extra action handles. The
 response's `revision` identifies the published frame; an optional request
-`expectedRevision` rejects stale reads without advancing the game. Each owned
+`expectedRevision` rejects stale reads without advancing the game. Source-query
+values, including nested previews, effects and extra source portraits, are
+copied before they are returned or cached. An automated domain and its extra
+portraits share one completed query result. Catalogs and extra card handles are
+installed only after the full query still has its original input, source version,
+publication and catalog/query ownership. Human previews recheck that ownership
+after their final funding query, even when an input replacement has not yet
+changed the displayed revision. A superseded outer read preserves a newer nested
+result and its handles. These are read-only descriptions; accepting and executing
+an action still requires its current live authority. No wire fields or command
+scopes change.
+Each owned
 mana-payment prompt freshly publishes actual `payerId`, `unpaidManaParts`, `fundingContext` and
 `usablePoolManaColors`, so manual payments shrink the displayed bill and consumed
 inputs cannot retain those facts. The final adjusted bill remains authoritative.

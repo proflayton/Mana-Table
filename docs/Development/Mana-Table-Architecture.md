@@ -62,6 +62,18 @@ selection and publication guards share the actual queue/proxy and active-input
 check. A queued action alone is not proof that its input has retired; required
 dialog futures and combat refresh keep their separate ownership.
 
+Source queries have one completed value owner alongside that decision capture.
+The automated action domain and its extra Stack/Sideboard source portraits are
+copied together with `PublishedDecisionFacts`; human action previews use the same
+value-copy boundary. Catalogs and additional card handles are staged locally,
+then installed only after the entire query retains its input, source version,
+publication and observed catalog/query identities. A nested completed query
+keeps its result and handles when the outer read is discarded. In particular,
+the final human preview check follows funding queries: a real input replacement
+can invalidate a reply before its queued display changes the revision.
+These retained descriptions cannot be mutated by an observer. They contain no
+stored funding witness and do not replace live command admission or execution.
+
 Targets, multiple-entity selections, indexed choice/reveal dialogs and ordinary
 confirmations stage their family facts in that same publication.
 The current input's existing player choices, staged selections, effect or cost

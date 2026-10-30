@@ -345,6 +345,20 @@ again. It retains its 25-second deadline and a 16-refresh cap. An offer must mat
 the observed revision; no accepted command is replayed and engine revision
 fences remain enforced. `SourceActionsTest` covers the queued display-publication
 interleaving which can expire an otherwise unanswered priority input.
+Its human and automated journeys also attempt nested mutation of actual source
+query values, retain the original reply, and then execute a current Forest mana
+action once while rejecting replay. `AutomatedObservationTest` replaces a real
+input during the last preview funding query without first changing the displayed
+revision. A separate nested source read must retain its completed domain and
+usable handles after the outer read is rejected, without requiring another
+publication. These cases use the real engine and existing state boundary;
+descriptive values never grant additional command authority.
+The Stack-source journey casts Lightning Storm from its deterministic first-main
+hand (the real opening seven plus first draw), retains its extra portrait and
+matching action domain, then activates that
+exact source by discarding a land. Its real charge-counter event refreshes the
+new portrait without mutating the retained old query. The small fixture ends
+before the next draw; it does not alter shuffle or card rules.
 
 The controlled journeys cover funded/unfunded X, funded/short consuming sources,
 optional effect-cost decline/payment, flexible-output payment, and mana
