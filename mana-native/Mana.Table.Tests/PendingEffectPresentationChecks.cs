@@ -270,8 +270,9 @@ internal static class PendingEffectPresentationChecks
         unavailable = unavailable with { Revision = view.Match.Revision,
             Decision = unavailable.Decision! with { Id = sameOwner } };
         engine.ObserveOverride = () => Task.FromResult<GameSnapshot?>(unavailable);
-        view.Accept(unavailable);
-        Tick(); Tick();
+        Await(() => !view.Busy && view.Match!.Decision?.Id == sameOwner
+                && view.Match.Decision.Payload is TargetSelectionPayload { Complete.Enabled: false },
+            "The actual polled provider publishes disabled completion for the same target owner before authority is checked");
         File.WriteAllText(Path.Combine(directory, "same-owner-disabled-before-assert.json"), JsonSerializer.Serialize(new {
             wire = Wire(1, false), state = view.Match, frame = frame.Observe(),
             oldConfirm = new { confirm.Id, confirm.Scope, confirm.Bounds },
@@ -283,8 +284,9 @@ internal static class PendingEffectPresentationChecks
                 && !frame.Hits.Any(hit => hit.Id == "confirm") && !view.Activate(confirm) && commands.Count == 5,
             "A same-owner refresh retains descriptive progress while disabled completion revokes the old confirmation authority");
         engine.ObserveOverride = null;
-        view.Accept(engine.State);
-        Tick(); Tick();
+        Await(() => !view.Busy && view.Match!.Decision?.Id == sameOwner
+                && view.Match.Decision.Payload is TargetSelectionPayload { Complete.Enabled: true },
+            "The actual polled provider restores enabled completion for the same target owner before a fresh gesture");
         confirm = frame.Hits.Single(hit => hit.Id == "confirm");
         Click(confirm.Bounds.Center);
         Await(() => !view.Busy && commands.Count == 6, "Re-enabled current completion accepts one fresh separate confirmation gesture");
