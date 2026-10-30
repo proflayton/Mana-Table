@@ -1599,7 +1599,7 @@ scans. The geometry, final-hit isolation and old-action/ResolveHit assertions
 report separately without changing their order, gestures or required facts.
 That run passed pinned C4 but the first C1024/U3/W1/literal-key refresh made a
 wider group whose nearby row was still outside the independently capped axes.
-The current search sweeps the complete clamped critical row and column edge
+A subsequent candidate swept the complete clamped critical row and column edge
 lists, merged by a conservative single-axis distance bound, for at most 676
 linear interval probes. The original five seeds establish an initial clear
 upper bound; only a known clear best can stop an axis whose remaining distance
@@ -1611,6 +1611,15 @@ fully packed table can still prevent a nearby clear result.
 Critical edges explicitly include the positive source anchor. The crowded
 fallback retains the original occupied-only edge membership and order, with its
 two edge sorts materialized once per axis only when that fallback is needed.
+That actual quick run still failed the first wider value map. Source review
+identified the static decision-dock rectangle in two reservation paths even
+though the passive view suppressed its painter. The current candidate removes
+the advanced sweep and retains the reviewed clear-first rule, safe score cutoff
+and original 24-edge grid. One generic dock visibility predicate now owns both
+existing draw gates and both reservation copies. Renderer defaults still reserve
+the dock for ordinary board arrangement and camera calculations. These changes
+preserve the actual card, bill, resource, portrait, turn, pile and command areas;
+the same 500-pixel proximity and full text assertions remain unchanged.
 For a focused iteration, append `--presentation-group mana-pool` to the existing
 `--smoke-headless-presentation` invocation. It calls the same pool/payment clarity
 and lifecycle group and writes the same receipts labeled `mana-pool`; an omitted

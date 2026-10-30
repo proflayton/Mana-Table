@@ -47,10 +47,12 @@ internal sealed partial class TableApplication
         IReadOnlyList<Rectangle>? additionalReservations = null, int minimumWidth = 320, bool boundedWorkspace = false)
     {
         var source = anchor; source.Inflate(12, 12);
-        var occupied = new List<Rectangle> { source, new(1240, 550, 350, 245) };
+        bool includeDecisionDock = DecisionDockCanPaint;
+        var occupied = new List<Rectangle> { source };
+        if (includeDecisionDock) occupied.Add(new(1240, 550, 350, 245));
         if (additionalReservations != null) occupied.AddRange(additionalReservations);
         if (match is { } state && tableScene != null) {
-            occupied.AddRange(TableViewGeometry.FixedReservations(state, tableScene));
+            occupied.AddRange(TableViewGeometry.FixedReservations(state, tableScene, includeDecisionDock));
             var turn = TurnControlLayout.For(SeatHero(state.ViewerId));
             var controls = turn.Markers.Append(turn.AutoCenter).Append(turn.HoldCenter).ToArray();
             int left = (int)controls.Min(point => point.X) - 22, top = (int)controls.Min(point => point.Y) - 22;
