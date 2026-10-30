@@ -1566,6 +1566,15 @@ runs after every producer while higher views retain their own close controls.
 These candidate additions reuse existing runners and are separate from the
 retained old-production baseline: that first run failed the earlier payment
 bill-continuity assertion, before the pinned-reader and lifecycle cases ran.
+The first contextual candidate retained that bill but failed the same combined
+check. A separately authorized, instrumented focused run recorded the actual
+Colorless token overlapping the local turn arc by 13 x 21 logical pixels; full
+names/counts and passive hit isolation passed. The generic bounded workspace
+now prefers any fully clear candidate before its existing collision fallback.
+Failure-only mana-runner snapshots preserve the current frame, measured text,
+resource parts, physical and control reservations, and final hit intent types
+without composing a new frame or invoking actions. Later cases and physical
+acceptance remain pending until a corrected candidate actually completes them.
 The normal native UI inventory runs this window journey at 1000 x 740, including
 both text scales. Only after the ordinary journey and both counted-source/preview
 windows finish does the producer write `mana-payment-ci-results.json`: one

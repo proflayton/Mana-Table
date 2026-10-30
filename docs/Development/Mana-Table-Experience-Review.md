@@ -52,7 +52,9 @@ checks, with no remembered face or restore step.
 
 The complete measured expansion reserves current physical cards, reader,
 bill/source/output footprints, other pips, portraits and turn controls using
-the existing finite workspace search. This sparse authored journey must be
+the existing finite workspace search. A fully clear bounded candidate takes
+precedence over a colliding candidate; existing distance and source/overlap
+costs choose within each class. This sparse authored journey must be
 reviewed at 1000 x 740 and a larger window, at 100% and 130% text and with reduced
 motion. A fully packed battlefield may still have no clear placement. Source,
 edge-seat and crowded-table review remains separate from automated geometry;
