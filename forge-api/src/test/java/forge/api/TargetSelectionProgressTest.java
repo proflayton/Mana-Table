@@ -40,7 +40,7 @@ public class TargetSelectionProgressTest {
                 1, List.of("Grizzly Bears", "Grizzly Bears"), 2, List.of("Grizzly Bears")).entrySet())
             players.get(entry.getKey()).addExtraCardsOnBattlefield(entry.getValue().stream()
                     .map(name -> (forge.item.IPaperCard)StaticData.instance().getCommonCards().getCard(name)).toList());
-        Path evidence = Path.of("target/rules-regressions/target-selection-progress"); Files.createDirectories(evidence);
+        Path evidence = ApiTestWorkspace.evidence("target-selection-progress");
         try (var table = new MatchTable("Commander", players, resources, evidence, true)) {
             table.start(); var answered = new HashMap<Integer, String>();
             var main = until(table, answered, 0, input -> input.seat() == 0 && priority(input)

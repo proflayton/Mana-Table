@@ -307,7 +307,6 @@ public class StartupLifecycleTest {
     }
 
     private static Path evidence(String prefix) throws Exception {
-        Path root = Path.of("target/rules-regressions"); Files.createDirectories(root);
-        return Files.createTempDirectory(root, "startup-" + prefix);
+        return ApiTestWorkspace.evidence("startup-" + prefix);
     }
 }

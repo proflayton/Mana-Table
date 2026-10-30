@@ -36,7 +36,7 @@ public class StackResolutionTest {
             extras.add(StaticData.instance().getCommonCards().getCard(name));
         for (int index = 0; index < 42; index++) extras.add(StaticData.instance().getCommonCards().getCard("Island"));
         automated.addExtraCardsOnBattlefield(extras);
-        Path evidence = Path.of("target/rules-regressions/stack-resolution-draw-burst"); Files.createDirectories(evidence);
+        Path evidence = ApiTestWorkspace.evidence("stack-resolution-draw-burst");
         try (var table = new MatchTable("Commander", List.of(human, automated), RESOURCES, evidence)) {
             int actor = table.game.getPlayers().get(1).getId();
             var driver = new Driver(table, actor); table.start();

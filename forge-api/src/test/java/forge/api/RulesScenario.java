@@ -103,8 +103,7 @@ final class RulesScenario implements AutoCloseable {
         this.seatCount = seatCount;
         this.automated = automated;
         if (StaticData.instance() == null) EngineResources.load(RESOURCES);
-        evidence = Path.of("target/rules-regressions", name);
-        Files.createDirectories(evidence);
+        evidence = ApiTestWorkspace.evidence(name);
         var players = new ArrayList<RegisteredPlayer>();
         for (int seat = 0; seat < seatCount; seat++) {
             var deck = new Deck("Rules seat " + seat);

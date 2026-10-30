@@ -35,7 +35,7 @@ public class TerminalProjectionTest {
                 "Concordant Crossroads", "Forest").stream().<forge.item.IPaperCard>map(name -> StaticData.instance().getCommonCards().getCard(name)).toList());
         players.get(1).addExtraCardsOnBattlefield(List.of("Grizzly Bears", "Plains").stream()
                 .<forge.item.IPaperCard>map(name -> StaticData.instance().getCommonCards().getCard(name)).toList());
-        Path evidence = Path.of("target/rules-regressions/terminal-commander-damage"); Files.createDirectories(evidence);
+        Path evidence = ApiTestWorkspace.evidence("terminal-commander-damage");
         try (var table = new MatchTable("Commander", players, resources, evidence, true)) {
             table.start(); var answered = new HashMap<Integer, String>();
             var main = until(table, answered, input -> input.seat() == 0
