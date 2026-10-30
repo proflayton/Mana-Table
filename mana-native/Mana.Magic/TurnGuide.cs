@@ -14,6 +14,8 @@ public static class TurnGuide
         if (d.Payload is not PriorityPayload) return d.Payload switch {
             OpeningHandPayload opening => opening.Keep.Label,
             PaymentPayload payment => payment.Pay.Label,
+            TargetSelectionPayload { Progress: { } progress } target => progress.SelectedCount == 0 && target.Range.Min == 0
+                ? "Choose no targets" : "Confirm " + progress.SelectedCount + (progress.SelectedCount == 1 ? " target" : " targets"),
             TargetSelectionPayload target => target.Complete.Label,
             EntitySelectionPayload entity => entity.Complete.Label,
             ConfirmationPayload confirmation => confirmation.Accept.Label,

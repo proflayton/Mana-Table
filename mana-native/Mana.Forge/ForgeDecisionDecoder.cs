@@ -31,6 +31,7 @@ internal static class ForgeDecisionDecoder
             if (Present(prompt, "librarySearch") && task != "confirmation" && !(task == "selection" && purpose == "targets")
                 || Present(prompt, "openingHand") && task != "openingHand"
                 || Present(prompt, "effect") && !(task == "selection" && purpose == "targets")
+                || Present(prompt, "targetSelectionProgress") && !(task == "selection" && purpose == "targets")
                 || Present(prompt, "counterPayment") && !(task == "selection" && purpose == "")
                 || Present(prompt, "counterPaymentChoice") && !(task == "choice" && purpose == "" && !ordered)) throw Invalid();
             if (Present(prompt, "disclosedCards") && (task != "choice" || purpose != "" || ordered
@@ -70,7 +71,9 @@ internal static class ForgeDecisionDecoder
                 },
                 "attack" => new AttackPayload(Ok()), "block" => new BlockPayload(Ok()),
                 "selection" when purpose == "targets" => new TargetSelectionPayload(Ok(), Cancel(), Range(prompt),
-                    PlayerChoices(prompt, players), Optional<PendingEffect>(prompt, "effect"), SearchTarget(prompt)),
+                    PlayerChoices(prompt, players), Optional<PendingEffect>(prompt, "effect"), SearchTarget(prompt)) {
+                    Progress = TargetProgress(prompt, players)
+                },
                 "selection" => new EntitySelectionPayload(Ok(), Cancel(), PlayerChoices(prompt, players), OptionalRange(prompt), CounterPayment(prompt)) {
                     ManaReduction = ManaReduction(prompt)
                 },
@@ -218,6 +221,15 @@ internal static class ForgeDecisionDecoder
         var result = Array(prompt, "playerChoices").Select(value => value.TryGetInt32(out int id) ? id : throw Invalid()).ToImmutableArray();
         if (result.Distinct().Count() != result.Length || result.Any(id => players == null || !players.Contains(id))) throw Invalid();
         return result;
+    }
+    private static TargetSelectionProgress? TargetProgress(JsonElement prompt, IReadOnlySet<int>? players)
+    {
+        if (!Present(prompt, "targetSelectionProgress")) return null;
+        var value = Field(prompt, "targetSelectionProgress"); Object(value);
+        var selected = Array(value, "selectedPlayers", required: true)
+            .Select(item => item.TryGetInt32(out int id) ? id : throw Invalid()).ToImmutableArray();
+        if (selected.Any(id => players == null || !players.Contains(id))) throw Invalid();
+        return new(Integer(value, "selectedCount"), selected);
     }
     private static SelectionRange Range(JsonElement prompt) => new(Integer(prompt, "min"), Integer(prompt, "max"));
     private static SelectionRange? OptionalRange(JsonElement prompt) => Present(prompt, "min") || Present(prompt, "max") ? Range(prompt) : null;

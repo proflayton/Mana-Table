@@ -158,7 +158,7 @@ public static class DecisionDockPresentation
         string heading = status switch {
             DecisionDockStatus.Attack => "Choose attackers",
             DecisionDockStatus.Block => "Choose blockers",
-            DecisionDockStatus.Target => TargetHeading(((TargetSelectionPayload)decision.Payload).Range),
+            DecisionDockStatus.Target => TargetHeading((TargetSelectionPayload)decision.Payload),
             DecisionDockStatus.AbilityChoice => "Choose an ability",
             _ when decision.Payload is OrderingPayload => "Choose an order",
             _ when decision.Payload is NumberPayload => "Choose a number",
@@ -166,7 +166,9 @@ public static class DecisionDockPresentation
         };
         var actorRole = status switch { DecisionDockStatus.Attack => DecisionDockActorRole.Attacking,
             DecisionDockStatus.Block => DecisionDockActorRole.Blocking, _ => DecisionDockActorRole.Choosing };
-        return View(status, heading, instruction: decision.Context.Message, role: actorRole, actor: state.ViewerId,
+        string targetCaption = decision.Payload is TargetSelectionPayload { Progress: { SelectedPlayers.Length: > 0 } progress }
+            ? "Selected: " + string.Join(", ", progress.SelectedPlayers.Select(id => Name(state, id))) : "";
+        return View(status, heading, targetCaption, instruction: decision.Context.Message, role: actorRole, actor: state.ViewerId,
             action: TurnGuide.Confirm(state));
     }
 
@@ -204,10 +206,18 @@ public static class DecisionDockPresentation
         _ => "Paused"
     };
 
-    private static string TargetHeading(SelectionRange range) => range.Max > 1
-        ? range.Min == range.Max ? "Choose " + range.Max + " targets"
+    private static string TargetHeading(TargetSelectionPayload target)
+    {
+        var range = target.Range;
+        if (target.Progress is { } progress) {
+            string permitted = range.Min == range.Max ? range.Max.ToString()
+                : range.Min > 0 ? range.Min + "–" + range.Max : "up to " + range.Max;
+            return progress.SelectedCount + " of " + permitted + (range.Max == 1 ? " target" : " targets");
+        }
+        return range.Max > 1 ? range.Min == range.Max ? "Choose " + range.Max + " targets"
             : range.Min > 0 ? "Choose " + range.Min + "–" + range.Max + " targets" : "Choose up to " + range.Max + " targets"
-        : range.Max == 1 && range.Min == 0 ? "Choose up to 1 target" : "Choose a target";
+            : range.Max == 1 && range.Min == 0 ? "Choose up to 1 target" : "Choose a target";
+    }
 
     private static string Name(GameSnapshot state, int? id) => id == null ? "" : id == state.ViewerId ? "You"
         : state.Players.FirstOrDefault(player => player.Id == id)?.Name ?? "Player " + id;

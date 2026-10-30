@@ -50,6 +50,7 @@ internal sealed class StateClaritySmoke : ITableAutomation
                 "The source and engine-owned target purpose remain available beside the named controls");
             Capture("01-public-state-and-recipients");
         });
+        OptionalTargets("01a-optional-targets-100");
         ClickHit("settings");
         Wait(() => view.Hits.Any(h => h.Id == "text-size"), 3, () => { });
         ClickHit("text-size"); ClickHit("text-size"); ClickHit("close-overlay");
@@ -65,6 +66,7 @@ internal sealed class StateClaritySmoke : ITableAutomation
                 Counters = ImmutableDictionary<string, int>.Empty.Add("Poison", 9).Add("Energy", 2).Add("Experience", 3).Add("Rad", 4).Add("Ticket", 5).Add("Acorn", 6).Add("Shield", 7).Add("Time", 8).Add("Quest", 9)
             }).ToImmutableArray() });
         });
+        OptionalTargets("01b-optional-targets-130");
         Wait(() => view.CounterBadge(0) is { HiddenTypes: 8 }, 3, () => {
             Check(view.CounterBadge(0) is { Text: "Poison 9 +8 types", HiddenTypes: 8 } badge
                 && badge.MeasuredWidth <= badge.AvailableWidth && view.TextScale == 1.3f,
@@ -206,6 +208,73 @@ internal sealed class StateClaritySmoke : ITableAutomation
         Step(.1, () => {
             File.WriteAllText(Path.Combine(view.Profile, "state-clarity-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
             view.Exit();
+        });
+    }
+
+    private void OptionalTargets(string capture)
+    {
+        GameSnapshot previous = null!;
+        var commands = new List<GameCommand>();
+        var source = new Card { VisualId = "clarity-optional-source", CombatId = "clarity-optional-source",
+            Name = "Crackle with Power", Type = "Sorcery", ManaCost = "{X}{X}{X}{R}{R}", Text = "Deal five times X damage to each of up to X targets." };
+        TargetSelectionPayload Targets(int selected) => new(new("Confirm", true), new("Cancel", true), new(0, 2), [0, 1, 2, 3],
+            new PendingEffect { Id = "clarity-optional-damage", Kind = "damage", Amount = 10, AmountBasis = "announced" }) {
+                Progress = new TargetSelectionProgress(selected, selected == 0 ? [] : [1])
+            };
+        void SaveCurrent(string suffix)
+        {
+            File.WriteAllText(Path.Combine(view.Profile, capture + suffix + ".json"), JsonSerializer.Serialize(new {
+                state = view.Match, frame = view.Frame!.Observe(), textScale = view.TextScale,
+                hits = view.Hits.Select(hit => new { hit.Id, hit.Scope, hit.Bounds, intent = hit.Intent.ToString(),
+                    centerHit = view.HitAt(hit.Bounds.Center)?.Id }).ToArray(),
+                commands = commands.Select(command => new { kind = command.GetType().Name,
+                    decision = (command as DecisionCommand)?.DecisionId }).ToArray()
+            }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+        }
+        Step(.1, () => {
+            previous = view.Match!;
+            scenario.ReplyOverride = command => {
+                if (command is SelectPlayer { Player: 1 } && commands.Count == 0)
+                    scenario.Present(scenario.State with { Decision = scenario.State.Decision! with { Payload = Targets(1) } });
+                else if (command is CompleteSelection && commands.Count == 1)
+                    scenario.Present(scenario.State with { Decision = null, DecisionOwnerId = null, ActionClass = "resolving" });
+                else throw new InvalidOperationException("Unexpected command in the optional-target GPU continuation");
+                commands.Add(command); return Task.CompletedTask;
+            };
+            Publish(previous with { DecisionOwnerId = 0, ActionClass = "selection", Stack = [],
+                Players = previous.Players.Select(player => player.Id == 1 ? player with { Name = "Targeted opponent" } : player).ToImmutableArray(),
+                Decision = new("", new DecisionContext(Message: "Choose up to two targets.",
+                    Source: new DecisionSource(Card: source, ControllerId: 0, Zone: "Stack")), Targets(0)) });
+        });
+        Wait(() => view.Hits.Any(hit => hit.Id == "player:1") && view.Hits.Any(hit => hit.Id == "confirm"), 3, () => {
+            SaveCurrent("-zero-before-assert");
+            Check(commands.Count == 0 && view.Frame!.Observe().Text.Any(text => text.Value == "0 of up to 2 targets")
+                && view.Frame.Observe().Text.Any(text => text.Value == "Choose no targets")
+                && view.Hits.Single(hit => hit.Id == "targeting-source:" + view.Match!.Decision!.Id).Card?.VisualId == source.VisualId,
+                "The current optional-target GPU stage shows known zero, its real disclosed source and deliberate empty completion");
+        });
+        ClickHit("player:1");
+        Wait(() => !view.Busy && commands.Count == 1 && view.Match!.Decision?.Payload is TargetSelectionPayload { Progress.SelectedCount: 1 }, 3, () => {
+            SaveCurrent("-selected-before-assert");
+            var confirm = view.Hits.Single(hit => hit.Id == "confirm");
+            var texts = view.Frame!.Observe().Text;
+            Check(texts.Any(text => text.Value == "1 of up to 2 targets")
+                && texts.Any(text => text.Value == "Selected: Targeted opponent")
+                && texts.Any(text => text.Value == "Confirm 1 target")
+                && confirm.Intent is Mana.Table.Interaction.MatchIntent.ConfirmDecision
+                && view.HitAt(confirm.Bounds.Center)?.Id == confirm.Id
+                && commands.Single() is SelectPlayer { Player: 1 },
+                "The actual GPU target click stages the exact named recipient and leaves an exposed separate current Confirm1target gesture");
+            expectedDecision = view.Match!.Decision!.Id;
+            Capture(capture);
+        });
+        ClickHit("confirm");
+        Wait(() => !view.Busy && commands.Count == 2, 3, () => {
+            SaveCurrent("-completed");
+            Check(commands.OfType<CompleteSelection>().Single().DecisionId == expectedDecision,
+                "One separate physical confirmation completes exactly its current selected-target GPU scope");
+            scenario.ReplyOverride = null;
+            Publish(previous);
         });
     }
 

@@ -1821,8 +1821,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 .filter(targeting::canSelectPlayer).map(Player::getId).toList());
         promptFacts.put("playerChoices", playerChoices);
         automatedFacts.putAll(DecisionSemantics.describeTargets(ability, game.costPaymentStack.peek(), human.getPlayer(), this::semanticCardId));
-        automatedFacts.put("selectedPlayers", java.util.stream.StreamSupport.stream(
-                ability.getTargets().getTargetPlayers().spliterator(), false).map(Player::getId).toList());
+        var targets = ability.getTargets();
+        var selectedPlayers = java.util.stream.StreamSupport.stream(
+                targets.getTargetPlayers().spliterator(), false).map(Player::getId).toList();
+        promptFacts.put("targetSelectionProgress", map("selectedCount", targets.size(), "selectedPlayers", selectedPlayers));
+        automatedFacts.put("selectedPlayers", selectedPlayers);
         return table.currentPublication(boardRevision) && pending == prompt && sourceActionVersion.get() == sourceVersion
                 && selectionInputCurrent(prompt);
     }

@@ -45,6 +45,7 @@ public class TargetPublicationTest {
                 var raw = fixture.session().automatedObservation();
                 var before = JSON.toJsonTree(raw).getAsJsonObject();
                 var prompt = before.getAsJsonObject("state").getAsJsonObject("prompt");
+                assertTargetProgress(prompt, 0, List.of());
                 assertEquals(prompt.getAsJsonObject("effect").get("amount").getAsInt(), 3);
                 assertEquals(text(prompt.getAsJsonObject("effect"), "amountBasis"), "base");
                 assertTrue(before.getAsJsonObject("semantics").get("amount").isJsonNull(),
@@ -57,6 +58,9 @@ public class TargetPublicationTest {
                 assertThrows(UnsupportedOperationException.class, operations::clear);
                 var publishedPrompt = (Map<?, ?>)((Map<?, ?>)raw.get("state")).get("prompt");
                 assertThrows(UnsupportedOperationException.class, ((Map<?, ?>)publishedPrompt.get("effect"))::clear);
+                var progress = (Map<?, ?>)publishedPrompt.get("targetSelectionProgress");
+                assertThrows(UnsupportedOperationException.class, progress::clear);
+                assertThrows(UnsupportedOperationException.class, ((List<?>)progress.get("selectedPlayers"))::clear);
                 assertThrows(IllegalArgumentException.class, () -> PublishedDecisionFacts.freeze(Map.of("liveCard", fixture.source)));
                 assertThrows(IllegalArgumentException.class, () -> PublishedDecisionFacts.freeze(Map.of("unmodeled", new UnmodeledValue("unknown"))));
                 var spectator = JSON.toJsonTree(fixture.table.spectatorState()).getAsJsonObject();
@@ -66,6 +70,9 @@ public class TargetPublicationTest {
                     var other = JSON.toJsonTree(audience.automatedObservation()).getAsJsonObject();
                     assertFalse(other.getAsJsonObject("semantics").has("selectedPlayers"));
                     assertEquals(text(other.getAsJsonObject("semantics"), "intent"), "Unknown");
+                    var otherPrompt = other.getAsJsonObject("state").get("prompt");
+                    assertTrue(otherPrompt == null || otherPrompt.isJsonNull()
+                            || !otherPrompt.getAsJsonObject().has("targetSelectionProgress"));
                 }
 
                 fixture.ability.forbidFacts = true; fixture.ability.forbidCostReads = true;
@@ -82,6 +89,7 @@ public class TargetPublicationTest {
                 fixture.table.publish();
                 var refreshed = fixture.observation();
                 var next = refreshed.getAsJsonObject("state").getAsJsonObject("prompt");
+                assertTargetProgress(next, 0, List.of());
                 assertSame(fixture.controller().getInputQueue().getInput(), fixture.input);
                 assertEquals(next.get("id"), prompt.get("id"));
                 assertEquals(next.getAsJsonObject("effect").get("amount").getAsInt(), 5);
@@ -112,6 +120,7 @@ public class TargetPublicationTest {
                 assertNull(fixture.ability.beforeNextDamageRead);
                 assertEquals(inner.size(), 1, "A real target projection must exercise the nested publication");
                 var published = inner.get(0);
+                assertTargetProgress(published.getAsJsonObject("prompt"), 0, List.of());
                 long board = published.get("boardRevision").getAsLong();
                 assertTrue(board > previous.getAsJsonObject("state").get("boardRevision").getAsLong());
                 for (var audience : fixture.table.automatedSeats())
@@ -135,6 +144,7 @@ public class TargetPublicationTest {
         try (var fixture = new Fixture("stop")) {
             HeadlessPlatform.query(fixture.table, () -> {
                 var old = fixture.current();
+                assertTargetProgress(old.prompt(), 0, List.of());
                 var cleanup = new ArrayList<JsonObject>();
                 var originalGui = fixture.controller().getGui();
                 var probeGui = (IGuiGame)Proxy.newProxyInstance(IGuiGame.class.getClassLoader(), new Class<?>[]{IGuiGame.class}, (proxy, method, args) -> {
@@ -174,11 +184,15 @@ public class TargetPublicationTest {
         try (var fixture = new Fixture("players")) {
             var initial = fixture.current(); String episode = episode(fixture.observation());
             int chosenId = fixture.player(1).getId();
+            assertTargetProgress(initial.prompt(), 0, List.of());
             var chosen = fixture.answer(initial, Map.of("action", "player", "playerId", chosenId));
             assertEquals(chosen.getAsJsonObject("semantics").get("selectedPlayers"), JSON.toJsonTree(List.of(chosenId)));
+            assertTargetProgress(input(chosen).prompt(), 1, List.of(chosenId));
             assertEquals(episode(chosen), episode); assertSame(fixture.controller().getInputQueue().getInput(), fixture.input);
             var undone = fixture.answer(input(chosen), Map.of("action", "player", "playerId", chosenId));
             assertEquals(undone.getAsJsonObject("semantics").get("selectedPlayers"), JSON.toJsonTree(List.of()));
+            assertTargetProgress(input(undone).prompt(), 0, List.of());
+            assertTargetProgress(input(chosen).prompt(), 1, List.of(chosenId));
             assertEquals(episode(undone), episode);
             assertEquals(chosen.getAsJsonObject("semantics").get("selectedPlayers"), JSON.toJsonTree(List.of(chosenId)));
             var current = input(undone);
@@ -201,6 +215,7 @@ public class TargetPublicationTest {
                 assertEquals(prompt.get("id"), current.prompt().get("id"));
                 assertEquals(episode(recovered), episode); assertSame(fixture.controller().getInputQueue().getInput(), fixture.input);
                 assertEquals(recovered.getAsJsonObject("semantics").get("selectedPlayers"), JSON.toJsonTree(List.of()));
+                assertTargetProgress(prompt, 0, List.of());
                 assertFalse(prompt.getAsJsonArray("playerChoices").asList().stream().anyMatch(value -> value.getAsInt() == fixture.player(2).getId()));
                 assertTrue(recovered.getAsJsonObject("state").get("notices").toString().contains("That target changed"));
                 assertEquals(recovered.getAsJsonObject("state").get("prompt"), JSON.toJsonTree(fixture.session().state()).getAsJsonObject().get("prompt"));
@@ -210,6 +225,10 @@ public class TargetPublicationTest {
         }
     }
 
+    private static void assertTargetProgress(JsonObject prompt, int selectedCount, List<Integer> selectedPlayers) {
+        assertEquals(prompt.get("targetSelectionProgress"), JSON.toJsonTree(Map.of(
+                "selectedCount", selectedCount, "selectedPlayers", selectedPlayers)));
+    }
     private static Input input(JsonObject observation) {
         var state = observation.getAsJsonObject("state"); return new Input(state.get("viewerId").getAsInt(), state, state.getAsJsonObject("prompt"));
     }
