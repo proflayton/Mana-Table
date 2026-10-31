@@ -188,7 +188,7 @@ The target is not a measured guarantee. Record cache/runner conditions where
 known and compare multiple runs before claiming a repeatable improvement. All
 required source, native, lifecycle and publication checks remain mandatory.
 
-The package timing journal is a source implementation after 0.2.292. Packaging
+The package timing journal is a source implementation after 0.2.295. Packaging
 writes `<output-directory>-timings.jsonl` beside its output, with the source SHA,
 version, release/preview operation, phase, completed/failed status and elapsed
 milliseconds on each row. It separates client publishing, resource copying,
