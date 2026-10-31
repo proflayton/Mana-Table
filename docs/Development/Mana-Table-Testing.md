@@ -1200,6 +1200,18 @@ review moving to readable scale, inspecting and playing the first, middle and
 last physical occurrences, then returning to the same source packet. A count
 of 200 represented cards cannot establish that the journey is understandable.
 
+Source candidate after 0.2.297: cleanup hand reduction has a typed, atomic
+selection path. `HandReductionTest` starts a real 35-card cleanup, rejects
+malformed or stale batches without changing the hand, then discards 28 physical
+occurrences in one command and checks their discard triggers.
+`CleanupHandReductionRegression` covers contract admission, AI resource choices
+and bounded work; `HandReductionWireChecks` covers decoder validation.
+The existing headless collection journey covers choosing seven keepers at both
+window sizes, inspection without commitment, stale drafts and one complementary
+28-card reply. The existing `--smoke-card-states` journey also captures the
+35-card spread, reading and the ready-to-confirm keep selection. These are
+automated checks; actual human review of this candidate remains pending.
+
 `CounterCostExperienceTest` follows actual Loch Mare activation through mana,
 counter removal and draw, and retains explicit mixed-type/distributed choices,
 removal restrictions and cancellation. `PaymentCandidateExperienceTest` uses

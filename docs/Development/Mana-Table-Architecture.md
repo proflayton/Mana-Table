@@ -140,6 +140,17 @@ reuse an earlier capture or relabel the old query with a new cost. Nested color
 choices retain their separate payment ownership. Selection completion retires
 the existing input flag before cleanup callbacks and starts its waiting
 transition once.
+Cleanup hand reduction has an explicit engine-owned full-hand capability.
+It publishes an exact unordered indexed choice with typed owner, hand size and
+effective hand limit. Human keep selections remain local; their offered-index
+discard complement is submitted once through the existing choice command.
+Admission and queued execution recheck the original input, candidate identities,
+counts and unchanged hand before a bulk input method mutates its selection and
+finishes once. Generic entity selections grant no complement or batch authority.
+The native draft and command guards verify that the typed fact still names the
+viewer's entire current hand; masked or incomplete disclosures retain the
+ordinary indexed-choice fallback.
+
 Indexed dialogs stage option facts and the provider's actual cost order locally,
 then commit them with the same audience capture. A superseded option query cannot
 write through to the pending dialog. Their exact offered indices, bounds and

@@ -16,6 +16,7 @@ internal sealed partial class TableApplication
 {
     private CardCollectionTarget? spreadCollection;
     private string? spreadGame, spreadDecision;
+    private (string Game, int Viewer, string Decision)? cleanupHandSpread;
     private string? spreadId => spreadCollection?.Id;
     private int spreadViewer;
     private BoardView? spreadTarget;
@@ -46,7 +47,7 @@ internal sealed partial class TableApplication
         if (dragging || match == null || session.NeedsRecovery && target is not CardCollectionTarget.PublicZone
             || ActivityOpen || updatesOpen || ExperienceOpen || overlay.Length > 0 || zoneName != null) return;
         if (!CollectionAllowed(target)) return;
-        if (target is CardCollectionTarget.HandCollection && tableScene?.Hand.Total is not > 0) return;
+        if (target is CardCollectionTarget.HandCollection && match.Viewer?.Zone("Hand").Cards.Length is not > 0) return;
         if (target is CardCollectionTarget.AccessCollection or CardCollectionTarget.AccessPacket
             && tableScene?.PlayAccess.Groups.Any(group => target is CardCollectionTarget.AccessCollection
                 || target is CardCollectionTarget.AccessPacket packet && group.Id == packet.PacketId) != true) return;
@@ -65,6 +66,7 @@ internal sealed partial class TableApplication
         if (CardCollectionOpen) CollapseCardReading();
         QueuePublicCollectionReturn();
         spreadCollection = null; spreadTarget = null; spreadPanning = false; spreadCameraUsed = false;
+        cleanupHandSpread = null;
         spreadWorldTargets.Clear();
         spreadCamera.Reset();
     }
@@ -73,6 +75,10 @@ internal sealed partial class TableApplication
     {
         ReconcilePublicCollectionReturns();
         if (spreadId == null) return;
+        if (cleanupHandSpread != null && cleanupHandSpread != CurrentCleanupHandScope()) {
+            FoldCardCollection();
+            return;
+        }
         if (match is not { } state || state.Id != spreadGame || state.ViewerId != spreadViewer
             || session.NeedsRecovery && spreadCollection is not CardCollectionTarget.PublicZone
             || ActivityOpen || updatesOpen || ExperienceOpen || overlay.Length > 0 || zoneName != null
@@ -83,6 +89,19 @@ internal sealed partial class TableApplication
             CollapseCardReading();
             FoldCardCollection();
         }
+    }
+
+    private (string Game, int Viewer, string Decision)? CurrentCleanupHandScope()
+        => match?.Decision is { } decision && decisions.Choice is { Keeping: true } && HandReductionFacts.IsCurrent(match)
+            ? (match.Id, match.ViewerId, decision.Id) : null;
+
+    private void ExpandCleanupHandCollection()
+    {
+        var current = CurrentCleanupHandScope();
+        if (cleanupHandSpread != null && cleanupHandSpread != current) FoldCardCollection();
+        if (current == null || spreadCollection == CardCollectionTarget.Hand) return;
+        ExpandCardCollection(CardCollectionTarget.Hand);
+        if (spreadCollection == CardCollectionTarget.Hand) cleanupHandSpread = current;
     }
 
     private void PrepareCardCollection()
@@ -124,6 +143,13 @@ internal sealed partial class TableApplication
             spreadInstruction = decisions.Presentation.Instruction;
             if (decisions.Presentation.Payload is OpeningHandPayload { Consequence: { } hand })
                 spreadInstruction = hand.FreeMulligan ? "Free mulligan" : $"Mulligan → keep {hand.NextHandSize}";
+            if (decisions.Choice is { HandReduction: { } reduction } draft) {
+                int discards = reduction.HandSize - reduction.MaximumHandSize;
+                spreadTitle = draft.Keeping ? $"Choose {reduction.MaximumHandSize} cards to keep" : $"Choose {discards} cards to discard";
+                spreadInstruction = draft.Keeping
+                    ? $"Keep {decisions.Selections.Count} / {reduction.MaximumHandSize} · The other {discards} cards will be discarded together."
+                    : $"Discard {decisions.Selections.Count} / {discards} · Keep {reduction.MaximumHandSize} cards.";
+            }
         }
         spreadInstructionY = 72 + canvas.TextSize(spreadTitle, .85f, 1120, 80, true).Y + 8;
         spreadAreaTop = Math.Max(CardSpreadPlan.Viewport.Top, spreadInstructionY

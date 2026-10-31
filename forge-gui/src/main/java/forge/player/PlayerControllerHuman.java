@@ -1855,14 +1855,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
             return choices;
         }
 
-        @SuppressWarnings("serial") final InputSelectCardsFromList inp = new InputSelectCardsFromList(this, nDiscard, nDiscard,
-                player.getZone(ZoneType.Hand).getCards()) {
-            @Override
-            protected boolean allowAwaitNextInput() {
-                return true; // prevent Cleanup message getting stuck during
-                // opponent's next turn
-            }
-        };
+        final InputSelectHandSizeDiscard inp = new InputSelectHandSizeDiscard(this, nDiscard);
         final String message = localizer.getMessage("lblCleanupPhase") + "\n"
                 + localizer.getMessage("lblSelectCardsToDiscardHandDownMaximum", nDiscard, max);
         inp.setMessage(message);

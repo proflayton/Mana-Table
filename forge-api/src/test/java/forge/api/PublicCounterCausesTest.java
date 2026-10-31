@@ -238,7 +238,7 @@ public class PublicCounterCausesTest {
                     && text(i.state(), "phaseKey").equals("MAIN1") && text(i.prompt(), "inputType").equals("InputPassPriority")
                     && i.state().getAsJsonArray("stack").isEmpty()
                     || text(i.prompt(), "inputType").equals("InputSelectTargets")
-                    || text(i.prompt(), "inputType").equals("InputSelectCardsFromList") && text(i.state(), "phaseKey").equals("CLEANUP"));
+                    || text(i.prompt(), "inputType").equals("InputSelectHandSizeDiscard") && text(i.state(), "phaseKey").equals("CLEANUP"));
             if (text(input.prompt(), "inputType").equals("InputPassPriority")) return input;
             if (text(input.prompt(), "inputType").equals("InputSelectTargets")) {
                 assertEquals(input.seat(), 0);

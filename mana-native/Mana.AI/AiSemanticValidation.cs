@@ -11,6 +11,8 @@ internal static class AiSemanticValidation
     {
         var context = new Context(state);
         DecisionOrderingFacts.Validate(state, semantics);
+        if (state.Decision?.Payload is OptionsPayload { HandReduction: not null }
+            && !HandReductionFacts.IsCurrent(state)) throw Invalid();
         foreach (var item in state.Stack) context.Committed(item);
         if (state.Decision?.Payload is EntitySelectionPayload { ManaReduction: not null } reduction
             && (!semantics.SelectionIsCost || semantics.Intent != DecisionIntent.Tap || reduction.CounterPayment != null

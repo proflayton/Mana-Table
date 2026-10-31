@@ -44,6 +44,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             QueuePlayerStateChecks();
             QueueManaPoolChecks();
             QueueOrderedChoiceChecks();
+            QueueCleanupHandReadingChecks();
             return;
         }
         if (selectionOnly) {

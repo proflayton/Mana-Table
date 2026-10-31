@@ -177,15 +177,34 @@ public sealed record OptionsPayload(ChoiceSelection Selection, CounterPaymentCho
 {
     private ChoiceSelection selection = ValidateSelection(Selection, CounterPayment);
     private ManaColorPaymentContext? manaPaymentContext;
+    private HandReductionContext? handReduction;
     public ChoiceSelection Selection { get => selection; init {
         var validated = ValidateSelection(value, CounterPayment);
         ValidateManaChoice(validated, manaPaymentContext, CounterPayment);
+        ValidateHandReduction(validated, handReduction, manaPaymentContext, CounterPayment);
         selection = validated;
     } }
     public CounterPaymentChoice? CounterPayment { get; } = CounterPayment;
     public ManaColorPaymentContext? ManaPaymentContext { get => manaPaymentContext; init {
-        ValidateManaChoice(selection, value, CounterPayment); manaPaymentContext = value;
+        ValidateManaChoice(selection, value, CounterPayment);
+        ValidateHandReduction(selection, handReduction, value, CounterPayment);
+        manaPaymentContext = value;
     } }
+    public HandReductionContext? HandReduction { get => handReduction; init {
+        ValidateHandReduction(selection, value, manaPaymentContext, CounterPayment); handReduction = value;
+    } }
+    private static void ValidateHandReduction(ChoiceSelection selection, HandReductionContext? context,
+        ManaColorPaymentContext? mana, CounterPaymentChoice? counters)
+    {
+        if (context != null && (mana != null || counters != null || !selection.Disclosures.IsEmpty
+            || selection.Range.Min != context.HandSize - context.MaximumHandSize || selection.Range.Max != selection.Range.Min
+            || selection.Choices.Length != context.HandSize
+            || selection.Choices.Select(choice => choice.CardId).Distinct(StringComparer.Ordinal).Count() != context.HandSize
+            || selection.Choices.Any(choice => string.IsNullOrWhiteSpace(choice.CardId) || choice.Mana.Length != 0
+                || choice.Card is not { Key.Length: 0, Selectable: false, Highlighted: false } card
+                || CardViews.Identity(card) != choice.CardId)))
+            throw new ArgumentException("A hand reduction describes the whole current hand and exactly its required discard count.", nameof(context));
+    }
     private static void ValidateManaChoice(ChoiceSelection selection, ManaColorPaymentContext? context, CounterPaymentChoice? counters)
     {
         if (context != null && (counters != null || selection.Range is not { Min: 1, Max: 1 }
@@ -202,6 +221,21 @@ public sealed record OptionsPayload(ChoiceSelection Selection, CounterPaymentCho
             || !value.Choices.Select(choice => (choice.Index, choice.Label)).SequenceEqual(payment.Options.Select(option => (option.Index, option.Label)))))
             throw new ArgumentException("Counter payment descriptions must name the exact ordinary offered choices.", nameof(payment));
         return value;
+    }
+}
+
+/// <summary>Engine-owned cleanup facts; the ordinary option indices still name cards to discard.</summary>
+public sealed record HandReductionContext
+{
+    public int PlayerId { get; }
+    public int HandSize { get; }
+    public int MaximumHandSize { get; }
+    [JsonConstructor]
+    public HandReductionContext(int playerId, int handSize, int maximumHandSize)
+    {
+        if (playerId < 0 || maximumHandSize < 0 || handSize <= maximumHandSize)
+            throw new ArgumentOutOfRangeException(nameof(handSize));
+        PlayerId = playerId; HandSize = handSize; MaximumHandSize = maximumHandSize;
     }
 }
 

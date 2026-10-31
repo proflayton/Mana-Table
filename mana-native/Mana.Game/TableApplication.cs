@@ -212,6 +212,8 @@ internal sealed partial class TableApplication : IDisposable
     {
         ReconcileTurnPass();
         var presentation = match == null ? null : DecisionDockPresentation.From(match, CurrentDecisionControls());
+        bool handReductionChanged = decisions.Payload is OptionsPayload { HandReduction: not null }
+            || match?.Decision?.Payload is OptionsPayload { HandReduction: not null };
         bool changed = decisions.Observe(match, presentation?.RequiredSurface == DecisionRequiredSurface.Table);
         decisions.Presentation = presentation;
         if (!changed) return;
@@ -226,6 +228,12 @@ internal sealed partial class TableApplication : IDisposable
             zoneName = null; CollapseCardReading();
         }
         selectedCombat = null; dragging = false; dragSource = null; ClearCardDrag(); textFocus = false;
+        if (handReductionChanged) {
+            // A replaced cleanup offer cannot release a gesture begun under its
+            // previous limits, even when the transport reuses the decision ID.
+            pressed = null;
+            ExpandCleanupHandCollection();
+        }
     }
     internal void Update(GameTime time, MouseState mouse, KeyboardState keys, Point viewport, bool inputActive = true)
     {

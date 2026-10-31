@@ -62,7 +62,7 @@ public class RulesRegressionTest {
             var input = HeadlessPlatform.query(game.table, () -> {
                 var actual = (InputSelectCardsFromList)controller.getInputQueue().getInput();
                 assertEquals(actual.getClass().getSuperclass(), InputSelectCardsFromList.class,
-                        "This is the real cleanup input whose allowAwaitNextInput override protects the next turn");
+                        "The named cleanup input preserves the await-next-input behavior protecting the next turn");
                 controller.setGui(ManyPublicationTest.intercept(originalGui, (name, args) -> {
                     if (name.equals("awaitNextInput")) {
                         assertFalse(actual.isSelectionActive()); waits.incrementAndGet();
@@ -124,7 +124,7 @@ public class RulesRegressionTest {
                 int active = state.get("activePlayerId").getAsInt();
                 assertTrue(endSteps.contains(active));
                 assertEquals(state.get("viewerId").getAsInt(), active, "Only the active player discards");
-                assertEquals(text(input.prompt(), "inputType"), "InputSelectCardsFromList");
+                assertEquals(text(input.prompt(), "inputType"), "InputSelectHandSizeDiscard");
                 assertFalse(input.prompt().get("canAutoPass").getAsBoolean());
                 game.rejected(input, "passIfNoResponse", "This response window needs your decision");
                 game.rejected(input, "ok", "Continue is not available");
@@ -181,7 +181,7 @@ public class RulesRegressionTest {
                         assertEquals(count(viewer(state), "Hand"), before[i.seat()], "No premature cleanup discard");
                         endSteps.add(i.seat());
                     }
-                    return text(i.prompt(), "inputType").equals("InputSelectCardsFromList");
+                    return text(i.prompt(), "inputType").equals("InputSelectHandSizeDiscard");
                 });
                 if (input.state().get("turn").getAsInt() > 4) break;
                 assertEquals(text(input.state(), "phaseKey"), "CLEANUP");

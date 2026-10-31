@@ -167,7 +167,13 @@ internal sealed partial class TableApplication
             var badge = new Rectangle((int)pose.Center.X - 39, pose.Bounds.Top + 8, 78, 24);
             ExtendCardHit(card, badge);
             if (decisions.Payload is OrderingPayload) PaintChoiceOrder(choice.Value, badge, .48f);
-            else {
+            else if (decisions.Choice is { HandReduction: not null } draft) {
+                string caption = draft.Keeping ? "KEEP" : "DISCARD";
+                int width = canvas.TextWidth(caption, .52f, true) + 14;
+                var marker = new Rectangle((int)pose.Center.X - width / 2, pose.Bounds.Bottom - 30, width, 24);
+                canvas.Rounded(marker, new(19, 33, 35), 4);
+                canvas.CenterText(caption, marker, Gold, .52f, true);
+            } else {
                 var mark = pose.Point(.85f, .12f);
                 canvas.Circle(mark, 9, new(19, 33, 35));
                 canvas.Line(mark + new Vector2(-4, 0), mark + new Vector2(-1, 3), Gold, 2);

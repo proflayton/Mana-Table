@@ -163,7 +163,8 @@ public static class GameCommandPermissions
             ToggleBlock value => payload is BlockPayload && Card(value.Attacker) is { CombatId: var attacker }
                 && Card(value.Blocker) is { CombatId: var blocker }
                 && state.Combat?.Attackers.Any(attack => attack.CardId == attacker && attack.EligibleBlockerIds.Contains(blocker)) == true,
-            ChooseOptions value => payload switch { OptionsPayload options => Choices(options.Selection, value.Choices),
+            ChooseOptions value => payload switch { OptionsPayload options => Choices(options.Selection, value.Choices)
+                    && (options.HandReduction == null || HandReductionFacts.IsCurrent(state)),
                 AbilityChoicePayload ability => Choices(ability.Selection, value.Choices), _ => false },
             OrderOptions value => payload is OrderingPayload order && Choices(order.Selection, value.Choices),
             ChooseNumber value => payload is NumberPayload number && (number.Range is not { } range || value.Value >= range.Min && value.Value <= range.Max),

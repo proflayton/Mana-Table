@@ -43,6 +43,11 @@ final class RulesScenario implements AutoCloseable {
         this(name, battlefield, "Forest", "Rhys the Redeemed");
     }
 
+    static RulesScenario largeHand(String name, Map<Integer, List<String>> battlefield, int startingHand) throws Exception {
+        return new RulesScenario(name, battlefield, "Forest", List.of("Rhys the Redeemed"), false, 4,
+                DecisionTempo.Settings.off(), () -> System.nanoTime() / 1_000_000, Map.of(), false, startingHand);
+    }
+
     static RulesScenario automated(String name, Map<Integer, List<String>> battlefield, String mainCard, String commander) throws Exception {
         return automated(name, battlefield, mainCard, commander, false);
     }
@@ -110,6 +115,13 @@ final class RulesScenario implements AutoCloseable {
     private RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, List<String> commanders,
                           boolean enableEtbCounters, int seatCount, DecisionTempo.Settings settings, LongSupplier time,
                           Map<Integer, List<String>> mainDeckOverrides, boolean automated) throws Exception {
+        this(name, battlefield, mainCard, commanders, enableEtbCounters, seatCount, settings, time,
+                mainDeckOverrides, automated, 7);
+    }
+
+    private RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, List<String> commanders,
+                          boolean enableEtbCounters, int seatCount, DecisionTempo.Settings settings, LongSupplier time,
+                          Map<Integer, List<String>> mainDeckOverrides, boolean automated, int startingHand) throws Exception {
         this.seatCount = seatCount;
         this.automated = automated;
         if (StaticData.instance() == null) EngineResources.load(RESOURCES);
@@ -123,6 +135,7 @@ final class RulesScenario implements AutoCloseable {
             for (String commander : commanders)
                 deck.getOrCreate(DeckSection.Commander).add(StaticData.instance().getCommonCards().getCard(commander));
             var player = automated ? MatchTable.automated(deck, "Commander", "Seat " + seat) : MatchTable.human(deck, "Commander", "Seat " + seat);
+            if (seat == 0) player.setStartingHand(startingHand);
             player.setEnableETBCountersEffect(enableEtbCounters);
             List<IPaperCard> extras = new ArrayList<>();
             for (String card : battlefield.getOrDefault(seat, List.of())) {
@@ -134,6 +147,9 @@ final class RulesScenario implements AutoCloseable {
             players.add(player);
         }
         table = new MatchTable("Commander", players, RESOURCES, evidence, settings, time, automated);
+        // RegisteredPlayer's starting-hand setting also initializes its maximum.
+        // Author the large opening hand with the normal limit before play begins.
+        if (startingHand != 7) table.game.getRegisteredPlayers().get(0).setMaxHandSize(7);
         table.start();
     }
 

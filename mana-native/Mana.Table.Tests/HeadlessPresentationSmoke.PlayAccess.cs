@@ -346,6 +346,7 @@ internal static partial class HeadlessPresentationSmoke
                 "Escape folds an unfolded collection without advancing priority or a rules decision");
         }
         CheckCollectionDraft(profile, check);
+        CheckCleanupCollectionDraft(profile, check);
         CheckCollectionExpiryMotion(profile, check);
     }
 
@@ -449,6 +450,75 @@ internal static partial class HeadlessPresentationSmoke
         check(run.Connection.Commands.Single() is ChooseOptions chosen && chosen.DecisionId == withdrawn.Decision!.Id
                 && chosen.Choices.SequenceEqual([17, 17 + hand.Length - 1]),
             "The shared current confirmation is reachable from the open hand spread and submits only the two explicitly chosen original indices");
+    }
+
+    private static void CheckCleanupCollectionDraft(string profile, Action<bool, string> check)
+    {
+        foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) }) {
+            using var run = new PlayAccessRun(profile, "cleanup-keep-draft-" + size.X, size, 11);
+            var initial = run.Connection.State;
+            var hand = initial.Viewer!.Zone("Hand").Cards.Take(35).Select((card, index) => index is 0 or 17 or 34
+                ? card with { Name = "Forest", ArtName = "Forest" } : card).ToImmutableArray();
+            var choices = hand.Select((card, index) => new Choice(71 + index * 5, card.Name,
+                card with { Key = "", Selectable = false, Highlighted = false }) { CardId = card.VisualId }).ToImmutableArray();
+            var required = initial with { PriorityPlayerId = null, DecisionOwnerId = initial.ViewerId, ActionClass = "choice",
+                Players = initial.Players.Select(player => player.Id != initial.ViewerId ? player : player with {
+                    MaxHandSize = 7, Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with { Count = 35, Cards = hand }).ToImmutableArray()
+                }).ToImmutableArray(),
+                Decision = new(initial.Decision!.Id + ":cleanup", new(), new OptionsPayload(new(choices, new(28, 28))) {
+                    HandReduction = new(initial.ViewerId, 35, 7)
+                })
+            };
+            run.Publish(required);
+            run.Until(() => run.Frame.Scene?.Spread?.Target == CardCollectionTarget.Hand);
+            var spread = run.Frame.Scene!.Spread!;
+            var world = spread.WorldCards.Select(card => (card.Id, card.Pose)).ToArray();
+            check(spread.WorldCards.Count == 35 && spread.WorldCards.Select(card => card.Id).Distinct().Count() == 35
+                    && spread.View.Scale >= .95f && spread.WorldCards.All(card => {
+                        var focused = spread.Focus(card.Id).Apply(card.Pose);
+                        return spread.CameraArea.Contains(focused.Bounds) && focused.Size == CardSpreadPlan.CardSize;
+                    }) && run.Connection.Commands.IsEmpty && run.View.Selections.Count == 0,
+                "Cleanup opens the whole owned 35-card hand at reading distance, with every distinct physical copy reachable by the same spatial camera at " + size);
+            int[] keepSlots = [34, 0, 17, 3, 28, 9, 22];
+            foreach (int slot in keepSlots) {
+                run.FocusOccurrence(hand[slot].VisualId);
+                int before = run.View.Selections.Count;
+                run.ClickCard(hand[slot].VisualId);
+                run.Until(() => run.Frame.Hits.Any(hit => hit.Id == "read-card-action"));
+                check(run.View.Selections.Count == before && run.Connection.Commands.IsEmpty
+                        && run.Frame.Cards.Single(card => card.Id == hand[slot].VisualId).Focused
+                        && run.Frame.Drawing.Commands.OfType<DrawCommand.CenterText>().Any(text => text.Value == "Keep card"),
+                    "Reading an exact cleanup card remains noncommitting until its explicit Keep card gesture at " + size);
+                run.Click("read-card-action");
+                check(run.View.Selections.Count == before + 1 && run.Connection.Commands.IsEmpty
+                        && run.Frame.Scene!.Spread!.WorldCards.Select(card => (card.Id, card.Pose)).SequenceEqual(world),
+                    "A keeper mark stages one original offered index without rearranging the other physical cards or sending a discard at " + size);
+            }
+            var expectedKeep = keepSlots.Select(slot => 71 + slot * 5).ToArray();
+            var expectedDiscard = choices.Select(choice => choice.Index).Where(index => !expectedKeep.Contains(index)).ToArray();
+            run.Publish(required with { Revision = required.Revision + 1 });
+            check(run.View.Selections.SequenceEqual(expectedKeep) && run.Connection.Commands.IsEmpty
+                    && run.Frame.Hits.Any(hit => hit.Id == "confirm")
+                    && run.Frame.Drawing.Commands.OfType<DrawCommand.CenterText>().Any(text => text.Value == "Discard 28 cards"),
+                "Seven staged keepers, including three identically named copies, enable one clearly named 28-card discard at " + size);
+            run.Click("confirm");
+            run.Until(() => !run.View.Busy && run.Connection.Commands.Count == 1);
+            check(run.Connection.Commands.Single() is ChooseOptions chosen && chosen.DecisionId == required.Decision!.Id
+                    && chosen.Choices.SequenceEqual(expectedDiscard) && chosen.Choices.All(index => !expectedKeep.Contains(index))
+                    && run.Connection.Attempts == 1 && run.Frame.Scene?.Spread == null,
+                "One final cleanup gesture sends exactly the 28-card complement in original offer order and never the seven keep indices at " + size);
+            run.Publish(required with { Revision = run.Connection.State.Revision + 1 });
+            run.Until(() => run.Frame.Scene?.Spread?.Target == CardCollectionTarget.Hand);
+            run.Publish(required with { Revision = run.Connection.State.Revision + 1, Decision = null, DecisionOwnerId = null });
+            check(run.Frame.Scene?.Spread == null && run.Connection.Commands.Count == 1,
+                "An automatically opened cleanup spread folds when the engine independently leaves that exact required decision at " + size);
+            run.Publish(initial with { Revision = run.Connection.State.Revision + 1 });
+            run.Unfold(CardCollectionTarget.Hand);
+            run.Publish(required with { Revision = run.Connection.State.Revision + 1 });
+            run.Publish(required with { Revision = run.Connection.State.Revision + 1, Decision = null, DecisionOwnerId = null });
+            check(run.Frame.Scene?.Spread?.Target == CardCollectionTarget.Hand && run.Connection.Commands.Count == 1,
+                "A hand deliberately opened before cleanup retains the player's viewing intent after cleanup leaves at " + size);
+        }
     }
 
     private static void CheckStackPlayAccessFocus(string profile, Action<bool, string> check)

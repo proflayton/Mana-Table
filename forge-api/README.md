@@ -213,6 +213,15 @@ response future still own the answer. A changed ambient cost entry makes its
 classification Unknown without removing the required dialog or inventing a
 payment outcome. Nested color and counter-type choices retain their separate
 payment context and current choice semantics.
+Cleanup's engine-owned hand-reduction input publishes `task: "choice"` with the
+whole candidate set, an exact discard count and optional typed `handReduction`
+(`playerId`, `handSize`, `maximumHandSize`). The helper is present only when the
+viewer's full hand identities can be corroborated. Its existing `choices` answer
+commits the discard set atomically after admission and owned-input execution
+validate unique indices, exact cardinality, current candidates and the unchanged
+hand. Invalid or stale batches do not partially select cards. The helper grants
+no generic target, cost-selection or hidden-face reading permission.
+
 Ordinary `InputConfirm` questions share this capture for their existing ability
 and cost semantics and library-search descriptor. Retained observations do not
 reopen the ability or consult a newer ambient cost. An entry changed during

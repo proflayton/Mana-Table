@@ -162,6 +162,9 @@ internal sealed partial class TableApplication
                 int? index = TableChoices.Index(match!, entry.Card);
                 bool selected = index is { } choice ? decisions.Selections.Contains(choice) : entry.Card.Highlighted;
                 string label = selected ? "Deselect" : "Choose card";
+                if (decisions.Choice is { HandReduction: not null } draft)
+                    label = draft.Keeping ? selected ? "Remove from kept cards" : "Keep card"
+                        : selected ? "Keep this card" : "Discard card";
                 Button("read-card-action", label, target.X + 8, Math.Min(840, target.Bottom - 2),
                     canvas.TextWidth(label, .76f) + 24, new MatchIntent.UseReaderCard(entry.Card), !busy, height: 30);
             }
