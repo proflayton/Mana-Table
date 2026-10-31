@@ -48,9 +48,19 @@ internal sealed class InteractionScenarioEngine : ICardEngine, ISourceActions
     private void Publish()
     {
         string prompt = "scenario-" + ++revision;
+        var rekeyed = state.Players.SelectMany(player => player.Zones).SelectMany(zone => zone.Cards)
+            .Where(card => card.Key.Length > 0).GroupBy(card => card.Key, StringComparer.Ordinal)
+            .Where(group => group.Count() == 1).ToDictionary(group => group.Key, group => prompt + ":" + group.Single().VisualId, StringComparer.Ordinal);
+        PriorityAbility CurrentAbility(PriorityAbility ability) => rekeyed.TryGetValue(ability.SourceCardKey, out var key)
+            ? ability with { SourceCardKey = key } : ability;
+        var decision = state.Decision;
+        if (decision?.Payload is PriorityPayload priority)
+            decision = decision with { Payload = priority with { Abilities = priority.Abilities.Select(CurrentAbility).ToImmutableArray() } };
         state = state with {
             Revision = revision,
-            Decision = state.Decision == null ? null : state.Decision with { Id = prompt },
+            Decision = decision == null ? null : decision with { Id = prompt },
+            IgnoredPriorityAbilities = state.IgnoredPriorityAbilities.Select(ability => decision?.Payload is PriorityPayload
+                ? CurrentAbility(ability) : ability with { SourceCardKey = "" }).ToImmutableArray(),
             Players = state.Players.Select(p => p with { Zones = p.Zones.Select(z => z with { Cards = z.Cards.Select(c => c with {
                 Key = prompt + ":" + c.VisualId,
                 Attacking = state.Combat?.Attackers.Any(a => a.CardId == c.CombatId) == true,

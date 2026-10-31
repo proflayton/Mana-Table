@@ -482,10 +482,15 @@ During a required hand-card choice, including mulligan bottoming or discarding,
 clicking a card reads it. Choose card beside that face makes the selection;
 Deselect removes an existing choice when available. Complete any remaining
 confirmation in the decision controls. Reading alone never chooses the card.
-An available activation can be set to "Pass until my next turn" beside Pass.
-This keeps Auto moving when that ability is your only play. The ability remains
-usable; other available responses still pause the game. The indicator offers Restore,
-and the preference clears when your next turn starts. Hold overrides it immediately.
+Source candidate: ACTIVATION STOP beside your portrait names the available
+ability's card. Click it to read the source and exact ability under Auto - This
+activation. Reading changes no preference. Skip this activation lets Auto pass
+when that ability is your only play, until your next turn. Stop for this ability
+restores that stop; Back to table closes the reader. Multiple activations stay
+separate. You can still activate a skipped ability manually, and other available
+responses still stop Auto. Hold and Full control pause automatic passing.
+If that exact activation expires, its reader closes. A source without a current
+card handle keeps its disclosed name and rules without guessing artwork.
 Triggered abilities happen automatically; answer any choices the game presents.
 For a player choice, a named recipient panel keeps the source, controller and
 purpose visible. Choose an offered name or highlighted portrait. The decision
@@ -502,11 +507,13 @@ empty-stack windows on the current turn, including your own. New spells,
 abilities, public actions, declared combat, required choices and a new turn end
 that continuation. It still stops for you to choose attackers or blockers.
 It never selects cards, pays costs or enables an uninterruptible end-turn yield.
-Take control stays in the same position and holds Auto for this turn, even when
-a pass is already in flight. Deliberately choosing Wait for action starts waiting
-again. Pass once answers only the current window. Go to combat and other named
+Source candidate: routine Auto keeps a larger Take control action beside your
+portrait, including while waiting for an engine reply. It holds Auto for this
+turn; an already submitted pass can finish. Deliberately choosing Wait for action
+starts waiting again. Pass once answers only the current window. Go to combat and other named
 phase gestures still give the table its ordinary response windows first.
 The controls stay steady while observing other players and pause while reading.
+Reading never passes priority; the table's configured decision clock keeps running.
 Targets, library searches and mana payment still need their own answers.
 In the next source build, Resolve these passes priority for the entries already
 on the stack. Take control stops it. A new action or required choice stops it

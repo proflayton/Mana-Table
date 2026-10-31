@@ -124,7 +124,8 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record SetMasterVolume(float Volume) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Settings; }
     internal sealed record AdjustMasterVolume(int PercentagePoints) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Settings; }
     internal sealed record CycleTextScale : MatchIntent;
-    internal sealed record OpenPriorityPassing : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
+    internal sealed record TakePriorityControl : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
+    internal sealed record OpenPriorityPassing(string AbilityId = "") : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record ReadPriorityAbility(string Id) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record SetPriorityAbility(string Id, bool Ignored) : MatchIntent {
         internal override InteractionScopeKind ScopeKind => Ignored ? InteractionScopeKind.Current : InteractionScopeKind.Playback;

@@ -93,7 +93,7 @@ internal static class Program
             if (args.Contains("--smoke-priority-abilities")) {
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PriorityAbilitySmoke.Example());
                 using var test = new TableWindow(TestTableServices.For(scenario), profile, null, null, size, initialState: scenario.State,
-                    artSource: new CardReadingArtFixture());
+                    artSource: new CardReadingArtFixture(Arg("--art-cache")));
                 test.Automation = new PriorityAbilitySmoke(test.TestPort, scenario);
                 test.Run(); return 0;
             }

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Diagnostics;
+using Mana.Client;
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Renderer;
@@ -29,11 +30,79 @@ internal static class PriorityContinuationChecks
             CheckAutomatic(profile, viewport, false, check);
             CheckAutomatic(profile, viewport, true, check);
             CheckAcknowledgedResolution(profile, viewport, check);
+            CheckRoutineTakeControl(profile, viewport, false, check);
+            CheckRoutineTakeControl(profile, viewport, true, check);
         }
         CheckNextTurn(profile, null, check);
         CheckNextTurn(profile, StackActionKind.Spell, check);
         CheckNextTurn(profile, StackActionKind.TriggeredAbility, check);
         CheckNoUndo(profile, check);
+    }
+
+    private static void CheckRoutineTakeControl(string profile, Point viewport, bool whilePolling, Action<bool, string> check)
+    {
+        using var run = new Journey(profile, whilePolling ? "routine-auto-take-control-polling" : "routine-auto-take-control-in-flight",
+            viewport, false, routineAuto: true,
+            delivery: whilePolling ? ObservationDeliveryMode.Polled : ObservationDeliveryMode.External);
+        run.View.SetHeld(false); run.Tick();
+        run.Until(() => run.Replies.Count == 1, "Routine Auto submits its current engine-authorized pass");
+        var own = run.Engine.State;
+        var control = run.Frame.Hits.Single(hit => hit.Id == "priority-take-control");
+        check(run.View.Automatic && !run.View.Held && run.View.Busy
+                && run.View.DecisionDock?.Surface == DecisionDockSurface.None
+                && run.Replies.Single() is AutoPassPriority { DecisionId: var passed } && passed == own.Decision!.Id
+                && run.Text.Any(text => text.StartsWith("Auto", StringComparison.Ordinal))
+                && run.Text.Contains("Take control") && run.View.CurrentHit(control),
+            "Routine Auto retains an immediately usable Take control beside the portrait while its one pass is in flight");
+        for (int frame = 0; frame < 6; frame++) run.Tick();
+        check(run.View.Busy && run.Replies.Count == 1
+                && run.Frame.Hits.Single(hit => hit.Id == control.Id).Bounds == control.Bounds,
+            "A delayed routine automatic pass preserves the takeover target without resubmitting its decision");
+
+        var observation = new TaskCompletionSource<GameSnapshot?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try {
+            if (whilePolling) {
+                run.Engine.Present(own with { Decision = null, DecisionOwnerId = 1, PriorityPlayerId = 1 });
+                run.Release(0);
+                run.Until(() => !run.View.Busy && run.View.Match is { Decision: null, PriorityPlayerId: 1 },
+                    "The routine pass publishes another seat's priority without a local decision");
+                check(run.Has(control.Id) && run.Frame.Hits.Single(hit => hit.Id == control.Id).Bounds == control.Bounds
+                        && run.View.CurrentHit(run.Frame.Hits.Single(hit => hit.Id == control.Id)) && !run.Has("confirm"),
+                    "The same takeover position survives a foreign publication even though no local game action is available");
+                run.Engine.ObserveOverride = () => observation.Task;
+                var lobby = new Lobby("local", "Controlled routine Auto observation", null, false, null, true, "", null, [], []);
+                run.View.PresentLobby(lobby, false); run.Tick(); run.View.PresentLobby(lobby, true);
+                run.Until(() => run.View.Polling, "A controlled background observation is actually pending before takeover");
+                check(run.Frame.Hits.Single(hit => hit.Id == control.Id).Bounds == control.Bounds,
+                    "Polling a foreign priority leaves the global Take control target in place");
+            }
+
+            run.Click(control.Id);
+            check(run.View.Automatic && run.View.Held && !run.Has(control.Id)
+                    && (whilePolling ? run.View.Polling : run.View.Busy) && run.Replies.Count == 1,
+                "The physical takeover gesture immediately holds Auto during transport without passing or activating anything");
+
+            var instant = new Card { VisualId = "takeover-response", CombatId = "takeover-response", Name = "Lightning Bolt",
+                Type = "Instant", ManaCost = "{R}", Text = "Lightning Bolt deals 3 damage to any target.", Selectable = true };
+            run.Engine.Present(Response(own) with {
+                Players = own.Players.Select(player => player.Id != own.ViewerId ? player : player with {
+                    Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with { Count = 1, Cards = [instant] }).ToImmutableArray()
+                }).ToImmutableArray()
+            });
+            string current = run.Engine.State.Decision!.Id;
+            if (whilePolling) observation.TrySetResult(run.Engine.State); else run.Release(0);
+            run.Until(() => !run.View.Busy && !run.View.Polling && run.View.Match?.Decision?.Id == current,
+                "Take control reconciles the already-started transport and its fresh authoritative response");
+            run.Settle();
+            check(run.View.Automatic && run.View.Held && run.Has("confirm") && CanPlayInstant(run.View.Match)
+                    && run.View.Match?.Decision?.Id == current && run.Engine.State.Decision?.Id == current
+                    && run.Replies.Count == 1 && run.Replies.Single() is AutoPassPriority,
+                "The fresh playable response remains unanswered after routine Auto takeover; its earlier pass is neither undone nor repeated");
+            CheckNoTurnYield(run, check);
+        } finally {
+            observation.TrySetResult(run.Engine.State);
+            run.Engine.ObserveOverride = null;
+        }
     }
 
     private static void CheckAcknowledgedResolution(string profile, Point viewport, Action<bool, string> check)
@@ -284,7 +353,8 @@ internal static class PriorityContinuationChecks
         internal PresentationFrame Frame { get; private set; } = null!;
         internal IEnumerable<string> Text => Frame.Drawing.Commands.Select(command => command switch {
             DrawCommand.Text text => text.Value, DrawCommand.CenterText text => text.Value, _ => null }).OfType<string>();
-        internal Journey(string profile, string name, Point viewport, bool ownTurn, bool holdInitially = true)
+        internal Journey(string profile, string name, Point viewport, bool ownTurn, bool holdInitially = true,
+            bool routineAuto = false, ObservationDeliveryMode delivery = ObservationDeliveryMode.External)
         {
             this.viewport = viewport;
             var path = Path.Combine(profile, $"{name}-{viewport.X}x{viewport.Y}-{(ownTurn ? "own" : "opponent")}");
@@ -299,17 +369,17 @@ internal static class PriorityContinuationChecks
                 Activity = [], Executions = new(1, 0, [], []),
                 Players = state.Players.Select(player => player.Id != state.ViewerId ? player : player with {
                     LandPlaysUsed = 1,
-                    Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Count = 1, Cards = [instant] }
+                    Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Count = routineAuto ? 0 : 1, Cards = routineAuto ? [] : [instant] }
                         : zone.Name == "Battlefield" ? zone with { Count = 0, Cards = [] } : zone).ToImmutableArray()
                 }).ToImmutableArray(),
                 Decision = new("", new(), new PriorityPayload(new("Pass priority", true), new(PriorityAlternative.PassTurn, new("Pass turn", true)),
-                    CanAutoPass: false, QuietYieldToken: "unchanged-public-permission", Abilities: [])) });
+                    CanAutoPass: routineAuto, QuietYieldToken: routineAuto ? "" : "unchanged-public-permission", Abilities: [])) });
             Engine.ReplyOverride = async reply => {
                 var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 releases.Enqueue(release); Replies.Enqueue(reply);
                 await release.Task;
             };
-            app = new(TestTableServices.For(Engine), path, Engine.State, viewport);
+            app = new(TestTableServices.For(Engine), path, Engine.State, viewport, delivery);
             app.EnableLiveTableStudy();
             View.PresentLobby(new("local", "Bounded priority fixture", null, false, null, true, "", null, [], []), true);
             Tick();

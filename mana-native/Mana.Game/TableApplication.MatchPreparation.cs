@@ -34,8 +34,9 @@ internal sealed partial class TableApplication
             || overlay is "player" or "mana" && player == null) overlay = "";
         if (overlay == "ability-auto-pass") {
             var abilities = PriorityAbilityOptions();
-            if (abilities.Length == 0) overlay = "";
-            else priorityAbilityId = abilities[Math.Max(0, Array.FindIndex(abilities, ability => ability.Id == priorityAbilityId))].Id;
+            // A source leaving or its preference expiring retires this reading.
+            // Never replace the selected activation with another card's policy.
+            if (!abilities.Any(ability => ability.Id == priorityAbilityId)) overlay = "";
         }
         if (overlay == "hand-placement") {
             var card = placementCard == null ? null : state.Viewer?.Zone("Hand").Cards.FirstOrDefault(card => CardViews.Same(card, placementCard));
@@ -92,7 +93,6 @@ internal sealed partial class TableApplication
         changePage = Math.Clamp(changePage, 0, matchReadingPages.Length - 1);
         tableStatePage = Math.Clamp(tableStatePage, 0, matchReadingPages.Length - 1);
         if (decisions.Allocation?.Inspection is { } inspection) inspection.RulesPage = Math.Clamp(inspection.RulesPage, 0, matchReadingPages.Length - 1);
-        priorityAbilityTextPage = Math.Clamp(priorityAbilityTextPage, 0, matchReadingPages.Length - 1);
     }
 
     private void PrepareReaderBindings()
@@ -115,8 +115,6 @@ internal sealed partial class TableApplication
             return MeasuredHelpPages(purpose + "\n\n" + (match.Combat?.BlockProblem ?? "") + "\n\n" + CardActions.Help);
         }
         if (overlay == "table-state") return TextPages(string.Join("\n\n", match!.States.Select(PublicStatePresentation.Description)), ReadingPageSize(1100));
-        if (overlay == "ability-auto-pass" && PriorityAbilityOptions().FirstOrDefault(ability => ability.Id == priorityAbilityId) is { } ability)
-            return TextPages(ability.Text, 850);
         if (overlay == "changes" && CurrentChange is { } group) return ChangeReadingPages(group);
         if (overlay.Length == 0 && zoneName == "Stack" && match!.Stack.ElementAtOrDefault(zonePage) is { } item)
             return TextPages(item.Text, ReadingPageSize(1000));

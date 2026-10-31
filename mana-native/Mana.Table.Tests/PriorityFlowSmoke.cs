@@ -88,8 +88,29 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
             Check(view.DecisionDock is { Status: DecisionDockStatus.Priority, ActorRole: DecisionDockActorRole.Priority,
                     ActorId: 0, ActionLabel: "Pass once" } && view.DecisionText.Length == 0
                 && !view.Hits.Any(hit => hit.Id == "instructions")
-                && view.Hits.Any(hit => hit.Id == "ability-pass:optional-mesa"),
-                "The current role and real pass action explain priority without repeated prose, while an optional activation retains its own pass control");
+                && view.Hits.Any(hit => hit.Id == "ability-auto-pass-open"
+                    && hit.Intent is MatchIntent.OpenPriorityPassing { AbilityId: "optional-mesa" })
+                && Text().Contains("Arid Mesa") && !view.Hits.Any(hit => hit.Id == "ability-pass:optional-mesa"),
+                "The current role and real pass action explain priority while the named activation entry reads before changing its preference");
+            var activation = view.Hits.Single(hit => hit.Id == "ability-auto-pass-open").Bounds;
+            Check(view.StackRows.All(row => !row.Bounds.Intersects(activation))
+                && view.Hits.Where(hit => hit.Id.StartsWith("stack-queue-", StringComparison.Ordinal)).All(hit => !hit.Bounds.Intersects(activation)),
+                "The named activation stays clear of every pending-effect row and stack navigation control");
+            MoveHit("ability-auto-pass-open");
+        }); Click();
+        Step(() => {
+            var ability = ((PriorityPayload)engine.State.Decision!.Payload).Abilities.Single();
+            Check(view.Overlay == "ability-auto-pass" && Text().Contains(ability.SourceName) && Text().Contains(ability.Text)
+                && view.Hits.Any(hit => hit.Id == "ability-pass:" + ability.Id
+                    && hit.Intent is MatchIntent.SetPriorityAbility { Id: "optional-mesa", Ignored: true })
+                && view.Match?.Decision?.Id == engine.State.Decision.Id && engine.Replies.Count == 0,
+                "Reading the named activation shows its exact rules and separate scoped Skip action without changing the decision or sending a command");
+            Observe("activation-reader"); Capture("01a-activation-reader"); MoveHit("close-overlay");
+        }); Click();
+        Step(() => {
+            Check(view.Overlay.Length == 0 && view.Match?.Decision?.Id == engine.State.Decision!.Id && engine.Replies.Count == 0,
+                "Back to table preserves the unanswered response and activation preference without passing");
+            Observe("activation-closed");
             AssertQueue(1, 2, 3); MoveHit("stack-queue-next");
         }); Click();
         Step(() => {
@@ -205,7 +226,8 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
     {
         var hit = view.Hits.LastOrDefault(hit => hit.Id == id) ?? throw new InvalidOperationException("Missing priority input target: " + id);
         var physical = Pixel(hit.Bounds.Center.ToVector2());
-        if (Hit(physical)?.Id != id) throw new InvalidOperationException("Covered physical priority input target: " + id);
+        var covering = Hit(physical);
+        if (covering?.Id != id) throw new InvalidOperationException($"Covered physical priority input target: {id} {hit.Bounds} at {physical}, covered by {covering?.Id ?? "no current hit"} {covering?.Bounds}");
         Move(physical);
     }
     private void Move(Point point) => mouse = new(point.X, point.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
@@ -215,7 +237,8 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
     private void Check(bool passed, string message) { if (!passed) throw new InvalidOperationException(message); checks.Add(message); }
     private void Observe(string stage) => observations.Add(new { stage, view.Now, viewport.X, viewport.Y, view.DecisionText,
         game = view.Match?.Id, decision = view.Match?.Decision?.Id, actionClass = view.Match?.ActionClass, priorityPlayerId = view.Match?.PriorityPlayerId,
-        seats = view.PrioritySeats.ToArray(), rows = view.StackRows.ToArray(), text = Text(), replies = engine.Replies.ToArray() });
+        seats = view.PrioritySeats.ToArray(), rows = view.StackRows.ToArray(), text = Text(),
+        controls = view.Hits.Select(hit => new { hit.Id, hit.Bounds }).ToArray(), replies = engine.Replies.ToArray() });
     private void Capture(string name)
     {
         if (window == null) return;

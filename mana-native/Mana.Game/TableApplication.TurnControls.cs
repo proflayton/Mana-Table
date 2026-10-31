@@ -21,7 +21,7 @@ internal sealed partial class TableApplication
             var layout = TurnControlLayout.For(SeatHero(match!.ViewerId));
             var phases = layout.PhaseBounds.Take(turnProgress!.Markers.Length).ToArray();
             return SelectingActionTarget ? phases
-                : [.. phases, layout.AutoBounds, layout.HoldBounds, layout.AlertBounds];
+                : [.. phases, layout.AutoBounds, layout.HoldBounds, layout.AlertBounds, AbilityPassingControlBounds()];
         }
     }
 
@@ -84,20 +84,70 @@ internal sealed partial class TableApplication
         if (IsControlHovered("hold")) DrawTurnHint(held ? "Stop holding priority (Ctrl)" : "Hold priority this turn (Ctrl)", layout.HoldCenter);
     }
 
-    private void DrawPortraitPriority(DecisionDockView view)
+    private int PriorityWaitWidth => Math.Max(150, Math.Max(canvas.TextWidth("Wait for action", .76f),
+        canvas.TextWidth("Take control", .76f, true)) + 24);
+
+    private Rectangle PortraitPriorityArea()
     {
-        var state = match!; var d = state.Decision;
-        var layout = TurnControlLayout.For(SeatHero(state.ViewerId));
+        var layout = TurnControlLayout.For(SeatHero(match!.ViewerId));
         var area = layout.PriorityArea;
-        int waitWidth = Math.Max(150, Math.Max(canvas.TextWidth("Wait for action", .76f),
-            canvas.TextWidth("Take control", .76f, true)) + 24);
         int passWidth = new[] { "Continue damage", "Go to end step", "Go to combat", "Pass once" }
             .Max(label => canvas.TextWidth(label, .76f, true)) + 24;
-        area.Width = Math.Max(area.Width, passWidth + waitWidth + 8);
+        area.Width = Math.Max(area.Width, passWidth + PriorityWaitWidth + 8);
         if (turnPassRequest != null) {
             int labelWidth = Math.Max(canvas.TextWidth("Keep playing", .76f, true), canvas.TextWidth("Pass anyway", .76f));
             area.Width = Math.Max(area.Width, (labelWidth + 24) * 2 + 8);
         }
+        return area;
+    }
+
+    private Rectangle PlacePortraitPriorityArea(Rectangle area)
+    {
+        // Both automatic waiting and its explicit continuation use the same
+        // portrait action position, including enlarged type and resource pips.
+        int resourceRight = manaPoolBadges.GetValueOrDefault(match!.ViewerId)?.Bounds.Right ?? 0;
+        area.X = Math.Clamp(Math.Max(area.X, resourceRight + 14), area.X, 1550 - area.Width);
+        var readers = matchPresentation.Cards.Cards.Where(card => card.Focused
+                || card.Layer is Presentation.CardPresentationLayer.Returning or Presentation.CardPresentationLayer.Playing)
+            .Select(card => card.Display.Bounds).Append(sourceReaderActionsBounds);
+        return tableScene?.PlayAccess.ReservePriority(area, readers) ?? area;
+    }
+
+    private void DrawAutomaticPassingControl()
+    {
+        if (!automatic || held || !PortraitTurnControlsCanPaint) return;
+        var area = PlacePortraitPriorityArea(PortraitPriorityArea());
+        if (area.IsEmpty) return;
+        decisionPanelBounds = area;
+        string heading = decisionDock?.PauseReason switch {
+            DecisionDockPauseReason.Inspection => "Auto paused · Reading",
+            DecisionDockPauseReason.Presentation => "Auto · Watching play",
+            DecisionDockPauseReason.Chat => "Auto paused · Chat",
+            DecisionDockPauseReason.PhaseStop => "Auto paused · Phase stop",
+            DecisionDockPauseReason.Interaction or DecisionDockPauseReason.Overlay => "Auto paused",
+            _ when match?.Status == "resolving" => "Auto · Watching play",
+            _ => "Auto · Waiting for action"
+        };
+        canvas.Text(heading, area.X + 28, area.Y - 2, Blue, .62f, area.Width - 28, 1, true);
+        PaintTurnAdvance(new(area.X + 8, area.Y + 10), Blue);
+        var action = new Rectangle(area.Right - PriorityWaitWidth, area.Bottom - 40, PriorityWaitWidth, 40);
+        // This local stop remains usable while a submitted pass reconciles.
+        // It cannot retract that pass or fabricate a new engine response.
+        Button("priority-take-control", "Take control", action, new MatchIntent.TakePriorityControl(), true, true);
+        if (IsControlHovered("priority-take-control"))
+            DrawTurnHint("Pause Auto for this turn (Ctrl)", action.Center.ToVector2());
+    }
+
+    private void DrawPortraitPriority(DecisionDockView view)
+    {
+        var state = match!; var d = state.Decision;
+        bool following = busy || d == null || view.Status == DecisionDockStatus.AutoPassing;
+        if (following && automatic && !held && !QuietPriorityArmed && !ResolvingCapturedStack && turnPassRequest == null) {
+            DrawAutomaticPassingControl();
+            return;
+        }
+        var area = PortraitPriorityArea();
+        int waitWidth = PriorityWaitWidth;
         string finiteSource = finiteResolutionIntent?.SourceName ?? "";
         if (finiteResolutionIntent is { DeclinesOptionalPayments: false } resolving)
             finiteSource = state.Executions?.Occurrences.FirstOrDefault(item => resolving.CapturedExecutionIds.Contains(item.Id)
@@ -114,14 +164,7 @@ internal sealed partial class TableApplication
         }
         int undoHeight = UndoControlHeight(area.Width);
         if (undoHeight > 0) { area.Y -= undoHeight + 8; area.Height += undoHeight + 8; }
-        // Resource values keep their measured width. The quiet portrait action
-        // can grow into the former decision area without covering mana.
-        int resourceRight = manaPoolBadges.GetValueOrDefault(state.ViewerId)?.Bounds.Right ?? 0;
-        area.X = Math.Clamp(Math.Max(area.X, resourceRight + 14), area.X, 1550 - area.Width);
-        var readers = matchPresentation.Cards.Cards.Where(card => card.Focused
-                || card.Layer is Presentation.CardPresentationLayer.Returning or Presentation.CardPresentationLayer.Playing)
-            .Select(card => card.Display.Bounds).Append(sourceReaderActionsBounds);
-        area = tableScene?.PlayAccess.ReservePriority(area, readers) ?? area;
+        area = PlacePortraitPriorityArea(area);
         decisionPanelBounds = area; decisionTextBounds = Rectangle.Empty; decisionText = ""; decisionTextOverflow = false;
         if (area.IsEmpty) return;
         if (DrawTurnPassConfirmation(area)) return;
@@ -156,7 +199,6 @@ internal sealed partial class TableApplication
             hits.Add(new(id, ScopeFor(new MatchIntent.TogglePhaseStop(key, true)), bounds, new MatchIntent.TogglePhaseStop(key, true)));
             if (IsControlHovered(id)) DrawTurnHint("Remove my " + turnProgress!.PhaseLabel.ToLowerInvariant() + " stop", bounds.Center.ToVector2());
         }
-        bool following = busy || d == null || view.Status == DecisionDockStatus.AutoPassing;
         var action = new Rectangle(area.X, area.Bottom - 40, area.Width, 40);
         if (ResolvingCapturedStack) {
             Button("stack-resolution-stop", "Take control", action, new MatchIntent.SetStackResolution(false), true, true);

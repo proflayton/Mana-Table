@@ -912,7 +912,9 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
     {
         diagnosticFrames++;
         try {
-            if (view.Now > (statesOnly ? 45 : selectionOnly ? 30 : 50)) throw new TimeoutException(statesOnly ? "Card states smoke did not finish" : selectionOnly ? "Compact selection smoke did not finish" : "Reading smoke did not finish");
+            // The 35-card cleanup journey needs 300+ separate rendered input steps.
+            // Leave room for slow CI frames; Prepared retains each readiness deadline.
+            if (view.Now > (statesOnly ? 90 : selectionOnly ? 30 : 50)) throw new TimeoutException(statesOnly ? "Card states smoke did not finish" : selectionOnly ? "Compact selection smoke did not finish" : "Reading smoke did not finish");
             if (view.Error.Length > 0) Check(false, view.Error);
             if (steps.TryPeek(out var next) && (next.Ready?.Invoke() == true || view.Now - lastStep >= next.Delay)) {
                 steps.Dequeue();
