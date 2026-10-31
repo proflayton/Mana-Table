@@ -9,6 +9,8 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
+    private const int PendingStackLeft = 545, PendingStackWidth = 435;
+
     private static readonly Color PriorityAccent = new(100, 230, 209);
     private PriorityView? priorityView;
     private int stackQueuePage;
@@ -63,7 +65,7 @@ internal sealed partial class TableApplication
         var state = match!;
         if (state.Stack.Length == 0) return;
         if (TableStudyEnabled) { DrawStudyStackFlow(); return; }
-        if (RepeatedStackWorkload) { DrawStackWorkloads(new(545, 319, 435, 165)); return; }
+        if (RepeatedStackWorkload) { DrawStackWorkloads(new(PendingStackLeft, 319, PendingStackWidth, 165)); return; }
         const int capacity = 3;
         int page = Math.Clamp(stackQueuePage, 0, (state.Stack.Length - 1) / capacity);
         const string status = "Pending effects";
@@ -80,7 +82,7 @@ internal sealed partial class TableApplication
                 ? 62 + PendingDamageCounterHeight(value, 407) : canvas.TextSize(effect, .86f, 407, 80, true).Y;
             int height = expanded ? Math.Clamp(PendingEffectHeaderHeight(entry, owner)
                 + bodyHeight + (entry.Targets.Length > 0 ? 27 : 0) + 12, 134, 220) : 46;
-            var bounds = new Rectangle(545, y, 435, height);
+            var bounds = new Rectangle(PendingStackLeft, y, PendingStackWidth, height);
             canvas.Panel(bounds, new(17, 29, 36), index == 0 ? Gold * .7f : Muted * .45f, 4);
             PaintStackArrival(entry, bounds);
             if (expanded) PaintPendingEffect(entry, index, bounds, owner, effect);
@@ -97,16 +99,16 @@ internal sealed partial class TableApplication
             stackRows.Add(new(entry.Id, index + 1, bounds));
             y = bounds.Bottom + 5;
         }
-        canvas.Rounded(new(545, 285, 435, 34), new(11, 22, 28), 5);
+        canvas.Rounded(new(PendingStackLeft, 285, PendingStackWidth, 34), new(11, 22, 28), 5);
         canvas.Text(matchPresentation.StackArrivalStrength(state.Stack[0].Id, now) > 0 ? StackHeading(state.Stack[0]) : status,
-            557, 293, Gold, .56f, 411, 1, true);
+            PendingStackLeft + 12, 293, Gold, .56f, PendingStackWidth - 24, 1, true);
         if (state.Stack.Length > capacity) {
-            Button("stack-queue-prev", "‹", 905, y + 1, 32, new MatchIntent.SetPage(MatchPage.PriorityQueue, page - 1), page > 0, height: 28);
-            Button("stack-queue-next", "›", 945, y + 1, 32, new MatchIntent.SetPage(MatchPage.PriorityQueue, page + 1), (page + 1) * capacity < state.Stack.Length, height: 28);
-            canvas.Text($"{page * capacity + 1}–{Math.Min(state.Stack.Length, (page + 1) * capacity)} / {state.Stack.Length} pending", 555, y + 7, Muted, .51f, 338, 1);
+            Button("stack-queue-prev", "‹", PendingStackLeft + PendingStackWidth - 75, y + 1, 32, new MatchIntent.SetPage(MatchPage.PriorityQueue, page - 1), page > 0, height: 28);
+            Button("stack-queue-next", "›", PendingStackLeft + PendingStackWidth - 35, y + 1, 32, new MatchIntent.SetPage(MatchPage.PriorityQueue, page + 1), (page + 1) * capacity < state.Stack.Length, height: 28);
+            canvas.Text($"{page * capacity + 1}–{Math.Min(state.Stack.Length, (page + 1) * capacity)} / {state.Stack.Length} pending", PendingStackLeft + 10, y + 7, Muted, .51f, PendingStackWidth - 97, 1);
         }
         if (stackRows.FirstOrDefault() is { } expandedRow) {
-            var occupied = new Rectangle(545, 285, 435, y - 285 + (state.Stack.Length > capacity ? 34 : 0));
+            var occupied = new Rectangle(PendingStackLeft, 285, PendingStackWidth, y - 285 + (state.Stack.Length > capacity ? 34 : 0));
             DrawPendingEffectConnections(state.Stack[expandedRow.Position - 1], expandedRow.Bounds, occupied);
         }
     }

@@ -144,6 +144,13 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
                     "The retained policy stays readable between prompts without retaining a source action handle");
                 Check(view.Hits.Any(h => h.Id == "priority-take-control"),
                     "Take control remains visible while automatic play follows resolution between decisions");
+                var followingFrame = view.Frame ?? throw new InvalidOperationException("Expected the ignored-ability presentation frame");
+                var activationBounds = followingFrame.Hits.Single(hit => hit.Id == "ability-auto-pass-open").Bounds;
+                var commandCards = followingFrame.Cards.Where(card => card.Zone == "Command").ToArray();
+                Check(commandCards.Length > 0
+                    && commandCards.All(card => !activationBounds.Intersects(card.Display.Bounds) && !activationBounds.Intersects(card.Hit.Bounds))
+                    && followingFrame.Hits.Where(hit => hit.Zone == "Command").All(hit => !activationBounds.Intersects(hit.Bounds)),
+                    "The measured activation entry leaves every rendered commander face and command-zone card or pile hit unobstructed");
                 Capture(surface, "04-ability-ignored-following"); Press("ability-auto-pass-open"); Next(); break;
             case 6: Release(); Next(); break;
             case 7:

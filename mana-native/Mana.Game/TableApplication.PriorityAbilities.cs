@@ -50,11 +50,13 @@ internal sealed partial class TableApplication
         var abilities = PriorityAbilityOptions();
         if (match == null || abilities.Length == 0) return Rectangle.Empty;
         var priority = TurnControlLayout.For(SeatHero(match.ViewerId)).PriorityArea;
-        int headingHeight = canvas.TextSize("ACTIVATION STOPS", .48f, priority.Width - 46, 1, true).Y;
-        int sourceHeight = canvas.TextSize(abilities[0].SourceName, .66f, priority.Width - 28, 80, true).Y;
-        int statusHeight = canvas.TextSize("Skipping until your next turn", .48f, priority.Width - 28, 1).Y;
+        int left = Math.Max(priority.X, PendingStackLeft + PendingStackWidth + 14);
+        int width = priority.Right - left;
+        int headingHeight = canvas.TextSize("ACTIVATION STOPS", .48f, width - 46, 1, true).Y;
+        int sourceHeight = canvas.TextSize(abilities[0].SourceName, .66f, width - 28, 80, true).Y;
+        int statusHeight = canvas.TextSize("Skipping until your next turn", .48f, width - 28, 1).Y;
         int height = Math.Max(72, 8 + headingHeight + 4 + sourceHeight + 6 + statusHeight + 8);
-        return new(priority.X, priority.Top - height - 14, priority.Width, height);
+        return new(left, priority.Top - height - 14, width, height);
     }
 
     private void DrawPriorityAbilityControl(PriorityAbility[] abilities)

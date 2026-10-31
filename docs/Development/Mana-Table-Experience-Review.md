@@ -52,6 +52,10 @@ rules and separate Take control readable without visible overlap. Only Arid
 Mesa used real artwork; other faces were pattern fixtures. This does not cover
 a 100-permanent table or establish human gameplay acceptance. The existing
 priority window journey also runs in the ordinary CI release partition.
+The separate priority-flow journey passes 50 checks at each size in both
+headless and rendered modes, including reading and closing the named activation
+without a command, keeping the entire stack queue clear, and completing the
+existing priority, recipient and library-selection sequence.
 
 ## Large cleanup hands: 30 October 2026
 
