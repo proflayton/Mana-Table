@@ -41,6 +41,7 @@ internal sealed partial class TableApplication
         if (!BattlefieldFocused && !CardCollectionOpen) DrawLiftedCards();
         // Your seat stays in front of the fan and readable during card travel.
         if (state.Viewer is { } local) DrawHero(local, SeatHero(local.Id), true, 3);
+        DrawOpponentSeatAuxiliaries();
         DrawPriorityHandoff();
         DrawGameHeader(); DrawCombatBar(); DrawActionCallout(); DrawPublicAnnouncement();
         DrawTurnCallout();

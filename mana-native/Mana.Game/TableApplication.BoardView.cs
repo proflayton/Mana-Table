@@ -72,7 +72,7 @@ internal sealed partial class TableApplication
         }
         if (TableStudyEnabled) {
             var targetView = manualBoardView ?? (StudyFocusActive
-                ? BoardView.Frame(SharedTableStudy.Territory(tableScene.Seat(studyFocusOwner!.Value).Index), new(195, 170, 995, 530))
+                ? BoardView.Frame(tableScene.Seat(studyFocusOwner!.Value).Geometry.PlaymatBounds!.Value, new(195, 170, 995, 530))
                 : BoardView.Identity);
             boardView = boardViewMotion.Navigate(state.Id, state.ViewerId, targetView, now, preferences.ReducedMotion,
                 dragging || pressed?.Card != null || readingId != null || OverlayOpen,

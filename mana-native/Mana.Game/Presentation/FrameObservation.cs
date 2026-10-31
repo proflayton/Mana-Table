@@ -21,13 +21,57 @@ internal sealed record FrameObservation(FrameStamp Stamp, int Width, int Height,
             Array.AsReadOnly(CardPresentation.Counters(card.Card).Select(pair => new ObservedCounter(pair.Key, pair.Value)).ToArray()))).ToArray()),
         Array.AsReadOnly(frame.Hits.Select(hit => new ObservedControl(hit.Id, hit.Scope, ObservedBounds.From(hit.Bounds),
             hit.Card == null ? null : CardViews.Identity(hit.Card), hit.Zone, hit.PlayerId, hit.Shape != null)).ToArray()),
-        Array.AsReadOnly(frame.Drawing.Commands.Select(command => command switch {
-            DrawCommand.Text text => new ObservedText(text.Value ?? "", new(text.X, text.Y, text.Width, 0), text.Size,
-                text.MaxLines, text.Bold, false, frame.Drawing.TextScale),
-            DrawCommand.CenterText text => new ObservedText(text.Value ?? "", ObservedBounds.From(text.Bounds), text.Size,
-                1, text.Bold, true, frame.Drawing.TextScale),
-            _ => null
-        }).OfType<ObservedText>().ToArray()), new(frame.BoardView.Offset.X, frame.BoardView.Offset.Y, frame.TurnFollowEnabled, frame.BoardView.Scale));
+        Array.AsReadOnly(ObserveText(frame.Drawing)), new(frame.BoardView.Offset.X, frame.BoardView.Offset.Y, frame.TurnFollowEnabled, frame.BoardView.Scale));
+
+    private static ObservedText[] ObserveText(DrawingFrame drawing)
+    {
+        var result = new List<ObservedText>();
+        var transforms = new Stack<BoardView>();
+        var clips = new Stack<Rectangle?>();
+        var view = Mana.Renderer.BoardView.Identity;
+        Rectangle? clip = null;
+        TextMetrics? metrics = null;
+        foreach (var command in drawing.Commands) {
+            switch (command) {
+                case DrawCommand.BeginTransform begin:
+                    transforms.Push(view); view = view.Compose(begin.View); break;
+                case DrawCommand.EndTransform:
+                    view = transforms.Pop(); break;
+                case DrawCommand.BeginClip begin:
+                    clips.Push(clip);
+                    var bounds = view.Apply(begin.Bounds);
+                    clip = clip is { } previous ? Rectangle.Intersect(previous, bounds) : bounds;
+                    break;
+                case DrawCommand.EndClip:
+                    clip = clips.Pop(); break;
+                case DrawCommand.Text text:
+                    if (transforms.Count == 0) {
+                        // Preserve the existing unscoped observation contract.
+                        result.Add(new(text.Value ?? "", new(text.X, text.Y, text.Width, 0), text.Size,
+                            text.MaxLines, text.Bold, false, drawing.TextScale));
+                        break;
+                    }
+                    metrics ??= new TextMetrics();
+                    var measured = metrics.TextSize(text.Value ?? "", text.Size, text.Width, text.MaxLines, text.Bold, drawing.TextScale);
+                    Add(text.Value ?? "", new(text.X, text.Y, measured.X, measured.Y), text.Size, text.MaxLines, text.Bold, false);
+                    break;
+                case DrawCommand.CenterText text:
+                    if (transforms.Count == 0) result.Add(new(text.Value ?? "", ObservedBounds.From(text.Bounds), text.Size,
+                        1, text.Bold, true, drawing.TextScale));
+                    else Add(text.Value ?? "", text.Bounds, text.Size, 1, text.Bold, true);
+                    break;
+            }
+        }
+        return result.ToArray();
+
+        void Add(string value, Rectangle world, float size, int lines, bool bold, bool centered)
+        {
+            var displayed = view.Apply(world);
+            if (clip is { } active) displayed = Rectangle.Intersect(displayed, active);
+            if (displayed.IsEmpty) return;
+            result.Add(new(value, ObservedBounds.From(displayed), size * view.Scale, lines, bold, centered, drawing.TextScale));
+        }
+    }
 }
 
 internal sealed record ObservedBoardView(float X, float Y, bool FollowTurnEnabled, float Zoom);

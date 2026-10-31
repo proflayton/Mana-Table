@@ -116,6 +116,7 @@ internal sealed partial class TableApplication
         });
         var plan = new List<ManaHaloPart>();
         int inner = seat == 3 ? 102 : 50;
+        bool sideMatRail = TableStudyEnabled && seat is 0 or 2;
         foreach (var entry in ordered) {
             int column = seat is 0 or 2 ? entry.Slot % 2 + entry.Slot / 6 * 2 : entry.Slot / 3;
             int row = seat is 0 or 2 ? entry.Slot % 6 / 2 : entry.Slot % 3;
@@ -124,13 +125,14 @@ internal sealed partial class TableApplication
                 .Select(e => widths[e.Part.Key]).DefaultIfEmpty(0).Max();
             if (seat is 0 or 2) {
                 int offset = Enumerable.Range(0, column).Sum(col => ColumnWidth(col) + 6);
-                x = seat == 0 ? (int)hero.X + inner + offset : (int)hero.X - inner - offset - width;
+                x = sideMatRail ? seat == 0 ? 8 + offset : 1592 - offset - width
+                    : seat == 0 ? (int)hero.X + inner + offset : (int)hero.X - inner - offset - width;
             } else {
                 bool left = column % 2 == 0;
                 int offset = Enumerable.Range(0, column / 2).Sum(col => ColumnWidth(col * 2 + (left ? 0 : 1)) + 6);
                 x = left ? (int)hero.X - inner - offset - width : (int)hero.X + inner + offset;
             }
-            var bounds = new Rectangle(x, (int)hero.Y - 40 + row * 28, width, 24);
+            var bounds = new Rectangle(x, (sideMatRail ? 70 : (int)hero.Y - 40) + row * 28, width, 24);
             int labelWidth = entry.Part.Symbol.Length > 0 ? 20 : canvas.TextWidth(entry.Part.Name + " ", .6f, true);
             plan.Add(new(entry.Part, bounds, labelWidth, .6f));
         }

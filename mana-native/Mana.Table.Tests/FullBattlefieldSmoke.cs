@@ -12,6 +12,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
 using Point = Microsoft.Xna.Framework.Point;
+using Rectangle = Microsoft.Xna.Framework.Rectangle;
 using Keys = Microsoft.Xna.Framework.Input.Keys;
 
 namespace Mana.Table;
@@ -89,6 +90,22 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
     private FullBattlefieldSmoke(TableWindow.Probe view, InteractionScenarioEngine scenario, bool readableCrowd, HashSet<string> unavailableArt)
     {
         this.view = view; this.scenario = scenario; this.unavailableArt = unavailableArt;
+        GameSnapshot? threePlayerSnapshot = null;
+        Dictionary<string, SceneCard> threePlayerCards = [];
+        void CheckThreePlayerCamera(string name)
+        {
+            var scene = view.Frame!.Scene!;
+            var expectedPlayers = threePlayerSnapshot!.Players.Select(player => player.Id).ToHashSet();
+            Check(scene.Seats.Count == 3 && scene.Seats.Select(seat => seat.PlayerId).ToHashSet().SetEquals(expectedPlayers)
+                    && ReferenceEquals(view.Match, threePlayerSnapshot)
+                    && scene.BattlefieldDrawOrder.Count == threePlayerCards.Count
+                    && scene.BattlefieldDrawOrder.All(card => threePlayerCards.TryGetValue(card.Id, out var original)
+                        && ReferenceEquals(card.Card, original.Card) && card.Owner == original.Owner && card.Pose == original.Pose)
+                    && scenario.Replies.Count == 0,
+                name + ": navigating the three-seat table retains the exact authorized players, card occurrences, controllers and canonical poses without a game command");
+            Check(!view.Frame.Hits.Any(hit => hit.Id.StartsWith("playmat", StringComparison.OrdinalIgnoreCase)),
+                name + ": physical play mats add no competing input targets");
+        }
         Step(1.5, () => { CheckFaces("Initial field"); Capture("01-normal-field"); });
         if (!readableCrowd) {
             Step(0, () => Publish(Example("eight")));
@@ -122,6 +139,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             Check(view.StudyFocusOwner == 3 && scenario.Replies.Count == 0,
                 "An actual opponent nameplate frames the same battlefield without changing game state");
             CheckPrintedFaces("Focused battlefield");
+            CheckResourceOcclusion("Focused battlefield");
             Capture("04-player-camera");
             selected = view.Frame!.Scene!.Battlefield(3).SelectMany(cluster => cluster.Cards)
                 .Last(card => card.GroupFront && !card.Card.FaceDown).Id;
@@ -155,8 +173,8 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             CheckFaces("Canonical 480-permanent field"); Capture("08-canonical-crowd");
             Check(view.Frame!.Cards.Where(card => card.Zone == "Hand").All(card => card.Rest.Size.X > 50),
                 "A crowded battlefield does not replace or compress the local hand");
-            Publish(TappedResourcesScenario.Create()[3].Snapshot);
         });
+        Step(0, () => Publish(TappedResourcesScenario.Create()[3].Snapshot));
         Step(1.5, () => {
             Check(view.Match!.Players.All(player => Mana.Magic.PublicResources.Lands(player) is { Total: 9, Untapped: 3, Tapped: 6 }),
                 "The mixed-land case retains exact total/untapped/tapped counts for every controller");
@@ -203,10 +221,102 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             CheckPrintedFaces("All tapped lands");
             Check(scenario.Replies.Count == 0, "Inspecting tap-state counts never spends or produces mana");
             Capture("10-all-lands-tapped");
+        });
+        Step(0, () => {
+            var threePlayer = Example("mixed");
+            // The four-player example's epoch was retired when the resource lab
+            // replaced it. A separate authored table must use a fresh identity.
+            threePlayer = threePlayer with { Id = "full-battlefield-three-player",
+                Players = threePlayer.Players.Where(player => player.Id != 3).ToImmutableArray() };
+            int topId = TableLayout.Opponents(threePlayer)[1].Id;
+            Publish(threePlayer with {
+                Players = threePlayer.Players.Select(player => player.Id != topId ? player : player with {
+                    Mana = new[] { "W", "U", "B", "R", "G", "C" }.ToImmutableDictionary(symbol => symbol, _ => 1),
+                    States = [new("counter:energy", "Energy", "counter", 2, null, "Two public energy counters."),
+                        new("counter:poison", "Poison", "counter", 3, null, "Three public poison counters.")],
+                    Zones = player.Zones.Select(zone => zone.Name != "Command" ? zone : zone with {
+                        Count = 2,
+                        Cards = [zone.Cards[0], zone.Cards[0] with {
+                            Key = "p:full-field-partner-" + player.Id,
+                            VisualId = "full-field-partner-" + player.Id,
+                            CombatId = "full-field-partner-" + player.Id
+                        }]
+                    }).ToImmutableArray()
+                }).ToImmutableArray()
+            });
+        });
+        Step(.65, () => keyboard = new(Keys.Home));
+        Step(.04, () => keyboard = new());
+        Step(.85, () => {
+            threePlayerSnapshot = view.Match!;
+            threePlayerCards = view.Frame!.Scene!.BattlefieldDrawOrder.ToDictionary(card => card.Id);
+            Check(threePlayerSnapshot.Players.Length == 3 && threePlayerSnapshot.ViewerId == 0
+                    && threePlayerSnapshot.Players.All(player => player.Id != 3)
+                    && view.TableStudyEnabled && view.BoardView.IsIdentity && view.StudyFocusOwner == null,
+                "Opening a three-player table and pressing Home retains the authorized viewer and an unoccupied fourth seat"
+                    + $" (players={string.Join(',', threePlayerSnapshot.Players.Select(player => player.Id))}, viewer={threePlayerSnapshot.ViewerId}, study={view.TableStudyEnabled}, camera={view.BoardView}, focus={view.StudyFocusOwner})");
+            CheckFaces("Three-player battlefield");
+            CheckThreePlayerCamera("Three-player overview");
+            Capture("11-three-player-field"); MoveHit("settings");
+        }); Click();
+        Step(.1, () => MoveHit("motion")); Click();
+        Step(.1, () => {
+            Check(PlayPreferences.Load(view.Profile).ReducedMotion,
+                "The actual settings gesture enables and persists reduced motion before three-player camera navigation");
+            keyboard = new(Keys.Escape);
+        });
+        Step(.04, () => { keyboard = new(); Move(new(80, 55)); });
+        Step(.1, () => {
+            CheckThreePlayerCamera("Three-player reduced motion");
+            Capture("12-three-player-reduced-motion");
+            beforePan = view.BoardView.Offset; keyboard = new(Keys.W);
+        });
+        Step(.08, () => keyboard = new());
+        Step(.1, () => {
+            Check(view.BoardView.Offset != beforePan,
+                "W moves the three-player table while reduced motion is enabled");
+            CheckThreePlayerCamera("Three-player reduced-motion pan");
+            Capture("13-three-player-reduced-pan");
+            beforeZoom = view.BoardView.Scale; Move(new(800, 420)); Wheel(480);
+        });
+        Step(.1, () => {
+            Check(view.BoardView.Scale > beforeZoom,
+                "Wheel zoom enlarges the same three-player table while reduced motion is enabled");
+            CheckThreePlayerCamera("Three-player reduced-motion zoom");
+            CheckResourceOcclusion("Three-player reduced-motion zoom");
+            int topId = TableLayout.Opponents(view.Match!)[1].Id;
+            Check(view.CounterBadge(topId) == null
+                    && !view.Frame!.Hits.Any(hit => hit.Id.StartsWith("player-state:" + topId + ":", StringComparison.Ordinal)),
+                "The actual zoomed top resource group retires both paint and counter controls when a fixed commander would obscure its subtotal");
+            Capture("14-three-player-reduced-zoom"); keyboard = new(Keys.Home);
+        });
+        Step(.04, () => keyboard = new());
+        Step(.1, () => {
+            Check(view.BoardView.IsIdentity && view.StudyFocusOwner == null,
+                "Home immediately restores the whole three-player table with reduced motion enabled");
+            CheckThreePlayerCamera("Three-player reduced-motion reset");
+            CheckPrintedFaces("Three-player reduced-motion reset");
+            int topId = TableLayout.Opponents(view.Match!)[1].Id;
+            Check(view.CounterBadge(topId)?.Chips.Length == 2,
+                "Home restores both unobscured public counter chips after zoomed readout occlusion");
+            CheckResourceOcclusion("Three-player reduced-motion reset");
+            Capture("15-three-player-reduced-reset");
             File.WriteAllText(Path.Combine(view.Profile, "full-battlefield-results.json"), JsonSerializer.Serialize(checks));
             File.WriteAllText(Path.Combine(view.Profile, "review.json"), "{\"humanReview\":\"pending\",\"note\":\"Mechanical checks do not establish visual readability.\"}");
             view.Exit();
         });
+    }
+    private void CheckResourceOcclusion(string name)
+    {
+        var frame = view.Frame!;
+        var fixedCards = frame.Cards.Where(card => !BoardView.AffectsZone(card.Zone)).ToArray();
+        var worldTotals = frame.Observe().Text.Where(text => text.Bounds.Height > 0
+            && (text.Value.EndsWith(" lands", StringComparison.Ordinal) || text.Value.EndsWith(" land", StringComparison.Ordinal)
+                || text.Value.Contains("untapped", StringComparison.Ordinal))).ToArray();
+        Check(worldTotals.All(text => fixedCards.All(card => !card.Display.Bounds.Intersects(
+                new Rectangle(text.Bounds.X, text.Bounds.Y, text.Bounds.Width, text.Bounds.Height))))
+                && scenario.Replies.Count == 0,
+            name + ": actual projected resource totals do not cross fixed public cards or submit game commands");
     }
     private void CheckFaces(string name)
     {
@@ -262,6 +372,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
     {
         using var output = File.Create(Path.Combine(view.Profile, name + ".png"));
         view.Surface.SaveAsPng(output, view.Surface.Width, view.Surface.Height);
+        view.CaptureWindow(Path.Combine(view.Profile, name + "-window.png"));
         File.WriteAllText(Path.Combine(view.Profile, name + ".frame.json"), JsonSerializer.Serialize(view.Frame!.Observe()));
     }
     public void Frame(Texture2D surface)

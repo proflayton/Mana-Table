@@ -1,5 +1,6 @@
 using Mana.Contracts;
 using Microsoft.Xna.Framework;
+using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Renderer;
 
@@ -8,6 +9,7 @@ public sealed class SeatGeometry
 {
     public int PlayerId { get; }
     public int Index { get; }
+    public Rectangle? PlaymatBounds { get; }
     public Vector2 Hero { get; }
     public Vector2 Hand { get; }
     public Vector2 CommandLink { get; }
@@ -18,6 +20,7 @@ public sealed class SeatGeometry
     {
         PlayerId = player.Id;
         Index = seat;
+        PlaymatBounds = study ? PlayerPlaymat.Bounds(seat, duel) : null;
         Hero = TableLayout.Hero(seat);
         Hand = TableLayout.SeatHand(seat);
         bool own = seat == 3, side = seat is 0 or 2;
@@ -34,14 +37,23 @@ public sealed class SeatGeometry
         Piles = Array.AsReadOnly(new[] { "Library", "Graveyard", "Exile" }
             .Select((zone, index) => new PilePlan(zone, TableWorld.Pile(seat, index), side)).ToArray());
         if (study) {
-            CommandLink = own ? new(260, 720) : seat == 1 ? new(1180, 174) : new(seat == 0 ? 125 : 1490, 602);
+            if (side) {
+                Hero -= new Vector2(0, 40);
+                Hand = new(seat == 0 ? 84 : 1516, Hand.Y - 80);
+            }
+            CommandLink = own ? new(260, 720) : seat == 1 ? new(948, 144) : new(seat == 0 ? 125 : 1490, 602);
             Commanders = Array.AsReadOnly(leaders.Select((card, index) => {
-                var center = own ? new Vector2(230 + index * 60, 682) : seat == 1 ? new Vector2(1140 + index * 80, 118)
+                var center = own ? new Vector2(230 + index * 60, 682) : seat == 1 ? new Vector2(917 + index * 62, 100)
                     : new Vector2((seat == 0 ? 75 : 1450) + index * 75, 554);
                 return SceneCard.Create(card, new(center, own ? new(48, 67) : new(58, 81)), "Command", player.Id, index, Hero);
             }).ToArray());
             Piles = Array.AsReadOnly(new[] { "Library", "Graveyard", "Exile" }.Select((zone, index) => {
-                var center = own ? new Vector2(42 + index * 60, 736) : seat == 1 ? new Vector2(1320 + index * 70, 110)
+                // The top seat's zone rail stays above its own material: the
+                // library left of the held hand, commanders right of the life
+                // counter and mana, then its two public piles. None borrows the
+                // right-hand player's mat, even when that field is empty.
+                var center = own ? new Vector2(42 + index * 60, 736) : seat == 1
+                    ? index == 0 ? new Vector2(540, 95) : new Vector2(index == 1 ? 1030 : 1071, 105)
                     : new Vector2((seat == 0 ? 42 : 1400) + index * (seat == 0 ? 56 : 65), 650);
                 return new PilePlan(zone, new(center, new(39, 55)), true);
             }).ToArray());

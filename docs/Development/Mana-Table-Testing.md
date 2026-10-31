@@ -892,6 +892,35 @@ fully tapped lands at each seat. Its counts cover physical state, not mana
 availability; the presentation checks separately include animated lands,
 nonland mana sources and concealed identities. Inspect the actual counted piles
 and seat summaries in both window sizes; assertions do not approve their clarity.
+
+The playmat candidate extends `SharedTableStudyChecks` across two, three and four
+players and every viewer: role lanes and complete families fit inside the hem,
+neighbouring mats retain a bare-table gap, and empty fields keep their seat and
+mat bounds. Existing sparse/dense/tapped checks and `AttachmentStackChecks`
+protect complete assemblies and foreign-controlled attachments without changing
+their controller or individual permissions. Side-hand checks retain all seven
+anonymous cards and their shadows while protecting actual support-card faces
+from the held-hand input region. The existing `match-header` headless group
+also checks measured readouts with six mana colors, two commanders, two public
+counter types and incoming combat at both text and window sizes.
+`DrawingFrameChecks` covers balanced/copied nested world transforms, known
+sprite/triangle coordinates, transformed clip rounding, canonical measurement,
+pixel-snapped text density and rejected invalid scopes. Drawing groups cover
+nested visible/hidden paint, complete rollback, publication rejection for open
+groups and protection of enclosing camera/clip scopes. Opponent resource checks
+compare projected/clipped counter hits and text observations during camera
+movement, including whole-group omission at registered fixed HUD geometry, while
+preserving the anchored portrait, mana, public piles and local resource HUD.
+`FullBattlefieldSmoke` (the existing
+`--smoke-full-battlefield` mode) appends a three-player journey through the actual
+reduced-motion setting, keyboard pan, wheel zoom and Home. It checks unchanged
+authorized occurrences, canonical poses, no game command and no playmat hits;
+captures `11` through `15` retain both fitted-surface and physical-window views.
+**Human review is pending.** Inspect normal and reduced
+motion at 1000x740 and a larger window, including mat/card alignment while moving,
+visible table gaps, tapped silhouettes and side-pile separation. These checks do
+not certify dense-board readability; existing packing still shrinks dense faces.
+
 The existing cluttered-changes journey also uses the production renderer in
 headless and windowed modes. It retains the full source/delta/activation checks
 and zooms to the actual activation card before reading it; it no longer demands

@@ -203,6 +203,8 @@ internal sealed partial class TableApplication
         internal bool Automatic => game.automatic;
         internal bool Held => game.held;
         internal PublicCounterBadge? CounterBadge(int player) => game.publicCounterBadges.TryGetValue(player, out var badge) ? badge : null;
+        internal IReadOnlyList<Rectangle> SeatReadouts => game.seatReadoutBounds;
+        internal IReadOnlyDictionary<int, WorldSeatReadout> WorldReadouts => game.worldSeatReadouts;
         internal PublicResourcePaint? ManaPoolBadge(int player) => game.manaPoolBadges.TryGetValue(player, out var badge) ? badge : null;
         internal PublicResourcePaint? ManaPoolDetail => game.overlay == "mana" ? game.manaPoolDetail : null;
         internal AttachmentBadgePaint? AttachmentBadge(string id) => game.attachmentBadges.TryGetValue(id, out var badge) ? badge : null;

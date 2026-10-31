@@ -15,6 +15,21 @@ public readonly record struct BoardView(Vector2 Offset, float Zoom = 1)
     public float Scale => Zoom == 0 ? 1 : Zoom;
     public bool IsIdentity => Offset == Vector2.Zero && Scale == 1;
 
+    // Nest local drawing coordinates inside this view: result(point) is
+    // this(local(point)). Zero's existing default-view identity remains valid.
+    public BoardView Compose(BoardView local)
+    {
+        if (!float.IsFinite(local.Offset.X) || !float.IsFinite(local.Offset.Y)
+            || !float.IsFinite(local.Scale) || local.Scale <= 0)
+            throw new ArgumentOutOfRangeException(nameof(local));
+        var offset = Apply(local.Offset);
+        float zoom = Scale * local.Scale;
+        if (!float.IsFinite(offset.X) || !float.IsFinite(offset.Y)
+            || !float.IsFinite(zoom) || zoom <= 0)
+            throw new ArgumentOutOfRangeException(nameof(local));
+        return new(offset, zoom);
+    }
+
     public Vector2 Apply(Vector2 point) => point * Scale + Offset;
     public Vector2 Inverse(Vector2 point) => (point - Offset) / Scale;
     public Pose Apply(Pose pose) => pose with { Center = Apply(pose.Center), Size = pose.Size * Scale,

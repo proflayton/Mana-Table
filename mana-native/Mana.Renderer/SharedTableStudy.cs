@@ -10,26 +10,10 @@ public static class SharedTableStudy
 {
     private static readonly string[] Roles = ["Creatures", "Support", "Lands"];
     private const float AttachmentEdge = 36, AttachmentDrop = 8;
-    public static float Facing(int seat) => seat switch { 0 => MathF.PI / 2, 1 => MathF.PI, 2 => -MathF.PI / 2, _ => 0 };
-    public static Rectangle ActionArea => new(565, 390, 470, 165);
-    public static Rectangle Territory(int seat) => seat switch {
-        0 => new(195, 160, 350, 470), 1 => new(510, 171, 580, 204),
-        2 => new(1055, 160, 350, 370), _ => new(320, 555, 915, 225)
-    };
-    public static Rectangle Lane(int seat, string role) => (seat, role) switch {
-        (0, "Creatures") => new(300, 165, 195, 385),
-        (0, "Support") => new(195, 165, 94, 210),
-        (0, _) => new(195, 390, 94, 230),
-        (1, "Creatures") => new(510, 270, 580, 105),
-        (1, "Support") => new(510, 171, 430, 94),
-        (1, _) => new(955, 171, 135, 94),
-        (2, "Creatures") => new(1105, 165, 190, 355),
-        (2, "Support") => new(1310, 165, 94, 218),
-        (2, _) => new(1310, 398, 94, 122),
-        (_, "Creatures") => new(590, 555, 645, 84),
-        (_, "Support") => new(320, 555, 260, 155),
-        _ => new(980, 640, 255, 64)
-    };
+    public static float Facing(int seat) => PlayerPlaymat.Facing(seat);
+    public static Rectangle ActionArea => new(684, 390, 420, 165);
+    public static Rectangle Territory(int seat) => PlayerPlaymat.Bounds(seat);
+    public static Rectangle Lane(int seat, string role) => PlayerPlaymat.Lane(seat, role);
 
     internal static BattlefieldCluster[] Arrange(int seat, int owner, IReadOnlyList<Card> cards,
         Func<Card, bool> isResource, IReadOnlySet<string>? separate,

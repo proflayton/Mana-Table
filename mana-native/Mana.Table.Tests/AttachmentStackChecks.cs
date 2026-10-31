@@ -29,8 +29,9 @@ internal static class AttachmentStackChecks
                 var host = nodes.Single(node => node.Id == child.Attachment!.RootId);
                 var edge = child.Attachment!.Edge(child.Pose);
                 check(host.StudyFamily!.Bounds.Contains(child.Pose.Bounds) && !edge.Intersects(host.Pose.Bounds)
-                    && scene.Seat(child.Owner).BattlefieldCard(child.Id) == child,
-                    $"Each attachment reserves space in its host assembly and retains its actual controller lookup: {child.Id}, viewer {viewer}, edge {edge}, host {host.Pose.Bounds}, assembly {host.StudyFamily.Bounds}");
+                    && scene.Seat(child.Owner).BattlefieldCard(child.Id) == child
+                    && scene.Seat(host.Owner).Geometry.PlaymatBounds!.Value.Contains(host.StudyFamily.Bounds),
+                    $"Each attachment reserves space on its host's physical mat and retains its actual controller lookup: {child.Id}, viewer {viewer}, edge {edge}, host {host.Pose.Bounds}, assembly {host.StudyFamily.Bounds}");
                 check(Array.IndexOf(nodes.ToArray(), child) < Array.IndexOf(nodes.ToArray(), host),
                     "Attachments paint beneath the host without obscuring its current stats");
             }
