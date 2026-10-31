@@ -385,6 +385,13 @@ without changing the user's persistent UPnP preference. Host results and
 `failed`), `addressLookupPending`, `internetInvite` (nullable), and `addresses`.
 Local address entries also carry `invite` when IPv4 encoding is available.
 
+The source implementation after 0.2.292 runs address lookup asynchronously once
+per listening host endpoint; state reads never enumerate adapters or wait for it. The pending
+flag covers both LAN and external lookup. Local-only tables and guests skip
+discovery. LAN addresses remain fixed until rehosting, which also retries a failed
+lookup; rehost after switching network adapters. Entries use the current listening
+port, and late results from a previous endpoint cannot replace them.
+
 `multiplayerJoin {address}` accepts either the complete `MT1-…` invite or the
 existing direct host/port syntax. Invites contain the endpoint and a CRC32 typo
 checksum, with no authentication or directory service. Invalid invites are

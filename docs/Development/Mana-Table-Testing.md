@@ -951,6 +951,11 @@ covers actual host/guest assignments, private-data filtering, saved-token/table
 guards and readiness legality; the native mixed-seat journey captures the same
 shared commander previews. These checks do not supply human portrait-legibility
 or gameplay acceptance.
+The same Java class uses held/injected LAN and external-address futures with an
+actual listening host and guest to check nonblocking polls, one lookup per host,
+ordered immutable results, failure fallback/rehost retry and rejection of late
+results from an older endpoint. Local-only hosts and guests must not start either
+lookup. These fixtures perform no adapter enumeration, external lookup or UPnP.
 The native mixed-seat snapshot probe temporarily stops scheduling new polls,
 waits for the actual in-flight observation to finish, then composes the guest
 view and restores the host. It does not rebind the lobby or retire observation

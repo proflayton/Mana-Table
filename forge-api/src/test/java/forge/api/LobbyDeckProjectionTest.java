@@ -11,6 +11,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import static org.testng.Assert.*;
 
@@ -23,6 +27,110 @@ public class LobbyDeckProjectionTest {
     private static JsonObject seat(JsonObject lobby, int index) { return lobby.getAsJsonArray("slots").get(index).getAsJsonObject(); }
     private static JsonObject preview(JsonObject lobby, int index) { return seat(lobby, index).getAsJsonObject("deckPreview"); }
     private static long revision(JsonObject lobby) { return lobby.get("revision").getAsLong(); }
+    private static List<String> addressLabels(JsonObject lobby) {
+        return lobby.getAsJsonArray("addresses").asList().stream().map(row -> row.getAsJsonObject().get("label").getAsString()).toList();
+    }
+    private static JsonObject address(JsonObject lobby, String label) {
+        return lobby.getAsJsonArray("addresses").asList().stream().map(row -> row.getAsJsonObject())
+                .filter(row -> row.get("label").getAsString().equals(label)).findFirst().orElseThrow();
+    }
+
+    @Test(timeOut = 45000) public void addressDiscoveryNeverBlocksLobbyPollsAndGuestsNeverDiscoverHostAddresses() {
+        var lanCalls = new AtomicInteger(); var internetCalls = new AtomicInteger(); var guestCalls = new AtomicInteger();
+        var lan = new CompletableFuture<Map<String, String>>(); var internet = new CompletableFuture<String>();
+        var host = new SyncLobby(RESOURCES, ApiTestWorkspace.profile("lobby-address-poll"), false, null,
+                () -> { lanCalls.incrementAndGet(); return lan; }, () -> { internetCalls.incrementAndGet(); return internet; });
+        var guest = new SyncLobby(RESOURCES, ApiTestWorkspace.profile("lobby-address-guest"), false, null,
+                () -> { guestCalls.incrementAndGet(); throw new AssertionError("Guests do not enumerate local host addresses"); },
+                () -> { guestCalls.incrementAndGet(); throw new AssertionError("Guests do not discover an external host address"); });
+        try {
+            var pending = object(host.host("Commander", 2, false, "mixed"));
+            assertTrue(pending.get("addressLookupPending").getAsBoolean());
+            assertEquals(addressLabels(pending), List.of("This computer"));
+            String loopback = address(pending, "This computer").get("url").getAsString();
+            for (int poll = 0; poll < 20; poll++) assertEquals(addressLabels(object(host.state())), List.of("This computer"));
+            var joined = object(guest.join(loopback));
+            assertTrue(joined.getAsJsonArray("addresses").isEmpty());
+            assertFalse(joined.get("addressLookupPending").getAsBoolean());
+            assertEquals(guestCalls.get(), 0);
+
+            var discovered = new LinkedHashMap<String, String>();
+            discovered.put("VPN", "10.2.3.4"); discovered.put("Wi-Fi", "192.168.2.3");
+            lan.complete(discovered); discovered.clear(); discovered.put("Changed after capture", "10.9.9.9");
+            var local = object(host.state());
+            assertEquals(addressLabels(local), List.of("VPN", "Wi-Fi", "This computer"));
+            assertTrue(local.get("addressLookupPending").getAsBoolean(), "LAN completion does not hide the still-pending external lookup");
+            internet.complete("203.0.113.9");
+            var complete = object(host.state());
+            assertFalse(complete.get("addressLookupPending").getAsBoolean());
+            assertEquals(addressLabels(complete), List.of("VPN", "Wi-Fi", "This computer", "Internet"));
+            assertTrue(address(complete, "Internet").get("preferred").getAsBoolean());
+            String port = loopback.substring(loopback.lastIndexOf(':'));
+            assertEquals(NetworkInvite.address(address(complete, "Internet").get("invite").getAsString()), "203.0.113.9" + port);
+            assertEquals(NetworkInvite.address(address(complete, "VPN").get("invite").getAsString()), "10.2.3.4" + port);
+            host.reconnect(); for (int poll = 0; poll < 20; poll++) host.state();
+            assertEquals(lanCalls.get(), 1); assertEquals(internetCalls.get(), 1);
+        } finally { guest.close(); host.close(); }
+    }
+
+    @Test(timeOut = 45000) public void failedAddressDiscoveryIsAnEndpointFallbackAndRehostingRetries() {
+        for (String failure : List.of("throw", "null-future", "null-result", "failed-future")) {
+            var calls = new AtomicInteger();
+            var host = new SyncLobby(RESOURCES, ApiTestWorkspace.profile("lobby-address-" + failure), false, null, () -> {
+                if (calls.incrementAndGet() > 1) return CompletableFuture.completedFuture(Map.of("New endpoint", "10.4.5.6"));
+                return switch (failure) {
+                    case "throw" -> throw new IllegalStateException("Discovery unavailable");
+                    case "null-future" -> null;
+                    case "null-result" -> CompletableFuture.completedFuture(null);
+                    default -> CompletableFuture.failedFuture(new IllegalStateException("Discovery failed"));
+                };
+            }, () -> CompletableFuture.failedFuture(new IllegalStateException("External discovery unavailable")));
+            try {
+                var failed = object(host.host("Commander", 2, false, "mixed"));
+                assertEquals(addressLabels(failed), List.of("This computer"));
+                assertFalse(failed.get("addressLookupPending").getAsBoolean());
+                host.state(); host.state(); assertEquals(calls.get(), 1, "Polling never retries discovery on the engine command pipe");
+                var retried = object(host.host("Commander", 2, false, "mixed"));
+                assertEquals(addressLabels(retried), List.of("New endpoint", "This computer"));
+                assertEquals(calls.get(), 2, "An empty or failed prior endpoint never poisons a new host");
+            } finally { host.close(); }
+        }
+    }
+
+    @Test(timeOut = 45000) public void oldAddressDiscoveryCannotReplaceANewEndpointAndLocalTablesNeverStartDiscovery() {
+        var lanCalls = new AtomicInteger(); var internetCalls = new AtomicInteger();
+        var oldLan = new CompletableFuture<Map<String, String>>(); var newLan = new CompletableFuture<Map<String, String>>();
+        var oldInternet = new CompletableFuture<String>(); var newInternet = new CompletableFuture<String>();
+        var host = new SyncLobby(RESOURCES, ApiTestWorkspace.profile("lobby-address-lifecycle"), false, null,
+                () -> lanCalls.incrementAndGet() == 1 ? oldLan : newLan,
+                () -> internetCalls.incrementAndGet() == 1 ? oldInternet : newInternet);
+        try {
+            var first = object(host.host("Commander", 2, false, "mixed"));
+            var second = object(host.host("Commander", 2, false, "mixed"));
+            assertNotEquals(first.get("tableId"), second.get("tableId"));
+            oldLan.complete(Map.of("Old endpoint", "10.0.0.1")); oldInternet.complete("203.0.113.1");
+            var waiting = object(host.state());
+            assertEquals(addressLabels(waiting), List.of("This computer")); assertTrue(waiting.get("addressLookupPending").getAsBoolean());
+            newInternet.complete("203.0.113.2");
+            var lanPending = object(host.state());
+            assertTrue(lanPending.get("addressLookupPending").getAsBoolean(), "External completion does not hide pending LAN discovery");
+            assertEquals(addressLabels(lanPending), List.of("This computer", "Internet"));
+            newLan.complete(Map.of("Current endpoint", "10.0.0.2"));
+            var current = object(host.state());
+            assertFalse(current.get("addressLookupPending").getAsBoolean());
+            assertEquals(addressLabels(current), List.of("Current endpoint", "This computer", "Internet"));
+            String loopback = address(current, "This computer").get("url").getAsString();
+            String port = loopback.substring(loopback.lastIndexOf(':'));
+            assertEquals(address(current, "Current endpoint").get("url").getAsString(), "10.0.0.2" + port);
+            assertEquals(NetworkInvite.address(current.get("internetInvite").getAsString()), "203.0.113.2" + port);
+            assertTrue(object(host.close()).getAsJsonArray("addresses").isEmpty());
+            var local = object(host.host("Commander", 2, false, "local"));
+            assertEquals(addressLabels(local), List.of("This computer"));
+            assertEquals(address(local, "This computer").get("url").getAsString(), "127.0.0.1:0");
+            assertFalse(local.get("addressLookupPending").getAsBoolean());
+            assertEquals(lanCalls.get(), 2); assertEquals(internetCalls.get(), 2);
+        } finally { host.close(); }
+    }
     private static Deck rhys(String name) {
         var deck = new Deck(name); deck.getMain().add(StaticData.instance().getCommonCards().getCard("Forest"), 99);
         deck.getOrCreate(DeckSection.Commander).add(StaticData.instance().getCommonCards().getCard("Rhys the Redeemed")); return deck;

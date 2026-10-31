@@ -9,12 +9,15 @@ import forge.api.sync.TableConversation;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 
 /** Lobby orchestration and a connection to a seat. No gameplay projection lives here. */
 final class SyncLobby {
     private final Path resources, profile;
     private final CardCatalog catalog;
     private final AiDeckCatalog aiDecks;
+    private final Supplier<CompletableFuture<Map<String, String>>> discoverLocalAddresses;
+    private final Supplier<CompletableFuture<String>> discoverExternalAddress;
     private SyncTransport.Server server;
     private SyncTransport.Connection connection;
     private final List<Slot> slots = new ArrayList<>();
@@ -27,6 +30,7 @@ final class SyncLobby {
     private DecisionTempo.Settings tempo = DecisionTempo.Settings.off();
     private int port;
     private PortForwarding forwarding;
+    private CompletableFuture<Map<String, String>> localAddresses = CompletableFuture.completedFuture(Map.of());
     private CompletableFuture<String> external = CompletableFuture.completedFuture(null);
     private static final class Slot {
         String name; LobbyDeckSelection selection; boolean ready, occupied, ai;
@@ -47,7 +51,16 @@ final class SyncLobby {
         this(resources, profile, automated, null);
     }
     SyncLobby(Path resources, Path profile, boolean automated, AiDeckCatalog aiDecks) {
+        this(resources, profile, automated, aiDecks,
+                () -> CompletableFuture.supplyAsync(FServerManager::getAllLocalAddresses),
+                () -> CompletableFuture.supplyAsync(FServerManager::getExternalAddress));
+    }
+    SyncLobby(Path resources, Path profile, boolean automated, AiDeckCatalog aiDecks,
+              Supplier<CompletableFuture<Map<String, String>>> discoverLocalAddresses,
+              Supplier<CompletableFuture<String>> discoverExternalAddress) {
         this.automated = automated;
+        this.discoverLocalAddresses = Objects.requireNonNull(discoverLocalAddresses);
+        this.discoverExternalAddress = Objects.requireNonNull(discoverExternalAddress);
         this.resources = resources; this.profile = profile;
         catalog = CardCatalog.fromDatabases(forge.StaticData.instance().getAvailableDatabases().values());
         this.aiDecks = aiDecks == null ? new AiDeckCatalog(catalog, null) : aiDecks;
@@ -66,7 +79,13 @@ final class SyncLobby {
             long epoch = ++transportEpoch;
             server = new SyncTransport.Server(this::dispatch, this::joinSeat, seat -> disconnected(epoch, seat)); connection = server.local(0);
             try { port = transport.equals("local") ? 0 : server.listen(); } catch (java.io.IOException e) { close(); throw new IllegalStateException("Could not host the table", e); }
-            if (port != 0) external = CompletableFuture.supplyAsync(FServerManager::getExternalAddress).exceptionally(ignored -> null);
+            if (port != 0) {
+                // Endpoint metadata is discovered once, off the command pipe.
+                // A lobby/game poll must never enumerate operating-system NICs.
+                localAddresses = discovery(discoverLocalAddresses, Map.<String, String>of())
+                        .thenApply(SyncLobby::copyLocalAddresses).exceptionally(ignored -> Map.of());
+                external = discovery(discoverExternalAddress, null);
+            }
             forwarding = new PortForwarding(port, port != 0 && autoForward);
         }
         // Connect outside the lobby monitor: the accept worker needs it for dispatch.
@@ -138,7 +157,12 @@ final class SyncLobby {
         if (current != null) { if (server == null) try { current.request("leave", new JsonObject()); } catch (Exception ignored) { } current.close(); }
         if (server != null) { server.close(); server = null; }
         if (forwarding != null) { forwarding.close(); forwarding = null; }
-        synchronized (this) { if (table != null) { table.close(); table = null; } slots.clear(); external = CompletableFuture.completedFuture(null); }
+        synchronized (this) {
+            if (table != null) { table.close(); table = null; }
+            slots.clear(); port = 0;
+            localAddresses = CompletableFuture.completedFuture(Map.of());
+            external = CompletableFuture.completedFuture(null);
+        }
         return idle();
     }
 
@@ -309,17 +333,36 @@ final class SyncLobby {
         result.put("slots", rows);
         if (viewer == 0) {
             result.put("addresses", addresses()); result.put("internetInvite", NetworkInvite.encode(external.getNow(null), port));
-            result.put("addressLookupPending", !external.isDone()); result.put("portMapping", forwarding == null ? "disabled" : forwarding.status());
+            result.put("addressLookupPending", !localAddresses.isDone() || !external.isDone()); result.put("portMapping", forwarding == null ? "disabled" : forwarding.status());
         }
         return result;
     }
     private List<Map<String, Object>> addresses() {
-        var addresses = new LinkedHashMap<>(FServerManager.getAllLocalAddresses()); addresses.putIfAbsent("This computer", "127.0.0.1");
+        var addresses = new LinkedHashMap<>(localAddresses.getNow(Map.of())); addresses.putIfAbsent("This computer", "127.0.0.1");
         String internet = external.getNow(null); if (NetworkInvite.encode(internet, port) != null) addresses.put("Internet", internet.trim());
         var result = new ArrayList<Map<String, Object>>();
         for (var address : addresses.entrySet()) result.add(Map.of("label", address.getKey(), "url", address.getValue() + ":" + port,
                 "invite", Objects.requireNonNullElse(NetworkInvite.encode(address.getValue(), port), ""), "preferred", address.getKey().equals("Internet")));
         return result;
+    }
+    private static <T> CompletableFuture<T> discovery(Supplier<CompletableFuture<T>> start, T fallback) {
+        try {
+            var future = start.get();
+            return future == null ? CompletableFuture.completedFuture(fallback)
+                    : future.handle((value, error) -> error == null && value != null ? value : fallback);
+        } catch (RuntimeException error) { return CompletableFuture.completedFuture(fallback); }
+    }
+    private static Map<String, String> copyLocalAddresses(Map<String, String> discovered) {
+        var copied = new LinkedHashMap<String, String>();
+        int inspected = 0;
+        for (var entry : discovered.entrySet()) {
+            if (inspected++ == 64) break;
+            String label = entry.getKey(), address = entry.getValue();
+            if (label == null || label.isBlank() || label.length() > 128 || label.chars().anyMatch(Character::isISOControl)
+                    || address == null || address.length() > 32 || NetworkInvite.encode(address, 1) == null) continue;
+            copied.put(label, address.trim());
+        }
+        return Collections.unmodifiableMap(copied);
     }
     private static JsonObject object(Object value) { return SyncTransport.JSON.toJsonTree(value).getAsJsonObject(); }
     private static LinkedHashMap<String, Object> idle() {

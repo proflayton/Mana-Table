@@ -1194,6 +1194,20 @@ complete seat-filtered snapshots from the authority. Networking contains no card
 combat or decision interpretation. `SyncLobby` manages deck selection, readiness
 and seat ownership. `PortForwarding` is an independent reachability service.
 
+The source implementation after 0.2.292 separates address advertisement from
+routine lobby/game polling. A network host starts one asynchronous LAN lookup
+and the existing external-address lookup for its listening endpoint. Projection
+reads completed results without enumerating network adapters or waiting on those
+lookups under the lobby/transport monitors. The pending flag covers both lookups.
+Local-only tables and guests do not discover host addresses.
+
+The LAN result is a bounded ordered immutable snapshot for that endpoint;
+projection combines it with loopback, the current port and the latest completed
+external address. Closing clears that ownership, and late results from an older
+host cannot populate a new endpoint. Rehosting refreshes changed network adapters;
+a guest reconnect only reads the host's current advertisement. Discovery failure
+retains loopback for this endpoint and does not prevent retry on the next host.
+
 Concession admission revokes only the departing seat's current authority and
 returns before rules-driven disclosure acknowledgements. Loss cleanup runs as
 rules work, outside transport and adapter monitors. Read-only revelations retain
