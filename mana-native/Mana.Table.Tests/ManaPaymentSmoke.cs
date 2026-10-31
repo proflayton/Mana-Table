@@ -489,26 +489,59 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
                 "The physical reader footer and phase centers keep separate current targets with the exact pinned card, bill and zero commands");
             var frame = view.Frame!;
             var metrics = new Mana.Renderer.TextMetrics();
-            var readouts = frame.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Text>()
-                .Where(text => text.Value is { } value && (value.EndsWith(" land", StringComparison.Ordinal)
-                    || value.EndsWith(" lands", StringComparison.Ordinal)
-                    || value.Contains(" untapped", StringComparison.Ordinal) && value.Contains(" tapped", StringComparison.Ordinal)))
+            bool IsLandReadout(string? value) => value != null && (value.EndsWith(" land", StringComparison.Ordinal)
+                || value.EndsWith(" lands", StringComparison.Ordinal)
+                || value.Contains(" untapped", StringComparison.Ordinal) && value.Contains(" tapped", StringComparison.Ordinal));
+            var printedReadouts = frame.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Text>()
+                .Where(text => IsLandReadout(text.Value))
                 .Select(text => {
                     var size = metrics.TextSize(text.Value!, text.Size, text.Width, text.MaxLines, text.Bold, frame.Drawing.TextScale);
-                    return new { text.Value, bounds = new Microsoft.Xna.Framework.Rectangle(text.X, text.Y, size.X, size.Y),
+                    return new { Value = text.Value!, bounds = new Microsoft.Xna.Framework.Rectangle(text.X, text.Y, size.X, size.Y),
                         text.Size, text.Width, text.MaxLines, text.Bold, frame.Drawing.TextScale };
                 }).ToArray();
+            var observedFrame = frame.Observe();
+            var readouts = observedFrame.Text.Where(text => !text.Centered && IsLandReadout(text.Value)).Select(text => {
+                var size = text.Bounds.Height == 0 ? metrics.TextSize(text.Value, text.Size, text.Bounds.Width,
+                    text.MaxLines, text.Bold, text.TextScale) : new Point(text.Bounds.Width, text.Bounds.Height);
+                return new { text.Value, bounds = new Microsoft.Xna.Framework.Rectangle(text.Bounds.X, text.Bounds.Y, size.X, size.Y), text.Size };
+            }).ToArray();
+            var state = view.Match!;
+            var opponents = state.Players.Where(player => player.Id != state.ViewerId).ToArray();
+            var worldReadouts = view.WorldReadouts;
+            string[] LandLabels(Player player) {
+                var lands = Mana.Magic.PublicResources.Lands(player);
+                return [lands.Total + (lands.Total == 1 ? " land" : " lands"), lands.Untapped + " untapped · " + lands.Tapped + " tapped"];
+            }
+            bool SameLabels(IEnumerable<string> actual, Player player) => actual.OrderBy(value => value, StringComparer.Ordinal)
+                .SequenceEqual(LandLabels(player).OrderBy(value => value, StringComparer.Ordinal));
+            bool exactGroups = worldReadouts.Count == opponents.Length && opponents.All(player => worldReadouts.ContainsKey(player.Id))
+                && opponents.All(player => {
+                    var group = worldReadouts[player.Id];
+                    var emitted = printedReadouts.Where(text => group.Canonical.Contains(text.bounds)).ToArray();
+                    return group.Visible ? emitted.Length == 2 && SameLabels(emitted.Select(text => text.Value), player) : emitted.Length == 0;
+                });
+            var localReadouts = printedReadouts.Where(text => !worldReadouts.Values.Any(group => group.Canonical.Contains(text.bounds))).ToArray();
+            exactGroups &= localReadouts.Length == 2 && SameLabels(localReadouts.Select(text => text.Value), state.Viewer!);
+            var boardViewport = new Microsoft.Xna.Framework.Rectangle(0, 54, 1600, 724);
+            var expectedReadouts = printedReadouts.Select(text => {
+                bool world = worldReadouts.Values.Any(group => group.Canonical.Contains(text.bounds));
+                return new { text.Value, bounds = world ? Microsoft.Xna.Framework.Rectangle.Intersect(frame.BoardView.Apply(text.bounds), boardViewport) : text.bounds,
+                    Size = text.Size * (world ? frame.BoardView.Scale : 1) };
+            }).Where(text => !text.bounds.IsEmpty).ToArray();
+            var exactObservedReadouts = expectedReadouts.OrderBy(text => text.Value, StringComparer.Ordinal).ThenBy(text => text.bounds.X).ThenBy(text => text.bounds.Y)
+                .SequenceEqual(readouts.OrderBy(text => text.Value, StringComparer.Ordinal).ThenBy(text => text.bounds.X).ThenBy(text => text.bounds.Y));
             var nameplates = frame.Hits.Where(hit => hit.Id.StartsWith("focus:", StringComparison.Ordinal)
                     && hit.Intent is MatchIntent.OpenZone { Zone: "Battlefield" })
                 .Select(hit => new { hit.Id, hit.Bounds, intent = hit.Intent.ToString() }).ToArray();
             var bill = view.ManaJourney;
             File.WriteAllText(Path.Combine(view.Profile, "reader-bill-public-readouts-" + label + ".json"),
-                JsonSerializer.Serialize(new { state = view.Match, frame = frame.Observe(), readouts, nameplates,
+                JsonSerializer.Serialize(new { state, frame = observedFrame, printedReadouts, worldReadouts, expectedReadouts, readouts, nameplates,
+                    exactGroups, exactObservedReadouts,
                     currentBill = bill, currentReader = SameCurrentReader(), replies = engine.Replies.Count,
                     artworkSource = ArtworkSource, realArtwork = RealArtwork,
-                    scope = "Measured current emitted land text and current focus/nameplate hits; no World position or placement formula."
+                    scope = "Exact current visible world groups and emitted land labels, observed clipped screen text, and current focus/nameplate hits; no seat-placement formula."
                 }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
-            Check(readouts.Length == view.Match!.Players.Length * 2 && nameplates.Length == view.Match.Players.Length - 1
+            Check(exactGroups && exactObservedReadouts && readouts.Length == expectedReadouts.Length && nameplates.Length == state.Players.Length - 1
                 && bill != null && readouts.All(text => !bill.Bounds.Intersects(text.bounds))
                 && nameplates.All(hit => !bill.Bounds.Intersects(hit.Bounds)),
                 "The current exact printed-cost bill stays clear of the measured land summaries and current player nameplate targets");
