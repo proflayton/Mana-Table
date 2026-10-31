@@ -975,7 +975,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 throw new IllegalArgumentException("That selection has changed. Use the current prompt.");
             if (request.has("expectedTask") && !semanticTask(next).equals(string(request, "expectedTask")))
                 throw new IllegalArgumentException("That command does not answer the current decision.");
-            List<Card> handReductionCards = action.equals("choose") ? handReductionSelection(next, request) : null;
+            // Indexed dialogs keep their own response future and validation below.
+            // Only an input-owned choice can enter the cleanup batch admission.
+            List<Card> handReductionCards = next.kind.equals("input") && action.equals("choose")
+                    ? handReductionSelection(next, request) : null;
             if ((next.input instanceof InputAttack || next.input instanceof InputBlock) && currentCombatChoices(next) == null)
                 throw new IllegalArgumentException("Combat choices changed. Wait for the current offers.");
             if (action.equals("undoCertifiedAction")) return undoAction(next, request, playerDriven);

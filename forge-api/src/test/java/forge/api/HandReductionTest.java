@@ -50,7 +50,7 @@ public class HandReductionTest {
                     () -> (InputSelectHandSizeDiscard)controller.getInputQueue().getInput());
             var discard = IntStream.range(7, 35).boxed().toList();
             var duplicate = new ArrayList<>(discard); duplicate.set(27, duplicate.get(0));
-            game.rejected(cleanup, Map.of("choices", duplicate), "Invalid or duplicate discard choice");
+            game.rejected(cleanup, Map.of("action", "choose", "choices", duplicate), "Invalid or duplicate discard choice");
             var outside = new ArrayList<>(discard); outside.set(27, 35);
             game.rejected(cleanup, Map.of("choices", outside), "Invalid or duplicate discard choice");
             game.rejected(cleanup, Map.of("choices", discard.subList(0, 27)), "Choose the required number of cards to discard");
