@@ -188,6 +188,22 @@ The target is not a measured guarantee. Record cache/runner conditions where
 known and compare multiple runs before claiming a repeatable improvement. All
 required source, native, lifecycle and publication checks remain mandatory.
 
+The package timing journal is a source implementation after 0.2.295. Packaging
+writes `<output-directory>-timings.jsonl` beside its output, with the source SHA,
+version, release/preview operation, phase, completed/failed status and elapsed
+milliseconds on each row. It separates client publishing, resource copying,
+Java runtime creation, source export and hashing, safety checks, runtime ZIP
+creation and final metadata. Observation never retries build work; the original
+commands, exit checks and errors remain authoritative.
+
+CI retains this small journal on success and failure in the existing package
+evidence upload, named `mana-native-package-evidence-<attempt>`. It is outside the
+runtime payload, source ZIP and authoritative build/source manifests. Recording
+is best effort: a missing row or interrupted file does not prove success, and a
+completed phase does not prove later verification or publication. Use the normal
+run's step durations alongside these rows to account for SDK setup, queueing and
+transfer; no extra package build or benchmark is needed.
+
 In release 0.2.224, adapter verification delayed artifact sharing by 122 seconds,
 before the installer's 135-second source-archive transfer. Release 0.2.227's
 source transfer took 12 seconds, so the earlier transfer cost was not steady.

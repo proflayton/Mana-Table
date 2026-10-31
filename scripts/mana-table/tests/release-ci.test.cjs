@@ -307,6 +307,21 @@ test('the producer builds the source-bound harness before sharing immutable arti
   assert.match(shared.source, /dist\/forge-engine-fixtures.jar/);
   assert.match(shared.source, /dist\/ci-source-receipt.json/);
 });
+test('package timing evidence survives failure without becoming an immutable product input', () => {
+  const steps = jobSteps(nativeJobs().get('package'));
+  const evidence = steps.filter(step => /name: mana-native-package-evidence-/.test(step));
+  assert.equal(evidence.length, 1, 'Use the existing package evidence upload.');
+  assert.match(evidence[0], /if: always\(\)/);
+  assert.match(evidence[0], /^            dist\/package-timings.jsonl$/m);
+  for (const step of steps.filter(step => /name: mana-native-(?:ui|installer)-inputs-/.test(step))) {
+    assert.doesNotMatch(step, /timings/, 'Timing rows are diagnostics, not consumer provenance.');
+  }
+  const checks = nativeJobs().get('checks');
+  assert.match(checks, /powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File mana-native\/ci\/test-phase-timing.ps1\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /);
+  const fixtures = fs.readFileSync(path.join(__dirname, '../../../mana-native/ci/test-native-ci.ps1'), 'utf8');
+  assert.match(fixtures, /Join-Path \$PSScriptRoot 'test-phase-timing.ps1'/);
+});
+
 test('a closed two-suite matrix preserves every controlled and real-engine check against immutable artifacts', () => {
   const verification = nativeJobs().get('native-verification');
   assert.deepEqual(dependencies(verification), ['package'], 'Both suites can run alongside installer and UI verification.');

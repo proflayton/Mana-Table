@@ -9,6 +9,17 @@ SDK; engine work requires JDK 17+ and Maven 3.8.1+. Node is only for dependency-
 documentation and CI tools. See [native setup](../../mana-native/README.md) for
 a complete engine/runtime/resource bundle.
 
+## Package timing checks
+
+The existing native CI fixture runner includes `ci/test-phase-timing.ps1`.
+The Windows packaging checks also run it with Windows PowerShell 5.1; the normal
+fixture runner uses PowerShell 7. These small isolated fixtures check that the
+observer preserves output, caller assignments, native exit codes and original
+errors even when its file sink fails. They also check partial-file retention,
+bounded phase records and exclusion of the journal from the runtime ZIP.
+They do not build the client, run Java or prove a release speed improvement.
+The normal exact-source package and release gates supply integration evidence.
+
 ## Canonical interaction coverage
 
 `Mana.Client.Tests` reports ordinary assertion failures and their stack traces to
