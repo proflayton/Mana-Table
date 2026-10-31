@@ -148,6 +148,7 @@ internal sealed partial class TableApplication
                 && HandPlacements.Options(match, sourceCard).FirstOrDefault(ability => ability.Id == use.Id) is { } placement: UseReaderPlacement(placement); break;
             case MatchIntent.SetAutomatic automatic: UseAutomaticControl(automatic.Enabled); break;
             case MatchIntent.ToggleHold: ToggleHoldControl(); break;
+            case MatchIntent.TakePriorityControl: TakePriorityControl(); break;
             case MatchIntent.TogglePriorityAlerts: priorityNotification.ToggleMute(now); break;
             case MatchIntent.TogglePhaseStop stop:
                 if (stop.Resume) preferences.Stops.Remove(stop.Key);
@@ -165,9 +166,11 @@ internal sealed partial class TableApplication
             case MatchIntent.AdjustMasterVolume setting when overlay == "settings": SetMasterVolume(preferences.Audio.Master.Volume + setting.PercentagePoints / 100f); FinishAudioAdjustment(); break;
             case MatchIntent.CycleTextScale:
                 preferences = preferences with { TextScale = preferences.TextScale < 1.1f ? 1.15f : preferences.TextScale < 1.25f ? 1.3f : 1 }; SavePreferences(); break;
-            case MatchIntent.OpenPriorityPassing when PriorityAbilityOptions().FirstOrDefault() is { } ability:
+            case MatchIntent.OpenPriorityPassing open when PriorityAbilityOptions()
+                .FirstOrDefault(ability => open.AbilityId.Length == 0 || ability.Id == open.AbilityId) is { } ability:
                 overlay = "ability-auto-pass"; priorityAbilityId = ability.Id; priorityAbilityTextPage = 0; break;
-            case MatchIntent.ReadPriorityAbility read: priorityAbilityId = read.Id; priorityAbilityTextPage = 0; break;
+            case MatchIntent.ReadPriorityAbility read when PriorityAbilityOptions().Any(ability => ability.Id == read.Id):
+                priorityAbilityId = read.Id; priorityAbilityTextPage = 0; break;
             case MatchIntent.SetPriorityAbility setting when PriorityAbilityOptions().FirstOrDefault(ability => ability.Id == setting.Id) is { } ability:
                 SetAbilityAutoPass(ability, setting.Ignored); break;
             case MatchIntent.OpenDecisionHelp: overlay = "help"; inspectPage = 0; break;

@@ -6,6 +6,53 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Readable passing controls: 30 October 2026
+
+**SOURCE CANDIDATE; local checks passed; exact-head CI and human gameplay review pending.** The
+reported narrow **Until my next turn · Restore** strip hides which activation
+the player is skipping and makes taking control difficult. The intended journey
+is to read the actual ability, choose whether it should stop Auto, and return
+to the same table.
+
+[Magic Online's gameplay controls](https://www.mtgo.com/getting-started/getting-started-tips-tricks)
+distinguish passing until a response is available (2), yielding through the turn
+(6), ability-specific yields and clearing those decisions (5).
+[Arena's mobile FAQ](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-mobile-faqs-2021-01-28)
+places Full Control on the player's avatar. Our adaptation keeps interruption
+beside the portrait and puts an activation's preference beside its source. These
+references establish game precedents, not this exact layout or desktop gesture.
+
+The **ACTIVATION STOP** entry shows the full first source name, a count when
+needed, and whether Auto is skipping an activation until the next own turn.
+Opening it only reads the source and complete current ability rules under
+**Auto · This activation**. **Skip this activation** changes only that exact
+engine-issued ability ID; **Stop for this ability** restores its stop.
+**Back to table** dismisses the reader. A skipped ability remains manually
+usable, and other available responses still stop Auto. Hold or Full Control
+pauses the preference's automatic effect.
+
+Artwork requires the exact currently disclosed card handle. A missing handle
+retains the disclosed full name and rules without guessing a face. An expired
+selected ID closes the reader rather than selecting another activation. The
+gesture never casts, activates, pays or answers a required choice.
+
+Routine Auto also exposes a larger **Take control** action near the portrait
+while polling or sending. It holds Auto for the current turn and reconciles a
+pass already submitted; it cannot undo that pass. Reading pauses continuation
+without passing, while the host's configured decision clock continues. **Wait
+for action**, **Pass once** and the finite **Resolve these** queue retain their
+existing consent and interruption boundaries.
+
+The existing `PriorityAbilitySmoke` and `PriorityContinuationChecks` journeys
+use real pointer targets at 1000 x 740 and 1540 x 980 with 130% text. Local
+validation passed 2734 headless checks and both window journeys, including
+distinct same-source abilities, expiry while reading, and taking control during
+a delayed reply. Agent inspection of those captures found the named entry,
+rules and separate Take control readable without visible overlap. Only Arid
+Mesa used real artwork; other faces were pattern fixtures. This does not cover
+a 100-permanent table or establish human gameplay acceptance. The existing
+priority window journey also runs in the ordinary CI release partition.
+
 ## Large cleanup hands: 30 October 2026
 
 **Source candidate after 0.2.297; local checks passed; exact-head CI and human review pending.** The

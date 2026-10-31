@@ -682,6 +682,21 @@ duration. The existing headless arrival check separately verifies that unchanged
 observations do not restart that announcement.
 
 `PriorityContinuationChecks` runs in the existing headless presentation lane.
+Source candidate: its routine-Auto journey and the existing
+`PriorityAbilitySmoke` journey cover the larger portrait-adjacent
+Take control action and named activation entry. Opening the activation entry
+must send no command or change a preference. Pointer checks must distinguish
+Skip this activation, Stop for this ability and Back to table; preserve a second
+ability's preference; retain manual activation; and close an expired selected
+ID without retargeting. A source face requires its exact disclosed card handle;
+missing handles retain full name/rules. Reading pauses Auto while the host's
+decision clock remains authoritative. Take control during polling or send holds
+the current turn without replaying or undoing an already submitted pass.
+Use the existing headless and window lanes at 1000 x 740 and 1540 x 980 with
+130% text. The existing `priority-1280` window case is included in the ordinary
+four-shard CI partition as well as the extended inventory; no new CLI mode or CI
+lane is introduced. Local headless and window checks passed; exact-head CI and
+human gameplay acceptance remain separate and pending.
 Actual pointer journeys at 1000x740 and 1540x980 with 130% text cover default
 opponent Auto with an available instant, explicit own/opponent waiting, fresh
 decisions retaining one original permission, cast/trigger interruption, no silent

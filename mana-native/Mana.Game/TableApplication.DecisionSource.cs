@@ -52,7 +52,11 @@ internal sealed partial class TableApplication
         var source = anchor; source.Inflate(sourcePadding, sourcePadding);
         bool includeDecisionDock = DecisionDockCanPaint;
         var occupied = new List<Rectangle> { source };
-        if (includeDecisionDock) occupied.Add(new(1240, 550, 350, 245));
+        if (includeDecisionDock) {
+            occupied.Add(new(1240, 550, 350, 245));
+            var passing = AbilityPassingControlBounds();
+            if (!passing.IsEmpty) occupied.Add(passing);
+        }
         if (additionalReservations != null) occupied.AddRange(additionalReservations);
         if (match is { } state && tableScene != null) {
             occupied.AddRange(TableViewGeometry.FixedReservations(state, tableScene, includeDecisionDock));

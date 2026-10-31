@@ -86,8 +86,9 @@ internal sealed partial class TableApplication
         }
         if (!SelectingActionTarget && decisionDock.Surface == DecisionDockSurface.None) {
             decisionPanelBounds = Rectangle.Empty;
-            var ignoredAbilities = PriorityAbilityOptions().Where(ability => ability.IgnoredUntilNextTurn).ToArray();
-            if (ignoredAbilities.Length > 0) DrawPriorityAbilityControl(ignoredAbilities);
+            DrawAutomaticPassingControl();
+            var passingAbilities = PriorityAbilityOptions();
+            if (passingAbilities.Any(ability => ability.IgnoredUntilNextTurn)) DrawPriorityAbilityControl(passingAbilities);
             return;
         }
         if (!SelectingActionTarget && decisionDock.Surface == DecisionDockSurface.Portrait) {
