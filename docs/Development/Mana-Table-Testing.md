@@ -786,13 +786,23 @@ occurrences. It uses the real `TimedAiHostPacing` and a monotonic test clock:
 no bot evaluates before the initial 2.4-second beat, then all 200 fresh priority
 answers complete without adding 2.4 seconds per trigger. Controls retain ordinary
 beats for new responses, retargeting, reordering, controller/source changes,
-action/owned-choice fences, phase changes, unrelated public events and unknown
-ancestry. Explicit parent progress and translated prose are separate positives;
+unrelated public events and unknown ancestry. Action/owned-choice fences and
+phase-only changes end the captured cohort without restarting an announcement;
+an unchanged poll cannot recapture it, and its next real completion gets a fresh
+beat. Explicit parent progress and translated prose are separate positives;
 an originally disclosed parent aging out of the public event tail is separate
 from contradictory known reparenting or a private intermediate ancestor.
 Legacy evidence and queues above 256 remain conservative. This fixture checks
 host cadence, fresh authority and receipts; real Forge rules coverage remains in
 the separate Java and packaged-engine journeys above.
+
+The same fixture follows ordinary mana/payment and required-choice progress
+through the production snapshot-to-cadence projection and host. It preserves the
+remaining time of an existing public beat, then requires fresh current commands
+without a pause for every private payment step. The eventual cast and actual
+public mana-ability consequences retain their readable pauses. These are
+controlled-clock host checks, not a wall-clock performance claim about a live
+player's game.
 
 `AiRepeatedCadenceEngineJourney` also runs inside the existing
 `--smoke-headless-engine` JVM. Its test-only pregame factory supplies Grim

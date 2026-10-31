@@ -40,16 +40,22 @@ public sealed class TimedAiHostPacing(TimeSpan duration, TimeProvider? clock = n
             // Activity IDs belong to one viewer's filtered feed, not the table.
             // Observe every seat together so a shared action's beat starts once
             // for each audience, even while only one of them has a prompt.
-            bool changed = baseline ? !item.StackIds.IsEmpty : before!.Progress.Turn != item.Turn
+            bool publicTableChanged = baseline ? !item.StackIds.IsEmpty : before!.Progress.Turn != item.Turn
                 || before.Progress.ActivePlayerId != item.ActivePlayerId || before.Progress.PublicActionId != item.PublicActionId
                 || !before.Progress.StackIds.SequenceEqual(item.StackIds)
-                || before.Progress.RestorationVersion != item.RestorationVersion
-                || AiResolutionCadence.Changed(before.Progress.Resolution, item.Resolution);
+                || before.Progress.RestorationVersion != item.RestorationVersion;
+            bool changed = publicTableChanged || !baseline && AiResolutionCadence.Changed(before!.Progress.Resolution, item.Resolution);
             bool capturedProgress = changed && !baseline && before!.Progress.RestorationVersion == item.RestorationVersion && before.Progress.Turn == item.Turn
                 && before.Progress.ActivePlayerId == item.ActivePlayerId && before.Cohort?.Continue(item.Resolution) == true;
-            var cohort = capturedProgress || !changed ? before?.Cohort : AiResolutionCadence.Capture(item.Resolution);
-            beats[(item.GameId, item.SeatId)] = new(item, changed && !capturedProgress ? time.GetTimestamp() : before?.Started ?? 0,
-                changed || before?.Waiting == true, cohort);
+            bool announcement = publicTableChanged || changed && !baseline
+                && AiResolutionCadence.AnnouncementChanged(before!.Progress.Resolution, item.Resolution);
+            bool startBeat = announcement && !capturedProgress;
+            // A guard-only change retires the cohort without restarting its
+            // timer or recapturing the same queue on the next unchanged poll.
+            var cohort = capturedProgress || !changed ? before?.Cohort
+                : startBeat ? AiResolutionCadence.Capture(item.Resolution) : null;
+            beats[(item.GameId, item.SeatId)] = new(item, startBeat ? time.GetTimestamp() : before?.Started ?? 0,
+                startBeat || before?.Waiting == true, cohort);
         }
     }
 

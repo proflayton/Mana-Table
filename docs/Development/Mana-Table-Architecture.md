@@ -705,6 +705,17 @@ are excluded from this projection. Legacy/missing evidence keeps ordinary timing
 This is host cadence, not a bot strategy, human consent or server grant: every
 automated input still receives a fresh observation and policy evaluation.
 
+The source implementation after 0.2.292 separates announcement timing from
+cohort validity. With complete typed public progress, a phase, action-version or
+owned-choice-version change alone ends a captured cohort without restarting its
+reading pause. It cannot recapture the same queue on the next unchanged poll.
+This lets ordinary mana taps and private required cost steps proceed through
+fresh inputs without inserting a full pause at each step. Public stack members,
+targets, executions, outcomes and activity remain announcement evidence; visible
+consequences of a mana ability still receive the ordinary beat. An existing beat
+keeps its remaining duration, and missing or invalid evidence stays conservative.
+The shipping 2.4-second duration and rules/command permissions are unchanged.
+
 `IAiHostDiagnostics` is a separate host-only failure sink. Shipping composition
 retains original exception chains in `diagnostics/ai-host.log`; the provider
 quarantines the last decoded private bot batch and any rejected wire batch in
