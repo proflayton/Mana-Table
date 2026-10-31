@@ -151,8 +151,11 @@ internal sealed partial class TableApplication
     private void DrawSelectionCompletion(Rectangle complete, Rectangle clear)
     {
         var range = decisions.Presentation!.Selection!.Range;
-        Button("confirm", decisions.Selections.Count == 0 && range.Min == 0 ? "Choose none" : $"Confirm ({decisions.Selections.Count}/{range.Max})",
-            complete, new MatchIntent.ConfirmSelection(), !busy && TableChoices.CanConfirm(match!, decisions.Selections), true);
+        string label = decisions.Choice is { HandReduction: { } reduction }
+            ? $"Discard {reduction.HandSize - reduction.MaximumHandSize} cards"
+            : decisions.Selections.Count == 0 && range.Min == 0 ? "Choose none" : $"Confirm ({decisions.Selections.Count}/{range.Max})";
+        Button("confirm", label, complete, new MatchIntent.ConfirmSelection(), !busy && decisions.SelectionReply(match!) != null
+            && TableChoices.CanConfirm(match!, decisions.SubmissionSelections), true);
         Button("choicesclear", "Clear", clear, new MatchIntent.ClearSelection(), !busy && decisions.Selections.Count > 0);
     }
 

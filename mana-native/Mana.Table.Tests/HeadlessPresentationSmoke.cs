@@ -54,6 +54,7 @@ internal static partial class HeadlessPresentationSmoke
             BlockRepairWireChecks.Run(Check);
             ManaColorPaymentWireChecks.Run(Check);
             ManaReductionWireChecks.Run(Check);
+            HandReductionWireChecks.Run(Check);
             AiReleaseGoldens.CheckReceiptEvidence(Check);
             AiEngineCampaign.CheckDisclosureBounds(Check);
             ForgePublicProjectionChecks.Run(profile, Check);

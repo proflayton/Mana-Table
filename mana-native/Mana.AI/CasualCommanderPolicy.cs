@@ -30,7 +30,9 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             EntitySelectionPayload entity => Select(request, entity.Complete, entity.Cancel, entity.Range, entity.Players),
             ConfirmationPayload confirmation => Confirmation(request, confirmation),
             AbilityChoicePayload ability => Choices(request, ability.Selection, false),
-            OptionsPayload options => options.CounterPayment is { } counter ? CounterChoice(request, counter) : Choices(request, options.Selection, false),
+            OptionsPayload options => options.CounterPayment is { } counter ? CounterChoice(request, counter)
+                : options.HandReduction is { } reduction ? ReduceHand(request, options.Selection, reduction)
+                    : Choices(request, options.Selection, false),
             OrderingPayload ordering => Choices(request, ordering.Selection, true),
             RevealPayload => Answer(request, new AcknowledgeReveal(state.Id, decision.Id), "acknowledge-reveal"),
             NumberPayload number => Number(request, number, cancellation),
@@ -428,6 +430,47 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         var indices = ordered.Take(count).Select(item => item.Choice.Index).ToImmutableArray();
         DecisionCommand command = ordering ? new OrderOptions(state.Id, state.Decision!.Id, indices) : new ChooseOptions(state.Id, state.Decision!.Id, indices);
         return Answer(request, command, ordering ? "order-public-card-values" : "choose-offered-effect");
+    }
+    private static AiProposal ReduceHand(AiDecisionRequest request, ChoiceSelection selection, HandReductionContext reduction)
+    {
+        // Cleanup always submits discarded indices. Rank the smaller side of
+        // the partition, updating existing opportunity costs as resources leave
+        // the hypothetical hand. No future draws or resolutions are invented.
+        bool keeping = reduction.MaximumHandSize < selection.Range.Min;
+        int count = keeping ? reduction.MaximumHandSize : selection.Range.Min;
+        var remaining = selection.Choices.OrderBy(choice => choice.Index).ToList();
+        var selected = new HashSet<int>();
+        var retained = new List<Card>();
+        var faces = request.Frame.State.Viewer!.Zone("Hand").Cards.ToDictionary(CardViews.Identity, StringComparer.Ordinal);
+        GameSnapshot WithHand(ImmutableArray<Card> hand) => request.Frame.State with {
+            Players = request.Frame.State.Players.Select(player => player.Id != reduction.PlayerId ? player
+                : player with { Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with {
+                    Count = hand.Length, Cards = hand, TopCard = null }).ToImmutableArray() }).ToImmutableArray()
+        };
+        bool limited = false;
+        while (selected.Count < count) {
+            Choice? best = null; double bestScore = double.NegativeInfinity;
+            var current = keeping ? null : WithHand(remaining.Select(choice => faces[choice.CardId]).ToImmutableArray());
+            foreach (var choice in remaining) {
+                if (request.Work.Remaining <= 4 || !request.Work.TrySpend()) { limited = true; break; }
+                var face = faces[choice.CardId];
+                var state = current ?? WithHand(retained.Append(face).ToImmutableArray());
+                double score = CasualTableAssessment.OpportunityCost(state, face, "Hand") * (keeping ? 1 : -1)
+                    + CasualTableAssessment.Tie(request.Seed, choice.CardId) * .1;
+                if (best == null || score > bestScore) { best = choice; bestScore = score; }
+            }
+            // Optimization may stop early, but a required input still receives
+            // a complete legal answer using its current offered indices.
+            best ??= remaining[0];
+            selected.Add(best.Index); retained.Add(faces[best.CardId]); remaining.Remove(best);
+            if (limited) {
+                foreach (var choice in remaining.Take(count - selected.Count)) selected.Add(choice.Index);
+                break;
+            }
+        }
+        return Answer(request, new ChooseOptions(request.Frame.State.Id, request.Frame.State.Decision!.Id,
+            selection.Choices.Where(choice => keeping != selected.Contains(choice.Index)).Select(choice => choice.Index).ToImmutableArray()),
+            limited ? "cleanup-required-bounded-candidate" : "cleanup-retain-current-hand-resources");
     }
     private static double ChoiceScore(AiDecisionRequest request, Choice choice, bool lose, out bool modeled)
     {

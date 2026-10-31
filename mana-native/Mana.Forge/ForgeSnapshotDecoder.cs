@@ -63,6 +63,8 @@ internal static class ForgeSnapshotDecoder
             CombatRepairFacts.Validate(snapshot);
             FiniteResolutionFacts.Validate(snapshot);
             FiniteStackYieldFacts.Validate(snapshot);
+            if (snapshot.Decision?.Payload is OptionsPayload { HandReduction: not null }
+                && !HandReductionFacts.IsCurrent(snapshot)) throw Invalid();
             var operations = new ActionOperationValidation(snapshot);
             foreach (var item in snapshot.Stack) operations.ValidateCommitted(item);
             if (snapshot.Decision?.Payload is PaymentPayload payment) {

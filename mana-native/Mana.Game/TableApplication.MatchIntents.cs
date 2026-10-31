@@ -60,7 +60,7 @@ internal sealed partial class TableApplication
             case MatchIntent.ConfirmTurnPass: ConfirmTurnPass(); break;
             case MatchIntent.DismissTurnPass: turnPassRequest = null; break;
             case MatchIntent.ConfirmSelection when match?.Decision is { } decision:
-                textFocus = false; Send(DecisionCommands.Choose(match, decision.Payload is RevealPayload ? [] : decisions.Selections)); break;
+                textFocus = false; Send(decisions.SelectionReply(match)); break;
             case MatchIntent.ChooseNone none when match?.Decision != null:
                 if (none.CollapseReader) CollapseCardReading();
                 Send(DecisionCommands.Choose(match, [])); break;

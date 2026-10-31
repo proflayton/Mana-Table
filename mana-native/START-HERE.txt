@@ -328,6 +328,13 @@ and the wheel zooms. Home returns to the overview. Escape or the return gesture
 folds the same cards to their original places. A large hand has no page controls.
 Large collections open at play distance; the overview is a deliberate choice.
 The card remains in its real zone until the engine plays it.
+Source candidate after 0.2.297: when cleanup would discard most of your hand,
+choose the cards to keep instead. The hand opens at play distance; click a card
+to read it, then use Keep card to mark it. You can change those marks before
+confirming Discard N cards once. For a 35-card hand with a seven-card limit,
+choose seven keepers and confirm the other 28 together. The current hand limit
+comes from the engine. Smaller discards still ask for the cards to discard.
+Reading cards and marking keepers do not discard anything before confirmation.
 Passing your turn before your first land play asks for confirmation beside your
 portrait. This also applies when leaving your second main phase. Keep playing
 or Escape stays on the current decision; Pass anyway continues the requested

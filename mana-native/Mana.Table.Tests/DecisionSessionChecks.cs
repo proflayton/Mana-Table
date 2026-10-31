@@ -1,5 +1,7 @@
 using System.Reflection;
+using System.Collections.Immutable;
 using Mana.Contracts;
+using Mana.Magic;
 using Mana.Table.Interaction;
 using Mana.Table.Presentation;
 
@@ -164,7 +166,83 @@ internal static class DecisionSessionChecks
         draft.Clear();
         check(draft.Selections.Count == 0 && draft.Allocations.Count == 0 && draft.AllocationReply(combat) == null && draft.Input.Length == 0,
             "Reset clears every draft and its submission authority");
+        CheckHandReduction(check);
         CheckDataOnlyInteractions(check);
+    }
+
+    private static void CheckHandReduction(Action<bool, string> check)
+    {
+        GameSnapshot Cleanup(int count, int maximum)
+        {
+            var cards = Enumerable.Range(0, count).Select(index => new Card {
+                Name = "Forest", VisualId = "cleanup-face-" + index, Key = "cleanup-key-" + index
+            }).ToImmutableArray();
+            var choices = cards.Select((card, index) => new Choice(101 + index * 3, card.Name,
+                card with { Key = "", Selectable = false, Highlighted = false }) { CardId = card.VisualId }).ToImmutableArray();
+            var player = new Player(0, "You", 40, false, false, ImmutableDictionary<string, int>.Empty,
+                [new("Hand", count, cards, null)]) { MaxHandSize = maximum };
+            return State(new("cleanup", new(), new OptionsPayload(new(choices, new(count - maximum, count - maximum))) {
+                HandReduction = new(0, count, maximum)
+            })) with { Players = [player], DecisionOwnerId = 0, PriorityPlayerId = null };
+        }
+
+        var state = Cleanup(35, 7);
+        var draft = new DecisionSession();
+        check(draft.Observe(state, true) && draft.Choice is { Keeping: true, SelectionLimit: 7 }
+                && draft.Selections.Count == 0 && draft.SubmissionSelections.Count == 35 && draft.SelectionReply(state) == null,
+            "A large cleanup hand stages the smaller keep set without submitting the initial discard complement");
+        int[] keep = [203, 101, 152, 110, 185, 128, 167];
+        foreach (int index in keep) draft.Toggle(state, index);
+        var selected = draft.SubmissionSelections;
+        var expected = ((OptionsPayload)state.Decision!.Payload).Selection.Choices.Select(choice => choice.Index).Where(index => !keep.Contains(index)).ToArray();
+        check(draft.Selections.SequenceEqual(keep) && selected.SequenceEqual(expected)
+                && draft.SelectionReply(state) is ChooseOptions reply && reply.Choices.SequenceEqual(expected)
+                && !draft.Toggle(state, 104),
+            "Seven explicitly kept physical copies produce exactly the other 28 original discard indices in offer order");
+        bool immutable = true;
+        if (selected is IList<int> published) { try { published[0] = 999; immutable = false; } catch (NotSupportedException) { } }
+        check(immutable && !draft.Observe(state with { Revision = 9 }, true) && draft.Selections.SequenceEqual(keep),
+            "The discard complement is immutable and unchanged observations preserve the local keep marks");
+        draft.Toggle(state, keep[0]);
+        check(draft.SelectionReply(state) == null && draft.SubmissionSelections.Count == 29,
+            "Removing a keeper disables final submission until the exact effective hand limit is met again");
+
+        foreach (var changed in new[] {
+            state with { Players = [state.Viewer! with { MaxHandSize = 8 }] },
+            state with { Players = [state.Viewer! with { Zones = [state.Viewer!.Zone("Hand") with { Count = 34 }] }] },
+            state with { Players = [state.Viewer! with { Zones = [state.Viewer!.Zone("Hand") with {
+                Cards = state.Viewer!.Zone("Hand").Cards.Select((card, index) => index == 0 ? card with { Key = "replacement-key" } : card).ToImmutableArray()
+            }] }] },
+            state with { DecisionOwnerId = 1 },
+            state with { ViewerId = 1 },
+            state with { Decision = state.Decision! with { Payload = new OptionsPayload(((OptionsPayload)state.Decision!.Payload).Selection) } }
+        }) {
+            draft.Observe(state, true); draft.Toggle(state, 101);
+            check(draft.Observe(changed, true) && draft.Selections.Count == 0 && !draft.Toggle(state, 104)
+                    && draft.SelectionReply(state) == null,
+                "Changed hand ownership, limits, occurrence handles or cleanup purpose retire the former keep draft under a reused decision ID");
+        }
+        var small = Cleanup(8, 7);
+        draft.Observe(small, true); draft.Toggle(small, 104);
+        check(draft.Choice is { Keeping: false, SelectionLimit: 1 } && draft.SubmissionSelections.SequenceEqual([104])
+                && draft.SelectionReply(small) is ChooseOptions one && one.Choices.SequenceEqual([104]),
+            "Ordinary cleanup retains one explicit discard when selecting discards is the smaller task");
+        var otherLimit = Cleanup(35, 10);
+        draft.Observe(otherLimit, true);
+        check(draft.Choice is { Keeping: true, SelectionLimit: 10 } && draft.SelectionReply(otherLimit) == null,
+            "Keep-side staging uses the engine's effective hand limit rather than a hard-coded seven");
+        var hiddenCard = state.Viewer!.Zone("Hand").Cards[0] with { Key = "", FaceDown = true, Name = "Face-down card", Text = "" };
+        var opaque = state with { Players = [state.Viewer! with { Zones = [state.Viewer!.Zone("Hand") with {
+            Cards = state.Viewer!.Zone("Hand").Cards.SetItem(0, hiddenCard)
+        }] }], Decision = state.Decision! with { Payload = new OptionsPayload(new(
+            ((OptionsPayload)state.Decision!.Payload).Selection.Choices.Select(choice => choice.Index == 101
+                ? new Choice(101, "Face-down card", hiddenCard with { Selectable = false, Highlighted = false }) { CardId = hiddenCard.VisualId } : choice).ToImmutableArray(),
+            new(28, 28))) { HandReduction = new(0, 35, 7) } } };
+        draft.Observe(opaque, true);
+        var opaqueClick = new InteractionController().CardClick(opaque, hiddenCard);
+        check(opaqueClick.ChoiceIndex == 101 && opaqueClick.Reply == null && draft.Toggle(opaque, 101)
+                && draft.Selections.SequenceEqual([101]) && draft.SelectionReply(opaque) == null,
+            "An authorized opaque hand occurrence can be staged by exact option identity without reading a concealed face or sending an early discard");
     }
 
     private static GameSnapshot State(Decision decision) => new("game", "playing", null, null, 0, 1, "Main phase", "MAIN1", 0,

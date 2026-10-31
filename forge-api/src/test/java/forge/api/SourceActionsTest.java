@@ -958,7 +958,7 @@ public class SourceActionsTest {
                 input = game.until(next -> next.seat() == 0 && priority(next) && text(next.state(), "phaseKey").equals("MAIN1")
                         && next.state().get("activePlayerId").getAsInt() == next.state().get("viewerId").getAsInt()
                         && next.state().get("turn").getAsInt() > previousTurn && next.state().getAsJsonArray("stack").isEmpty()
-                        || text(next.state(), "phaseKey").equals("CLEANUP") && text(next.prompt(), "inputType").equals("InputSelectCardsFromList"));
+                        || text(next.state(), "phaseKey").equals("CLEANUP") && text(next.prompt(), "inputType").equals("InputSelectHandSizeDiscard"));
                 if (priority(input)) { nextTurn = true; break; }
                 var discard = zone(viewer(input.state()), "Hand").getAsJsonArray("cards").asList().stream()
                         .map(value -> value.getAsJsonObject()).filter(value -> value.get("selectable").getAsBoolean()).findFirst().orElseThrow();

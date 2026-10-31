@@ -155,6 +155,8 @@ public static class DecisionDockPresentation
             AbilityChoicePayload => DecisionDockStatus.AbilityChoice,
             _ => DecisionDockStatus.Selection
         };
+        var reduction = HandReductionFacts.IsCurrent(state) ? (decision.Payload as OptionsPayload)?.HandReduction : null;
+        bool keeping = reduction != null && reduction.MaximumHandSize < reduction.HandSize - reduction.MaximumHandSize;
         string heading = status switch {
             DecisionDockStatus.Attack => "Choose attackers",
             DecisionDockStatus.Block => "Choose blockers",
@@ -162,13 +164,18 @@ public static class DecisionDockPresentation
             DecisionDockStatus.AbilityChoice => "Choose an ability",
             _ when decision.Payload is OrderingPayload => "Choose an order",
             _ when decision.Payload is NumberPayload => "Choose a number",
+            _ when reduction != null => keeping ? $"Choose {reduction.MaximumHandSize} cards to keep"
+                : $"Choose {reduction.HandSize - reduction.MaximumHandSize} cards to discard",
             _ => "Make a choice"
         };
         var actorRole = status switch { DecisionDockStatus.Attack => DecisionDockActorRole.Attacking,
             DecisionDockStatus.Block => DecisionDockActorRole.Blocking, _ => DecisionDockActorRole.Choosing };
         string targetCaption = decision.Payload is TargetSelectionPayload { Progress: { SelectedPlayers.Length: > 0 } progress }
             ? "Selected: " + string.Join(", ", progress.SelectedPlayers.Select(id => Name(state, id))) : "";
-        return View(status, heading, targetCaption, instruction: decision.Context.Message, role: actorRole, actor: state.ViewerId,
+        string instruction = reduction == null ? decision.Context.Message : keeping
+            ? $"The other {reduction.HandSize - reduction.MaximumHandSize} cards will be discarded together."
+            : $"Keep {reduction.MaximumHandSize} cards after discarding.";
+        return View(status, heading, targetCaption, instruction: instruction, role: actorRole, actor: state.ViewerId,
             action: TurnGuide.Confirm(state));
     }
 

@@ -6,6 +6,38 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Large cleanup hands: 30 October 2026
+
+**Source candidate after 0.2.297; local checks passed; exact-head CI and human review pending.** The
+reported journey has 35 cards in hand and requires discarding down to seven.
+Individual engine clicks turn this into 28 requests, and the existing prompt
+does not publish its exact hand-reduction bounds.
+
+Arena's [Strixhaven developer notes](https://magic.wizards.com/en/news/mtg-arena/strixhaven-mtg-arena-digital-release-notes-2021-04-07)
+describe choosing an actual hand card for a discard. Magic Online's
+[gameplay guide](https://www.mtgo.com/getting-started/getting-started-gameplay)
+describes expanding zones and hovering cards to read them. Adapt those physical
+card and expanded-play-space interactions using the existing Mana Table hand
+spread, camera and full-face reader. These references do not establish a
+choose-the-keepers mode in Arena, or prove that a large fan stays usable.
+
+The candidate opens the hand spread when keeping the smaller set is useful.
+Its task is **Choose 7 cards to keep**, using Forge's effective current limit.
+Clicking a card reads it; its **Keep card** action stages that exact occurrence.
+Kept cards receive a mark without rearranging the remaining cards. The player
+can change those choices, pan or zoom, and read any offered card before one
+**Discard 28 cards** confirmation. The original engine receives the 28-card
+complement as one validated answer. An eight-card hand requiring one discard
+retains the smaller discard selection. No seven-card rule is inferred locally.
+
+Only an engine-owned whole-hand reduction grants this presentation. A changed
+viewer, input, candidate set or limit retires the draft. Ordinary targets,
+discard costs, ordering and mulligan choices retain their own semantics.
+Review the whole 35-card journey at 1000 x 740 and 1540 x 980, including identical
+printings with different occurrences, a deep card, revision while reading,
+changing one's mind and the actual discard result. Automation establishes
+command safety and geometry; human comfort remains pending.
+
 ## Reader rules control and phase markers: 30 October 2026
 
 **Source candidate; local checks passed; exact-head CI and human review pending.** Actual window

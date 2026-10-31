@@ -40,6 +40,9 @@ internal static class ForgeDecisionDecoder
                 || Present(prompt, "counterPaymentChoice") || Present(prompt, "disclosedCards") || Present(prompt, "libraryCards"))) throw Invalid();
             if (Present(prompt, "manaReduction") && (task != "selection" || purpose != ""
                 || Present(prompt, "counterPayment") || Array(prompt, "playerChoices").Length != 0)) throw Invalid();
+            if (Present(prompt, "handReduction") && (task != "choice" || purpose != "" || ordered
+                || Present(prompt, "manaPaymentContext") || Present(prompt, "counterPaymentChoice")
+                || Present(prompt, "disclosedCards") || Present(prompt, "libraryCards"))) throw Invalid();
             if (task != "mana" && (Present(prompt, "unpaidMana") || Present(prompt, "unpaidManaParts") || Present(prompt, "fundingContext")
                 || Present(prompt, "usablePoolManaColors") || Present(prompt, "payerId"))) throw Invalid();
             if (Present(prompt, "unpaidMana") && Present(prompt, "unpaidManaParts")) throw Invalid();
@@ -81,7 +84,7 @@ internal static class ForgeDecisionDecoder
                 "choice" when purpose == "abilities" => new AbilityChoicePayload(Selection(prompt)),
                 "choice" when ordered => new OrderingPayload(Selection(prompt)),
                 "choice" => new OptionsPayload(Selection(prompt), CounterChoice(prompt, players)) {
-                    ManaPaymentContext = ManaColorPayment(prompt, players)
+                    ManaPaymentContext = ManaColorPayment(prompt, players), HandReduction = HandReduction(prompt, players)
                 },
                 "reveal" => new RevealPayload(Reveal(prompt)),
                 "number" => new NumberPayload(Text(prompt, "initial"), kind == "text" ? OptionalNumberRange(prompt) : NumberRange(prompt)),
@@ -97,6 +100,15 @@ internal static class ForgeDecisionDecoder
         } catch (Exception error) when (error is JsonException or InvalidOperationException or FormatException or OverflowException or ArgumentException) {
             throw new IOException("The rules provider published an invalid decision schema.", error);
         }
+    }
+
+    private static HandReductionContext? HandReduction(JsonElement prompt, IReadOnlySet<int>? players)
+    {
+        if (!Present(prompt, "handReduction")) return null;
+        var value = Field(prompt, "handReduction"); Object(value);
+        int player = Integer(value, "playerId");
+        if (players == null || !players.Contains(player)) throw Invalid();
+        return new(player, Integer(value, "handSize"), Integer(value, "maximumHandSize"));
     }
 
     private static ImmutableArray<string> PaymentSymbols(JsonElement prompt, string key)

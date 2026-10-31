@@ -190,6 +190,7 @@ await AiStrategicPlanRegression.RunAsync(Check);
 await AiIntentPolicyRegression.RunAsync(Check);
 await AiIntentPaymentRegression.RunAsync(Check);
 await AiSwarmCombatRegression.RunAsync(Check);
+await CleanupHandReductionRegression.RunAsync(Check);
 await LatestReadRegression.RunAsync(Check);
 await ExternalObservationRegression.RunAsync(Check);
 await AppUpdateSessionRegression.RunAsync(Check);

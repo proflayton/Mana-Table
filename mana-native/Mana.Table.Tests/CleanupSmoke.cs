@@ -3,6 +3,7 @@ using Mana.Contracts;
 using Mana.Forge;
 using Mana.Magic;
 using Mana.Client;
+using Mana.Table.Interaction;
 
 namespace Mana.Table;
 
@@ -25,7 +26,7 @@ internal static class CleanupSmoke
         var auto = new AutoPriority();
         var noStops = new HashSet<string> { "END_OF_TURN" }; // Observe the real eight-card end step before cleanup.
         var advance = new DecisionAdvance(engine);
-        var interactions = new InteractionController();
+        var choices = new DecisionSession();
         var deadline = DateTime.UtcNow.AddMinutes(2);
         int discardedTurn = -1;
         string? previous = null;
@@ -54,16 +55,20 @@ internal static class CleanupSmoke
                 Check(state.Viewer!.Zone("Hand").Count == 8, "Eight cards remain legal during the end step");
                 endStep = true;
             }
-            if (state.PhaseKey == "CLEANUP" && decision.Payload is TargetSelectionPayload or EntitySelectionPayload) {
+            if (decision.Payload is OptionsPayload { HandReduction: not null } && HandReductionFacts.IsCurrent(state)) {
                 Check(endStep, "Cleanup follows the end step");
                 Check(state.ActivePlayerId == state.ViewerId, "Only our own cleanup requests our discard");
                 Check(state.Viewer!.MaxHandSize == 7, "Forge's hand-size limit reaches the native contract");
                 Check(DecisionCommands.Confirm(state) == null && DecisionCommands.Cancel(state) == null, "Incomplete discard cannot be confirmed or cancelled");
                 Check(auto.Update(state, true, false, noStops, false, false) is null, "Auto never answers required cleanup");
                 await File.WriteAllTextAsync(Path.Combine(paths.Profile, "cleanup-fixture.json"), JsonSerializer.Serialize(state));
-                var card = state.Viewer.Zone("Hand").Cards.First(c => c.Selectable && !c.Highlighted);
-                reply = interactions.CardClick(state, card).Reply;
-                Check(reply is SelectCard, "Shared card click selects a discard without a play gesture");
+                choices.Observe(state, true);
+                var offered = ((OptionsPayload)decision.Payload).Selection.Choices;
+                Check(choices.Choice is { Keeping: false }, "An eight-card cleanup chooses the smaller one-card discard set");
+                Check(choices.Toggle(state, offered[0].Index), "The current cleanup draft stages an original offered physical-card index");
+                reply = choices.SelectionReply(state);
+                Check(reply is ChooseOptions selected && selected.Choices.Length == 1
+                    && selected.Choices[0] == offered[0].Index, "One shared cleanup confirmation submits the exact staged discard batch");
                 cleanup = true;
                 discardedTurn = state.Turn;
             } else if (DecisionDockPresentation.From(state, new()).Selection is { } selection) {

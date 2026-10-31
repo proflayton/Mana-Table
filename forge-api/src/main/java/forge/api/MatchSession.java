@@ -167,6 +167,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         SpellAbility announcedAbility;
         String executionId;
         Input colorPaymentOwner;
+        InputSelectHandSizeDiscard.Offer handReductionOffer;
         CurrentDecisionProjection.Capture publishedDecision;
         String announcedSymbol = "";
         SourceQueryValues sourceQuery;
@@ -456,6 +457,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     "message", message, "ok", ok, "cancel", cancel, "okEnabled", okEnabled, "cancelEnabled", cancelEnabled,
                     "canAttackAll", current instanceof InputAttack, "playerChoices", List.of(),
                     "canAutoPass", canAutoPass(current));
+            next.handReductionOffer = current instanceof InputSelectHandSizeDiscard discard ? discard.getHandReductionOffer() : null;
+            if (next.handReductionOffer != null) next.prompt.put("kind", "choice");
             projectPriorityAlternative(next.prompt, current);
             if (current instanceof InputConfirmMulligan mulligan && mulligan.getOpeningHandOffer() != null) {
                 var offer = mulligan.getOpeningHandOffer();
@@ -941,7 +944,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
     private Map<String, Object> actionInState(JsonObject request, boolean playerDriven) {
         synchronized (gate) {
-            String action = string(request, "action");
+            String suppliedAction = string(request, "action");
+            String action = suppliedAction.isEmpty() && request.has("choices") && pending != null
+                    && pending.handReductionOffer != null && pending.input instanceof InputSelectHandSizeDiscard
+                    ? "choose" : suppliedAction;
             if (action.equals("revokeFiniteStackYield")) {
                 if (!id.equals(string(request, "sessionId"))) throw new IllegalArgumentException("This match is no longer active");
                 if (!finiteStackYield.id().equals(string(request, "grantId")) || finiteStackYield.id().isEmpty())
@@ -969,6 +975,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 throw new IllegalArgumentException("That selection has changed. Use the current prompt.");
             if (request.has("expectedTask") && !semanticTask(next).equals(string(request, "expectedTask")))
                 throw new IllegalArgumentException("That command does not answer the current decision.");
+            // Indexed dialogs keep their own response future and validation below.
+            // Only an input-owned choice can enter the cleanup batch admission.
+            List<Card> handReductionCards = next.kind.equals("input") && action.equals("choose")
+                    ? handReductionSelection(next, request) : null;
             if ((next.input instanceof InputAttack || next.input instanceof InputBlock) && currentCombatChoices(next) == null)
                 throw new IllegalArgumentException("Combat choices changed. Wait for the current offers.");
             if (action.equals("undoCertifiedAction")) return undoAction(next, request, playerDriven);
@@ -1023,6 +1033,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (manaOutput != null && !action.equals("useSourceAction"))
                 throw new IllegalArgumentException("A mana output belongs to an exact current source action");
             switch (action) {
+                case "choose" -> { /* The entire immutable batch was validated before changing any consent or input state. */ }
                 case "autoPayOptionalPayment" -> {
                     if (!(next.input instanceof InputPayMana mana) || !sourceInputCurrent(next)
                             || !currentOptionalPayment(next, string(request, "offerId"))
@@ -1132,6 +1143,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             String chosenYieldToken = yieldToken;
             SourceActions.Catalog chosenSourceCatalog = sourceCatalog;
             SourceActions.Action chosenSourceAction = sourceAction;
+            List<Card> chosenHandReductionCards = handReductionCards;
             Long chosenStackVersion = stackVersion;
             String chosenFiniteGrant = automaticGrant;
             Long chosenCombatVersion = next.input instanceof InputAttack || next.input instanceof InputBlock ? sourceActionVersion.get() : null;
@@ -1155,6 +1167,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     if ((action.equals("ok") || action.equals("cancel")) && next.input instanceof InputConfirm confirmation
                             && !confirmation.isConfirmationActive()) return;
                     switch (action) {
+                        case "choose" -> restorePriority = !(next.input instanceof InputSelectHandSizeDiscard discard)
+                                || !discard.submitSelection(next.handReductionOffer, chosenHandReductionCards);
                         case "autoPayOptionalPayment" -> {
                             var input = (InputPayMana) next.input;
                             var step = Objects.equals(chosenPaymentVersion, sourceActionVersion.get())
@@ -1239,6 +1253,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                                     : chosenFiniteGrant != null ? "Finite yielding stopped; review the current effects."
                                     : action.equals("useSourceAction") ? "That source action changed. Read the current card again."
                                     : action.equals("autoPayOptionalPayment") ? "Automatic payment stopped. Review the current cost and mana sources."
+                                    : action.equals("choose") ? "Your hand changed. Review the current cards before discarding."
                                     : action.equals("card") || action.equals("player") ? "That target changed. Use the current choice."
                                     : action.startsWith("priority") ? "That priority action changed. Use the current decision."
                                     : "That hand-placement option is no longer available. Use the current prompt.");
@@ -1260,6 +1275,33 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private boolean currentTargetCard(InputSelectTargets input, CardView view) {
         Card card = sourceCard(view);
         return input.isTargetSelectionActive() && card != null && card.getView() == view && input.canSelectCard(card);
+    }
+
+    private List<Card> handReductionSelection(Pending current, JsonObject request) {
+        if (!(current.input instanceof InputSelectHandSizeDiscard discard) || current.handReductionOffer == null
+                || !selectionInputCurrent(current) || !discard.isOfferCurrent(current.handReductionOffer))
+            throw new IllegalArgumentException("That hand choice has changed. Use the current prompt.");
+        var values = request.get("choices");
+        if (values == null || !values.isJsonArray()
+                || values.getAsJsonArray().size() != current.handReductionOffer.discardCount())
+            throw new IllegalArgumentException("Choose the required number of cards to discard");
+        var selected = new ArrayList<Card>();
+        var indices = new HashSet<Integer>();
+        for (var value : values.getAsJsonArray()) {
+            int index;
+            try {
+                if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) throw new ArithmeticException();
+                index = value.getAsBigDecimal().intValueExact();
+            } catch (ArithmeticException | NumberFormatException invalid) {
+                throw new IllegalArgumentException("Invalid or duplicate discard choice");
+            }
+            if (index < 0 || index >= current.handReductionOffer.cards().size() || !indices.add(index))
+                throw new IllegalArgumentException("Invalid or duplicate discard choice");
+            selected.add(current.handReductionOffer.cards().get(index));
+        }
+        if (!discard.acceptsSelection(current.handReductionOffer, selected))
+            throw new IllegalArgumentException("That hand choice has changed. Use the current prompt.");
+        return List.copyOf(selected);
     }
 
     private boolean currentTargetPlayer(InputSelectTargets input, PlayerView view) {
@@ -1448,6 +1490,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (input instanceof InputPayMana) return "mana";
         if (input instanceof InputAttack) return "attack";
         if (input instanceof InputBlock) return "block";
+        if (input instanceof InputSelectHandSizeDiscard && prompt.handReductionOffer != null) return "choice";
         if (input instanceof InputSelectTargets || input instanceof InputSelectManyBase<?> || input instanceof InputLondonMulligan)
             return "selection";
         return "confirmation";
@@ -1656,6 +1699,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             Input input = current.input;
             actionClass = input instanceof InputPassPriority ? "priority" : input instanceof InputPayMana ? "mana"
                     : input instanceof InputAttack ? "attack" : input instanceof InputBlock ? "block"
+                    : input instanceof InputSelectHandSizeDiscard && current.handReductionOffer != null ? "choice"
                     : input instanceof InputSelectTargets || input instanceof InputSelectEntitiesFromList<?> ? "selection"
                     : input instanceof InputLondonMulligan ? "mulligan" : input instanceof InputConfirm ? "confirm" : "choice";
         }
@@ -1854,6 +1898,30 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (payment.amount() > 0) promptFacts.put("counterPayment", map("amount", payment.amount(), "remaining", payment.remaining()));
         }
         automatedFacts.putAll(DecisionSemantics.describeSelection(many, ability, paying, human.getPlayer(), this::semanticCardId));
+        if (many instanceof InputSelectHandSizeDiscard discard) {
+            automatedFacts.put("intent", "Discard"); automatedFacts.put("selectionIsCost", false);
+            if (prompt.handReductionOffer != null) {
+                var offer = prompt.handReductionOffer;
+                if (!discard.isOfferCurrent(offer) || offer.playerId() != viewer.getId()) return false;
+                var choices = new ArrayList<Map<String, Object>>();
+                boolean completeHand = true;
+                for (int index = 0; index < offer.cards().size(); index++) {
+                    var view = offer.cards().get(index).getView();
+                    boolean visible = isVisibleInZone(view, ZoneType.Hand, viewer);
+                    var face = visible ? cardState(view, null) : choiceCard(view, viewer);
+                    face.put("key", ""); face.put("selectable", false); face.put("highlighted", false);
+                    String identity = visible ? semanticCardId(view) : "";
+                    completeHand &= visible && identity != null && !identity.isEmpty();
+                    choices.add(map("index", index, "label", face.get("name"), "card", face, "cardId", identity));
+                }
+                promptFacts.put("choices", List.copyOf(choices));
+                promptFacts.put("ordered", false);
+                promptFacts.put("min", offer.discardCount()); promptFacts.put("max", offer.discardCount());
+                if (completeHand) promptFacts.put("handReduction", map("playerId", offer.playerId(),
+                        "handSize", offer.handSize(), "maximumHandSize", offer.maximumHandSize()));
+                automatedFacts.put("amount", offer.discardCount());
+            }
+        }
         automatedFacts.put("selectedPlayers", many.getSelected().stream().filter(Player.class::isInstance)
                 .map(entity -> ((Player) entity).getId()).toList());
         if (promptFacts.containsKey("counterPayment")) {
@@ -1864,7 +1932,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             return false;
         }
         return table.currentPublication(boardRevision) && pending == prompt && sourceActionVersion.get() == sourceVersion
-                && selectionInputCurrent(prompt);
+                && selectionInputCurrent(prompt)
+                && (!(many instanceof InputSelectHandSizeDiscard discard) || prompt.handReductionOffer == null
+                    || discard.isOfferCurrent(prompt.handReductionOffer));
     }
 
     private boolean captureConfirm(Pending prompt, long boardRevision, long sourceVersion,
