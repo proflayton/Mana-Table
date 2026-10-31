@@ -64,10 +64,12 @@ jobs:
             throw 'A failed test must log its exception and exit with code 1.'
           }
           $global:LASTEXITCODE = 0
-      - name: Verify compact script packaging on Windows PowerShell
+      - name: Verify script packaging and timing on Windows PowerShell
         run: |
           powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File mana-native/test-package-resources.ps1
           if ($LASTEXITCODE -ne 0) { throw 'Compact script archive regression failed.' }
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File mana-native/ci/test-phase-timing.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Package timing regression failed.' }
       - name: Verify native shard coverage and artifact rejection
         run: ./mana-native/ci/test-native-ci.ps1
       - name: Verify update publication inventory and provenance rejection
@@ -191,12 +193,13 @@ jobs:
             @{ path=$_.FullName.Substring($root.Length+1).Replace('\','/'); sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
           })
           @{ sourceRevision=$env:GITHUB_SHA; files=$files } | ConvertTo-Json -Depth 5 | Set-Content dist/ci-harness-manifest.json -Encoding utf8
-      - name: Save package and composition failure evidence
-        if: failure()
+      - name: Save package timing and failure evidence
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: mana-native-package-checks-failure-${{ github.run_attempt }}
+          name: mana-native-package-evidence-${{ github.run_attempt }}
           path: |
+            dist/package-timings.jsonl
             dist/*-checks/**/*.json
             dist/*-checks/**/*.log
             dist/*-checks/**/whole-seat-ai-public.jsonl

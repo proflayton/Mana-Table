@@ -160,6 +160,7 @@ try {
     & (Join-Path $PSScriptRoot 'test-source-receipt.ps1') -TestDirectory (Join-Path $TestDirectory 'source-receipts')
     & (Join-Path $PSScriptRoot 'test-tools.ps1') -TestDirectory (Join-Path $TestDirectory 'tools')
     & (Join-Path $PSScriptRoot 'test-native-verification.ps1') -TestDirectory (Join-Path $TestDirectory 'verification')
+    & (Join-Path $PSScriptRoot 'test-phase-timing.ps1') -TestDirectory (Join-Path $TestDirectory 'phase-timing')
 } finally {
     $env:GITHUB_SHA = $saved.SHA
     $env:MANA_RELEASE_VERSION = $saved.Version
