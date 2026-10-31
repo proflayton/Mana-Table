@@ -17,6 +17,14 @@ public abstract record DrawCommand
     {
         internal override void Paint(Canvas canvas) => canvas.EndClip();
     }
+    public sealed record BeginTransform(BoardView View) : DrawCommand
+    {
+        internal override void Paint(Canvas canvas) => canvas.BeginTransform(View);
+    }
+    public sealed record EndTransform : DrawCommand
+    {
+        internal override void Paint(Canvas canvas) => canvas.EndTransform();
+    }
     public sealed record Fill(Rectangle Bounds, Color Color) : DrawCommand
     {
         internal override void Paint(Canvas canvas) => canvas.Fill(Bounds, Color);

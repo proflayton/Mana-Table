@@ -1093,14 +1093,51 @@ views show resources near the player's hands, permanents ahead, deck/piles on a
 flank, cards facing the controller, and physical mat edges separating adjacent
 players. Resource groups can overlap by state while retaining their location on
 that mat. The red-mat late-game view retains that front/back relationship as the
-number of cards grows.
+number of cards grows. Further inspected primary stills in
+[Shuffle Up & Play 26 at 15:40](https://www.youtube.com/watch?v=WWUUN4Xxvm4&t=940s)
+and [45:10](https://www.youtube.com/watch?v=WWUUN4Xxvm4&t=2710s) show distinct red
+and teal mats facing their sitters, with lands nearer the player and permanents
+forward. A [player's three-seat Commander photograph](https://virtualwolf.org/media/posts/2458)
+shows bare wood between mats and a side player's mat and cards rotated together.
+These observed spatial arrangements supply the ownership cues being adapted.
 
-The intended adaptation is one player-local play area whose transform places
+The broader layout direction is one player-local play area whose transform places
 its battlefield rows, resources and public piles together. The controller owns
 placement; printed ownership remains a separate rules fact. A view change should
 frame that same space rather than repack its cards or leave its piles behind.
 Hand interaction and current-decision controls can remain in screen space.
-This is a layout direction awaiting implementation and human review. Broadcast
+
+**Playmat source candidate, 31 October 2026; human review pending.**
+The current study candidate places battlefield assemblies on quiet cloth mats
+over a wood table. Backing, shallow shadows, stitched hems, bare-table gaps and
+seat-facing woven crests adapt the physical separation above. Stable material
+bounds come from the same layout owner as the card lanes and face the same seat;
+they do not follow turn ownership, priority or permanent count. Opponents'
+public counters, land counts and combat status travel with their material, so
+inspecting another seat does not leave those labels over that player's cards.
+Their interaction regions and recorded text follow the same view and clip.
+If a measured readout would overlap registered fixed physical HUD geometry, its complete
+group and input regions are omitted together. Public state remains available
+through existing inspection. Command cards, public piles, portraits, unspent
+mana and the local resource HUD remain anchored. Moving those zones with a
+complete player-local space remains a separate layout change.
+
+The player intent is to identify who controls a battlefield, then inspect that
+player's cards. Existing player focus, pan, zoom and Home navigate the same
+mat/card arrangement; mats add no gesture or engine transition. This adapts
+[Tabletop Simulator's table and camera controls](https://kb.tabletopsimulator.com/player-guides/basic-controls/),
+while engine authority and visibility remain unchanged. A foreign-controlled
+attachment rests with its host but keeps its actual controller and current
+individual permissions. Crests and edges supplement restrained colour;
+transient turn/priority cues remain separate from this persistent seating cue.
+
+The current candidate retains existing packing, including shrinking in dense
+fields. Agent inspection of the larger mixed-combat capture also found the
+existing fixed combat summary crossing the right pile rail; that separate HUD
+layout remains unresolved. Mat geometry and automated occurrence checks do not
+establish that a large board is readable. Small/large window captures and the three-player
+reduced-motion camera journey are review inputs; mechanical checks and agent
+inspection do not supply human acceptance. Broadcast
 cuts, inserted card closeups and separate player cameras are presentation edits;
 they do not establish a continuous physical table or validate our four-seat
 camera. A small still also cannot establish tapping/dragging gestures or readable

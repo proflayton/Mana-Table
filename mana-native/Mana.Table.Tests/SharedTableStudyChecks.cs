@@ -4,6 +4,7 @@ using Mana.Magic;
 using Mana.Renderer;
 using Mana.Scenarios;
 using Microsoft.Xna.Framework;
+using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Table;
 
@@ -44,6 +45,8 @@ internal static class SharedTableStudyChecks
         CopyStates(ordinary, check);
         NameFamilies(ordinary, check);
         FocusedRows(crowded, check);
+        PlaymatBoundaries(ordinary, check);
+        SideHandClearance(ordinary, check);
         HiddenFace(check);
         TwoPlayerContinuity(check);
         ResourceTurns(check);
@@ -66,6 +69,12 @@ internal static class SharedTableStudyChecks
             check(scenes.All(scene => !Cards(scene).Any(card => Cards(scene).Any(other => card.Owner != other.Owner
                     && card.Pose.Bounds.Intersects(other.Pose.Bounds)))),
                 "The two-player creature rows keep opposing faces and their current stats separate");
+            check(scenes.All(scene => scene.Seats.All(seat => {
+                    var cloth = seat.Geometry.PlaymatBounds!.Value; cloth.Inflate(-PlayerPlaymat.HemInset, -PlayerPlaymat.HemInset);
+                    return seat.Battlefield.SelectMany(cluster => cluster.Cards).Where(card => card.Attachment == null)
+                        .All(card => cloth.Contains(card.StudyFamily!.Bounds));
+                })),
+                "Both duel viewers keep complete card families within their own physical mat's hem across sparse and crowded rows");
             var before = Cards(scenes[0]).ToDictionary(card => card.Id, card => card.Pose);
             check(Cards(scenes[1]).Where(card => card.Owner == 1 || card.Card.Type is "Artifact" or "Enchantment" or "Basic Land")
                     .All(card => before[card.Id] == card.Pose)
@@ -111,6 +120,12 @@ internal static class SharedTableStudyChecks
 
     private static void CheckFootprints(TableScene scene, string label, Action<bool, string> check)
     {
+        check(scene.Seats.All(seat => {
+                var cloth = seat.Geometry.PlaymatBounds!.Value; cloth.Inflate(-PlayerPlaymat.HemInset, -PlayerPlaymat.HemInset);
+                return seat.Battlefield.SelectMany(cluster => cluster.Cards).Where(card => card.Attachment == null)
+                    .All(card => cloth.Contains(card.StudyFamily!.Bounds));
+            }),
+            "Study " + label + ": complete permanent families, captions and independently tapped faces remain inside their controller's physical mat hem");
         var outside = scene.Seats.SelectMany(seat => seat.Battlefield.SelectMany(cluster => cluster.Cards.Select(card => new {
             Node = card, Seat = seat.Index, Role = cluster.Kind,
             Lane = SharedTableStudy.Lane(seat.Index, cluster.Kind), Territory = SharedTableStudy.Territory(seat.Index)
@@ -140,6 +155,83 @@ internal static class SharedTableStudyChecks
         check(covered == null,
             "Study " + label + ": public zone piles and command cards do not cover any controller's battlefield faces"
             + (covered == null ? "" : $"; {covered.Footprint.Kind} controller {covered.Footprint.Owner} bounds {covered.Footprint.Bounds} covers {covered.Card.Id} controller {covered.Card.Owner} bounds {covered.Card.Pose.Bounds}"));
+    }
+
+    private static void PlaymatBoundaries(GameSnapshot baseline, Action<bool, string> check)
+    {
+        foreach (int playerCount in new[] { 2, 3, 4 }) foreach (int viewer in baseline.Players.Take(playerCount).Select(player => player.Id)) {
+            // Exercise the full physical command rail, not just this authored
+            // scene's ordinary single commander, for every relative table seat.
+            var state = baseline with { ViewerId = viewer, Players = baseline.Players.Take(playerCount).Select(player => player with {
+                Zones = player.Zones.Select(zone => zone.Name != "Command" ? zone : zone with {
+                    Count = 2, Cards = [zone.Cards[0], zone.Cards[0] with { VisualId = "playmat-partner-" + player.Id }]
+                }).ToImmutableArray()
+            }).ToImmutableArray() };
+            var scene = Build(state);
+            bool duel = playerCount == 2;
+            var mats = scene.Seats.Select(seat => seat.Geometry.PlaymatBounds!.Value).ToArray();
+            check(mats.All(mat => mats.Where(other => other != mat).All(other =>
+                    Math.Max(Math.Max(other.Left - mat.Right, mat.Left - other.Right),
+                        Math.Max(other.Top - mat.Bottom, mat.Top - other.Bottom)) >= PlayerPlaymat.MinimumGap)),
+                $"{playerCount}-player viewer {viewer}: physical mats leave a bare-table gap between every pair of battlefields");
+            check(scene.Seats.All(seat => {
+                    var inside = seat.Geometry.PlaymatBounds!.Value; inside.Inflate(-PlayerPlaymat.HemInset, -PlayerPlaymat.HemInset);
+                    return new[] { "Creatures", "Support", "Lands" }.All(role => inside.Contains(PlayerPlaymat.Lane(seat.Index, role, duel)))
+                        && seat.Battlefield.SelectMany(cluster => cluster.Cards).Where(card => card.Attachment == null)
+                            .All(card => inside.Contains(card.StudyFamily!.Bounds));
+                }),
+                $"{playerCount}-player viewer {viewer}: every complete role lane and real family fits its mat without borrowing a neighbour's cloth");
+            var misplaced = scene.Seats.SelectMany(seat => seat.Geometry.Piles.Select(pile => {
+                    var player = state.Players.Single(player => player.Id == seat.PlayerId);
+                    return new { Owner = seat.PlayerId, Kind = pile.Zone, Bounds = PileGeometry.Create(pile.Pose, player.Zone(pile.Zone).Count, pile.Compact).Reservation };
+                }).Concat(seat.Geometry.Commanders.Select(card => new {
+                    Owner = seat.PlayerId, Kind = "Command:" + card.Id, Bounds = (card.Pose with { Size = card.Pose.Size + new Microsoft.Xna.Framework.Vector2(13) }).Bounds
+                })))
+                .SelectMany(item => scene.Seats.Where(other => other.PlayerId != item.Owner)
+                    .Select(other => new { Item = item, Other = other, Mat = other.Geometry.PlaymatBounds!.Value }))
+                .FirstOrDefault(item => item.Item.Bounds.Intersects(item.Mat));
+            check(misplaced == null,
+                $"{playerCount}-player viewer {viewer}: public pile faces, labels, hits and command cards stay outside every other player's physical mat"
+                + (misplaced == null ? "" : $"; {misplaced.Item.Kind} controller {misplaced.Item.Owner} bounds {misplaced.Item.Bounds} intersects controller {misplaced.Other.PlayerId} mat {misplaced.Mat}"));
+            var empty = Build(state with { Players = state.Players.Select(player => player with {
+                Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Cards = [], Count = 0 }).ToImmutableArray()
+            }).ToImmutableArray() });
+            check(empty.Seats.Select(seat => (seat.PlayerId, seat.Index, seat.Geometry.PlaymatBounds))
+                    .SequenceEqual(scene.Seats.Select(seat => (seat.PlayerId, seat.Index, seat.Geometry.PlaymatBounds)))
+                    && !Cards(empty).Any(),
+                $"{playerCount}-player viewer {viewer}: an empty battlefield retains its seat and the same physical mat rather than collapsing or reseating players");
+        }
+    }
+
+    private static void SideHandClearance(GameSnapshot baseline, Action<bool, string> check)
+    {
+        var supports = baseline with { Players = baseline.Players.Select(player => player with {
+            Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Count = 7 } : zone.Name != "Battlefield" ? zone : zone with {
+                Count = 2, Cards = [
+                    new Card { VisualId = "playmat-ring-" + player.Id, Name = "Sol Ring", Type = "Artifact" },
+                    new Card { VisualId = "playmat-study-" + player.Id, Name = "Rhystic Study", Type = "Enchantment" }
+                ]
+            }).ToImmutableArray()
+        }).ToImmutableArray() };
+        foreach (int viewer in supports.Players.Select(player => player.Id)) {
+            var scene = Build(supports with { ViewerId = viewer });
+            foreach (var seat in scene.Seats.Where(seat => seat.Index is 0 or 2)) {
+                var hand = seat.Geometry.Hand;
+                var handHit = new Rectangle((int)hand.X - 83, (int)hand.Y - 30, 166, 75);
+                var field = seat.Battlefield.SelectMany(cluster => cluster.Cards).ToArray();
+                check(field.Length == 2 && field.All(card => !card.Pose.Bounds.Intersects(handHit)),
+                    $"Viewer {viewer}, side {seat.Index}: the complete hidden-hand input region cannot steal either support card's physical face");
+                var fan = Enumerable.Range(0, 7).Select(index => {
+                    var pose = TableLayout.HiddenHand(seat.Index, index, 7);
+                    return pose with { Center = pose.Center + hand - TableLayout.SeatHand(seat.Index) };
+                }).ToArray();
+                var viewport = new Rectangle(0, 54, 1600, 724);
+                check(fan.All(pose => viewport.Contains(pose.Bounds)
+                        && viewport.Contains((pose with { Center = pose.Center + new Vector2(3, 6) }).Bounds))
+                        && viewport.Contains(handHit),
+                    $"Viewer {viewer}, side {seat.Index}: all seven anonymous cards, their complete shadows and the hand hit remain on the table");
+            }
+        }
     }
 
     private static void CopyStates(GameSnapshot baseline, Action<bool, string> check)

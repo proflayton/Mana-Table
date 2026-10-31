@@ -31,6 +31,7 @@ internal sealed partial class TableApplication
         // Outward from the side portrait: this pocket contains neither its
         // inward-facing mana nor the command-zone card below its name.
         var center = hero + new Vector2(seat == 2 ? 59 : -59, 0);
+        if (TableStudyEnabled) fixedSeatCircles.Add((center, 15));
         var fill = new Color(17, 26, 30);
         canvas.Circle(center, 15, Gold * .8f);
         canvas.Circle(center, 13, fill);

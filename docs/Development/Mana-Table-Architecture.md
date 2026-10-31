@@ -1492,6 +1492,37 @@ world lanes: left/right quarter turns, far seat half turn, local seat upright.
 Two-player framing keeps its upright faces. Tap rotation is relative to that
 baseline; state labels and full readers stay viewer-readable. The same turned
 pose drives texture, footprint and pointer geometry.
+
+`PlayerPlaymat` owns the study's canonical cloth bounds, role lanes and seat
+facing for two, three and four players. `SharedTableStudy` and `DuelTableStudy`
+delegate to it rather than keeping separate lane coordinates. Each mat reserves
+a 12-design-unit hem and at least 16 units of bare table between neighbours;
+empty fields, density and priority do not resize or reseat the material.
+`SeatGeometry.PlaymatBounds` prepares that material with each scene seat;
+painting and player focus consume those prepared bounds.
+`TableApplication.Playmats` paints wood, cloth, backing, stitches and seat crests
+using the same `BoardView` exactly once. It adds no hits or game state and does
+not apply `TableWorld` a second time. `DrawList` records balanced
+`BeginTransform`/`EndTransform` scopes; `Canvas` composes nested views through
+`BoardView.Compose` before the viewport scale for sprites, triangles and clips.
+Text measurement remains in canonical units while raster density includes world
+zoom and its origin snaps in final pixel space. Battlefield assemblies lie on
+the mat; command cards, public piles, portraits and unspent mana stay anchored
+beside it. Opponents' auxiliary public counters, land counts and combat status
+move with their world view; local resources retain their HUD placement. Their
+hits and copied observations use the same projection and board clip, retiring
+offscreen regions. Each measured auxiliary group is omitted as a whole when it
+would cover registered fixed physical HUD geometry. A balanced `DrawList` group discards
+that paint together; the application also retires its matching hits and probes.
+This affects the readout's presentation, not card rendering, rules or public state.
+The upper command/pile rail and side held hands clear neighbouring material
+and card input. Counter/state painters return their measured footprint, so the
+upper seat's land counts and combat status follow the actual text height rather
+than overlapping it. Cross-controller attachments still follow their
+host spatially without changing their actual controller index or permissions.
+These mats establish stable separation; the existing dense packing can still
+shrink faces, and this change adds no density threshold or alternate renderer.
+
 Resource faces reserve their complete turning footprint before packing. Their
 portrait dimensions stay constant through a tap; only their angle changes.
 Compact noncreature paint reserves its tap cue before fitting a complete name.

@@ -69,11 +69,11 @@ internal sealed partial class TableApplication
         return true;
     }
 
-    private void DrawPublicPlayerCounters(Player player, int x, int y, int width, bool growUp = false)
+    private Rectangle DrawPublicPlayerCounters(Player player, int x, int y, int width, bool growUp = false)
     {
-        if (player.States.Length > 0) { DrawPublicPlayerStates(player, x, y, width, growUp); return; }
+        if (player.States.Length > 0) return DrawPublicPlayerStates(player, x, y, width, growUp);
         var counters = StateClarity.PlayerCounters(player);
-        if (counters.Length == 0) { publicCounterBadges.Remove(player.Id); return; }
+        if (counters.Length == 0) { publicCounterBadges.Remove(player.Id); return Rectangle.Empty; }
         // Keep the caption footprint stable at every text size. The most urgent
         // resource and its overflow affordance use the exact cached font metrics
         // used to paint them, including bold and the current accessibility size.
@@ -92,18 +92,19 @@ internal sealed partial class TableApplication
         // unusually large totals whole rather than letting ellipsis eat +N.
         while (!Fits(size) && size > .4f) size -= .05f;
         int measured = canvas.TextWidth(summary, size, true);
-        publicCounterBadges[player.Id] = new(summary, size, measured, available, hidden);
         var bounds = new Rectangle(x, y, width, 25);
+        publicCounterBadges[player.Id] = new(summary, size, measured, available, hidden) { Bounds = bounds };
         bool poison = counters.Any(c => c.Key.Equals("poison", StringComparison.OrdinalIgnoreCase));
         canvas.Panel(bounds, new(14, 26, 31), poison ? new Color(157, 198, 118) : Blue, 4);
         canvas.Text(summary, x + 7, y + 2, Ink, size, available, 1, true);
         hits.Add(new("player-counters:" + player.Id, Scope, bounds, new MatchIntent.OpenPlayerDetails(player.Id)));
+        return bounds;
     }
 
-    private void DrawPublicPlayerStates(Player player, int x, int y, int width, bool growUp)
+    private Rectangle DrawPublicPlayerStates(Player player, int x, int y, int width, bool growUp)
     {
         var states = StateClarity.ProminentPlayerStates(player);
-        if (states.Length == 0) { publicCounterBadges.Remove(player.Id); return; }
+        if (states.Length == 0) { publicCounterBadges.Remove(player.Id); return Rectangle.Empty; }
         const int rowHeight = 24, gap = 3;
         var chips = new List<(PlayerState State, string Text, float Size, int Width, int X, int Row)>();
         int cursor = 0, row = 0;
@@ -132,10 +133,13 @@ internal sealed partial class TableApplication
         int rows = Math.Max(chips.Max(c => c.Row) + 1, hidden > 0 ? row + 1 : 1);
         int top = growUp ? y - (rows - 1) * (rowHeight + gap) : y;
         var bounds = new Rectangle(x, top, width, rows * rowHeight + (rows - 1) * gap);
-        hits.Add(new("player-counters:" + player.Id, Scope, bounds, new MatchIntent.OpenPlayerState(player.Id, "")));
+        var paintedTargets = new List<Rectangle>();
+        hits.Add(new("player-counters:" + player.Id, Scope, bounds, new MatchIntent.OpenPlayerState(player.Id, ""),
+            Shape: point => paintedTargets.Any(target => target.Contains(point))));
         var painted = new List<PublicStateChipPaint>();
         foreach (var chip in chips) {
             var rectangle = new Rectangle(x + chip.X, top + chip.Row * (rowHeight + gap), chip.Width, rowHeight);
+            paintedTargets.Add(rectangle);
             Color accent = chip.State.Kind == "progress" ? Gold : Blue;
             string hitId = "player-state:" + player.Id + ":" + chip.State.Id;
             PaintControlSurface(hitId, rectangle, new(14, 26, 31), accent);
@@ -146,6 +150,7 @@ internal sealed partial class TableApplication
         }
         if (hidden > 0) {
             var rectangle = new Rectangle(x + cursor, top + row * (rowHeight + gap), Math.Min(MoreWidth(), width - cursor), rowHeight);
+            paintedTargets.Add(rectangle);
             string hitId = "player-state-more:" + player.Id;
             PaintControlSurface(hitId, rectangle, new(14, 26, 31), Muted);
             canvas.Text(MoreText(), rectangle.X + 6, rectangle.Y + 2, Ink, .53f, rectangle.Width - 12, 1, true);
@@ -153,6 +158,7 @@ internal sealed partial class TableApplication
         }
         publicCounterBadges[player.Id] = new(string.Join(" · ", painted.Select(c => c.Text)) + (hidden > 0 ? " " + MoreText() : ""),
             .6f, painted.Max(c => c.MeasuredWidth), width - 12, hidden) { Chips = painted.ToArray(), Bounds = bounds };
+        return bounds;
     }
 
     private void OpenPlayerState(int player, string state)

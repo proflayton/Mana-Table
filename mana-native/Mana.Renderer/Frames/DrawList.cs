@@ -13,6 +13,9 @@ public sealed class DrawList : IDisposable
     private readonly TextMetrics metrics = new();
     private bool composing;
     private int clipDepth;
+    private readonly Stack<BoardView> transforms = [];
+    private readonly Stack<(int Command, int Clips, int Transforms)> groups = [];
+    private BoardView transform = BoardView.Identity;
     private float scale = 1;
     private float textScale = 1;
     public float TextScale {
@@ -26,12 +29,15 @@ public sealed class DrawList : IDisposable
     public void BeginComposition(float scale = 1)
     {
         if (composing) throw new InvalidOperationException("Finish the current composition before starting another frame.");
-        commands.Clear(); clipDepth = 0; this.scale = scale; composing = true;
+        commands.Clear(); clipDepth = 0; transforms.Clear(); groups.Clear(); transform = BoardView.Identity;
+        this.scale = scale; composing = true;
     }
     public DrawingFrame Complete()
     {
         if (!composing) throw new InvalidOperationException("No frame is being composed.");
         if (clipDepth != 0) throw new InvalidOperationException("A drawing clip was not closed.");
+        if (transforms.Count != 0) throw new InvalidOperationException("A drawing transform was not closed.");
+        if (groups.Count != 0) throw new InvalidOperationException("A drawing group was not completed.");
         composing = false;
         metrics.Trim();
         return new(commands, TextScale, scale);
@@ -45,7 +51,35 @@ public sealed class DrawList : IDisposable
     public void EndClip()
     {
         if (clipDepth == 0) throw new InvalidOperationException("No drawing clip is open.");
+        if (groups.TryPeek(out var group) && clipDepth <= group.Clips)
+            throw new InvalidOperationException("A drawing group cannot close its enclosing clip.");
         Add(new DrawCommand.EndClip()); clipDepth--;
+    }
+    public void BeginTransform(BoardView view)
+    {
+        var next = transform.Compose(view);
+        Add(new DrawCommand.BeginTransform(view)); transforms.Push(transform); transform = next;
+    }
+    public void EndTransform()
+    {
+        if (transforms.Count == 0) throw new InvalidOperationException("No drawing transform is open.");
+        if (groups.TryPeek(out var group) && transforms.Count <= group.Transforms)
+            throw new InvalidOperationException("A drawing group cannot close its enclosing transform.");
+        Add(new DrawCommand.EndTransform()); transform = transforms.Pop();
+    }
+    /// <summary>Defers publication of a measured group until its complete paint is accepted.</summary>
+    public void BeginGroup()
+    {
+        if (!composing) throw new InvalidOperationException("Begin a frame before composing a drawing group.");
+        groups.Push((commands.Count, clipDepth, transforms.Count));
+    }
+    public void EndGroup(bool visible = true)
+    {
+        if (!composing || !groups.TryPeek(out var group)) throw new InvalidOperationException("No drawing group is open.");
+        if (clipDepth != group.Clips || transforms.Count != group.Transforms)
+            throw new InvalidOperationException("Close the group's clips and transforms before completing it.");
+        groups.Pop();
+        if (!visible) commands.RemoveRange(group.Command, commands.Count - group.Command);
     }
     public int TextWidth(string value, float size = 1, bool bold = false) => metrics.TextWidth(value, size, bold, TextScale);
     public Point TextSize(string value, float size, int width, int maxLines, bool bold = false) => metrics.TextSize(value, size, width, maxLines, bold, TextScale);

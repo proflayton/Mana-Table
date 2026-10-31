@@ -15,6 +15,8 @@ public sealed class Canvas : IDisposable
     private readonly BasicEffect surfaceEffect;
     private readonly RasterizerState clipping = new() { ScissorTestEnable = true, CullMode = CullMode.None };
     private readonly Stack<Rectangle> clips = [];
+    private readonly Stack<BoardView> transforms = [];
+    private BoardView transform = BoardView.Identity;
     private Vector2 scale = Vector2.One;
     private readonly Dictionary<(TextLayout Layout, Vector2 Density), (Texture2D Texture, long Used)> text = [];
     private readonly TextMetrics metrics = new();
@@ -47,11 +49,12 @@ public sealed class Canvas : IDisposable
     }
     private void Resume()
     {
-        batch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp, null, clips.Count > 0 ? clipping : null, null, Matrix.CreateScale(scale.X, scale.Y, 1));
+        batch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp, null, clips.Count > 0 ? clipping : null, null, TransformMatrix(transform, scale));
     }
     public void End()
     {
         if (clips.Count > 0) throw new InvalidOperationException("A GPU drawing clip was not closed.");
+        if (transforms.Count > 0) throw new InvalidOperationException("A GPU drawing transform was not closed.");
         batch.End();
         if (text.Count > 600) foreach (var key in text.OrderBy(p => p.Value.Used).Take(text.Count - 450).Select(p => p.Key).ToArray()) { text[key].Texture.Dispose(); text.Remove(key); }
         metrics.Trim();
@@ -59,9 +62,7 @@ public sealed class Canvas : IDisposable
     public void BeginClip(Rectangle bounds)
     {
         batch.End();
-        int left = (int)MathF.Floor(bounds.Left * scale.X), top = (int)MathF.Floor(bounds.Top * scale.Y);
-        var pixels = new Rectangle(left, top, Math.Max(0, (int)MathF.Ceiling(bounds.Right * scale.X) - left),
-            Math.Max(0, (int)MathF.Ceiling(bounds.Bottom * scale.Y) - top));
+        var pixels = PixelBounds(bounds, transform, scale);
         pixels = Rectangle.Intersect(pixels, clips.Count > 0 ? clips.Peek() : device.Viewport.Bounds);
         clips.Push(pixels); device.ScissorRectangle = pixels; Resume();
     }
@@ -71,6 +72,34 @@ public sealed class Canvas : IDisposable
         batch.End(); clips.Pop();
         device.ScissorRectangle = clips.Count > 0 ? clips.Peek() : device.Viewport.Bounds;
         Resume();
+    }
+    public void BeginTransform(BoardView view)
+    {
+        var next = transform.Compose(view);
+        batch.End(); transforms.Push(transform); transform = next; Resume();
+    }
+    public void EndTransform()
+    {
+        if (transforms.Count == 0) throw new InvalidOperationException("No GPU drawing transform is open.");
+        batch.End(); transform = transforms.Pop(); Resume();
+    }
+    // All primitives share this composition: local coordinates through the
+    // nested world views, then the physical viewport. Layout remains local.
+    internal static Matrix TransformMatrix(BoardView view, Vector2 density) =>
+        Matrix.CreateScale(view.Scale, view.Scale, 1) * Matrix.CreateTranslation(view.Offset.X, view.Offset.Y, 0)
+            * Matrix.CreateScale(density.X, density.Y, 1);
+    internal static Rectangle PixelBounds(Rectangle bounds, BoardView view, Vector2 density)
+    {
+        var start = view.Apply(new Vector2(bounds.Left, bounds.Top)) * density;
+        var end = view.Apply(new Vector2(bounds.Right, bounds.Bottom)) * density;
+        int left = (int)MathF.Floor(start.X), top = (int)MathF.Floor(start.Y);
+        return new(left, top, Math.Max(0, (int)MathF.Ceiling(end.X) - left),
+            Math.Max(0, (int)MathF.Ceiling(end.Y) - top));
+    }
+    internal static Vector2 TextOrigin(Vector2 position, BoardView view, Vector2 density)
+    {
+        var pixels = view.Apply(position) * density;
+        return view.Inverse(new Vector2(MathF.Round(pixels.X), MathF.Round(pixels.Y)) / density);
     }
     public void Draw(DrawingFrame drawing) => Draw(drawing, Vector2.One);
     public void Draw(DrawingFrame drawing, Vector2 outputScale)
@@ -229,7 +258,7 @@ public sealed class Canvas : IDisposable
     private void Triangles(VertexPositionColorTexture[] vertices, Texture2D texture)
     {
         batch.End();
-        surfaceEffect.World = Matrix.CreateScale(scale.X, scale.Y, 1);
+        surfaceEffect.World = TransformMatrix(transform, scale);
         surfaceEffect.Projection = Matrix.CreateOrthographicOffCenter(0, device.Viewport.Width, device.Viewport.Height, 0, -1, 1);
         surfaceEffect.Texture = texture;
         device.BlendState = BlendState.AlphaBlend; device.DepthStencilState = DepthStencilState.None;
@@ -298,13 +327,14 @@ public sealed class Canvas : IDisposable
     }
     private void PaintText(TextLayout layout, Vector2 position, Color color)
     {
-        var key = (Layout: layout, Density: scale);
+        var density = scale * transform.Scale;
+        var key = (Layout: layout, Density: density);
         if (!text.TryGetValue(key, out var cached)) cached = (RenderText(key), frame);
         text[key] = (cached.Texture, frame);
         // The bitmap already has one texel per target pixel. Cancel the canvas
         // transform for its quad and align its origin without changing layout.
-        position = new(MathF.Round(position.X * scale.X) / scale.X, MathF.Round(position.Y * scale.Y) / scale.Y);
-        batch.Draw(cached.Texture, position, null, color, 0, Vector2.Zero, Vector2.One / scale, SpriteEffects.None, 0);
+        position = TextOrigin(position, transform, scale);
+        batch.Draw(cached.Texture, position, null, color, 0, Vector2.Zero, Vector2.One / density, SpriteEffects.None, 0);
     }
     private Texture2D RenderText((TextLayout Layout, Vector2 Density) key)
     {
