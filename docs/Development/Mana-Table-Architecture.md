@@ -705,6 +705,17 @@ are excluded from this projection. Legacy/missing evidence keeps ordinary timing
 This is host cadence, not a bot strategy, human consent or server grant: every
 automated input still receives a fresh observation and policy evaluation.
 
+The source implementation after 0.2.292 separates announcement timing from
+cohort validity. With complete typed public progress, a phase, action-version or
+owned-choice-version change alone ends a captured cohort without restarting its
+reading pause. It cannot recapture the same queue on the next unchanged poll.
+This lets ordinary mana taps and private required cost steps proceed through
+fresh inputs without inserting a full pause at each step. Public stack members,
+targets, executions, outcomes and activity remain announcement evidence; visible
+consequences of a mana ability still receive the ordinary beat. An existing beat
+keeps its remaining duration, and missing or invalid evidence stays conservative.
+The shipping 2.4-second duration and rules/command permissions are unchanged.
+
 `IAiHostDiagnostics` is a separate host-only failure sink. Shipping composition
 retains original exception chains in `diagnostics/ai-host.log`; the provider
 quarantines the last decoded private bot batch and any rejected wire batch in
@@ -1182,6 +1193,20 @@ Solo uses a local connection. A lobby can mix local and TCP connections; all rec
 complete seat-filtered snapshots from the authority. Networking contains no card,
 combat or decision interpretation. `SyncLobby` manages deck selection, readiness
 and seat ownership. `PortForwarding` is an independent reachability service.
+
+The source implementation after 0.2.292 separates address advertisement from
+routine lobby/game polling. A network host starts one asynchronous LAN lookup
+and the existing external-address lookup for its listening endpoint. Projection
+reads completed results without enumerating network adapters or waiting on those
+lookups under the lobby/transport monitors. The pending flag covers both lookups.
+Local-only tables and guests do not discover host addresses.
+
+The LAN result is a bounded ordered immutable snapshot for that endpoint;
+projection combines it with loopback, the current port and the latest completed
+external address. Closing clears that ownership, and late results from an older
+host cannot populate a new endpoint. Rehosting refreshes changed network adapters;
+a guest reconnect only reads the host's current advertisement. Discovery failure
+retains loopback for this endpoint and does not prevent retry on the next host.
 
 Concession admission revokes only the departing seat's current authority and
 returns before rules-driven disclosure acknowledgements. Loss cleanup runs as

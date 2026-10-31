@@ -129,9 +129,17 @@ internal sealed class AiResolutionCadence
     internal static bool Changed(AiResolutionProgress? before, AiResolutionProgress? after)
         => before == null != (after == null) || before != null && after != null
             && (before.PhaseKey != after.PhaseKey || before.ActionVersion != after.ActionVersion || before.ChoiceVersion != after.ChoiceVersion
-                || before.Queue.Length != after.Queue.Length || !before.Queue.Zip(after.Queue).All(pair => Same(pair.First, pair.Second))
-                || !before.Executions.SequenceEqual(after.Executions)
-                || !before.Events.SequenceEqual(after.Events));
+                || PublicProgressChanged(before, after));
+
+    // Scope guards still end a captured cohort, but an empty phase or the
+    // bot's own cost input is not another public action to announce. Missing or
+    // contradictory typed evidence keeps the conservative ordinary comparison.
+    internal static bool AnnouncementChanged(AiResolutionProgress? before, AiResolutionProgress? after)
+        => Valid(before) && Valid(after) ? PublicProgressChanged(before!, after!) : Changed(before, after);
+
+    private static bool PublicProgressChanged(AiResolutionProgress before, AiResolutionProgress after)
+        => before.Queue.Length != after.Queue.Length || !before.Queue.Zip(after.Queue).All(pair => Same(pair.First, pair.Second))
+            || !before.Executions.SequenceEqual(after.Executions) || !before.Events.SequenceEqual(after.Events);
 
     private static bool Same(AiCadenceMember before, AiCadenceMember after)
         => before.StackId == after.StackId && before.ExecutionId == after.ExecutionId && before.Kind == after.Kind
