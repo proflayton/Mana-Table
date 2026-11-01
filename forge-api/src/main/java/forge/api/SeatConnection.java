@@ -14,13 +14,18 @@ final class SeatConnection implements MatchEndpoint, AutoCloseable {
         var server = new SyncTransport.Server((seat, method, p) -> switch (method) {
             case "observe" -> session.state(); case "reply" -> session.action(p); case "sourceActions" -> session.sourceActions(p); case "concede" -> session.concede(p);
             case "tempoPresented" -> session.tempoPresented(p);
+            case "history" -> session.history(p);
             default -> throw new IllegalArgumentException("Unknown seat command");
-        }, () -> { throw new IllegalStateException("This seat is local"); });
+        }, () -> { throw new IllegalStateException("This seat is local"); }, ignored -> { }, Set.of("match-history"));
         return new SeatConnection(server.local(0), () -> { server.close(); session.closeTable(); });
     }
     @SuppressWarnings("unchecked") public Map<String, Object> state() { return (Map<String, Object>)connection.request("observe", new JsonObject()); }
     @SuppressWarnings("unchecked") public Map<String, Object> action(JsonObject command) { return (Map<String, Object>)connection.request("reply", command); }
     @SuppressWarnings("unchecked") public Map<String, Object> sourceActions(JsonObject command) { return (Map<String, Object>)connection.request("sourceActions", command); }
+    @SuppressWarnings("unchecked") public Map<String, Object> history(JsonObject query) {
+        if (!connection.capabilities().contains("match-history")) throw new HistoryUnavailableException();
+        return (Map<String, Object>)connection.request("history", query);
+    }
     @SuppressWarnings("unchecked") public Map<String, Object> concede(JsonObject command) { return (Map<String, Object>)connection.request("concede", command); }
     @SuppressWarnings("unchecked") public Map<String, Object> tempoPresented(JsonObject command) { return (Map<String, Object>)connection.request("tempoPresented", command); }
     public boolean finished() { var snapshot = state(); return snapshot != null && List.of("finished", "error").contains(snapshot.get("status")); }

@@ -8,6 +8,7 @@ interface MatchEndpoint {
     Map<String, Object> state();
     Map<String, Object> action(JsonObject command);
     Map<String, Object> sourceActions(JsonObject command);
+    Map<String, Object> history(JsonObject query);
     Map<String, Object> concede(JsonObject command);
     Map<String, Object> tempoPresented(JsonObject command);
     boolean finished();

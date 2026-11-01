@@ -46,7 +46,7 @@ internal sealed partial class TableApplication
         }
         bool experienceInput = ExperienceOpen && !ActivityOpen && !updatesOpen;
         bool blockedInput = ActivityOpen || experienceInput || updatesOpen;
-        bool chatKeys = blockedInput || !CurrentManaReading && ChatKeys(keys);
+        bool chatKeys = blockedInput || HistoryOpen || historyInspector || !CurrentManaReading && ChatKeys(keys);
         if (!chatKeys) { DeckKeys(keys); SetupKeys(keys); }
         pointer = RenderViewport.Fit(viewport, DesignHeight).ToLogical(new(mouse.X, mouse.Y));
         if (UpdateAudioInput(mouse, keys, blockedInput)) {
@@ -100,11 +100,26 @@ internal sealed partial class TableApplication
             else if (pressed == null && hit == null) { CollapseCardReading(); FoldCardCollection(); }
             pressed = null; dragSource = null; dragging = false; ClearCardDrag();
         }
+        if (HistoryOpen || historyInspector) {
+            if (keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) {
+                if (historyInspector) ReturnToHistory(); else CloseHistory();
+            } else if (HistoryOpen && !historySaved) {
+                if (keys.IsKeyDown(Keys.Left) && previousKeys.IsKeyUp(Keys.Left)) HandleHistoryIntent(new HistoryIntent.Move(-1));
+                if (keys.IsKeyDown(Keys.Right) && previousKeys.IsKeyUp(Keys.Right)) HandleHistoryIntent(new HistoryIntent.Move(1));
+                if (keys.IsKeyDown(Keys.Home) && previousKeys.IsKeyUp(Keys.Home)) HandleHistoryIntent(new HistoryIntent.Newest());
+            }
+            previousMouse = mouse; previousKeys = keys;
+            return;
+        }
         if (experienceInput && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) {
             CloseTableGuide();
         }
         if (updatesOpen && !ActivityOpen && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) CloseAppUpdates();
-        if (escapePressed && CurrentManaReading) {
+        if (escapePressed && historyInspector) {
+            ReturnToHistory(); pressed = null;
+        } else if (escapePressed && HistoryOpen) {
+            CloseHistory(); pressed = null;
+        } else if (escapePressed && CurrentManaReading) {
             overlay = ""; pressed = null;
         } else if (escapePressed && turnPassRequest != null) {
             turnPassRequest = null;

@@ -52,8 +52,40 @@ public final class ExecutionTracker {
     private final Deque<Transition> history = new ArrayDeque<>();
     private final Deque<String> executing = new ArrayDeque<>();
     private long sequence;
+    private String paymentOrigin = "unknown";
+    private int paymentPreviewDepth;
 
     ExecutionTracker(Game game) { this.game = game; }
+
+    public String paymentOrigin() { return paymentOrigin; }
+    public boolean paymentIsPreview() { return paymentPreviewDepth > 0; }
+
+    /** Legacy quotes temporarily borrow/refund real pool units. Such a quote
+     * must not become an actual-spending receipt through a nested helper. */
+    public PaymentPreview enterPaymentPreview(boolean preview) {
+        if (preview) paymentPreviewDepth++;
+        return new PaymentPreview(preview);
+    }
+    public final class PaymentPreview implements AutoCloseable {
+        private final boolean preview;
+        private boolean closed;
+        private PaymentPreview(boolean preview) { this.preview = preview; }
+        @Override public void close() { if (!closed) { if (preview) paymentPreviewDepth--; closed = true; } }
+    }
+
+    /** Gesture provenance only; this neither authorizes nor performs payment. */
+    public PaymentOrigin enterPaymentOrigin(String origin) {
+        if (!Set.of("manual", "auto", "unknown").contains(origin)) throw new IllegalArgumentException("Unknown payment origin");
+        var scope = new PaymentOrigin(paymentOrigin);
+        paymentOrigin = origin;
+        return scope;
+    }
+    public final class PaymentOrigin implements AutoCloseable {
+        private final String previous;
+        private boolean closed;
+        private PaymentOrigin(String previous) { this.previous = previous; }
+        @Override public void close() { if (!closed) { paymentOrigin = previous; closed = true; } }
+    }
 
     /** A trigger can be announced before its controller starts paying costs. */
     public String prepare(SpellAbility ability) { return prepare(ability, currentId()); }

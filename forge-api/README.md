@@ -1438,6 +1438,70 @@ atomic controller operations with both endpoints, revalidated by the authority.
 Public assignments reach all seats, including planned blocks before confirmation.
 Legal choices are never inferred from highlighted cards or another player's view.
 
+### Audience-scoped match history
+
+The optional `match-history` ready capability adds read-only `matchHistory` with
+`{gameId, afterSequence, limit}`. It uses the same seat endpoint for local and
+TCP play. `gameId` must match the endpoint's current match; callers cannot select
+another viewer. Unlike an action, reading does not require a current decision or
+its revision/token. `afterSequence` is a nonnegative exact integer no greater
+than the current tail. `limit` defaults to 128 and ranges from 1 through 128.
+
+Synchronization version 3 retains additive handshake capabilities. New hosts
+advertise `match-history`; a legacy hello without capabilities means an empty
+feature set. The desktop API emits typed `history-unavailable` only when that
+negotiated seat feature is absent. Invalid cursors, malformed batches and
+ordinary provider failures are not downgraded by matching error prose.
+
+The response is `{schemaVersion:1, gameId, viewerId, firstSequence, lastSequence,
+nextSequence, hasMore, records}`. Record ordinals belong to this audience's
+history ledger. Activity IDs and rules execution transition sequences retain
+their separate meanings inside the payload. Never infer missing transport from
+private rules transitions that this viewer was not permitted to observe.
+
+Each record supplies `sequence`, event-time `turn`/`phaseKey`, `exposure` (`public`
+or `seatPrivate`), optional historical `executionId`, `parentId`, `sourceCardId`
+and `sourceName`, and exactly one `activity`, `execution` or `payment` payload.
+`execution` contains `occurrence` and an optional `transition`. These immutable
+historical values do not grant current card inspection or input authority.
+Existing execution/activity audience admission runs before history capture;
+other seats' hidden preparation never enters the viewer's ledger. Public
+production does not include a private paid spell's bill or causal parent.
+Public activity copies omit unclassified `Detail` prose: a visible source does
+not certify every remembered object in an augmented stack description. Typed
+results and admitted cause rules remain available; private or unknown cause
+correlation IDs are removed from public copies.
+
+`payment` supplies `kind` (`opened`, `produced`, `spent`, `completed`, `cancelled`,
+or `restored`), `payerId`, `origin` (`manual`, `auto`, or `unknown`), optional
+`producerExecutionId`/`producerMode`, symbolic `{symbol,count}` arrays
+`billBefore`/`billAfter`, color-count maps `produced`/`spent`/`poolAfter`,
+`sourceCounters`, and `restoredExecutionId`. Unknown values are null, not
+fabricated empty results. Production is copied after replacement; spending
+comes from actual consumed units and updated bills. Test/remove/refund payment
+quotes never emit spending receipts. Refunds are not new production. A certified
+restoration appends a linked correction rather than erasing the earlier fact.
+Actual cancelled-payment refunds also append a correction after resource
+restoration. Scoped speculative-payment work cannot emit actual-spending
+receipts through legacy nested helpers that do not carry a `test` argument.
+
+Capture occurs before the ordinary live 120-activity/512-transition tails evict
+entries. The in-memory ledger retains at most 16,384 records and 8 MiB of encoded
+record data. An individual record is limited to 64 KiB; an oversized record
+retires the retained prefix so its missing segment cannot become an unreported
+interior hole. Chunks also stop at 512 KiB of record data. `firstSequence` is the
+actual retained fence; if it advances beyond the consumer's next expected
+ordinal, that consumer must record incomplete coverage. `nextSequence` is the
+last scanned record (or the current tail for an empty chunk); request it as the
+next `afterSequence` until `hasMore` is false.
+
+There is no provider acknowledgement or disk-durability promise in this first
+port. The provider's ledger is bounded process memory. The native composition
+recorder persists accepted chunks in the background and tracks its durable
+cursor separately from enqueued/observed cursors. A restart cannot reconstruct
+an unwritten tail. Do not treat a public-safe support export as equivalent to a
+viewer archive containing seat-private payment/preparation facts.
+
 ## Upstream maintenance
 
 Keep `upstream` pointed at Card-Forge/forge and the integration repository at

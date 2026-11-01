@@ -23,14 +23,16 @@ final class OptionalManaPayment {
     /** One ordinary gesture from a complete current funding witness. Never a retained action handle. */
     record Step(Byte poolColor, SpellAbility ability, Map<String, Integer> output) {
         boolean apply(InputPayMana input) {
-            if (poolColor != null) {
-                if (!input.getUsablePoolManaColors().contains(poolColor)) return false;
-                input.useManaFromPool(poolColor); return true;
+            try (var provenance = input.getPayer().getGame().getExecutions().enterPaymentOrigin("auto")) {
+                if (poolColor != null) {
+                    if (!input.getUsablePoolManaColors().contains(poolColor)) return false;
+                    input.useManaFromPool(poolColor); return true;
+                }
+                ability.setActivatingPlayer(input.getPayer());
+                if (!ability.canPlay() || !ManaProductionProjection.simpleTapSourceIsStable(ability)) return false;
+                var choices = ManaProductionProjection.outputChoices(ability, output);
+                return choices != null && input.selectAbility(ability, choices);
             }
-            ability.setActivatingPlayer(input.getPayer());
-            if (!ability.canPlay() || !ManaProductionProjection.simpleTapSourceIsStable(ability)) return false;
-            var choices = ManaProductionProjection.outputChoices(ability, output);
-            return choices != null && input.selectAbility(ability, choices);
         }
     }
 

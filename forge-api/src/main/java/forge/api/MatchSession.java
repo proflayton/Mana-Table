@@ -66,6 +66,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private final PlayerView viewer;
     private final MatchActivity activity;
     private final MatchExecutions executions;
+    private final MatchHistory history;
     private final QuietYieldBaseline quietYield = new QuietYieldBaseline();
     private final PlayAccessProjection playAccess = new PlayAccessProjection();
     private final CombatCardIds combatIds;
@@ -224,11 +225,15 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         viewer = human.getPlayer().getView();
         activity = new MatchActivity(viewer, table.identities, this::currentCardView, this::currentCardOccurrence);
         executions = new MatchExecutions(game.getExecutions(), viewer, activity);
+        history = new MatchHistory(id, viewer, game, activity);
+        activity.history(history::activity);
+        executions.history(history::execution);
         activity.executionFilter(executions::reference);
         activity.finiteAncestry(executions::finiteDescendant);
         combatIds = new CombatCardIds(viewer, activity, table.identities);
         game.subscribeToEvents(executions);
         game.subscribeToEvents(activity);
+        game.subscribeToEvents(history);
         game.subscribeToEvents(combatIds);
         game.subscribeToEvents(this);
         gui = (IGuiGame) Proxy.newProxyInstance(IGuiGame.class.getClassLoader(), new Class<?>[]{IGuiGame.class}, (proxy, method, args) -> {
@@ -270,7 +275,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "stackInterruptionVersion", table.stackInterruption.version(), "undo", undoProjection(null)));
     }
 
-    void detach() { game.unsubscribeFromEvents(activity); game.unsubscribeFromEvents(executions); game.unsubscribeFromEvents(combatIds); game.unsubscribeFromEvents(this); }
+    void detach() { game.unsubscribeFromEvents(activity); game.unsubscribeFromEvents(executions); game.unsubscribeFromEvents(history); game.unsubscribeFromEvents(combatIds); game.unsubscribeFromEvents(this); }
+
+    @Override public Map<String, Object> history(JsonObject query) { return history.read(query); }
     void clearDecision() { pending = null; }
     void cancelDecision() {
         combatChoices.clear();
@@ -1361,6 +1368,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         Player actor = game.getRegisteredPlayers().stream().filter(player -> player.getId() == restored.actorId()).findFirst().orElse(null);
         activity.restored(actor == null ? null : actor.getView(), restored.executionId());
+        if (actor != null) history.restored(actor.getId(), restored.executionId(), forge.game.event.ManaPaymentReceipt.pool(actor));
     }
 
     private Map<String, Object> undoAction(Pending next, JsonObject request, boolean playerDriven) {

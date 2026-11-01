@@ -46,6 +46,7 @@ internal static partial class HeadlessPresentationSmoke
             AutomatedWireFailureChecks.Run(profile, Check);
             CostOrderingWireChecks.Run(Check);
             ExecutionWireChecks.Run(Check);
+            HistoryWireChecks.Run(Check);
             GameplayUndoWireChecks.Run(Check);
             FiniteResolutionWireChecks.Run(Check);
             FiniteStackYieldWireChecks.Run(Check);

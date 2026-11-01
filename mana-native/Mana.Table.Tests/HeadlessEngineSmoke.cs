@@ -322,6 +322,7 @@ internal static class HeadlessEngineSmoke
             Check(view.Match.Players.Where(player => player.Id != view.Match.ViewerId).All(player => player.Zone("Hand").Cards.Length == 0)
                 && frame.Cards.Where(card => card.Zone == "Hand").All(card => card.Request.Owner == view.Match.ViewerId),
                 "Private AI hands remain absent from both the real adapter snapshot and production prepared frame");
+            await HistoryEngineJourney.CheckAsync(engine, view.Match, paths.Profile, Check);
             var conceding = view.Match;
             Click("concede"); Click("confirm-concede"); await Idle();
             Guard();

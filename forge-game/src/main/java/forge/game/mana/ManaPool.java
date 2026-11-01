@@ -279,7 +279,10 @@ public class ManaPool extends ManaConversionMatrix implements Iterable<Mana> {
         if (!removeMana(mana)) {
             return false;
         }
+        boolean actual = !test && !owner.getGame().getExecutions().paymentIsPreview();
+        var billBefore = actual ? forge.game.event.ManaPaymentReceipt.bill(manaCost) : null;
         manaCost.payMana(mana, this);
+        if (actual) owner.getGame().fireEvent(forge.game.event.ManaPaymentReceipt.spent(owner, sa, mana, billBefore, manaCost));
 
         return true;
     }

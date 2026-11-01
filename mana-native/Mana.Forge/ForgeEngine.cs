@@ -28,6 +28,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         public bool TempoAvailable { get; set; }
         public bool AutomationAvailable { get; set; }
         public bool CertifiedUndoAvailable { get; set; }
+        public bool HistoryAvailable { get; set; }
         public ForgeCommandScope Commands { get; } = new();
         public volatile Exception? Failure;
     }
@@ -69,6 +70,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                             owner.TempoAvailable = capabilities.Contains("decision-tempo");
                             owner.AutomationAvailable = capabilities.Contains("automated-seats");
                             owner.CertifiedUndoAvailable = capabilities.Contains("certified-one-step-undo");
+                            owner.HistoryAvailable = capabilities.Contains("match-history");
                             owner.Ready.TrySetResult();
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
@@ -122,6 +124,8 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         // discarding a batch; identical prose on any other failure stays fatal.
         if (method == "automatedState" && Text(message, "errorCode") == "observation-superseded")
             return new EngineObservationSupersededException();
+        if (method == "matchHistory" && Text(message, "errorCode") == "history-unavailable")
+            return new NotSupportedException("This table does not expose match history.");
         return new EngineCommandRejectedException(Text(message, "error") is { Length: > 0 } error
             ? error : "The rules engine rejected this request.");
     }

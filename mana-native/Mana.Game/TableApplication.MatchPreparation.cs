@@ -45,7 +45,6 @@ internal sealed partial class TableApplication
             if (Scope != placementScope || card == null || options.Length == 0) { overlay = ""; placementCard = null; }
             else placementPage = Math.Clamp(placementPage, 0, Math.Max(0, (options.Length - 1) / 3));
         }
-        historyPage = Math.Clamp(historyPage, 0, Math.Max(0, (state.Notices.Length + state.Activity.Length - 1) / 10));
         string top = state.Stack.FirstOrDefault()?.Id ?? "";
         if (stackQueueTop != top) { stackQueueTop = top; stackQueuePage = 0; }
         stackQueuePage = Math.Clamp(stackQueuePage, 0, Math.Max(0, (state.Stack.Length - 1) / 3));

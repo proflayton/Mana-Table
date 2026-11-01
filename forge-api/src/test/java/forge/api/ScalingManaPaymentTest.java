@@ -89,6 +89,7 @@ public class ScalingManaPaymentTest {
             fixture.preview(payment, elevator);
             fixture.auto(payment);
             fixture.assertPaid(payment, elevator, counters, expectedProduced, expectedColor);
+            assertEquals(fixture.events.receipts.stream().filter(receipt -> receipt.kind().equals("produced")).findFirst().orElseThrow().origin(), "auto");
         }
     }
 
@@ -183,11 +184,14 @@ public class ScalingManaPaymentTest {
             });
             fixture.await(payment);
             fixture.assertPaid(payment, elevator, 32, 3, (int) MagicColor.COLORLESS);
+            assertEquals(fixture.events.receipts.stream().filter(receipt -> receipt.kind().equals("produced")).findFirst().orElseThrow().origin(), "manual");
         }
     }
 
     public static final class TapEvents {
         private final Map<Integer, Integer> counts = new HashMap<>();
+        final java.util.List<forge.game.event.ManaPaymentReceipt> receipts = new java.util.ArrayList<>();
+        @Subscribe public void receipt(forge.game.event.ManaPaymentReceipt receipt) { receipts.add(receipt); }
         @Subscribe public void event(GameEventCardTapped event) {
             if (event.tapped()) counts.merge(event.card().getId(), 1, Integer::sum);
         }
@@ -270,6 +274,16 @@ public class ScalingManaPaymentTest {
                 assertEquals(source.getCounters(CounterEnumType.CHARGE), counters, "Producing mana does not spend charge counters");
                 assertEquals(events.taps(source), 1, "The source is tapped exactly once");
                 assertEquals(payment.doneCalls, 1, "The current payment completes exactly once");
+                var production = events.receipts.stream().filter(receipt -> receipt.kind().equals("produced")
+                        && receipt.source() != null && receipt.source().getId() == source.getId()).findFirst().orElseThrow();
+                assertEquals(production.produced().values().stream().mapToInt(Integer::intValue).sum(), produced,
+                        "The receipt copies actual production, including the selected alternate mode");
+                assertEquals(production.sourceCounters().get(CounterEnumType.CHARGE.getName()), Integer.valueOf(counters));
+                assertEquals(events.receipts.stream().filter(receipt -> receipt.kind().equals("spent"))
+                        .mapToInt(receipt -> receipt.spent().values().stream().mapToInt(Integer::intValue).sum()).sum(), spent);
+                var terminal = events.receipts.stream().filter(receipt -> receipt.kind().equals("completed")).findFirst().orElseThrow();
+                assertTrue(terminal.billAfter().isEmpty());
+                assertEquals(terminal.poolAfter().values().stream().mapToInt(Integer::intValue).sum(), produced - spent);
                 return null;
             });
         }

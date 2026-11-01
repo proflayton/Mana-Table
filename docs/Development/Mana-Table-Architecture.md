@@ -18,9 +18,8 @@ different proof scopes. See the [testing guide](Mana-Table-Testing.md#api-test-p
 
 ## Local command diagnostics
 
-The [match history and evidence proposal](Mana-Table-History.md) audits the
-current retention and presentation gaps and defines the next migration. It is
-a design proposal, not implemented archival storage or a replay capability.
+The [match history and evidence design](Mana-Table-History.md) distinguishes the
+implemented payment/history slice from the remaining experience migration.
 
 The source implementation after 0.2.290 adds viewer-local command diagnostics at
 `Mana.Client/ClientSession`. Its optional typed callback describes admission,
@@ -49,6 +48,42 @@ evidence, not a durable match
 save, rules replay, public activity stream or automatic upload. See
 [local command diagnostics](Mana-Table-Testing.md#local-command-diagnostics) for
 limits and tests.
+
+## Match history and archival records
+
+The source candidate after 0.2.317 adds the optional `IMatchHistory` port and
+`match-history` capability. `MatchHistory` captures immutable audience-scoped
+activity, execution and committed payment facts before the ordinary 120/512 live
+tails expire. Its archival ordinals are separate from activity and execution
+cursors. Read-only local/TCP chunks expose retention bounds and progress; they
+do not acknowledge durable storage. Older hosts negotiate absent capability,
+while malformed responses remain errors rather than unsupported fallbacks.
+
+`MatchHistorySession` belongs to `Mana.Client` and fences queries by accepted
+game/audience generation. It owns deduplication, gaps and the immutable
+`MatchHistoryReadModel`; it cannot issue a gameplay command. Historical identities
+never enter the live action catalog. The renderer's existing feedback consumers
+are not yet migrated to this new reader. `Mana.Game` owns selected play, measured
+reading, current disclosure checks and archive navigation, with no rules inference
+from nearby observations or payment pool differences.
+
+Composition constructs `MatchHistoryArchive` and injects it through `TableServices`.
+Accepted history batches feed its bounded background writer. Archives use local
+GUID directories under the profile's `history`, with `manifest.json` and
+`receipts.jsonl`; provider IDs never become paths. Defaults are ten retained
+matches, 30 days, 32 MiB per journal and 256 MiB total journal bytes. Provider
+retention is 16,384 records/8 MiB, chunks at most 128 records/512 KiB; native reading
+is bounded separately by 32,768 records/32 MiB. Exceeding a bound marks missing
+coverage. SHA-256 chains detect local corruption, not signed authenticity.
+
+Accepted, queued and written states remain distinct. A finished match closes
+after history catches up; leaving earlier marks an unobserved tail. Late accepted
+final chunks can append to a retained closed archive. Unfinished manifests after
+restart report interrupted closure. Storage failure cannot disconnect the match.
+Default JSON exports allowlist public facts and close private causal references;
+including the viewer's private choices requires explicit consent. Unclassified
+raw activity detail is not certified public. No snapshots, live action handles,
+private AI observations, chat or profile-directory bundles are exported.
 
 ## Optional payment consent
 

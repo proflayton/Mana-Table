@@ -46,6 +46,8 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     private final Queue<Card> delaySelectCards = new LinkedList<>();
 
     private boolean bPaid = false;
+    private String historyOrigin = "unknown";
+    private boolean historyFinished;
 
     private boolean locked = false;
 
@@ -149,6 +151,8 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     protected final void captureOriginalManaCost() {
         if (originalManaCost != null) throw new IllegalStateException("The original payment bill is immutable");
         if (manaCost != null) originalManaCost = new ManaCostBeingPaid(manaCost);
+        game.fireEvent(forge.game.event.ManaPaymentReceipt.payment("opened", player, saPaidFor,
+                originalManaCost, manaCost, "unknown"));
     }
 
     public final ManaCostBeingPaid getOriginalManaCost() {
@@ -255,11 +259,15 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     }
 
     public void useManaFromPool(byte colorCode) {
-        // find the matching mana in pool.
-        if (player.getManaPool().tryPayCostWithColor(colorCode, saPaidFor, manaCost, saPaidFor.getPayingMana())) {
-            // Record paying mana from pool here
-            getController().macros().addRememberedAction(new PayManaFromPoolAction(colorCode));
-            showMessage();
+        String origin = paymentGestureOrigin();
+        historyOrigin = origin;
+        try (var provenance = game.getExecutions().enterPaymentOrigin(origin)) {
+            // find the matching mana in pool.
+            if (player.getManaPool().tryPayCostWithColor(colorCode, saPaidFor, manaCost, saPaidFor.getPayingMana())) {
+                // Record paying mana from pool here
+                getController().macros().addRememberedAction(new PayManaFromPoolAction(colorCode));
+                showMessage();
+            }
         }
     }
 
@@ -400,24 +408,28 @@ public abstract class InputPayMana extends InputSyncronizedBase {
         // System.out.println("Chosen sa=" + chosen + " of " + chosen.getHostCard() + " to pay mana");
 
         locked = true;
+        String gestureOrigin = paymentGestureOrigin();
         game.getAction().invoke(() -> {
-            if (PlaySpellAbility.playSpellAbility(getController(), chosen.getActivatingPlayer(), chosen)) {
-                final List<AbilityManaPart> manaAbilities = chosen.getAllManaParts();
-                boolean restrictionsMet = true;
+            historyOrigin = gestureOrigin;
+            try (var provenance = game.getExecutions().enterPaymentOrigin(gestureOrigin)) {
+                if (PlaySpellAbility.playSpellAbility(getController(), chosen.getActivatingPlayer(), chosen)) {
+                    final List<AbilityManaPart> manaAbilities = chosen.getAllManaParts();
+                    boolean restrictionsMet = true;
 
-                for (AbilityManaPart sa : manaAbilities) {
-                    if (!sa.meetsManaRestrictions(saPaidFor)) {
-                        restrictionsMet = false;
-                        break;
+                    for (AbilityManaPart sa : manaAbilities) {
+                        if (!sa.meetsManaRestrictions(saPaidFor)) {
+                            restrictionsMet = false;
+                            break;
+                        }
+                    }
+
+                    if (restrictionsMet && !player.getController().isFullControl(FullControlFlag.NoPaymentFromManaAbility)) {
+                        player.getManaPool().payManaFromAbility(saPaidFor, manaCost, chosen);
                     }
                 }
-
-                if (restrictionsMet && !player.getController().isFullControl(FullControlFlag.NoPaymentFromManaAbility)) {
-                    player.getManaPool().payManaFromAbility(saPaidFor, manaCost, chosen);
-                }
+                // Need to call this to unlock
+                onStateChanged();
             }
-            // Need to call this to unlock
-            onStateChanged();
         });
 
         return true;
@@ -451,8 +463,11 @@ public abstract class InputPayMana extends InputSyncronizedBase {
             final Runnable proc = () -> ComputerUtilMana.payManaCost(manaCost, saPaidFor, player, effect);
             //must run in game thread as certain payment actions can only be automated there
             game.getAction().invoke(() -> {
-                runAsAi(proc);
-                onStateChanged();
+                historyOrigin = "auto";
+                try (var provenance = game.getExecutions().enterPaymentOrigin("auto")) {
+                    runAsAi(proc);
+                    onStateChanged();
+                }
             });
         }
     }
@@ -491,11 +506,24 @@ public abstract class InputPayMana extends InputSyncronizedBase {
 
     protected void onStateChanged() {
         if (isAlreadyPaid()) {
+            recordPaymentEnd("completed");
             done();
             stop();
         } else {
             FThreads.invokeInEdtNowOrLater(this::updateMessage);
         }
+    }
+
+    protected final void recordPaymentEnd(String kind) {
+        if (historyFinished) return;
+        historyFinished = true;
+        game.fireEvent(forge.game.event.ManaPaymentReceipt.payment(kind, player, saPaidFor,
+                originalManaCost, manaCost, historyOrigin));
+    }
+
+    private String paymentGestureOrigin() {
+        String inherited = game.getExecutions().paymentOrigin();
+        return !inherited.equals("unknown") ? inherited : getController().isExternallyAutomated() ? "unknown" : "manual";
     }
 
     protected abstract void done();

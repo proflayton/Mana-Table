@@ -16,6 +16,7 @@ public final class SyncTransport {
     public interface Handler { Object apply(int seat, String method, JsonObject arguments) throws Exception; }
     public interface Connection extends AutoCloseable {
         Object request(String method, JsonObject arguments);
+        default Set<String> capabilities() { return Set.of(); }
         @Override void close();
     }
     private SyncTransport() { }
@@ -24,6 +25,7 @@ public final class SyncTransport {
         private final Handler handler;
         private final java.util.function.IntSupplier join;
         private final java.util.function.IntConsumer disconnectSeat;
+        private final Set<String> capabilities;
         private final Map<String, SeatChannel> channels = new ConcurrentHashMap<>();
         private final Set<SeatChannel> seatChannels = ConcurrentHashMap.newKeySet();
         private final Set<Socket> sockets = ConcurrentHashMap.newKeySet();
@@ -32,7 +34,11 @@ public final class SyncTransport {
         private volatile boolean closed;
         public Server(Handler handler, java.util.function.IntSupplier join) { this(handler, join, ignored -> { }); }
         public Server(Handler handler, java.util.function.IntSupplier join, java.util.function.IntConsumer disconnectSeat) {
+            this(handler, join, disconnectSeat, Set.of());
+        }
+        public Server(Handler handler, java.util.function.IntSupplier join, java.util.function.IntConsumer disconnectSeat, Set<String> capabilities) {
             this.handler = handler; this.join = join; this.disconnectSeat = disconnectSeat;
+            this.capabilities = checkedCapabilities(capabilities);
         }
         public synchronized int listen() throws IOException {
             if (listener != null) return listener.getLocalPort();
@@ -104,7 +110,7 @@ public final class SyncTransport {
                     }
                 }
                 generation = channel.attach();
-                write(output, JSON.toJsonTree(Map.of("version", VERSION, "resume", token, "seat", channel.seat)));
+                write(output, JSON.toJsonTree(Map.of("version", VERSION, "resume", token, "seat", channel.seat, "capabilities", capabilities)));
                 while (!closed) write(output, channel.apply(read(input), generation));
             } catch (Exception failure) {
                 // A dropped connection retains its seat and receipt. Reconnection never replays a mutation.
@@ -120,6 +126,7 @@ public final class SyncTransport {
                 if (ended) throw new IllegalStateException("This connection has closed");
                 return result(channel.apply(envelope(++sequence, method, args), generation), sequence);
             }
+            @Override public Set<String> capabilities() { return capabilities; }
             @Override public synchronized void close() { if (!ended) { ended = true; channel.detach(generation); } }
         }
         @Override public synchronized void close() {
@@ -139,6 +146,7 @@ public final class SyncTransport {
         private String token = "";
         private long sequence;
         private JsonObject unresolved;
+        private volatile Set<String> capabilities = Set.of();
         public Remote(String endpoint) { this(endpoint, ""); }
         private Remote(String endpoint, String resume) {
             token = resume;
@@ -155,6 +163,18 @@ public final class SyncTransport {
             var hello = read(input);
             if (hello.has("error")) throw new IOException(hello.get("error").getAsString());
             if (hello.get("version").getAsInt() != VERSION) throw new IOException("Incompatible sync protocol");
+            try {
+                var advertised = new LinkedHashSet<String>();
+                if (hello.has("capabilities")) {
+                    if (!hello.get("capabilities").isJsonArray() || hello.getAsJsonArray("capabilities").size() > 32)
+                        throw new IllegalArgumentException("Invalid synchronization capabilities");
+                    for (var value : hello.getAsJsonArray("capabilities")) {
+                        if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString() || !advertised.add(value.getAsString()))
+                            throw new IllegalArgumentException("Invalid synchronization capability");
+                    }
+                }
+                capabilities = checkedCapabilities(advertised);
+            } catch (IllegalArgumentException invalid) { throw new IOException("Invalid synchronization capabilities", invalid); }
             token = hello.get("resume").getAsString();
         }
         @Override public synchronized Object request(String method, JsonObject args) {
@@ -178,6 +198,7 @@ public final class SyncTransport {
             throw new AssertionError();
         }
         /** A reconnect preserves the seat; the next read fetches a complete authoritative snapshot. */
+        @Override public Set<String> capabilities() { return capabilities; }
         public synchronized void reconnect() { disconnect(); }
         private void disconnect() { if (socket != null) try { socket.close(); } catch (IOException ignored) { } socket = null; }
         @Override public synchronized void close() { disconnect(); }
@@ -186,6 +207,11 @@ public final class SyncTransport {
     private static JsonObject envelope(long sequence, String method, JsonObject args) {
         var command = new JsonObject(); command.addProperty("sequence", sequence); command.addProperty("method", method);
         command.add("arguments", args == null ? new JsonObject() : args.deepCopy()); return command;
+    }
+    private static Set<String> checkedCapabilities(Set<String> values) {
+        if (values == null || values.size() > 32 || values.stream().anyMatch(value -> value == null || !value.matches("[a-z][a-z0-9-]{0,63}")))
+            throw new IllegalArgumentException("Invalid synchronization capabilities");
+        return Set.copyOf(values);
     }
     private static Object result(JsonObject receipt, long sequence) {
         if (receipt.get("sequence").getAsLong() != sequence) throw new IllegalStateException("Unexpected synchronization receipt");

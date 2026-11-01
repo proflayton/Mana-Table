@@ -1,9 +1,40 @@
 # Match history and diagnostic evidence
 
-**Design proposal, 1 November 2026. Not implemented or human-approved.**
-Audited against the source of release 0.2.317 (`293b4112c258`). This proposal
+**First implementation candidate after 0.2.317; human review pending.**
+Audited against release 0.2.317 (`293b4112c258`). The payment/history slice below
+is implemented in source; the remaining sections describe the wider design. It
 extends the existing rules execution and activity boundaries; it does not add
 another rules engine, require event sourcing, or promise save-game replay.
+
+## First slice in source
+
+History now reads provider-captured activity, executions and actual mana receipts
+through the optional `match-history` capability. Its read-only client owner admits
+exact game/audience chunks once, preserves coverage and derives actions by actual
+execution identity. Production is captured after replacement, spending at its
+actual cost owner; preview payments and refunds do not masquerade as production.
+Auto/manual provenance, symbolic bills, output, spending, remaining mana and
+linked certified restoration are separate immutable facts.
+
+The game replaces the ten clipped rows with a selected source and measured
+cost/result detail. Previous/Next play and left/right keys navigate occurrences;
+Home explicitly returns to newest. Incoming events do not move an existing
+selection. Current disclosed sources open a noncommitting card reader with
+Back to history/Escape. Expired faces retain only recorded permitted facts.
+
+Saved matches are reachable from History and Recent matches on the home screen.
+Background archives survive reopening the application. Save report creates a
+structured local JSON report; its default scope keeps public facts, with an
+explicit option to include the viewer's own private choices. Selection markers
+identify only records allowed by that export scope. Nothing uploads automatically.
+
+This slice does not yet deliver the compact live action trail, direct turn/seat
+lookup, counted mass-trigger/combat workspace, historical printed-face grants or
+the broader freeze/incident recorder. Existing operational logs remain separately
+budgeted and retain their previous behavior. Renderer feedback still consumes its
+existing activity cursor; the new history reader must not be described as a
+completed migration of all live feedback. The sections below remain the target
+for those follow-up migrations.
 
 ## The problem we must solve
 

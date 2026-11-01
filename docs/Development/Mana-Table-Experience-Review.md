@@ -8,7 +8,7 @@ does not establish that a person can understand or use the screen.
 
 ## Reconsider history and logs: 1 November 2026
 
-**Design proposal; implementation and human review pending.** The player rejected
+**First payment/history implementation candidate; human review pending.** The player rejected
 the text-only history as unreadable and unhelpful, after the short diagnostic
 tail could not identify an earlier mana payment. The [history and evidence
 proposal](Mana-Table-History.md) records the source audit, game references,
@@ -20,7 +20,12 @@ related repeated effects expandable as counted source groups. Reading must not
 reuse a live target/action gesture. Improving typography or retaining additional
 polls cannot repair missing event-time facts or chronology. Review the proposed
 journey with mass draws, combat, long matches and the player's payment report;
-the exact historical bill remains unrecovered.
+the exact historical bill remains unrecovered. The first source slice now opens
+one selected play with its source, actual cost/payment/result facts, Previous/Next
+play navigation, noncommitting current-card reading and saved match/report access.
+The compact live trail, direct turn lookup and counted trigger/combat workspace
+remain planned. Review this exact selected-play journey separately from those
+unimplemented surfaces; automated safety and rendered checks do not imply approval.
 
 ## Prefer the current mana yield: 1 November 2026
 

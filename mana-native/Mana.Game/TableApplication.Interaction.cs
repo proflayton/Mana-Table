@@ -32,6 +32,7 @@ internal sealed partial class TableApplication
         switch (intent) {
             case UiIntent.NoInteraction or UiIntent.Block: break;
             case MatchIntent matchIntent: HandleMatchIntent(matchIntent); break;
+            case HistoryIntent historyIntent: HandleHistoryIntent(historyIntent); break;
             case DeckIntent deckIntent: DispatchDeckIntent(deckIntent); break;
             case ShellIntent shellIntent: HandleShellIntent(shellIntent); break;
             default: throw new InvalidOperationException("No interaction flow owns " + intent.GetType().Name);
@@ -188,7 +189,7 @@ internal sealed partial class TableApplication
         if (zoneName == "Stack") { OpenStack(Math.Clamp(zonePage - direction, 0, Math.Max(0, match!.Stack.Length - 1))); return; }
         if (overlay is "inspect" or "help" or "action") { inspectPage = Math.Max(0, inspectPage - direction); return; }
         if (overlay == "ability-auto-pass") { priorityAbilityTextPage = Math.Max(0, priorityAbilityTextPage - direction); return; }
-        if (overlay == "history") { historyPage = Math.Max(0, historyPage - direction); return; }
+        if (overlay == "history") return;
         if (zoneName != null) { zonePage = Math.Max(0, zonePage - direction); return; }
         if (DecisionModal && decisions.Allocation?.Inspection != null) { decisions.Allocation!.Inspection!.RulesPage = Math.Max(0, decisions.Allocation.Inspection.RulesPage - direction); return; }
         if (DecisionModal) { decisions.Page = Math.Max(0, decisions.Page - direction); return; }
