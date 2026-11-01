@@ -38,6 +38,7 @@ internal sealed partial class TableApplication
             // Never replace the selected activation with another card's policy.
             if (!abilities.Any(ability => ability.Id == priorityAbilityId)) overlay = "";
         }
+        if (overlay == "priority-stops" && PriorityAbilityOptions().Length == 0) overlay = "";
         if (overlay == "hand-placement") {
             var card = placementCard == null ? null : state.Viewer?.Zone("Hand").Cards.FirstOrDefault(card => CardViews.Same(card, placementCard));
             var options = card == null ? [] : HandPlacements.Options(state, card);

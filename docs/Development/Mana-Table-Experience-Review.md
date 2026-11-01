@@ -6,35 +6,59 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
-## Readable passing controls: 30 October 2026
+## Readable passing controls: 1 November 2026
 
-**SOURCE CANDIDATE; local checks passed; exact-head CI and human gameplay review pending.** The
-reported narrow **Until my next turn · Restore** strip hides which activation
-the player is skipping and makes taking control difficult. The intended journey
-is to read the actual ability, choose whether it should stop Auto, and return
-to the same table.
+**Activation-stop list revision after 0.2.311; human gameplay review pending.**
+Automated validation and exact-candidate CI belong in the pull request record.
+The first named **ACTIVATION STOP** card made the ability
+readable, but the player's Ghost Town screenshot shows that a persistent source
+card obstructs the table. The intended journey is to keep Auto's state visible,
+deliberately expand its activation stops, read one exact ability, then collapse
+the list without changing any passing preference.
 
 [Magic Online's gameplay controls](https://www.mtgo.com/getting-started/getting-started-tips-tricks)
-distinguish passing until a response is available (2), yielding through the turn
-(6), ability-specific yields and clearing those decisions (5).
+put effect-specific yield and optional-answer choices behind a right-click on
+the actual stack ability. Its separate clear-yields shortcut preserves an
+explicit way back to manual decisions.
 [Arena's mobile FAQ](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-mobile-faqs-2021-01-28)
-places Full Control on the player's avatar. Our adaptation keeps interruption
-beside the portrait and puts an activation's preference beside its source. These
-references establish game precedents, not this exact layout or desktop gesture.
+places Full Control behind a tap-and-hold on the player's avatar. Its
+[January 2021 developer article](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-january-2021-01-21)
+describes tapping a tucked hand to fan out its cards and tapping the battlefield
+to tuck them again. These observations support a quiet seat-attached entry and
+deliberate expansion. Neither game documents this exact saved-activation list;
+the counted entry, drawer and desktop gestures below are our Commander adaptation.
 
-The **ACTIVATION STOP** entry shows the full first source name, a count when
-needed, and whether Auto is skipping an activation until the next own turn.
-Opening it only reads the source and complete current ability rules under
-**Auto · This activation**. **Skip this activation** changes only that exact
-engine-issued ability ID; **Stop for this ability** restores its stop.
-**Back to table** dismisses the reader. A skipped ability remains manually
-usable, and other available responses still stop Auto. Hold or Full Control
-pauses the preference's automatic effect.
+The collapsed **Activation stops · N** entry sits beside Auto, with a minimum
+40-pixel hit height. It replaces the persistent first-source card. Its count
+includes current activation stops and retained skipped activations; it must not
+imply that every entry is skipped. Clicking opens the `priority-stops` list,
+which separately states how many activations Auto is skipping until the next
+own turn. Reading the list sends no game command.
+
+Each entry retains its complete measured source name, readable ability rules and
+current stop/skip status. Separate abilities from the same source remain separate
+entries with their own exact IDs and rules. A long rules preview ends with
+**Read complete ability**; selecting the entry opens the existing
+**Auto · This activation** reader with that exact ability's complete rules.
+**Back to list** returns to the same list. **Back to table**, Escape or
+clicking outside dismisses the expanded surface without changing Auto, Hold or
+any saved rule. The small list expands into a wider measured, multi-column
+workspace before using navigation when full-size entries still exceed the
+available space. It does not reduce names to ellipses or turn the table into a
+permanently occupied scrolling settings panel.
+
+**Skip this activation** changes only the current engine-issued ability ID;
+**Stop for this ability** restores that exact retained stop. A skipped ability
+remains manually usable, and other available responses still stop Auto. Hold
+or Full Control pauses the preference's automatic effect. Yielding priority,
+answering an optional trigger and ignoring an available activation remain
+different permissions with their existing lifetimes.
 
 Artwork requires the exact currently disclosed card handle. A missing handle
 retains the disclosed full name and rules without guessing a face. An expired
-selected ID closes the reader rather than selecting another activation. The
-gesture never casts, activates, pays or answers a required choice.
+selected ID closes its reader rather than selecting another activation. Opening,
+reading, returning to the list and collapsing never cast, activate, pay or answer
+a required choice. Current action scopes and visibility permissions are unchanged.
 
 Routine Auto also exposes a larger **Take control** action near the portrait
 while polling or sending. It holds Auto for the current turn and reconciles a
@@ -43,19 +67,17 @@ without passing, while the host's configured decision clock continues. **Wait
 for action**, **Pass once** and the finite **Resolve these** queue retain their
 existing consent and interruption boundaries.
 
-The existing `PriorityAbilitySmoke` and `PriorityContinuationChecks` journeys
-use real pointer targets at 1000 x 740 and 1540 x 980 with 130% text. Local
-validation passed 2734 headless checks and both window journeys, including
-distinct same-source abilities, expiry while reading, and taking control during
-a delayed reply. Agent inspection of those captures found the named entry,
-rules and separate Take control readable without visible overlap. Only Arid
-Mesa used real artwork; other faces were pattern fixtures. This does not cover
-a 100-permanent table or establish human gameplay acceptance. The existing
-priority window journey also runs in the ordinary CI release partition.
-The separate priority-flow journey passes 50 checks at each size in both
-headless and rendered modes, including reading and closing the named activation
-without a command, keeping the entire stack queue clear, and completing the
-existing priority, recipient and library-selection sequence.
+Arena's tucked hand and MTGO's source menu do not establish readability for a
+Commander list containing many distinct or identically named abilities. Long
+same-source previews may need inspection to distinguish their complete rules.
+Review
+the full collapsed/list/reader/return journey at 1000 x 740 and 1540 x 980 with
+130% text, multiple sources, same-source abilities, long names, retained rules
+without artwork and expiry during inspection. Keep the stack queue, required
+decision and Take control reachable. Earlier `PriorityAbilitySmoke`,
+`PriorityContinuationChecks` and priority-flow results covered the previous
+source card and reader; they do not validate this list candidate. Its automated
+checks, rendered inspection and human gameplay review remain separate and pending.
 
 ## Large cleanup hands: 30 October 2026
 

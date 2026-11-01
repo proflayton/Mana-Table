@@ -2,10 +2,13 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Magic;
+using Mana.Table.Interaction;
+using Mana.Renderer;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
 using Point = Microsoft.Xna.Framework.Point;
+using Keys = Microsoft.Xna.Framework.Input.Keys;
 
 namespace Mana.Table;
 
@@ -17,7 +20,7 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
     private MouseState mouse = new(0, 0, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
     private string? click;
     private Mana.Table.Interaction.TableHit? staleUndo;
-    private Mana.Table.Interaction.TableHit? staleEntry;
+    private Mana.Table.Interaction.TableHit? staleRow;
     private string manualGame = "", manualDecision = "", manualCard = "";
     public string? ExpectedClick => click;
     public bool ClickAccepted { get; set; }
@@ -60,7 +63,7 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
     {
         string directory = Path.Combine(profile, "priority-artwork-handoff");
         Directory.CreateDirectory(directory);
-        new PlayPreferences { Automatic = false, Sounds = false }.Save(directory);
+        new PlayPreferences { Automatic = false, Sounds = false, TextScale = 1.3f }.Save(directory);
         var scenario = new InteractionScenarioEngine(); scenario.Present(Example());
         bool artworkReady = false;
         var resources = new Mana.Table.Presentation.PresentationResources {
@@ -71,9 +74,10 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
             initialState: scenario.State, resources: resources) { Automated = true };
         app.Initialize();
         var probe = app.TestPort;
+        probe.SetTableStudy(true);
         probe.PresentLobby(new("local", "Priority artwork handoff", null, false, null, true, "", null, [], []), pausePolling: true);
-        void Tick(double seconds) => app.Update(new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.016)),
-            new MouseState(20, 60, 0, default, default, default, default, default), new(), new(1280, 720));
+        void Tick(double seconds, Point? viewport = null, KeyboardState keys = default) => app.Update(new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.016)),
+            new MouseState(20, 60, 0, default, default, default, default, default), keys, viewport ?? new(1280, 720));
         Tick(.1); Tick(1.5);
         var loading = app.ReadPresentation().Observe();
         check(probe.ActivityOpen && probe.PreparingTableArtwork && !probe.Busy
@@ -91,10 +95,10 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
         probe.Accept(scenario.State); probe.SetAutomatic(true); Tick(1.7);
         var ignoredFrame = app.ReadPresentation();
         check(probe.DecisionDock?.Surface == DecisionDockSurface.None
-                && ignoredFrame.Hits.Any(hit => hit.Id == "ability-auto-pass-open" && hit.Bounds.Height >= 60
-                    && hit.Intent is Mana.Table.Interaction.MatchIntent.OpenPriorityPassing { AbilityId: "mesa-fetch" })
+                && ignoredFrame.Hits.Any(hit => hit.Id == "ability-auto-pass-open" && hit.Bounds.Height <= 48
+                    && hit.Intent is Mana.Table.Interaction.MatchIntent.OpenPriorityPassing { AbilityId: "" })
                 && !ignoredFrame.Hits.Any(hit => hit.Id is "confirm" or "quiet-priority-stop") && scenario.Replies.Count == 0,
-            "An ignored ability retains its named read entry during a quiet automatic window without a direct preference toggle or gameplay command");
+            "An ignored ability retains a compact list entry during a quiet automatic window without a persistent source panel or gameplay command");
         scenario.Present(scenario.State with { IgnoredPriorityAbilities = [ignored, ignored with { Id = "second-ignored-ability" }] });
         probe.Accept(scenario.State); Tick(1.8);
         var multipleIgnoredFrame = app.ReadPresentation();
@@ -102,9 +106,118 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
                 && multipleIgnoredFrame.Hits.Any(hit => hit.Id == "ability-auto-pass-open"
                     && hit.Intent is Mana.Table.Interaction.MatchIntent.OpenPriorityPassing)
                 && scenario.Replies.Count == 0,
-            "Several ignored abilities retain their existing scoped Edit route while ordinary Auto keeps the decision dock quiet");
+            "Several ignored abilities share one list entry while ordinary Auto keeps the decision dock quiet");
+        double clock = 1.8;
+        bool automaticBefore = probe.Automatic, heldBefore = probe.Held;
+        var stateBeforeReading = scenario.State;
+        void OpenControl(string id) {
+            check(probe.Activate(app.ReadPresentation().Hits.Single(hit => hit.Id == id)),
+                "The current activation navigation target accepts its exact presentation intent: " + id);
+            Tick(clock += .1);
+        }
+        void CheckReadingDidNotChangePlay(string label) => check(probe.Automatic == automaticBefore && probe.Held == heldBefore
+                && scenario.State.Decision?.Id == stateBeforeReading.Decision?.Id
+                && scenario.State.IgnoredPriorityAbilities.SequenceEqual(stateBeforeReading.IgnoredPriorityAbilities)
+                && scenario.Replies.Count == 0,
+            label + " preserves Auto, Hold, every retained preference and the unanswered decision");
+        OpenControl("ability-auto-pass-open"); OpenControl("ability-read:mesa-fetch");
+        var reader = app.ReadPresentation();
+        var readerBody = reader.Hits.Single(hit => hit.Id == "ability-reader-body");
+        var readerBackdrop = reader.Hits.Single(hit => hit.Id == "ability-reader-backdrop");
+        check(probe.TableStudyEnabled && readerBody.Intent is UiIntent.Block
+                && readerBackdrop.Intent is Mana.Table.Interaction.MatchIntent.CloseView
+                && probe.HitAt(new(readerBody.Bounds.X + 2, readerBody.Bounds.Y + 2))?.Id == readerBody.Id
+                && probe.HitAt(new(200, 100))?.Id == readerBackdrop.Id,
+            "The shipping-table reader blocks empty interior space and offers a separate dismissible outside backdrop");
+        check(probe.Activate(readerBody), "The reader's empty body consumes an interior click");
+        Tick(clock += .1);
+        check(probe.Overlay == "ability-auto-pass", "Clicking the reader body keeps the exact ability open");
+        CheckReadingDidNotChangePlay("Reading and clicking inside the ability");
+        OpenControl("ability-reader-backdrop");
+        check(probe.Overlay.Length == 0 && app.ReadPresentation().Hits.Any(hit => hit.Id == "ability-auto-pass-open"),
+            "Clicking outside the ability reader collapses it back to the compact activation entry");
+        CheckReadingDidNotChangePlay("Outside dismissal of the reader");
+        OpenControl("ability-auto-pass-open");
+        Tick(clock += .1, keys: new(Keys.Escape)); Tick(clock += .1);
+        check(probe.Overlay.Length == 0, "Escape collapses the explicit activation list");
+        CheckReadingDidNotChangePlay("Escape from the list");
+        OpenControl("ability-auto-pass-open"); OpenControl("ability-read:mesa-fetch");
+        Tick(clock += .1, keys: new(Keys.Escape)); Tick(clock += .1);
+        check(probe.Overlay.Length == 0, "Escape collapses the exact activation reader");
+        CheckReadingDidNotChangePlay("Escape from the reader");
+        var listFrames = new List<object>();
+        var abilities = Enumerable.Range(0, 20).Select(index => new PriorityAbility("many-ability-" + index, "",
+            index < 2 ? "A Very Long Named Commander and Their Equally Long Named Partner"
+                : $"A Long Named Source With a Distinct Complete Ending Number {index}",
+            $"Ability {index}: Pay one life and remove a counter from this permanent: Draw a card, then choose a card from your hand and put it on the bottom of your library.",
+            index % 3 == 0)).ToImmutableArray();
+        var baseState = scenario.State;
+        foreach (var viewport in new[] { new Point(1000, 740), new Point(1540, 980) }) {
+            scenario.Present(baseState with {
+                IgnoredPriorityAbilities = abilities.Where(ability => ability.IgnoredUntilNextTurn).ToImmutableArray(),
+                Decision = baseState.Decision! with { Payload = ((PriorityPayload)baseState.Decision.Payload) with {
+                    CanAutoPass = false, Abilities = abilities
+                } }
+            });
+            probe.Accept(scenario.State); Tick(clock += .1, viewport);
+            var collapsed = app.ReadPresentation();
+            var entry = collapsed.Hits.Single(hit => hit.Id == "ability-auto-pass-open");
+            check(entry.Bounds.Height <= 48 && !collapsed.Hits.Any(hit => hit.Id.StartsWith("ability-read:", StringComparison.Ordinal))
+                && !collapsed.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => abilities.Any(ability => text.Value == ability.SourceName)),
+                "Many long-named activations preserve one compact entry and reserve no persistent source rows at " + viewport);
+            check(probe.Activate(entry), "The collapsed activation entry opens through its current presentation intent at " + viewport);
+            Tick(clock += .1, viewport);
+            int previousPages = 0;
+            while (app.ReadPresentation().Hits.SingleOrDefault(hit => hit.Id == "ability-list-prev") is { } previous) {
+                check(++previousPages < abilities.Length && probe.Activate(previous),
+                    "A reopened list can return from its retained page through the existing Previous control at " + viewport);
+                Tick(clock += .1, viewport);
+            }
+            var visited = new HashSet<string>(StringComparer.Ordinal);
+            var pages = new List<object>();
+            int page = 0;
+            while (true) {
+                var frame = app.ReadPresentation();
+                var rows = frame.Hits.Where(hit => hit.Id.StartsWith("ability-read:", StringComparison.Ordinal)).ToArray();
+                var text = frame.Drawing.Commands.Select(command => command switch {
+                    DrawCommand.Text value => value.Value, DrawCommand.CenterText value => value.Value, _ => null
+                }).Where(value => value != null).Cast<string>().ToArray();
+                check(probe.Overlay == "priority-stops" && rows.Length > 0
+                    && text.Contains("7 of 20 skipping until your next turn")
+                    && scenario.Replies.Count == 0,
+                    "The expanded list distinguishes seven skipped abilities from twenty exact options without advancing gameplay at " + viewport);
+                foreach (var row in rows) {
+                    var read = row.Intent as Mana.Table.Interaction.MatchIntent.ReadPriorityAbility;
+                    var ability = abilities.SingleOrDefault(ability => ability.Id == read?.Id);
+                    check(ability != null && row.Id == "ability-read:" + ability.Id && visited.Add(ability.Id)
+                        && text.Contains(ability.SourceName) && text.Contains(ability.Text),
+                        "Every full-size named list entry preserves its complete source, rules and independent exact ability identity at " + viewport);
+                    check(row.Bounds.Left >= 0 && row.Bounds.Top >= 60 && row.Bounds.Right <= 1600 && row.Bounds.Bottom <= 900
+                        && rows.All(other => other.Id == row.Id || !row.Bounds.Intersects(other.Bounds))
+                        && frame.Hits.Where(hit => hit.Id is "close-overlay" or "ability-list-prev" or "ability-list-next")
+                            .All(control => !row.Bounds.Intersects(control.Bounds))
+                        && probe.HitAt(row.Bounds.Center)?.Id == row.Id,
+                        "Each activation row stays within the table workspace, clear of other rows and navigation, with an uncovered target at " + viewport);
+                }
+                pages.Add(frame.Observe());
+                var next = frame.Hits.SingleOrDefault(hit => hit.Id == "ability-list-next");
+                if (next == null) break;
+                check(++page < abilities.Length && probe.Activate(next), "The expanded full-size list advances only through its explicit remaining-activations control at " + viewport);
+                Tick(clock += .1, viewport);
+            }
+            check(visited.SetEquals(abilities.Select(ability => ability.Id)) && page > 0,
+                "Every activation, including two independent abilities on one long-named source, is reachable after expanding the workspace at " + viewport);
+            var close = app.ReadPresentation().Hits.Single(hit => hit.Id == "close-overlay");
+            check(probe.Activate(close), "Back to table closes the explicit activation list at " + viewport);
+            Tick(clock += .1, viewport);
+            check(probe.Overlay.Length == 0 && scenario.Replies.Count == 0
+                && scenario.State.IgnoredPriorityAbilities.Length == 7
+                && scenario.State.Decision?.Payload is PriorityPayload { Abilities.Length: 20 },
+                "Collapsing the large list leaves every current and skipped ability unchanged at " + viewport);
+            listFrames.Add(new { Viewport = viewport, Pages = pages, Collapsed = app.ReadPresentation().Observe() });
+        }
         File.WriteAllText(Path.Combine(directory, "frames.json"), JsonSerializer.Serialize(new { Loading = loading, Ready = ready,
-            Ignored = ignoredFrame.Observe(), MultipleIgnored = multipleIgnoredFrame.Observe() },
+            Ignored = ignoredFrame.Observe(), MultipleIgnored = multipleIgnoredFrame.Observe(), Lists = listFrames },
             new JsonSerializerOptions { WriteIndented = true }));
     }
 
@@ -116,30 +229,57 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
         var state = scenario.State;
         switch (stage) {
             case 0:
+                if (!view.TableStudyEnabled) { view.SetTableStudy(true); changed = view.Now; return; }
                 view.SetAutomatic(true); view.SetHeld(true);
-                Check(view.Hits.Any(h => h.Id == "ability-auto-pass-open" && h.Bounds.Height >= 60
-                    && h.Intent is Mana.Table.Interaction.MatchIntent.OpenPriorityPassing { AbilityId: "mesa-fetch" }),
-                    "A single activation has a named readable entry with an exact ability intent and a substantial hit area");
+                Check(view.Hits.Any(h => h.Id == "ability-auto-pass-open" && h.Bounds.Height is >= 32 and <= 48
+                    && h.Intent is Mana.Table.Interaction.MatchIntent.OpenPriorityPassing { AbilityId: "" }),
+                    "A single activation has a compact readable list entry without preselecting or changing an ability");
                 Check(state.Decision?.Payload is PriorityPayload { CanAutoPass: false }, "Arid Mesa initially prevents automatic passing");
                 Press("ability-auto-pass-open"); Next(); break;
             case 1: Capture(surface, "01-ability-available"); Release(); Next(); break;
             case 2:
+                Check(ClickAccepted && view.Overlay == "priority-stops" && scenario.Replies.Count == 0
+                    && view.Hits.Any(h => h.Id == "ability-read:mesa-fetch"
+                        && h.Intent is Mana.Table.Interaction.MatchIntent.ReadPriorityAbility { Id: "mesa-fetch" })
+                    && !view.Hits.Any(h => h.Id == "ability-pass:mesa-fetch"),
+                    "Opening activation stops lists an exact named ability without toggling its preference or answering priority");
+                Capture(surface, "02-ability-list"); Press("ability-read:mesa-fetch"); Next(); break;
+            case 3: Release(); Next(); break;
+            case 4:
                 Check(ClickAccepted && view.Overlay == "ability-auto-pass" && scenario.Replies.Count == 0
                     && view.Hits.Any(h => h.Id == "ability-pass:mesa-fetch")
                     && state.Decision is { Payload: PriorityPayload { Abilities: [{ SourceCardKey: var source }] } }
                     && source == state.Viewer!.Zone("Battlefield").Cards.Single().Key,
-                    "Opening the single activation reads its current authorized source and rules without toggling a preference or passing");
-                Capture(surface, "02-ability-source-and-rules"); Press("ability-pass:mesa-fetch"); Next(); break;
-            case 3: Release(); Next(); break;
-            case 4:
+                    "Choosing the named activation reads its authorized source and exact rules without changing a preference or passing");
+                Capture(surface, "03-ability-source-and-rules"); Press("ability-list-back"); Next(); break;
+            case 5: Release(); Next(); break;
+            case 6:
+                Check(ClickAccepted && view.Overlay == "priority-stops" && scenario.Replies.Count == 0
+                    && view.Hits.Any(h => h.Id == "ability-read:mesa-fetch"),
+                    "Back to list preserves the exact unanswered activation choices without a command");
+                Press("ability-list-backdrop"); Next(); break;
+            case 7: Release(); Next(); break;
+            case 8:
+                Check(ClickAccepted && view.Overlay.Length == 0 && scenario.Replies.Count == 0
+                    && state.Decision?.Payload is PriorityPayload { CanAutoPass: false }
+                    && view.Hits.Any(h => h.Id == "ability-auto-pass-open")
+                    && !view.Hits.Any(h => h.Id.StartsWith("ability-read:", StringComparison.Ordinal)),
+                    "Clicking outside the list collapses every source row while retaining the same response and stop preference");
+                Press("ability-auto-pass-open"); Next(); break;
+            case 9: Release(); Next(); break;
+            case 10: Press("ability-read:mesa-fetch"); Next(); break;
+            case 11: Release(); Next(); break;
+            case 12: Press("ability-pass:mesa-fetch"); Next(); break;
+            case 13: Release(); Next(); break;
+            case 14:
                 Check(ClickAccepted && scenario.Replies is [IgnorePriorityAbility { AbilityId: "mesa-fetch" }], "The contextual control submits only the selected ability preference");
                 Check(state.Decision?.Payload is PriorityPayload { CanAutoPass: true } && state.IgnoredPriorityAbilities is [{ Id: "mesa-fetch", IgnoredUntilNextTurn: true }], "Engine-authorized Auto becomes eligible after ignoring the sole response");
                 Check(view.Automatic && view.Held && view.Hits.Any(h => h.Id == "confirm"), "Hold continues to expose manual priority after an ability is ignored");
                 Check(view.Hits.Any(h => h.Id == "ability-auto-pass-open") && !view.Hits.Any(h => h.Id == "ability-undo:mesa-fetch"),
-                    "The armed preference keeps its named source entry rather than an unexplained direct Restore switch");
-                Capture(surface, "03-ability-ignored-held");
+                    "The armed preference keeps its compact list entry rather than a direct Restore switch or persistent source panel");
+                Capture(surface, "04-ability-ignored-held");
                 Publish(state with { Decision = null, Status = "resolving" }); view.SetHeld(false); Next(); break;
-            case 5:
+            case 15:
                 Check(view.Hits.Any(h => h.Id == "ability-auto-pass-open") && state.IgnoredPriorityAbilities[0].SourceCardKey.Length == 0,
                     "The retained policy stays readable between prompts without retaining a source action handle");
                 Check(view.Hits.Any(h => h.Id == "priority-take-control"),
@@ -150,79 +290,92 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
                 Check(commandCards.Length > 0
                     && commandCards.All(card => !activationBounds.Intersects(card.Display.Bounds) && !activationBounds.Intersects(card.Hit.Bounds))
                     && followingFrame.Hits.Where(hit => hit.Zone == "Command").All(hit => !activationBounds.Intersects(hit.Bounds)),
-                    "The measured activation entry leaves every rendered commander face and command-zone card or pile hit unobstructed");
-                Capture(surface, "04-ability-ignored-following"); Press("ability-auto-pass-open"); Next(); break;
-            case 6: Release(); Next(); break;
-            case 7:
+                    "The compact activation entry leaves every rendered commander face and command-zone card or pile hit unobstructed");
+                Capture(surface, "05-ability-ignored-following"); Press("ability-auto-pass-open"); Next(); break;
+            case 16: Release(); Next(); break;
+            case 17:
+                Check(ClickAccepted && view.Overlay == "priority-stops" && state.Decision == null && scenario.Replies.Count == 1
+                    && view.Hits.Any(h => h.Id == "ability-read:mesa-fetch"),
+                    "The retained exact activation stays listed between prompts without a current source action handle");
+                Press("ability-read:mesa-fetch"); Next(); break;
+            case 18: Release(); Next(); break;
+            case 19:
                 Check(ClickAccepted && view.Overlay == "ability-auto-pass" && state.Decision == null && scenario.Replies.Count == 1,
                     "Reading a retained policy without an authorized source face uses its disclosed rules and sends no command");
                 staleUndo = view.Hits.Single(h => h.Id == "ability-undo:mesa-fetch");
-                Capture(surface, "05-ability-rules-only"); Press("ability-undo:mesa-fetch"); Next(); break;
-            case 8: Release(); Next(); break;
-            case 9:
+                Capture(surface, "06-ability-rules-only"); Press("ability-undo:mesa-fetch"); Next(); break;
+            case 20: Release(); Next(); break;
+            case 21:
                 Check(ClickAccepted && state.IgnoredPriorityAbilities.Length == 0, "Undo clears the preference without waiting for local priority");
                 Check(scenario.Replies[^1] is RestorePriorityAbility, "Undo uses the match preference command rather than a gameplay decision");
                 Check(scenario.Replies.Count == 2 && state.Decision == null, "Changing the preference never activates the card or advances a decision");
                 var example = Example();
                 Publish(example with { Decision = example.Decision! with { Payload = ((PriorityPayload)(example.Decision!).Payload) with { Abilities = [((PriorityPayload)example.Decision.Payload).Abilities[0], new("mesa-second", "mesa", "Arid Mesa", "A second independent ability on the same card.", false)] } } });
                 view.SetHeld(true); Next(); break;
-            case 10:
+            case 22:
                 Check(view.Hits.Any(h => h.Id == "ability-auto-pass-open"), "Multiple abilities open individual choices instead of a card-wide ignore");
                 Press("ability-auto-pass-open"); Next(); break;
-            case 11: Release(); Next(); break;
-            case 12:
-                Check(view.Overlay == "ability-auto-pass" && view.Hits.Any(h => h.Id == "ability-pass:mesa-fetch"), "Ability details show the exact first ability and its preference");
+            case 23: Release(); Next(); break;
+            case 24:
+                Check(view.Overlay == "priority-stops"
+                    && view.Hits.Any(h => h.Id == "ability-read:mesa-fetch")
+                    && view.Hits.Any(h => h.Id == "ability-read:mesa-second"),
+                    "Two abilities on the same source remain independent named list entries");
                 Check(scenario.Replies.Count == 2, "Opening several activation preferences still submits no gameplay or setting command");
-                Capture(surface, "06-ability-details"); Press("ability-next"); Next(); break;
-            case 13: Release(); Next(); break;
-            case 14:
+                Capture(surface, "07-same-source-ability-list"); Press("ability-read:mesa-second"); Next(); break;
+            case 25: Release(); Next(); break;
+            case 26:
                 Check(view.Hits.Any(h => h.Id == "ability-pass:mesa-second"), "The next ability on the same source has an independent scoped control");
                 Press("ability-pass:mesa-second"); Next(); break;
-            case 15: Release(); Next(); break;
-            case 16:
+            case 27: Release(); Next(); break;
+            case 28:
                 Check(state.IgnoredPriorityAbilities is [{ Id: "mesa-second" }] && state.Decision?.Payload is PriorityPayload { CanAutoPass: false }, "Ignoring one ability does not suppress another ability on the same card");
                 Check(view.Hits.Any(h => h.Id == "confirm"), "Another available response still stops Auto");
                 var mesaHit = view.Hits.First(h => h.Card?.VisualId == "mesa" && h.Zone == "Battlefield");
                 Check(mesaHit.Card!.Selectable && CardActions.CanActivate(state, mesaHit.Card), "An ignored source remains available for manual activation");
                 manualGame = state.Id; manualDecision = state.Decision!.Id; manualCard = mesaHit.Card.Key;
                 Press(mesaHit.Id); Next(); break;
-            case 17: Release(); Next(); break;
-            case 18:
+            case 29: Release(); Next(); break;
+            case 30:
                 if (view.DisplayedPose("mesa") is not { Size.X: >= 400 } || !view.Hits.Any(hit => hit.Id == "read-card-action")) return;
                 Check(scenario.Replies.Count == 3 && state.Decision is { Payload: PriorityPayload }
                     && state.IgnoredPriorityAbilities is [{ Id: "mesa-second" }],
                     "Reading the ignored source sends no gameplay reply and preserves its independent ability preference");
                 Press("read-card-action"); Next(); break;
-            case 19: Release(); Next(); break;
-            case 20:
+            case 31: Release(); Next(); break;
+            case 32:
                 Check(scenario.Replies[^1] is ActivateCard reply && reply.GameId == manualGame
                     && reply.DecisionId == manualDecision && reply.Card == manualCard && state.Decision is { Payload: AbilityChoicePayload },
                     "Explicit manual activation opens the normal ability chooser with the exact current game, decision and card scope");
                 var nextTurn = Example();
                 Publish(nextTurn with { Turn = nextTurn.Turn + 1, ActivePlayerId = nextTurn.ViewerId, IgnoredPriorityAbilities = [] }); Next(); break;
-            case 21:
+            case 33:
                 view.Activate(staleUndo!);
                 Check(!view.Busy && scenario.Replies.Count == 4, "An Undo captured before expiry quietly does nothing after that preference has cleared");
-                Check(view.Hits.Any(h => h.Id == "ability-auto-pass-open") && !view.Hits.Any(h => h.Id.StartsWith("ability-undo:")), "The viewer's next turn shows the named ability entry again after engine expiry");
+                Check(view.Hits.Any(h => h.Id == "ability-auto-pass-open") && !view.Hits.Any(h => h.Id.StartsWith("ability-undo:")), "The viewer's next turn retains the collapsed activation-list entry after engine expiry");
                 Check(!TurnGuide.CanAutoPass(state, true, false, new HashSet<string>(), false), "After expiry the available ability once again stops Auto");
                 Check(scenario.Replies.Count == 4 && scenario.Replies.All(r => r is IgnorePriorityAbility or RestorePriorityAbility or ActivateCard), "Preference and inspection flows never submit an automatic activation or extra pass");
-                Capture(surface, "07-ability-next-turn");
-                staleEntry = view.Hits.Single(hit => hit.Id == "ability-auto-pass-open");
+                Capture(surface, "08-ability-next-turn"); Press("ability-auto-pass-open"); Next(); break;
+            case 34: Release(); Next(); break;
+            case 35:
+                Check(view.Overlay == "priority-stops", "Opening the list after expiry reads the current available activations");
+                staleRow = view.Hits.Single(hit => hit.Id == "ability-read:mesa-fetch");
                 var replacement = Example() with { Turn = state.Turn, ActivePlayerId = state.ActivePlayerId };
                 Publish(replacement with { Decision = replacement.Decision! with { Payload = ((PriorityPayload)replacement.Decision.Payload) with {
                     Abilities = [((PriorityPayload)replacement.Decision.Payload).Abilities[0] with { Id = "replacement-fetch" }]
                 } } }); Next(); break;
-            case 22:
-                view.Activate(staleEntry!);
-                Check(view.Overlay.Length == 0 && scenario.Replies.Count == 4,
-                    "A source entry captured for an expired activation cannot silently open its replacement");
-                Press("ability-auto-pass-open"); Next(); break;
-            case 23: Release(); Next(); break;
-            case 24:
+            case 36:
+                view.Activate(staleRow!);
+                Check(view.Overlay == "priority-stops" && scenario.Replies.Count == 4
+                    && !view.Hits.Any(hit => hit.Id == "ability-pass:replacement-fetch"),
+                    "A named row captured for an expired activation cannot open its replacement or change a preference");
+                Press("ability-read:replacement-fetch"); Next(); break;
+            case 37: Release(); Next(); break;
+            case 38:
                 Check(view.Overlay == "ability-auto-pass" && view.Hits.Any(hit => hit.Id == "ability-pass:replacement-fetch"),
-                    "A fresh source entry opens the exact replacement activation");
+                    "A fresh named list row opens the exact replacement activation");
                 Publish(Example() with { Turn = state.Turn, ActivePlayerId = state.ActivePlayerId }); Next(); break;
-            case 25:
+            case 39:
                 Check(view.Overlay.Length == 0 && scenario.Replies.Count == 4,
                     "A focused activation which disappears closes instead of rebinding its Skip button to a surviving ability");
                 File.WriteAllText(Path.Combine(view.Profile, "priority-ability-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));

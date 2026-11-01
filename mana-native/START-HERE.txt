@@ -482,13 +482,18 @@ During a required hand-card choice, including mulligan bottoming or discarding,
 clicking a card reads it. Choose card beside that face makes the selection;
 Deselect removes an existing choice when available. Complete any remaining
 confirmation in the decision controls. Reading alone never chooses the card.
-Source candidate: ACTIVATION STOP beside your portrait names the available
-ability's card. Click it to read the source and exact ability under Auto - This
-activation. Reading changes no preference. Skip this activation lets Auto pass
-when that ability is your only play, until your next turn. Stop for this ability
-restores that stop; Back to table closes the reader. Multiple activations stay
-separate. You can still activate a skipped ability manually, and other available
-responses still stop Auto. Hold and Full control pause automatic passing.
+Source candidate: Activation stops - N beside Auto opens a list of your available
+and skipped activations. The list separately shows how many Auto is skipping.
+Each entry shows the full card name, ability rules and whether it stops Auto.
+Select it to read its exact ability under Auto - This activation. Separate
+abilities on the same card have their own entries and rules; a long preview
+offers Read complete ability. Back to list returns to those entries.
+Back to table, Escape or clicking outside collapses the
+expanded view. Opening, reading and closing change no passing preference.
+Skip this activation lets Auto pass when that ability is your only play, until
+your next turn. Stop for this ability restores that stop. You can still activate
+a skipped ability manually, and other available responses still stop Auto.
+Hold and Full control pause automatic passing.
 If that exact activation expires, its reader closes. A source without a current
 card handle keeps its disclosed name and rules without guessing artwork.
 Triggered abilities happen automatically; answer any choices the game presents.
