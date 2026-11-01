@@ -283,10 +283,15 @@ public class AutomatedPaymentJourneyTest {
             assertEquals(observation.getAsJsonObject("semantics").getAsJsonArray("unpaidMana").toString(), "[\"{1}\"]");
             assertEquals(observation.getAsJsonObject("state").getAsJsonObject("prompt").getAsJsonArray("usablePoolManaColors").toString(), "[\"C\"]");
             assertEquals(observation.getAsJsonObject("domain").getAsJsonArray("poolManaColors").toString(), "[\"C\"]");
-            var before = table.automatedSeat(policyId).state();
-            assertThrows(IllegalArgumentException.class, () -> table.automatedSeat(policyId).action(
-                    request(payment, Map.of("action", "spendPoolMana", "manaColor", "G"))));
-            assertEquals(table.automatedSeat(policyId).state(), before, "Rejected pool payment cannot spend resources");
+            // An unrelated display callback can republish the same unanswered
+            // input. Compare the rejected gesture within one rules boundary so
+            // that a concurrent publication cannot impersonate its mutation.
+            table.game.getAction().withState(() -> {
+                var before = table.automatedSeat(policyId).state();
+                assertThrows(IllegalArgumentException.class, () -> table.automatedSeat(policyId).action(
+                        request(payment, Map.of("action", "spendPoolMana", "manaColor", "G"))));
+                assertEquals(table.automatedSeat(policyId).state(), before, "Rejected pool payment cannot spend resources");
+            });
             driver.answer(payment, Map.of("action", "spendPoolMana", "manaColor", "C"));
             driver.until(input -> input.playerId == policyId && isPriority(input)
                     && !input.state.getAsJsonArray("stack").isEmpty());
@@ -357,11 +362,13 @@ public class AutomatedPaymentJourneyTest {
             var payment = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").startsWith("InputPayMana"));
             assertFalse(payment.prompt.get("okEnabled").getAsBoolean(), "The policy must fund XX itself");
             HeadlessPlatform.query(table, () -> null);
-            var beforeStale = table.automatedSeat(policyId).state();
-            var stale = expectThrows(IllegalArgumentException.class,
-                    () -> table.automatedSeat(policyId).action(request(number, Map.of("action", "number", "value", 0))));
-            assertEquals(stale.getMessage(), "That choice has changed. Use the current prompt.");
-            assertEquals(table.automatedSeat(policyId).state(), beforeStale, "An expired numeric scope cannot revise the investment");
+            table.game.getAction().withState(() -> {
+                var beforeStale = table.automatedSeat(policyId).state();
+                var stale = expectThrows(IllegalArgumentException.class,
+                        () -> table.automatedSeat(policyId).action(request(number, Map.of("action", "number", "value", 0))));
+                assertEquals(stale.getMessage(), "That choice has changed. Use the current prompt.");
+                assertEquals(table.automatedSeat(policyId).state(), beforeStale, "An expired numeric scope cannot revise the investment");
+            });
             var paying = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()).getAsJsonObject();
             assertPaymentOwner(paying, "SpellCost", policyId);
             assertFalse(paying.getAsJsonObject("semantics").has("numeric"), "The announcement context ends when its decision is consumed");
