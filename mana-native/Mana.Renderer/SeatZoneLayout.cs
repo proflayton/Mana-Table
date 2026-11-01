@@ -56,6 +56,15 @@ public sealed class SeatZoneLayout
             CommandQuantity = new(CommandName.Right, CommandName.Y, 56, 19);
         } else {
             var label = Caption(new(194, 177), 68, 40);
+            if (seat == 2) {
+                // A mat-local side offset turns into a vertical gap at this
+                // seat. Keep upright text just below the painted assembly.
+                var poses = Commanders.Select(card => card.Pose)
+                    .DefaultIfEmpty(Face(new(289, 178), new(48, 67)));
+                var group = poses.Select(pose => Rectangle.Union(new CardPaintGeometry(pose).Bounds,
+                    (pose with { Size = pose.Size + new Vector2(13) }).Bounds)).Aggregate(Rectangle.Union);
+                label = new(group.Center.X - 34, group.Bottom + 4, 68, 40);
+            }
             CommandName = new(label.X, label.Y, label.Width, label.Height / 2);
             CommandQuantity = new(label.X, CommandName.Bottom, label.Width, label.Height / 2);
         }

@@ -8,7 +8,7 @@ does not establish that a person can understand or use the screen.
 
 ## Keep public piles with their player's mat: 1 November 2026
 
-**Source prototype; seat-identity revision human review pending.** The player found
+**Source prototype; right-caption revision human review pending.** The player found
 the rectangular seated table much better, then asked for library, graveyard, exile and command
 ownership to be clearer. In the preceding candidate, battlefield cards followed
 the seated mat plane but the public piles and commanders remained upright fixed
@@ -16,6 +16,13 @@ screen objects. The left player's pile row sat immediately above the viewer's
 row, and the far player's library was separated from their other zones by the
 held hand and portrait. These are observations of the actual native capture;
 another label or color alone would leave that spatial ambiguity.
+
+The single-identity layout in `75c96dc4` received positive visual feedback, with
+an issue on the right player's low Command caption. Its fixed mat-local offset
+became a large vertical gap after the seat's quarter turn. That upright caption
+now follows the actual commander paint envelope, including frame and shadow,
+with the existing hit, reservation and camera plan consuming its new bounds.
+The placement correction remains pending human review.
 
 The supplied MTG Arena screenshots place each player's piles near that player's
 side of the battlefield. Wizards' [Arena mobile gameplay
