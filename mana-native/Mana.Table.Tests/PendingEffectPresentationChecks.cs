@@ -10,6 +10,7 @@ using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
+using Keys = Microsoft.Xna.Framework.Input.Keys;
 using Point = Microsoft.Xna.Framework.Point;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
@@ -50,11 +51,11 @@ internal static class PendingEffectPresentationChecks
             PresentationFrame frame = null!;
             Tick();
             GameTime Time() => new(TimeSpan.FromSeconds(seconds), TimeSpan.FromMilliseconds(10));
-            PresentationFrame Tick(Point? next = null, ButtonState left = ButtonState.Released, double advance = .01)
+            PresentationFrame Tick(Point? next = null, ButtonState left = ButtonState.Released, double advance = .01, KeyboardState? keyboard = null)
             {
                 pointer = next ?? pointer; seconds += advance;
                 app.Update(Time(), new(pointer.X, pointer.Y, 0, left, ButtonState.Released, ButtonState.Released,
-                    ButtonState.Released, ButtonState.Released), new(), new(1600, 900));
+                    ButtonState.Released, ButtonState.Released), keyboard ?? new(), new(1600, 900));
                 return frame = app.ReadPresentation();
             }
             void Present(GameSnapshot value) { engine.Present(value); view.Accept(engine.State); Tick(new(20, 60)); }
@@ -105,6 +106,12 @@ internal static class PendingEffectPresentationChecks
             Tick(header.Bounds.Center); Tick(header.Bounds.Center, ButtonState.Pressed); Tick(header.Bounds.Center);
             check(engine.Replies.Count == 0 && !view.Busy && frame.Hits.Any(hit => hit.Id == "stack-card-preview")
                 && view.Overlay.Length == 0, "Hovering the targeting source uses the existing full-card preview and clicking that reference neither targets nor activates it");
+            var playerRecipients = ((TargetSelectionPayload)view.Match!.Decision!.Payload).Players;
+            check(playerRecipients.Length == 3 && playerRecipients.All(player => {
+                    var center = frame.Scene!.Seat(player).Geometry.Hero.ToPoint();
+                    return view.HitAt(center) is { PlayerId: var owner, Intent: MatchIntent.UsePlayer } && owner == player;
+                }) && engine.Replies.Count == 0,
+                "Reading the damage source keeps every current legal player portrait's real target hit exposed without selecting a player");
 
             Present(engine.State with { Players = engine.State.Players.Select(player => player with { Zones = player.Zones.Select(zone => zone with {
                 Cards = zone.Cards.Where(card => card.VisualId != source.VisualId).ToImmutableArray()
@@ -129,14 +136,45 @@ internal static class PendingEffectPresentationChecks
                 var amountBounds = frame.Drawing.Commands.OfType<DrawCommand.CenterText>()
                     .Single(text => text.Value == "3" && text.Size >= 1.4f).Bounds;
                 var confirm = frame.Hits.Single(hit => hit.Id == "confirm");
-                check(view.StudyFocusOwner == 1 && view.ReferencePreviewCardId == target.VisualId
+                bool readable = view.StudyFocusOwner == 1 && view.ReferencePreviewCardId == target.VisualId
                     && view.ReferencePreviewBounds is { } preview
+                    && preview.Width is >= 300 and <= 410 && Math.Abs(preview.Width * 574 - preview.Height * 410) <= 574
                     && !preview.Intersects(amountBounds) && view.StackRows.All(row => !preview.Intersects(row.Bounds))
                     && !preview.Intersects(confirm.Bounds) && view.HitAt(confirm.Bounds.Center)?.Id == "confirm"
                     && !preview.Intersects(frame.Cards.Single(card => card.Id == target.VisualId).Display.Bounds)
                     && !preview.Intersects(frame.Cards.Single(card => card.Id == recipient.VisualId).Display.Bounds)
-                    && engine.Replies.Count == 0,
+                    && engine.Replies.Count == 0;
+                if (!readable) File.WriteAllText(Path.Combine(directory, "focused-pending-preview-failure.json"), JsonSerializer.Serialize(new {
+                    view.StudyFocusOwner, view.ReferencePreviewCardId, view.ReferencePreviewBounds, amountBounds,
+                    rows = view.StackRows, confirm = confirm.Bounds, confirmHit = view.HitAt(confirm.Bounds.Center)?.Id,
+                    target = frame.Cards.Single(card => card.Id == target.VisualId).Display.Bounds,
+                    recipient = frame.Cards.Single(card => card.Id == recipient.VisualId).Display.Bounds,
+                    replies = engine.Replies.Count, frame = frame.Observe()
+                }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+                check(readable,
                     "Focused target inspection keeps the numeric pending effect, exact target and counter recipient visible and leaves the current priority answer exposed without submitting it");
+                var retained = view.ReferencePreviewBounds!.Value;
+                var retainedState = view.Match;
+                for (int step = 0; step < 8; step++) Tick(retained.Center, keyboard: new(Keys.D));
+                Tick(retained.Center);
+                var movedTarget = frame.Cards.Single(card => card.Id == target.VisualId).Display.Bounds;
+                var movedRecipient = frame.Cards.Single(card => card.Id == recipient.VisualId).Display.Bounds;
+                var currentConfirm = frame.Hits.Single(hit => hit.Id == "confirm");
+                bool panReadable = retained.Intersects(movedTarget) && view.ReferencePreviewCardId == target.VisualId
+                        && view.ReferencePreviewBounds is { } updated && updated != retained
+                        && updated.Width is >= 300 and <= 410 && Math.Abs(updated.Width * 574 - updated.Height * 410) <= 574
+                        && !updated.Intersects(movedTarget) && !updated.Intersects(movedRecipient)
+                        && view.StackRows.All(row => !updated.Intersects(row.Bounds))
+                        && !updated.Intersects(currentConfirm.Bounds) && view.HitAt(currentConfirm.Bounds.Center)?.Id == "confirm"
+                        && Number("3") && Receipts() >= 2 && ReferenceEquals(retainedState, view.Match) && engine.Replies.Count == 0;
+                if (!panReadable) File.WriteAllText(Path.Combine(directory, "panned-pending-preview-failure.json"), JsonSerializer.Serialize(new {
+                    retained, current = view.ReferencePreviewBounds, view.ReferencePreviewCardId, movedTarget, movedRecipient,
+                    rows = view.StackRows, confirm = currentConfirm.Bounds, confirmHit = view.HitAt(currentConfirm.Bounds.Center)?.Id,
+                    number = Number("3"), receipts = Receipts(), sameState = ReferenceEquals(retainedState, view.Match),
+                    replies = engine.Replies.Count, frame = frame.Observe()
+                }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+                check(panReadable,
+                    "Panning the real table into a held preview revalidates the complete readable portrait against current target, counter recipient, effect and answer geometry without changing match state");
                 Tick(new(20, 60));
                 var whole = frame.Hits.Single(hit => hit.Id == "study-focus-return");
                 Tick(whole.Bounds.Center, ButtonState.Pressed); Tick(whole.Bounds.Center);

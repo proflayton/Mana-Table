@@ -11,18 +11,7 @@ internal static class DecisionWorkspaceLayout
     {
         if (protectedObjects is { Count: > 0 }) occupied = occupied.Concat(protectedObjects).Distinct().ToArray();
         if (bounded) return PlaceWorkspace(anchor, requestedWidth, requestedHeight, occupied, minimumWidth, minimumHeight, protectedObjects ?? []);
-        var free = new List<Rectangle> { new(20, 64, 1560, 696) };
-        foreach (var obstacle in occupied) {
-            for (int index = free.Count - 1; index >= 0; index--) {
-                var area = free[index]; var overlap = Rectangle.Intersect(area, obstacle);
-                if (overlap.IsEmpty) continue;
-                free.RemoveAt(index);
-                if (overlap.Left > area.Left) free.Add(new(area.Left, area.Top, overlap.Left - area.Left, area.Height));
-                if (overlap.Right < area.Right) free.Add(new(overlap.Right, area.Top, area.Right - overlap.Right, area.Height));
-                if (overlap.Top > area.Top) free.Add(new(area.Left, area.Top, area.Width, overlap.Top - area.Top));
-                if (overlap.Bottom < area.Bottom) free.Add(new(area.Left, overlap.Bottom, area.Width, area.Bottom - overlap.Bottom));
-            }
-        }
+        var free = FreeAreas(new(20, 64, 1560, 696), occupied);
         var candidates = free.Where(area => area.Width >= Math.Min(260, requestedWidth) && area.Height >= 120).ToArray();
         if (candidates.Length == 0) candidates = free.Where(area => area.Width >= 100 && area.Height >= 110).ToArray();
         return candidates.Select(area => {
@@ -40,6 +29,41 @@ internal static class DecisionWorkspaceLayout
                 return Vector2.DistanceSquared(new Vector2(area.Center.X, top + height / 2), anchor.Center.ToVector2());
             })
             .ThenByDescending(area => area.Width * area.Height).FirstOrDefault();
+    }
+
+    // Fit a complete physical face without changing its aspect or its content.
+    // Measured text workspaces keep their own size and do not use this helper.
+    internal static Rectangle? Fit(Rectangle preferred, Rectangle viewport, IReadOnlyList<Rectangle> occupied, int minimumWidth = 1)
+    {
+        if (preferred.Width <= 0 || preferred.Height <= 0 || viewport.Width <= 0 || viewport.Height <= 0) return null;
+        var candidates = FreeAreas(viewport, occupied).Select(area => {
+            int width = Math.Min(preferred.Width, Math.Min(area.Width,
+                (int)Math.Floor(area.Height * (double)preferred.Width / preferred.Height)));
+            if (width < minimumWidth || width <= 0) return Rectangle.Empty;
+            int height = (int)Math.Round(width * (double)preferred.Height / preferred.Width);
+            if (height <= 0) return Rectangle.Empty;
+            return new Rectangle(Math.Clamp(preferred.X, area.Left, area.Right - width),
+                Math.Clamp(preferred.Y, area.Top, area.Bottom - height), width, height);
+        }).Where(area => !area.IsEmpty).OrderByDescending(area => area.Width)
+            .ThenBy(area => Vector2.DistanceSquared(area.Center.ToVector2(), preferred.Center.ToVector2())).ToArray();
+        return candidates.Length == 0 ? null : candidates[0];
+    }
+
+    private static List<Rectangle> FreeAreas(Rectangle viewport, IReadOnlyList<Rectangle> occupied)
+    {
+        var free = new List<Rectangle> { viewport };
+        foreach (var obstacle in occupied) {
+            for (int index = free.Count - 1; index >= 0; index--) {
+                var area = free[index]; var overlap = Rectangle.Intersect(area, obstacle);
+                if (overlap.IsEmpty) continue;
+                free.RemoveAt(index);
+                if (overlap.Left > area.Left) free.Add(new(area.Left, area.Top, overlap.Left - area.Left, area.Height));
+                if (overlap.Right < area.Right) free.Add(new(overlap.Right, area.Top, area.Right - overlap.Right, area.Height));
+                if (overlap.Top > area.Top) free.Add(new(area.Left, area.Top, area.Width, overlap.Top - area.Top));
+                if (overlap.Bottom < area.Bottom) free.Add(new(area.Left, overlap.Bottom, area.Width, area.Bottom - overlap.Bottom));
+            }
+        }
+        return free;
     }
 
     // Move a retained physical object at its complete size. Unlike a decision

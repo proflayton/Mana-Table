@@ -13,6 +13,7 @@ internal sealed partial class TableApplication
     private sealed record PendingCardReference(string StackId, string CardId, string DecisionId = "", bool ReadEffect = false);
     private PendingCardReference? pendingPreviewReference;
     private Rectangle? pendingPreviewBounds;
+    private Point? pendingPreviewRequestedSize;
     private string? pendingPreviewCardId;
     private (string Game, int Viewer, string Id, string Name, string Text, string Type, string Cost, float Scale)? stackReadKey;
     private Card? stackReadFace;
@@ -158,7 +159,9 @@ internal sealed partial class TableApplication
         var reference = HoveredPendingReference();
         var previous = pendingPreviewReference;
         pendingPreviewReference = reference; pendingPreviewCardId = null;
-        if (reference == null || ResolvePendingReference(reference) is not { } card) { pendingPreviewBounds = null; return; }
+        if (reference == null || ResolvePendingReference(reference) is not { } card) {
+            pendingPreviewBounds = null; pendingPreviewRequestedSize = null; return;
+        }
         var effect = reference.ReadEffect ? match!.Stack.FirstOrDefault(item => item.Id == reference.StackId) : null;
         if (effect != null) {
             string text = effect.Text.Length > 0 ? effect.Text : !effect.Ability ? card.Text : "Effect text not reported.";
@@ -176,32 +179,80 @@ internal sealed partial class TableApplication
         }
         var boardCard = PendingConnectionCard(CardViews.Identity(card));
         if (boardCard != null) canvas.CardFocus(boardCard.Display, HoverAccent);
-        bool CoversPendingContext(Rectangle candidate) => candidate.Intersects(decisionPanelBounds)
-            || !targetingEffectBounds.IsEmpty && candidate.Intersects(targetingEffectBounds)
-            || stackRows.Any(row => candidate.Intersects(row.Bounds));
+        var context = stackRows.Select(row => row.Bounds).Append(decisionPanelBounds).Append(targetingEffectBounds)
+            .Concat(ReaderControlReservations).Where(bounds => !bounds.IsEmpty).ToArray();
+        var objects = new List<Rectangle>();
+        var protectedCards = new HashSet<string>(StringComparer.Ordinal);
+        void ProtectCard(string id) {
+            if (id.Length == 0 || !protectedCards.Add(id)) return;
+            var shown = PendingConnectionCard(id) ?? matchPresentation.Cards.Cards.LastOrDefault(entry => entry.Zone == "Stack"
+                && (entry.Id == id || entry.Card.VisualId == id || entry.Card.CombatId == id));
+            if (shown != null) objects.Add(new CardPaintGeometry(shown.Display).Bounds);
+        }
+        void ProtectPlayer(int id) {
+            if (!heroPositions.TryGetValue(id, out var center)) return;
+            int radius = id == match!.ViewerId ? 57 : 48;
+            objects.Add(new((int)center.X - radius, (int)center.Y - radius, radius * 2, radius * 2));
+        }
+        void ProtectCounter(PendingEffect? pending) {
+            if (pending?.CounterChange?.Card is { } recipient) ProtectCard(CardViews.Identity(recipient));
+            else if (pending?.CounterChange?.PlayerId is { } recipientId) ProtectPlayer(recipientId);
+        }
+        ProtectCard(CardViews.Identity(card));
+        if (ValuedTargetDecision && match?.Decision is { } decision) {
+            if (CardViews.Source(match, decision) is { } source) ProtectCard(CardViews.Identity(source));
+            foreach (var target in matchPresentation.Cards.Cards.Where(entry => entry.Zone == "Battlefield" && IsCardActionable(entry.Card)))
+                ProtectCard(target.Id);
+            foreach (var recipientPlayer in match.Players.Where(candidate => IsPlayerTarget(candidate.Id))) ProtectPlayer(recipientPlayer.Id);
+            ProtectCounter((decision.Payload as TargetSelectionPayload)?.Effect);
+        }
+        foreach (var item in match!.Stack.Where((item, index) => index < 3 || item.Id == reference.StackId
+            || stackRows.Any(row => row.Id == item.Id))) {
+            if (item.Card != null) ProtectCard(CardViews.Identity(item.Card));
+            foreach (var target in item.Targets) {
+                if (target.Kind == "card") ProtectCard(target.Id);
+                else if (target.Kind == "player" && target.PlayerId is { } targetPlayer) ProtectPlayer(targetPlayer);
+            }
+            ProtectCounter(item.Effect);
+        }
+        var critical = context.Concat(objects).Distinct().Select(bounds => { bounds.Inflate(8, 8); return bounds; }).ToArray();
+        bool CoversPendingContext(Rectangle candidate) => context.Any(candidate.Intersects);
+        bool CoversCurrentObject(Rectangle candidate) => critical.Any(candidate.Intersects);
         var size = effect != null && stackReadLayout is { } layout ? new Point(layout.Width, layout.Height) : new Point(410, 574);
-        if (reference != previous || pendingPreviewBounds == null || pendingPreviewBounds.Value.Size != size || CoversPendingContext(pendingPreviewBounds.Value)) {
-            var candidates = new[] { 1008, 12, 545, 1180 }.Select(x => new Rectangle(x, 82, size.X, size.Y)).ToArray();
+        var viewport = new Rectangle(12, 64, 1576, 696);
+        if (reference != previous || pendingPreviewBounds == null || pendingPreviewRequestedSize != size
+            || !viewport.Contains(pendingPreviewBounds.Value) || CoversCurrentObject(pendingPreviewBounds.Value)) {
+            var candidates = new[] { 1008, 12, 545, 1180 }.Select(x => new Rectangle(
+                Math.Clamp(x, viewport.Left, Math.Max(viewport.Left, viewport.Right - size.X)), 82, size.X, size.Y)).ToArray();
             int Score(Rectangle candidate) {
                 // Instructions, pending values and actual answer controls take
                 // precedence over incidental battlefield overlap. Focus moves
                 // the effect workspace, so its current rows own this reserve.
-                int score = candidate.Intersects(decisionPanelBounds) ? 100_000 : 0;
-                if (!targetingEffectBounds.IsEmpty && candidate.Intersects(targetingEffectBounds)) score += 100_000;
-                score += stackRows.Count(row => candidate.Intersects(row.Bounds)) * 100_000;
-                if (ValuedTargetDecision) foreach (var target in matchPresentation.Cards.Cards.Where(card => card.Card.Selectable))
-                    if (candidate.Intersects(target.Display.Bounds)) score += 100;
-                foreach (var item in match!.Stack.Take(3)) {
-                    if (item.Card != null && PendingConnectionCard(CardViews.Identity(item.Card)) is { } source && candidate.Intersects(source.Display.Bounds)) score += 100;
-                    foreach (var target in item.Targets.Where(target => target.Kind == "card"))
-                        if (PendingConnectionCard(target.Id) is { } affected && candidate.Intersects(affected.Display.Bounds)) score += 100;
-                }
+                int score = context.Count(candidate.Intersects) * 100_000 + objects.Count(candidate.Intersects) * 100;
                 if (boardCard != null && candidate.Intersects(boardCard.Display.Bounds)) score += 1000;
                 return score;
             }
-            var clear = candidates.Where(candidate => !CoversPendingContext(candidate)).ToArray();
-            pendingPreviewBounds = (clear.Length > 0 ? clear : candidates).OrderBy(Score).First();
+            var clear = candidates.Where(candidate => viewport.Contains(candidate) && !CoversCurrentObject(candidate)).ToArray();
+            // Preserve the held reading location while the board moves beneath
+            // it. A newly wider gap across the table must not pull the card out
+            // from under the pointer and end that same inspection.
+            if (effect == null && reference == previous && pendingPreviewRequestedSize == size
+                && pendingPreviewBounds is { } retained && retained.Contains(pointer)
+                && DecisionWorkspaceLayout.Fit(new(retained.X, retained.Y, size.X, size.Y), retained, critical,
+                    minimumWidth: 300) is { } held)
+                pendingPreviewBounds = held;
+            else if (clear.Length > 0) pendingPreviewBounds = clear[0];
+            else if (effect == null && DecisionWorkspaceLayout.Fit(candidates[0], viewport, critical, minimumWidth: 300) is { } fitted)
+                pendingPreviewBounds = fitted;
+            else {
+                // A measured rules face retains its full layout. Dense tables
+                // retain the existing context-first fallback without squeezing
+                // its text or reducing a printed card below reading size.
+                var clearContext = candidates.Where(candidate => !CoversPendingContext(candidate)).ToArray();
+                pendingPreviewBounds = (clearContext.Length > 0 ? clearContext : candidates).OrderBy(Score).First();
+            }
         }
+        pendingPreviewRequestedSize = size;
         var bounds = pendingPreviewBounds.Value;
         var pose = new Pose(bounds.Center.ToVector2(), bounds.Size.ToVector2());
         if (effect != null && stackReadFace is { } face && stackReadLayout is { } measured) {

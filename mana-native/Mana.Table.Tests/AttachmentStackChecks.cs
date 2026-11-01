@@ -9,6 +9,7 @@ using Mana.Table.Interaction;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using Point = Microsoft.Xna.Framework.Point;
+using Rectangle = Microsoft.Xna.Framework.Rectangle;
 using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
 
 namespace Mana.Table;
@@ -178,6 +179,81 @@ internal static class AttachmentStackChecks
                 "Reading a turned opponent card opens that exact occurrence upright without a game action at seat " + seat);
             Tick(point, ButtonState.Pressed); Tick(point); Settle();
             check(frame.Cards.All(card => !card.Focused), "The same battlefield anchor closes its upright reader at seat " + seat);
+        }
+
+        foreach (var focus in new[] {
+            (State: stages[4].Snapshot, Owner: 1, Crowded: true, Name: "crowded foreign-host focus"),
+            (State: stages[0].Snapshot with { Players = stages[0].Snapshot.Players.Take(3).ToImmutableArray() }, Owner: 2, Crowded: false, Name: "three-player top focus"),
+            (State: stages[0].Snapshot, Owner: 0, Crowded: false, Name: "four-player own focus")
+        }) {
+            var state = focus.State with { Players = focus.State.Players.Select(player => player.Id != focus.State.ViewerId ? player : player with {
+                Mana = new[] { "W", "U", "B", "R", "G", "C" }.ToImmutableDictionary(symbol => symbol, _ => 1),
+                States = [new("counter:energy", "Energy", "counter", 2, null, "Two public energy counters."),
+                    new("counter:poison", "Poison", "counter", 3, null, "Three public poison counters.")]
+            }).ToImmutableArray() };
+            engine.Present(state); view.Accept(engine.State); Settle();
+            var snapshot = view.Match;
+            var canonical = frame.Scene!.BattlefieldDrawOrder.ToDictionary(card => card.Id, card => card.Pose);
+            int replies = engine.Replies.Count;
+            check(view.CounterBadge(state.ViewerId) is { Chips.Length: 2 }
+                    && view.ManaPoolBadge(state.ViewerId) is { Parts.Length: 6 }
+                    && (!focus.Crowded || canonical.Count == 480),
+                $"{size.X}px {focus.Name}: the actual local counter chips and all six mana pips are present before focusing");
+
+            view.OpenBattlefield(focus.Owner); Settle();
+            var selected = frame.Scene!.BattlefieldDrawOrder
+                .Where(card => (card.Attachment?.RootOwner ?? card.Owner) == focus.Owner).ToArray();
+            var shown = frame.Cards.Where(card => card.Zone == "Battlefield").ToDictionary(card => card.Id);
+            var phaseControls = frame.Hits.Where(hit => hit.Intent is MatchIntent.TogglePhaseStop).ToArray();
+            var portrait = frame.Hits.Single(hit => hit.Id == "player:" + state.ViewerId);
+            var badge = view.CounterBadge(state.ViewerId);
+            var mana = view.ManaPoolBadge(state.ViewerId);
+            check(view.StudyFocusOwner == focus.Owner && !view.BoardView.IsIdentity && selected.Length > 0
+                    && phaseControls.Length > 0 && badge is { Chips.Length: 2 } && mana is { Parts.Length: 6 },
+                $"{size.X}px {focus.Name}: actual focus retains the visible fixed portrait, phase controls, two counters and six mana pips");
+            var protectedAreas = phaseControls.Select(hit => (Id: hit.Id, Bounds: hit.Bounds))
+                .Append((Id: portrait.Id, Bounds: portrait.Bounds)).Append((Id: "local-counter-badge", Bounds: badge!.Bounds))
+                .Concat(mana!.Parts.Select((part, index) => (Id: "local-mana-" + index, Bounds: part.Bounds))).ToArray();
+            var collision = (from node in selected
+                let body = new CardPaintGeometry(shown[node.Id].Display)
+                from footprint in new[] { body.Backing.Bounds, body.Shadow.Bounds }
+                from control in protectedAreas
+                where footprint.Intersects(control.Bounds)
+                select new { node.Id, Footprint = footprint, Control = control.Id, control.Bounds }).FirstOrDefault();
+            check(collision == null,
+                $"{size.X}px {focus.Name}: each displayed selected-seat card and attachment backing/shadow clears actual local phase, portrait, counter and mana footprints"
+                + (collision == null ? "" : $"; {collision.Id} {collision.Footprint} intersects {collision.Control} {collision.Bounds}"));
+            Unchanged("focus");
+
+            if (focus.Crowded) {
+                var node = selected.Single(card => card.Id == AttachmentScenario.Foreign);
+                var card = shown[node.Id];
+                var point = node.Attachment!.Edge(card.Display).Center;
+                var hit = view.HitAt(point);
+                check(node.Owner == state.ViewerId && node.Attachment.RootOwner == focus.Owner
+                        && hit is { Card: { } hitCard } && hitCard.VisualId == node.Id && hitCard.Key == node.Card.Key,
+                    $"{size.X}px: the crowded foreign Aura's exposed edge retains its exact current controller, card key and physical hit after focus");
+                Tick(point, ButtonState.Pressed); Tick(point); Settle();
+                check(frame.Cards.Single(card => card.Focused) is { } reader
+                        && reader.Id == node.Id && reader.Request.Owner == node.Owner && reader.Card.Key == node.Card.Key
+                        && reader.Display.Size.X >= 300 && MathF.Abs(MathHelper.WrapAngle(reader.Display.Angle)) < .01f,
+                    $"{size.X}px: the focused crowded foreign Aura edge opens that same full upright reader");
+                Unchanged("foreign attachment reading");
+                Tick(point, ButtonState.Pressed); Tick(point); Settle();
+                check(frame.Cards.All(card => !card.Focused),
+                    $"{size.X}px: the same crowded foreign Aura anchor closes inspection without a game command");
+            }
+
+            var back = frame.Hits.Single(hit => hit.Id == "study-focus-return").Bounds.Center;
+            Tick(back, ButtonState.Pressed); Tick(back); Settle();
+            check(view.StudyFocusOwner == null && view.BoardView.IsIdentity,
+                $"{size.X}px {focus.Name}: the actual Whole table control restores the overview");
+            Unchanged("return");
+
+            void Unchanged(string step) => check(ReferenceEquals(snapshot, view.Match) && engine.Replies.Count == replies && replies == 0
+                    && frame.Scene!.BattlefieldDrawOrder.Count == canonical.Count
+                    && frame.Scene.BattlefieldDrawOrder.All(card => canonical.TryGetValue(card.Id, out var pose) && pose == card.Pose),
+                $"{size.X}px {focus.Name} {step}: navigation and inspection retain the exact snapshot, every canonical occurrence/pose and zero engine commands");
         }
     }
 }

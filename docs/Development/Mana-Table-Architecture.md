@@ -1506,6 +1506,12 @@ and `TurnControls` with each scene seat. Painting, public readouts, camera focus
 and fixed-control avoidance consume that geometry. The local priority area is
 beside its mat's right edge; its phase arc retains its actual portrait-relative
 targets. The local command rail clears the side player's cloth.
+Automatic focus first translates the complete projected mat clear of the
+prepared local phase, portrait, counter and mana spaces at the normal focus
+zoom. If the wide mat cannot fit there, it frames within the clear strip above
+those controls. The counter space remains reserved while empty so receiving a
+first counter does not move the focused field. Manual camera control retains
+precedence; neither path repacks cards or changes match state.
 `TableApplication.Playmats` paints wood, cloth, backing, stitches and seat crests
 using the same `BoardView` exactly once. It adds no hits or game state and does
 not apply `TableWorld` a second time. `DrawList` records balanced
@@ -1552,6 +1558,12 @@ active readers and newly placed bill/action footers reserve the prepared area.
 Its placement preserves current legal card targets and their displayed input
 geometry without using source-inspector painting to recalculate itself. This comparison
 uses no automatic camera movement and alters no engine permissions.
+Pending reference previews reserve current sources, targets, counter recipients
+and response controls. The shared free-space geometry can fit the complete
+printed portrait proportionally, with a 300-unit minimum width; measured rules
+faces retain their original text layout. A held portrait first retains its
+physical reading region when camera movement invalidates the previous fit.
+Current geometry is revalidated independently of the requested preview size.
 In the study, source mana choices use the existing rigid `Translate` planner
 with measured title/orb pieces in the producer's column; the generic workspace
 remains the fallback when that complete source-aligned placement cannot fit.

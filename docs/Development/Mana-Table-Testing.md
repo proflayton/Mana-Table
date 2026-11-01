@@ -928,6 +928,21 @@ deliberate obstruction zoom. Capturing a larger window cannot change that zoom's
 starting position through time spent holding W. The check requires an actual
 projected readout/portrait intersection, complete paint/input retirement and
 restoration on Home.
+The attachment group also exercises actual automatic focus at both window sizes
+with two local typed states and six mana colors: a crowded foreign-host field,
+an ordinary three-player top field and the local four-player field. Displayed
+card and attachment backing/shadow footprints must clear actual local controls;
+the foreign edge must open its exact current upright reader. Physical host
+placement is checked independently of the attachment's controller. Focus and
+Whole table return retain the exact snapshot and canonical poses with no game
+commands. `EquipmentSmoke` retains the original exposed-edge checks and writes
+the actual intercepting hit and frame when one fails.
+The pending-effect journey keeps the full printed preview's aspect and readable
+minimum size while protecting the exact source, target, counter recipient,
+pending amount and current answer. Actual D input then moves the target into
+the old preview bounds; the held preview must revalidate against the changed
+geometry without changing the snapshot or submitting a command. Failure-only
+observations retain the previous/current rectangles and complete frame.
 `DrawingFrameChecks` covers balanced/copied nested world transforms, known
 sprite/triangle coordinates, transformed clip rounding, canonical measurement,
 pixel-snapped text density and rejected invalid scopes. Drawing groups cover

@@ -1176,6 +1176,17 @@ they do not establish a continuous physical table or validate our four-seat
 camera. A small still also cannot establish tapping/dragging gestures or readable
 presentation at the extreme 480-permanent case.
 
+Focusing a seat keeps its complete mat clear of the local portrait, phase
+controls, counter space and mana, so an exposed attached card remains reachable.
+This adjusts camera framing while preserving the same cards, material and
+current decision; it does not create another battlefield layout.
+Hover reading keeps the complete printed portrait, fitted proportionally around
+the current source, targets, counter recipient and response. A held preview
+retains its reading region while the camera moves when a readable portrait
+still fits there. Measured effect text keeps its full layout. This placement is
+a Mana Table adaptation of the supplied Arena full-card hover references, not
+evidence that Arena establishes a four-player arrangement.
+
 ## Rules faces and the counter-lab entry: 25 October 2026
 
 **Source candidate; human review pending.** The player rejected the tiny

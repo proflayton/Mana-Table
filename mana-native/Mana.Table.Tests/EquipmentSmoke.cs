@@ -126,7 +126,16 @@ internal sealed class EquipmentSmoke : ITableAutomation
     private void MoveCard(string id) => MoveChecked(id, view.BoardView.Apply(Node(id).Pose).Center.ToPoint());
     private void MoveChecked(string id, Point point)
     {
-        Check(view.HitAt(point)?.Card?.VisualId == id, "The card's actual exposed center owns its pointer target: " + id);
+        var hit = view.HitAt(point);
+        if (hit?.Card?.VisualId != id) {
+            var node = Node(id);
+            File.WriteAllText(Path.Combine(view.Profile, "attachment-hit-failure.json"), JsonSerializer.Serialize(new {
+                id, point, hit = hit?.Id, hitCard = hit?.Card?.VisualId, node.Pose, node.Attachment,
+                displayed = view.BoardView.Apply(node.Pose), frame = view.Frame!.Observe()
+            }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+        }
+        Check(hit?.Card?.VisualId == id, "The card's actual exposed center owns its pointer target: " + id
+            + $"; point={point}, actual hit={hit?.Id}, actual card={hit?.Card?.VisualId}");
         Move(point);
     }
     private void Move(Point logical)
