@@ -3,9 +3,12 @@ using Mana.Magic;
 using Mana.Contracts;
 using Mana.Renderer;
 using Mana.Scenarios;
+using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Point = Microsoft.Xna.Framework.Point;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
+using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
+using Keys = Microsoft.Xna.Framework.Input.Keys;
 
 namespace Mana.Table;
 
@@ -67,6 +70,7 @@ internal static class TableSurfaceProjectionChecks
             "A spell landing adds its exact current occurrence on the shared plane without moving the already-played Forest or replacing engine cards");
         PaintedCurrentState(check);
         PaintedSmallCounterState(check);
+        FallbackIdentityAndState(check);
         FixedRailSupport(check);
     }
 
@@ -133,6 +137,68 @@ internal static class TableSurfaceProjectionChecks
 
     private static Point[] Corners(Rectangle bounds) => [bounds.Location, new(bounds.Right, bounds.Top),
         new(bounds.Right, bounds.Bottom), new(bounds.Left, bounds.Bottom)];
+
+    private static void FallbackIdentityAndState(Action<bool, string> check)
+    {
+        foreach (var viewport in new[] { new Point(1000, 740), new Point(1540, 980) })
+        foreach (float scale in new[] { 1f, 1.3f }) {
+            string profile = Path.Combine(Path.GetTempPath(), "ManaTableFallbackChecks", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(profile);
+            new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = scale }.Save(profile);
+            var engine = new InteractionScenarioEngine(); engine.Present(TappedResourcesScenario.Create()[1].Snapshot);
+            using var run = new PresentationRun(TestTableServices.For(engine), profile, engine.State, viewport);
+            run.EnableLiveTableStudy();
+            PresentationFrame frame = null!;
+            void Tick(Point? logical = null, ButtonState left = ButtonState.Released, Keys? key = null)
+            {
+                var at = RenderViewport.Fit(viewport, run.View.DesignHeight).ToPhysical((logical ?? new Point(-100, -100)).ToVector2() + new Vector2(.5f));
+                frame = run.Tick(TimeSpan.FromSeconds(.02), new((int)at.X, (int)at.Y, 0, left, default, default, default, default), key is { } pressed ? new(pressed) : new());
+            }
+            Tick(); Tick();
+            foreach (string name in new[] { "Serra Angel", "Luminarch Aspirant", "Tireless Tracker" }) {
+                var card = frame.Cards.Single(card => card.Zone == "Battlefield" && card.Card.Name == name);
+                var labels = run.View.BattlefieldLabels(card.Id);
+                var identity = labels.SingleOrDefault(label => label.Kind == "identity");
+                var overlays = labels.Where(label => label.Kind != "identity").ToArray();
+                var identityPaint = frame.Drawing.Commands.OfType<DrawCommand.Text>()
+                    .SingleOrDefault(text => text.Value == name && text.Size is .47f or .67f
+                        && new Rectangle(text.X, text.Y, text.Width,
+                            new TextMetrics().TextSize(name, text.Size, text.Width, 80, true, scale).Y).Intersects(card.Display.Bounds));
+                var paintedGlyphs = frame.Drawing.Commands.OfType<DrawCommand.Circle>()
+                    .Where(circle => circle.Radius == 6 && card.Display.Bounds.Contains(circle.Center))
+                    .Select(circle => new Rectangle((int)circle.Center.X - 6, (int)circle.Center.Y - 6, 12, 12)).ToArray();
+                check((identityPaint == null ? identity == null && name != "Serra Angel"
+                        : identity is { } && identity.Text == name && identityPaint is { Size: >= .47f }
+                        && identityPaint.X == identity.Bounds.X && identityPaint.Y == identity.Bounds.Y
+                        && identity.Bounds.Height == new TextMetrics().TextSize(name, identityPaint.Size, identityPaint.Width, 80, true, scale).Y
+                        && Corners(identity.Bounds).All(card.Display.Contains)
+                        && overlays.All(label => !label.Bounds.Intersects(identity.Bounds))
+                        && paintedGlyphs.All(glyph => !glyph.Intersects(identity.Bounds))),
+                    $"{viewport.X}x{viewport.Y}, {scale:P0}, {name}: the actual fallback paints only a complete measured full-font title and keeps every counter/P-T/copy/keyword glyph clear of its footprint");
+                check(labels.Any(label => label.Kind == "pt" && label.MeasuredWidth <= label.AvailableWidth)
+                        && (name == "Serra Angel" || labels.Any(label => label.Kind == "counter"
+                            && label.Text == (name == "Luminarch Aspirant" ? "2" : "1") && label.MeasuredWidth <= label.AvailableWidth)),
+                    $"{name}: protecting fallback identity retains its authoritative P/T and actual counter amount");
+                var center = card.Display.Center.ToPoint();
+                check(run.View.HitAt(center)?.Card is { } target && CardViews.Same(target, card.Card),
+                    $"{name}: the actual physical card still owns its scoped reading target");
+                Tick(center); Tick(center);
+                check(frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value == name && text.Size == .7f)
+                        && engine.Replies.Count == 0,
+                    $"{name}: its real pointer hover supplies the complete source-attached identity even when the overview title cannot fit, without a game command");
+                Tick(center, ButtonState.Pressed); Tick(center); Tick(center);
+                check(frame.Cards.Single(item => item.Id == card.Id) is { Focused: true, Display.Size.X: >= 300 }
+                        && frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value == name && text.Size == 1.05f)
+                        && (name != "Serra Angel" || frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value == "Flying")
+                            && frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value == "Vigilance"))
+                        && engine.Replies.Count == 0,
+                    $"{name}: clicking the same occurrence opens its full current identity and abilities without choosing or changing engine state");
+                Tick(key: Keys.Escape); Tick(); Tick();
+                check(!frame.Cards.Single(item => item.Id == card.Id).Focused && engine.Replies.Count == 0,
+                    $"{name}: closing reading restores the same physical occurrence and untouched engine decision");
+            }
+        }
+    }
 
     private static void FixedRailSupport(Action<bool, string> check)
     {

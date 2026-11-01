@@ -1573,6 +1573,11 @@ line height. Each row uses the horizontal slice of the projected quadrilateral
 at both row edges; a small tilted card must not lose its counter marker because
 a central inscribed rectangle or guessed padding is narrower. The selected
 font is painted as measured instead of being silently reduced to a short badge.
+Missing-art identity and live state consume that same face plan. A complete
+fallback title is painted only when it fits beside essential P/T and counters;
+optional keyword glyphs yield to its measured footprint. Compact identity uses
+the complete source-attached hover and full reader instead of a clipped or
+overwritten title. Hand/reader fallback painting keeps its separate full-card path.
 
 Player status is a separate fixed HUD layer. `SeatReadoutPlan` measures an
 opponent's land totals, incoming combat and public states at the actual text

@@ -9,12 +9,20 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
+    private sealed record CardFallbackLayout(Rectangle Name, float NameSize, IReadOnlyList<Rectangle> Reserved);
+    private sealed record BattlefieldScanLayout(Rectangle Face, float StatsSize, Rectangle StatsRow,
+        Rectangle BadgeRow, bool BadgeRoom, CardFallbackLayout? Fallback);
     // Every battlefield occurrence keeps the same original printing used in
     // the hand and reader. Current engine state supplements that printed face.
     private void PaintBattlefieldScanFace(Card card, Pose pose, int owner, bool selected, bool legal, bool focus, bool stateVisible, int copies)
     {
         float opacity = (card.PhasedOut ? .42f : 1) * (card.Tapped ? .72f : 1);
-        PaintCard(card, pose, selected, legal, focus, opacity);
+        var layout = stateVisible ? MeasureBattlefieldScanLayout(card, pose, copies,
+            !card.FaceDown && resources.Card(card) == null) : null;
+        var identity = PaintCard(card, pose, selected, legal, focus, opacity, layout?.Fallback);
+        if (layout?.Fallback is { } fallbackLayout && identity is { } name)
+            RecordBattlefieldLabel(card, owner, "identity", card.Name, name,
+                canvas.TextSize(card.Name, fallbackLayout.NameSize, name.Width, 80, true).X, name.Width);
         if (!stateVisible) return;
 
         var face = BattlefieldScanLabelArea(pose);
@@ -23,11 +31,12 @@ internal sealed partial class TableApplication
         int title = Math.Clamp((int)(face.Height * .14f), 0, 18);
         face = new(face.X, face.Y + title, face.Width, Math.Max(0, face.Height - title));
         if (face.Width >= 24 && face.Height >= 24)
-            PaintBattlefieldScanState(card, owner, pose, copies);
+            PaintBattlefieldScanState(card, owner, layout!, copies);
         if (copies > 1) {
             string count = "\u00d7" + copies;
             int measured = canvas.TextWidth(count, .44f, true), width = measured + 6;
-            var bounds = new Rectangle(face.X, face.Top + 3, width, 18);
+            var bounds = new Rectangle(layout!.BadgeRow.Left, layout.BadgeRow.Top, width,
+                canvas.TextSize(count, .44f, 1000, 1, true).Y);
             canvas.Rounded(bounds, new(13, 24, 30), 3);
             canvas.CenterText(count, bounds, Gold, .44f, true);
             RecordBattlefieldLabel(card, owner, "copies", count, bounds, measured, width - 6);
@@ -60,7 +69,7 @@ internal sealed partial class TableApplication
         return pose.InteriorBounds(1);
     }
 
-    private void PaintBattlefieldScanState(Card card, int owner, Pose pose, int copies)
+    private BattlefieldScanLayout MeasureBattlefieldScanLayout(Card card, Pose pose, int copies, bool fallback)
     {
         bool creature = CardPresentation.HasCombatStats(card);
         var outline = pose.Bounds;
@@ -70,22 +79,52 @@ internal sealed partial class TableApplication
         int top = outline.Top + 1 + Math.Min(18, (int)(outline.Height * .06f));
         int bottom = outline.Bottom - 1;
         var face = pose.InteriorBand(top, bottom, 1);
-        if (face.IsEmpty) return;
         float size = face.Width >= 100 ? .62f : .52f;
         string stats = creature ? CurrentStats(card) : "";
         string damage = card.Damage > 0 ? card.Damage.ToString() : "";
         const float counterSize = .46f;
         bool hasCounter = CounterMarker(card).Length > 0;
         int counterHeight = hasCounter ? Math.Max(18, canvas.TextSize(CounterMarker(card), counterSize, 1000, 1, true).Y) : 0;
+        int essentialBadgeHeight = Math.Max(counterHeight, copies > 1 ? canvas.TextSize("×" + copies, .44f, 1000, 1, true).Y : 0);
         int Height() => creature || damage.Length > 0
             ? Math.Max(canvas.TextSize(stats, size, 1000, 1, true).Y,
                 canvas.TextSize(damage, size, 1000, 1, true).Y) : 0;
         int Measure() => (creature ? canvas.TextWidth(stats, size, true) + 4 : 0)
             + (damage.Length > 0 ? canvas.TextWidth(damage, size, true) + 18 : 0);
-        while (size > .375f && (Measure() > face.Width || Height() + counterHeight + (hasCounter ? 1 : 0) > face.Height))
+        while (size > .375f && (Measure() > face.Width || Height() + essentialBadgeHeight + (essentialBadgeHeight > 0 ? 1 : 0) > face.Height))
             size = Math.Max(.375f, size - .025f);
         int height = Height();
         var statsRow = pose.InteriorBand(bottom - height, bottom, 1);
+        CardFallbackLayout? identity = null;
+        if (fallback) {
+            float nameSize = pose.Size.X > 100 ? .67f : .47f;
+            int nameTop = outline.Top + 5;
+            var nameArea = pose.InteriorBand(nameTop, bottom - height - (essentialBadgeHeight > 0 ? essentialBadgeHeight + 3 : 1), 4);
+            var name = Rectangle.Empty;
+            if (!nameArea.IsEmpty && card.Name.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+                    .All(word => canvas.TextWidth(word, nameSize, true) <= nameArea.Width)) {
+                var measured = canvas.TextSize(card.Name, nameSize, nameArea.Width, 80, true);
+                if (measured.Y <= nameArea.Height) name = new(nameArea.X, nameArea.Y, nameArea.Width, measured.Y);
+            }
+            if (!name.IsEmpty) top = Math.Max(top, name.Bottom + 2);
+            identity = new(name, nameSize, []);
+        }
+        var badgeRow = pose.InteriorBand(top, top + Math.Max(18, essentialBadgeHeight), 1);
+        bool badgeRoom = !badgeRow.IsEmpty && badgeRow.Bottom + 1 <= bottom - height;
+        bool hasBadge = essentialBadgeHeight > 0 || CardPresentation.Abilities(card).Any(ability => ability != "tapped")
+            || card.Sick && creature || card.PhasedOut;
+        if (identity != null) identity = identity with { Reserved = new[] { statsRow, badgeRoom && hasBadge ? badgeRow : Rectangle.Empty }.Where(bounds => !bounds.IsEmpty).ToArray() };
+        return new(face, size, statsRow, badgeRow, badgeRoom, identity);
+    }
+
+    private void PaintBattlefieldScanState(Card card, int owner, BattlefieldScanLayout layout, int copies)
+    {
+        bool creature = CardPresentation.HasCombatStats(card);
+        string stats = creature ? CurrentStats(card) : "";
+        string damage = card.Damage > 0 ? card.Damage.ToString() : "";
+        float size = layout.StatsSize;
+        var statsRow = layout.StatsRow;
+        int height = statsRow.Height, bottom = statsRow.Bottom;
         int right = statsRow.Right;
         if (creature) {
             int measured = canvas.TextWidth(stats, size, true), width = Math.Min(statsRow.Width, measured + 4);
@@ -109,14 +148,15 @@ internal sealed partial class TableApplication
                 RecordBattlefieldLabel(card, owner, "damage", damage, bounds, measured, width - 18);
             }
         }
-        var badgeRow = pose.InteriorBand(top, top + Math.Max(18, counterHeight), 1);
-        bool badgeRoom = badgeRow.Bottom + 1 <= bottom - height;
+        var badgeRow = layout.BadgeRow;
+        bool badgeRoom = layout.BadgeRoom;
         int copyWidth = copies > 1 ? canvas.TextWidth("×" + copies, .44f, true) + 10 : 0;
         int counterWidth = 0;
         if (CounterMarker(card).Length > 0 && badgeRoom) {
+            const float counterSize = .46f;
             int width = CounterMarkerWidth(card, counterSize);
             if (width + copyWidth <= badgeRow.Width) {
-                var bounds = new Rectangle(badgeRow.Right - width, badgeRow.Top, width, counterHeight);
+                var bounds = new Rectangle(badgeRow.Right - width, badgeRow.Top, width, badgeRow.Height);
                 canvas.Rounded(bounds, new(14, 32, 34), 3);
                 PaintCounterMarker(card, bounds, counterSize, owner);
                 counterWidth = width;
@@ -127,7 +167,11 @@ internal sealed partial class TableApplication
         if (card.PhasedOut) abilities.Insert(0, "phased out");
         for (int index = 0; badgeRoom && index < Math.Min(2, abilities.Count)
             && copyWidth + 14 + index * 15 <= badgeRow.Width - counterWidth; index++)
-            PaintBattlefieldScanGlyph(abilities[index], new(badgeRow.Left + copyWidth + 8 + index * 15, badgeRow.Center.Y));
+        {
+            var center = new Vector2(badgeRow.Left + copyWidth + 8 + index * 15, badgeRow.Center.Y);
+            PaintBattlefieldScanGlyph(abilities[index], center);
+            RecordBattlefieldLabel(card, owner, "ability", abilities[index], new((int)center.X - 6, (int)center.Y - 6, 12, 12), 12, 12);
+        }
     }
 
     private void PaintBattlefieldScanGlyph(string ability, Vector2 center)

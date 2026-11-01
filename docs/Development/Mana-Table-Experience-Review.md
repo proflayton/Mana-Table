@@ -80,6 +80,21 @@ The production-composition regression runs in the existing pure and headless
 presentation checks; the full GPU battlefield journey still tests the actual
 paint and pointer behavior at 1000×740 and 1540×980.
 
+Actual-image review of `22bead4` then found a separate fallback-face collision:
+Serra Angel's flying/vigilance glyphs crossed its title, and Luminarch Aspirant's
+counter occupied the end of its title. Missing artwork still needs a complete,
+readable identity. The follow-up shares one measured identity/state allocation
+between fallback face paint and state paint. Essential current P/T and counter
+amounts retain their measured fonts. A whole fallback title is admitted only
+when it fits beside those essential rows; optional keyword glyphs yield to the
+actual title footprint. When that small overview cannot fit the whole title,
+it omits that on-face title and retains the existing complete source-attached
+hover name and full-card reader. It never paints a shortened or overlapped name.
+The production regression checks the actual text and glyph drawing commands,
+the observed Serra Angel/Luminarch Aspirant/Tireless Tracker cases, and their
+real hover → full reader → close gestures at both windows and text scales,
+with no game commands. Human review of this follow-up remains pending.
+
 Review the continuous hand → stack → battlefield journey, a tapped card at each
 seat, attachments, four-player ownership and a focused mat at both small and
 large windows. Confirm that tapping remains a quarter turn relative to its seat,

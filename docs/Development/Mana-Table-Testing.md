@@ -993,6 +993,10 @@ The existing full-battlefield GPU journey also checks a small projected Llanowar
 Elves with current 3/3 and one counter at both sizes. The composed regression
 checks measured font height, full quantities, quad containment and separate
 state rows. Correct projected data alone does not prove those glyphs were drawn.
+Fallback-face regressions also inspect actual title text and keyword-circle
+paint for Serra Angel, Luminarch Aspirant and Tireless Tracker at both sizes and
+100%/130% text. Their complete source hover, reader and return gestures submit
+no game actions; missing artwork must not make state glyphs overwrite identity.
 `FullBattlefieldSmoke` (the existing
 `--smoke-full-battlefield` mode) appends a three-player journey through the actual
 reduced-motion setting, keyboard pan, wheel zoom and Home. It checks unchanged
