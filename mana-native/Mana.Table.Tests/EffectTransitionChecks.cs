@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Renderer;
 using Microsoft.Xna.Framework;
+using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
 using Point = Microsoft.Xna.Framework.Point;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
@@ -78,10 +79,11 @@ internal static class EffectTransitionChecks
             using var app = new TableApplication(TestTableServices.For(engine), profile, initialState: engine.State) { Automated = true };
             app.Initialize(); app.SetTableStudy(true);
             if (focused) app.TestPort.OpenBattlefield(1);
-            Mana.Table.Presentation.PresentationFrame Tick(double seconds)
+            Mana.Table.Presentation.PresentationFrame Tick(double seconds, Point? point = null, ButtonState left = ButtonState.Released)
             {
                 var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.01));
-                app.Update(time, new(), new(), new(1600, 900));
+                var pointer = point ?? new Point(-100, -100);
+                app.Update(time, new(pointer.X, pointer.Y, 0, left, default, default, default, default), new(), new(1600, 900));
                 return app.ReadPresentation();
             }
             var initial = Tick(10);
@@ -93,12 +95,31 @@ internal static class EffectTransitionChecks
                 .Select(card => card.StudyFamily).OfType<StudyBattlefieldFamily>().DistinctBy(family => family.Id)
                 .Where(family => family.CohortCount > 1 && paintedNames.Any(text => text.Value == family.Name
                     && text.X == frame.BoardView.Apply(family.NameBounds).X + 4 && text.Y == frame.BoardView.Apply(family.NameBounds).Y)).ToArray();
-            check(families.Any(family => family.Name == "Forest") && app.TestPort.CounterReceipts.Count > 0
+            check(app.TestPort.CounterReceipts.Count > 0
                 && app.TestPort.CounterReceipts.All(receipt => families.All(family => !receipt.Bounds.Intersects(frame.BoardView.Apply(family.NameBounds))))
                 && represented.SetEquals(frame.Cards.Where(card => card.Zone == "Battlefield").Select(card => card.Id))
                 && (!focused || app.TestPort.StudyFocusOwner == 1),
                 "The actual 480-permanent " + (focused ? "focused table" : "whole table")
-                    + " keeps visible Forest/Plains/Island family captions outside the new counter receipts while retaining the cards and localized increments");
+                    + " keeps every painted whole family caption outside the new counter receipts while retaining the cards and localized increments");
+            // A foreshortened caption that cannot fit upright text must retain
+            // a complete physical hover -> reader journey, not smaller text.
+            var forest = frame.Cards.Where(card => card.Zone == "Battlefield" && card.Card.Name == "Forest"
+                    && (!focused || card.Request.Owner == 1))
+                .FirstOrDefault(card => app.TestPort.HitAt(card.Display.Center.ToPoint())?.Card?.VisualId == card.Id);
+            check(forest != null && (!focused || frame.BoardView.Scale > 1 && app.TestPort.StudyFocusOwner == 1),
+                "Dense whole-table and focused views retain an exposed Forest's actual scoped pointer target; focus enlarges the same table");
+            var source = forest!;
+            var target = source.Display.Center.ToPoint();
+            frame = Tick(10.95, target);
+            check(frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value == "Forest")
+                    && app.TestPort.HitAt(target)?.Card?.VisualId == source.Id,
+                "Hovering the dense physical Forest exposes its complete name when an upright family caption does not fit the projected surface");
+            Tick(11, target, ButtonState.Pressed); frame = Tick(11.05, target);
+            frame = Tick(11.2, target);
+            var reader = frame.Cards.Single(card => card.Id == source.Id && card.Focused);
+            check(reader.Display.Size.Y > source.Rest.Size.Y && reader.Hit.Scope == frame.Stamp.Scope
+                    && reader.Card.Name == "Forest" && engine.Replies.Count == 0,
+                "The same dense Forest opens its full noncommitting reader through the real mouse gesture without a stale or grouped game command");
         }
     }
 

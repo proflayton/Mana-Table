@@ -507,27 +507,23 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             }).ToArray();
             var state = view.Match!;
             var opponents = state.Players.Where(player => player.Id != state.ViewerId).ToArray();
-            var worldReadouts = view.WorldReadouts;
+            var worldReadouts = view.ReadoutPlans;
             string[] LandLabels(Player player) {
                 var lands = Mana.Magic.PublicResources.Lands(player);
-                return [lands.Total + (lands.Total == 1 ? " land" : " lands"), lands.Untapped + " untapped · " + lands.Tapped + " tapped"];
+                return [(player.Id == state.ViewerId ? "" : player.Name + " · ") + lands.Total + (lands.Total == 1 ? " land" : " lands"), lands.Untapped + " untapped · " + lands.Tapped + " tapped"];
             }
             bool SameLabels(IEnumerable<string> actual, Player player) => actual.OrderBy(value => value, StringComparer.Ordinal)
                 .SequenceEqual(LandLabels(player).OrderBy(value => value, StringComparer.Ordinal));
             bool exactGroups = worldReadouts.Count == opponents.Length && opponents.All(player => worldReadouts.ContainsKey(player.Id))
                 && opponents.All(player => {
                     var group = worldReadouts[player.Id];
-                    var emitted = printedReadouts.Where(text => group.Canonical.Contains(text.bounds)).ToArray();
-                    return group.Visible ? emitted.Length == 2 && SameLabels(emitted.Select(text => text.Value), player) : emitted.Length == 0;
+                    var emitted = printedReadouts.Where(text => group.Pieces.Contains(text.bounds)).ToArray();
+                    return emitted.Length == 2 && SameLabels(emitted.Select(text => text.Value), player);
                 });
-            var localReadouts = printedReadouts.Where(text => !worldReadouts.Values.Any(group => group.Canonical.Contains(text.bounds))).ToArray();
+            var localReadouts = printedReadouts.Where(text => !worldReadouts.Values.Any(group => group.Pieces.Contains(text.bounds))).ToArray();
             exactGroups &= localReadouts.Length == 2 && SameLabels(localReadouts.Select(text => text.Value), state.Viewer!);
             var boardViewport = new Microsoft.Xna.Framework.Rectangle(0, 54, 1600, 724);
-            var expectedReadouts = printedReadouts.Select(text => {
-                bool world = worldReadouts.Values.Any(group => group.Canonical.Contains(text.bounds));
-                return new { text.Value, bounds = world ? Microsoft.Xna.Framework.Rectangle.Intersect(frame.BoardView.Apply(text.bounds), boardViewport) : text.bounds,
-                    Size = text.Size * (world ? frame.BoardView.Scale : 1) };
-            }).Where(text => !text.bounds.IsEmpty).ToArray();
+            var expectedReadouts = printedReadouts.Select(text => new { text.Value, text.bounds, text.Size }).ToArray();
             var exactObservedReadouts = expectedReadouts.OrderBy(text => text.Value, StringComparer.Ordinal).ThenBy(text => text.bounds.X).ThenBy(text => text.bounds.Y)
                 .SequenceEqual(readouts.OrderBy(text => text.Value, StringComparer.Ordinal).ThenBy(text => text.bounds.X).ThenBy(text => text.bounds.Y));
             var nameplates = frame.Hits.Where(hit => hit.Id.StartsWith("focus:", StringComparison.Ordinal)
@@ -635,10 +631,11 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
                 "The rock visibly turns, generic debt disappears, and its actual leftover colorless pip stays distinct from the unpaid blue");
             var tappedRing = view.DisplayedPose(ManaPaymentScenario.Ring)!.Value;
             Check(initialRingPose is { } untappedRing && untappedRing.Size == tappedRing.Size
-                && untappedRing.Bounds.Height > untappedRing.Bounds.Width
-                && tappedRing.Bounds.Width > tappedRing.Bounds.Height
+                && tappedRing.Bounds.Width > untappedRing.Bounds.Width
+                && tappedRing.Bounds.Height < untappedRing.Bounds.Height
                 && Math.Abs(Math.Abs(MathHelper.WrapAngle(tappedRing.Angle - untappedRing.Angle)) - MathHelper.PiOver2) < .01f,
-                "A settled rock keeps the same physical face and makes a visible quarter-turn from tall to wide rather than cancelling the tap by swapping dimensions");
+                "A settled rock keeps the same physical face and makes a visibly wider, shorter quarter-turn on its seated plane rather than cancelling the tap by swapping dimensions; "
+                    + $"before {initialRingPose}; tapped {tappedRing}");
             Capture("04-rock-tapped-blue-remains"); MoveHit("mana-pool:0:C");
         });
         Wait(() => HasText("Colorless mana · 1") && HasText("Not usable for the remaining cost"), () => {

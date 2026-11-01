@@ -64,16 +64,21 @@ public sealed record BattlefieldAttachment(string RootId, int RootOwner, string 
     public Rectangle Edge(Pose pose)
     {
         // Exposed edges follow the assembly's seat, independently of tapping.
-        var local = pose with { Angle = pose.Angle - Facing };
+        var local = pose with { Angle = pose.Angle - Facing, Tilt = 1, Perspective = 0, Shear = 0 };
         var bounds = local.Bounds;
         float faceWidth = MathF.Abs(MathF.Cos(local.Angle)) * pose.Size.X + MathF.Abs(MathF.Sin(local.Angle)) * pose.Size.Y;
         int width = Math.Clamp((int)MathF.Floor(faceWidth * ExposedWidthFraction), 1, Math.Max(1, bounds.Width));
         // Keep rounding at either quarter-turned face from extending the hit
         // strip into the covering host. Dense one-pixel strips stay reachable.
         var edge = new Rectangle(bounds.Left, bounds.Top, Math.Max(1, width - 2), Math.Max(1, bounds.Height - 2));
-        var offset = new Vector2(edge.X + edge.Width / 2f, edge.Y + edge.Height / 2f) - pose.Center;
-        var rotated = Facing == 0 ? offset : Facing == MathF.PI ? -offset
-            : Facing > 0 ? new Vector2(-offset.Y, offset.X) : new Vector2(offset.Y, -offset.X);
-        return new Pose(pose.Center + rotated, edge.Size.ToVector2(), Facing).Bounds;
+        Vector2 OnFace(Vector2 point) {
+            var offset = point - pose.Center;
+            var rotated = Facing == 0 ? offset : Facing == MathF.PI ? -offset
+                : Facing > 0 ? new Vector2(-offset.Y, offset.X) : new Vector2(offset.Y, -offset.X);
+            return pose.OffsetPoint(rotated);
+        }
+        Vector2[] corners = [OnFace(new(edge.Left, edge.Top)), OnFace(new(edge.Right, edge.Top)),
+            OnFace(new(edge.Right, edge.Bottom)), OnFace(new(edge.Left, edge.Bottom))];
+        return Pose.InteriorBounds(corners, OnFace(new(edge.X + edge.Width / 2f, edge.Y + edge.Height / 2f)));
     }
 }

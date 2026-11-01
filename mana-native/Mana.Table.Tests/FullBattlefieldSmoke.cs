@@ -293,14 +293,9 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             CheckThreePlayerCamera("Three-player reduced-motion zoom");
             CheckResourceOcclusion("Three-player reduced-motion zoom");
             int topId = TableLayout.Opponents(view.Match!)[1].Id;
-            var hero = view.Frame!.Scene!.Seat(topId).Geometry.Hero;
-            bool obstructed = view.WorldReadouts[topId].Canonical.Select(view.BoardView.Apply).Any(bounds => {
-                var nearest = Vector2.Clamp(hero, new(bounds.Left, bounds.Top), new(bounds.Right, bounds.Bottom));
-                return Vector2.DistanceSquared(nearest, hero) < 39 * 39;
-            });
-            Check(obstructed && !view.WorldReadouts[topId].Visible && view.CounterBadge(topId) == null
-                    && !view.Frame!.Hits.Any(hit => hit.Id.StartsWith("player-state:" + topId + ":", StringComparison.Ordinal)),
-                "The actual zoomed top resource group retires both paint and counter controls when fixed seat objects would obscure it");
+            Check(view.ReadoutPlans.ContainsKey(topId) && view.CounterBadge(topId) is { Chips.Length: 2 }
+                    && view.ReadoutPlans[topId].States.All(item => view.HitAt(item.Bounds.Center)?.Id == "player-state:" + topId + ":" + item.Id),
+                "The zoomed table preserves its complete readable fixed state HUD and exact counter controls");
             Capture("14-three-player-reduced-zoom"); keyboard = new(Keys.Home);
         });
         Step(.04, () => keyboard = new());

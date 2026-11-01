@@ -16,17 +16,9 @@ internal sealed partial class TableApplication
     private readonly List<Rectangle> seatReadoutBounds = new(12);
     private sealed record SeatAuxiliary(Player Player, Vector2 Center, bool Own, int Index, bool HasCounters,
         ManaHaloPlan Mana, string? Caption, int Incoming, Rectangle StatusArea);
-    internal sealed record WorldSeatReadout(IReadOnlyList<Rectangle> Canonical, IReadOnlyList<Rectangle> Displayed, bool Visible);
-    private readonly List<SeatAuxiliary> deferredSeatAuxiliaries = [];
-    private readonly Dictionary<int, WorldSeatReadout> worldSeatReadouts = [];
-    private readonly List<Pose> fixedSeatSurfaces = [];
-    private readonly List<Rectangle> fixedSeatLabels = [];
-    private readonly List<(Vector2 Center, float Radius)> fixedSeatCircles = [];
     private void DrawTableSurface()
     {
         manaPoolBadges.Clear(); manaPoolDetail = null; battlefieldStatsBounds.Clear(); seatReadoutBounds.Clear();
-        deferredSeatAuxiliaries.Clear(); worldSeatReadouts.Clear();
-        fixedSeatSurfaces.Clear(); fixedSeatLabels.Clear(); fixedSeatCircles.Clear();
         // Neutral material studies, drawn in code. An artist can supply the
         // play-surface texture without baking cards, seating, or UI into it.
         canvas.Gradient(new(0, 0, 1600, 900), new(13, 18, 24), new(7, 11, 16));
@@ -101,18 +93,15 @@ internal sealed partial class TableApplication
         var geometry = tableScene!.Seat(player.Id).Geometry;
         foreach (var node in geometry.Commanders) {
             canvas.CardFrame(node.Pose with { Size = node.Pose.Size + new Vector2(13) }, Gold * .35f, 1);
-            if (TableStudyEnabled) fixedSeatSurfaces.Add(node.Pose with { Size = node.Pose.Size + new Vector2(13) });
             DrawSceneCard(node);
         }
         var commandLink = geometry.CommandLink;
         int cx = (int)commandLink.X, cy = (int)commandLink.Y;
         canvas.CenterText("Command " + player.Zone("Command").Count, new(cx - 52, cy, 104, 24), Gold * .85f, .48f);
-        if (TableStudyEnabled) fixedSeatLabels.Add(new(cx - 52, cy, 104, 24));
         hits.Add(new("zone:" + player.Id + ":Command", Scope, new(cx - 56, cy - 3, 112, 30), new MatchIntent.OpenZone(player.Id, "Command")));
         if (AvailableZoneCount(player, "Command") is > 0 and var available) {
             var badge = new Rectangle(cx - 51, cy + 25, 102, 22);
             canvas.Panel(badge, new(15, 41, 54), ActionAccent, 4);
-            if (TableStudyEnabled) fixedSeatLabels.Add(badge);
             canvas.CenterText(available + " available", badge, ActionAccent, .5f, true);
             hits.Add(new("zone-actions:" + player.Id + ":Command", Scope, badge, new MatchIntent.OpenZone(player.Id, "Command")));
         }
@@ -122,11 +111,6 @@ internal sealed partial class TableApplication
     {
         var value = player.Zone(zone); var top = zone == "Library" ? value.TopCard : value.Cards.LastOrDefault();
         var geometry = PileGeometry.Create(pose, value.Count, compact);
-        if (TableStudyEnabled) {
-            fixedSeatSurfaces.Add(geometry.Shadow); fixedSeatSurfaces.AddRange(geometry.Layers); fixedSeatSurfaces.Add(geometry.Top);
-            fixedSeatLabels.Add(geometry.Label);
-            if (!geometry.Count.IsEmpty) fixedSeatLabels.Add(geometry.Count);
-        }
         canvas.Surface(null, geometry.Shadow, Color.Black * .4f);
         for (int i = 0; i < geometry.Layers.Count; i++)
             canvas.Surface(null, geometry.Layers[i], i % 2 == 0 ? new Color(154, 149, 131) : new Color(54, 58, 56));
@@ -161,10 +145,6 @@ internal sealed partial class TableApplication
         if (!own) {
             var handCenter = SeatHand(player.Id);
             foreach (var back in OpponentHandPoses(player, index)) {
-                if (TableStudyEnabled) {
-                    fixedSeatSurfaces.Add(back);
-                    fixedSeatSurfaces.Add(back with { Center = back.Center + new Vector2(3, 6) });
-                }
                 canvas.Surface(null, back with { Center = back.Center + new Vector2(3, 6) }, Color.Black * .45f);
                 PaintBack(back);
             }
@@ -173,17 +153,12 @@ internal sealed partial class TableApplication
             if (index != 1 && !hasCounters) {
                 var caption = new Rectangle((int)handCenter.X - 65, (int)handCenter.Y + 35, 130, 22);
                 canvas.CenterText(player.Zone("Hand").Count + " in hand", caption, Muted, .48f);
-                if (TableStudyEnabled) fixedSeatLabels.Add(caption);
             }
         }
         canvas.Glow(center + new Vector2(0, 10), new(radius * 3.8f, radius * 2.5f), Color.Black * .9f);
         if (target || active) canvas.Glow(center, new(radius * 4.7f), (target ? Blue : Gold) * .4f);
         // Layered seat medallions sit on the table rim, like physical life counters.
         canvas.Circle(center + new Vector2(0, 6), radius + 7, new Color(11, 17, 20));
-        if (TableStudyEnabled) {
-            fixedSeatCircles.Add((center + new Vector2(0, 6), radius + 7));
-            fixedSeatCircles.Add((center, radius + 5));
-        }
         canvas.Circle(center, radius + 5, target ? Blue : active ? Gold : new Color(119, 115, 100));
         canvas.Circle(center, radius + 3, new Color(36, 41, 42));
         canvas.Circle(center - new Vector2(0, 1), radius, new Color(55, 67, 66));
@@ -216,8 +191,12 @@ internal sealed partial class TableApplication
         bool topMatSeat = TableStudyEnabled && !own && index == 1;
         if (!own) {
             seatReadoutBounds.Add(nameplate);
-            if (TableStudyEnabled) fixedSeatLabels.Add(nameplate);
-            canvas.CenterText(name + " ↗", nameplate, nameplate.Contains(pointer) ? Blue : Ink, .6f, true);
+            string seatMarker = PublicSeatOrdinal(player.Id).ToString();
+            int markerWidth = canvas.TextWidth(seatMarker, .6f, true) + 10;
+            canvas.CenterText(seatMarker, new(nameplate.X, nameplate.Y, markerWidth, nameplate.Height), Ink, .6f, true);
+            string actionName = seatReadoutWorkspaces.Contains(player.Id) ? "Read resources" : name + " ↗";
+            canvas.CenterText(actionName, new(nameplate.X + markerWidth, nameplate.Y, nameplate.Width - markerWidth, nameplate.Height),
+                nameplate.Contains(pointer) ? Blue : Ink, .6f, true);
         }
         int incoming = match.Combat?.Attackers.Count(a => a.HasDefender && a.DefendingPlayerId == player.Id) ?? 0;
         string status = player.Eliminated ? TimedOut(player.Id) ? "TIMED OUT" : "ELIMINATED" : incoming > 0 ? incoming + (own ? " ATTACKING YOU" : " INCOMING")
@@ -234,15 +213,11 @@ internal sealed partial class TableApplication
         // Portrait identity and unspent mana remain fixed seat controls. Public
         // opponent resources are composed after the fixed hand is prepared.
         DrawPlayerMana(player, manaHalo);
-        if (TableStudyEnabled) fixedSeatLabels.AddRange(manaHalo.Parts.Select(part => part.Bounds));
         var auxiliary = new SeatAuxiliary(player, center, own, index, hasCounters, manaHalo, auxiliaryCaption, incoming, new(x + 4, y + 24, 180, 80));
-        if (TableStudyEnabled && !own) deferredSeatAuxiliaries.Add(auxiliary);
-        else {
-            var painted = DrawSeatAuxiliary(auxiliary);
-            if (TableStudyEnabled) fixedSeatLabels.AddRange(painted);
-        }
+        if (!TableStudyEnabled || own) DrawSeatAuxiliary(auxiliary);
         if (!own) DrawOpponentPhase(player, center, index);
-        if (!own) hits.Add(new("focus:" + player.Id, Scope, nameplate, new MatchIntent.OpenZone(player.Id, "Battlefield"),
+        if (!own) hits.Add(new("focus:" + player.Id, Scope, nameplate, seatReadoutWorkspaces.Contains(player.Id)
+            ? new MatchIntent.OpenPlayerState(player.Id, "") : new MatchIntent.OpenZone(player.Id, "Battlefield"),
             Shape: topMatSeat ? point => nameplate.Contains(point)
                 && Vector2.DistanceSquared(point.ToVector2(), center) > (radius + 9) * (radius + 9) : null));
     }
@@ -267,146 +242,33 @@ internal sealed partial class TableApplication
             : new((int)center.X - 94, (int)center.Y + 41, 188, 24);
     }
 
-    private List<Rectangle> DrawSeatAuxiliary(SeatAuxiliary auxiliary)
+    private void DrawSeatAuxiliary(SeatAuxiliary auxiliary)
     {
-        var (player, center, own, index, hasCounters, manaHalo, caption, incoming, originalStatusArea) = auxiliary;
-        var geometry = TableStudyEnabled ? tableScene!.Seat(player.Id).Geometry : null;
-        var readoutArea = geometry?.PublicReadoutArea;
-        var painted = new List<Rectangle>();
-        Rectangle counterBounds = Rectangle.Empty;
+        var (player, center, own, index, hasCounters, manaHalo, caption, incoming, statusArea) = auxiliary;
         if (hasCounters) {
             int counterX = own ? (int)center.X - 390 : (int)center.X - 94;
             int counterY = own ? (int)center.Y - 22 : index == 1 ? (int)center.Y + 35 : (int)center.Y - 64;
             int counterWidth = index == 1 && !own ? 144 : 188;
             bool growUp = !own && index != 1;
-            if (own && geometry?.PublicCounterArea is { } counterArea) {
-                counterX = counterArea.X;
-                counterY = counterArea.Bottom - (player.States.Length > 0 ? 24 : 25);
-                counterWidth = counterArea.Width;
-                growUp = true;
-            } else if (!own && readoutArea is { } personal) {
-                counterX = personal.X; counterY = personal.Y; counterWidth = personal.Width;
-                growUp = false;
+            if (own && TableStudyEnabled && tableScene!.Seat(player.Id).Geometry.PublicCounterArea is { } counterArea) {
+                counterX = counterArea.X; counterY = counterArea.Bottom - (player.States.Length > 0 ? 24 : 25);
+                counterWidth = counterArea.Width; growUp = true;
             } else if (own && manaHalo.Parts.Length > 0) counterX = Math.Min(counterX, manaHalo.Bounds.Left - 196);
             else if (index == 1) counterY = Math.Max(counterY, manaHalo.Bounds.Bottom + 8);
-            int firstCounterHit = hits.Count;
-            counterBounds = DrawPublicPlayerCounters(player, counterX, counterY, counterWidth, growUp);
-            if (!counterBounds.IsEmpty) seatReadoutBounds.Add(counterBounds);
-            // The allocated counter row can contain empty space. Occlusion uses
-            // its painted chips (including the overflow control), not that row.
-            painted.AddRange(hits.Skip(firstCounterHit).Where(hit => hit.Id.StartsWith("player-state:", StringComparison.Ordinal)
-                || hit.Id.StartsWith("player-state-more:", StringComparison.Ordinal)).Select(hit => hit.Bounds));
-            if (publicCounterBadges.TryGetValue(player.Id, out var badge) && badge.Chips.Length == 0 && !badge.Bounds.IsEmpty)
-                painted.Add(badge.Bounds);
+            var counters = DrawPublicPlayerCounters(player, counterX, counterY, counterWidth, growUp);
+            if (!counters.IsEmpty) seatReadoutBounds.Add(counters);
         }
-        int firstReadout = seatReadoutBounds.Count;
-        Rectangle landBounds = Rectangle.Empty;
-        if (TableStudyEnabled) {
-            var personal = readoutArea!.Value;
-            var landArea = own ? new Rectangle(8, 800, 220, 100)
-                : new Rectangle(personal.X, counterBounds.IsEmpty ? personal.Y : counterBounds.Bottom + 4, personal.Width, personal.Height);
-            landBounds = DrawLandState(player, landArea);
-        }
+        if (TableStudyEnabled && own) DrawLandState(player, new(8, 800, 220, 100));
         if (caption != null) {
-            var statusArea = !own && readoutArea is { } personal
-                ? new Rectangle(personal.X, landBounds.Bottom + 4, personal.Width, personal.Height)
-                : originalStatusArea;
             var measured = canvas.TextSize(caption, .53f, statusArea.Width, 80, true);
             seatReadoutBounds.Add(new(statusArea.X, statusArea.Y, measured.X, measured.Y));
             canvas.Text(caption, statusArea.X, statusArea.Y, incoming > 0 ? Red : Gold, .53f, statusArea.Width, 80, true);
         }
-        painted.AddRange(seatReadoutBounds.Skip(firstReadout));
-        return painted;
     }
 
-    private void DrawOpponentSeatAuxiliaries()
+    private void DrawOpponentSeatReadouts()
     {
-        if (deferredSeatAuxiliaries.Count == 0) return;
-        // These are the current displayed fixed cards, after the hand and any
-        // lifted occurrence have been prepared. Canonical layout reservations
-        // include empty safety margins and cannot decide paint visibility.
-        foreach (var card in matchPresentation.Cards.Cards.Where(card => !BoardView.AffectsZone(card.Zone))) {
-            var body = new CardPaintGeometry(card.Display);
-            fixedSeatSurfaces.Add(body.Backing); fixedSeatSurfaces.Add(body.Shadow);
-        }
-        foreach (var auxiliary in deferredSeatAuxiliaries) {
-            int firstHit = hits.Count, firstReadout = seatReadoutBounds.Count;
-            var screenPointer = pointer;
-            canvas.BeginGroup(); canvas.BeginClip(BoardViewport); canvas.BeginTransform(boardView);
-            List<Rectangle> painted;
-            pointer = boardView.Inverse(screenPointer);
-            try { painted = DrawSeatAuxiliary(auxiliary); }
-            finally { pointer = screenPointer; canvas.EndTransform(); canvas.EndClip(); }
-            var displayed = painted.Select(bounds => Rectangle.Intersect(boardView.Apply(bounds), BoardViewport))
-                .Where(bounds => !bounds.IsEmpty).ToArray();
-            var well = tableScene!.Seat(auxiliary.Player.Id).Geometry.PublicReadoutArea!.Value;
-            bool visible = painted.All(well.Contains) && displayed.Length > 0 && !displayed.Any(SeatReadoutOccluded);
-            canvas.EndGroup(visible);
-            worldSeatReadouts[auxiliary.Player.Id] = new(Array.AsReadOnly(painted.ToArray()),
-                Array.AsReadOnly(visible ? displayed : []), visible);
-            if (visible) ProjectMatResources(auxiliary.Player.Id, firstHit, firstReadout);
-            else {
-                var retired = hits.Skip(firstHit).ToArray();
-                hits.RemoveAll(candidate => retired.Any(hit => ReferenceEquals(candidate, hit)));
-                seatReadoutBounds.RemoveRange(firstReadout, seatReadoutBounds.Count - firstReadout);
-                publicCounterBadges.Remove(auxiliary.Player.Id);
-            }
-        }
-        deferredSeatAuxiliaries.Clear();
-    }
-
-    private bool SeatReadoutOccluded(Rectangle bounds)
-    {
-        if (fixedSeatLabels.Any(label => label.Intersects(bounds))) return true;
-        if (fixedSeatCircles.Any(circle => {
-            var nearest = Vector2.Clamp(circle.Center, new(bounds.Left, bounds.Top), new(bounds.Right, bounds.Bottom));
-            return Vector2.DistanceSquared(nearest, circle.Center) < circle.Radius * circle.Radius;
-        })) return true;
-        return fixedSeatSurfaces.Any(pose => Overlaps(pose, bounds));
-
-        static bool Overlaps(Pose pose, Rectangle rectangle) {
-            if (!pose.Bounds.Intersects(rectangle)) return false;
-            var corners = pose.Corners;
-            Vector2[] box = [new(rectangle.Left, rectangle.Top), new(rectangle.Right, rectangle.Top),
-                new(rectangle.Right, rectangle.Bottom), new(rectangle.Left, rectangle.Bottom)];
-            // Separating axes retain the empty corners of a rotated card fan.
-            for (int index = 0; index < corners.Length; index++) {
-                var edge = corners[(index + 1) % corners.Length] - corners[index];
-                var axis = new Vector2(-edge.Y, edge.X);
-                float cardMin = corners.Min(point => Vector2.Dot(point, axis)), cardMax = corners.Max(point => Vector2.Dot(point, axis));
-                float boxMin = box.Min(point => Vector2.Dot(point, axis)), boxMax = box.Max(point => Vector2.Dot(point, axis));
-                if (cardMax <= boxMin || boxMax <= cardMin) return false;
-            }
-            return true;
-        }
-    }
-
-    private void ProjectMatResources(int playerId, int firstHit, int firstReadout)
-    {
-        var view = boardView;
-        Rectangle Visible(Rectangle bounds) => bounds.IsEmpty ? Rectangle.Empty : Rectangle.Intersect(view.Apply(bounds), BoardViewport);
-        var worldHits = hits.Skip(firstHit).ToArray();
-        hits.RemoveAll(candidate => worldHits.Any(world => ReferenceEquals(candidate, world)));
-        foreach (var world in worldHits) {
-            var bounds = Visible(world.Bounds);
-            if (bounds.IsEmpty) continue;
-            hits.Add(world with { Bounds = bounds,
-                Shape = point => BoardViewport.Contains(point) && world.Contains(view.Inverse(point)) });
-        }
-        for (int index = seatReadoutBounds.Count - 1; index >= firstReadout; index--) {
-            var bounds = Visible(seatReadoutBounds[index]);
-            if (bounds.IsEmpty) seatReadoutBounds.RemoveAt(index);
-            else seatReadoutBounds[index] = bounds;
-        }
-        if (publicCounterBadges.TryGetValue(playerId, out var badge)) {
-            int Width(int width) => (int)MathF.Round(width * view.Scale);
-            var bounds = Visible(badge.Bounds);
-            var chips = badge.Chips.Select(chip => chip with { Bounds = Visible(chip.Bounds),
-                MeasuredWidth = Width(chip.MeasuredWidth), AvailableWidth = Width(chip.AvailableWidth) })
-                .Where(chip => !chip.Bounds.IsEmpty).ToArray();
-            publicCounterBadges[playerId] = badge with { Bounds = bounds, Chips = chips,
-                Size = badge.Size * view.Scale, MeasuredWidth = Width(badge.MeasuredWidth), AvailableWidth = Width(badge.AvailableWidth) };
-        }
+        foreach (var plan in seatReadoutPlans.Values) DrawSeatReadout(plan);
     }
 
     private Rectangle DrawLandState(Player player, Rectangle area)

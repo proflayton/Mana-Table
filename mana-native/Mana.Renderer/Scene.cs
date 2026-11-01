@@ -15,9 +15,30 @@ public readonly record struct Pose(Vector2 Center, Vector2 Size, float Angle = 0
         var local = new Vector2((u - .5f) * Size.X, (v - .5f) * Size.Y);
         float c = MathF.Cos(Angle), s = MathF.Sin(Angle);
         var d = new Vector2(local.X * c - local.Y * s, local.X * s + local.Y * c);
-        return Center + new Vector2(d.X + Shear * d.Y, d.Y * Tilt) / (1 + d.Y * Perspective);
+        return OffsetPoint(d);
     }
+    public Vector2 OffsetPoint(Vector2 offset) => Center
+        + new Vector2(offset.X + Shear * offset.Y, offset.Y * Tilt) / (1 + offset.Y * Perspective);
     public Vector2[] Corners => [Point(0, 0), Point(1, 0), Point(1, 1), Point(0, 1)];
+    // Upright state text must fit the actual projected face, not its enclosing
+    // screen rectangle. A centered rectangle is bounded by all four edges.
+    public Rectangle InteriorBounds(int inset = 0) => InteriorBounds(Corners, Center, inset);
+    internal static Rectangle InteriorBounds(IReadOnlyList<Vector2> corners, Vector2 center, int inset = 0)
+    {
+        float halfWidth = (corners.Max(point => point.X) - corners.Min(point => point.X)) / 2;
+        float halfHeight = (corners.Max(point => point.Y) - corners.Min(point => point.Y)) / 2;
+        float scale = 1;
+        for (int index = 0; index < corners.Count; index++) {
+            var edge = corners[(index + 1) % corners.Count] - corners[index];
+            float denominator = Math.Abs(edge.Y) * halfWidth + Math.Abs(edge.X) * halfHeight;
+            if (denominator > 0) scale = Math.Min(scale, Math.Abs(Cross(edge, center - corners[index])) / denominator);
+        }
+        int left = (int)MathF.Ceiling(center.X - halfWidth * scale) + inset;
+        int top = (int)MathF.Ceiling(center.Y - halfHeight * scale) + inset;
+        int right = (int)MathF.Floor(center.X + halfWidth * scale) - inset;
+        int bottom = (int)MathF.Floor(center.Y + halfHeight * scale) - inset;
+        return new(left, top, Math.Max(0, right - left), Math.Max(0, bottom - top));
+    }
     public Rectangle Bounds {
         get {
             var corners = Corners;

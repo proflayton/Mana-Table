@@ -41,7 +41,7 @@ internal sealed partial class TableApplication
         if (!BattlefieldFocused && !CardCollectionOpen) DrawLiftedCards();
         // Your seat stays in front of the fan and readable during card travel.
         if (state.Viewer is { } local) DrawHero(local, SeatHero(local.Id), true, 3);
-        DrawOpponentSeatAuxiliaries();
+        DrawOpponentSeatReadouts();
         DrawPriorityHandoff();
         DrawGameHeader(); DrawCombatBar(); DrawActionCallout(); DrawPublicAnnouncement();
         DrawTurnCallout();
@@ -154,7 +154,7 @@ internal sealed partial class TableApplication
         int? choice = match == null ? null : TableChoices.Index(match, card);
         bool selected = choice is { } index ? decisions.Selections.Contains(index) : card.Highlighted || GroupBlockSelected(card) || card.CombatId.Length > 0 && selectedCombat == card.CombatId;
         bool legal = IsCardActionable(card);
-        bool scanFace = zone == "Battlefield" && !focus && !pose.IsProjected && pose.Size.X < 300
+        bool scanFace = zone == "Battlefield" && !focus && pose.Size.X < 300
             && tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) is { ScanFace: true };
         if (zone == "Battlefield") PaintAbilityEffects(card, pose);
         if (scanFace) PaintBattlefieldScanFace(card, pose, owner, selected, legal, focus, groupFront || focus, groupCount);

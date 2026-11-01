@@ -57,17 +57,7 @@ internal sealed partial class TableApplication
 
     private static Rectangle BattlefieldScanLabelArea(Pose pose)
     {
-        float cosine = Math.Abs(MathF.Cos(pose.Angle)), sine = Math.Abs(MathF.Sin(pose.Angle));
-        // Fit inside the physical face before rounding. Using the outward
-        // rounded hit bounds here shrinks both axes again and can discard a
-        // pixel needed by current P/T and counters on an upright card.
-        float extentX = cosine * pose.Size.X + sine * pose.Size.Y;
-        float extentY = sine * pose.Size.X + cosine * pose.Size.Y;
-        float scale = Math.Min(1, Math.Min(pose.Size.X / Math.Max(1, cosine * extentX + sine * extentY),
-            pose.Size.Y / Math.Max(1, sine * extentX + cosine * extentY)));
-        int width = Math.Max(0, (int)(extentX * scale) - 2);
-        int height = Math.Max(0, (int)(extentY * scale) - 2);
-        return new((int)MathF.Round(pose.Center.X) - width / 2, (int)MathF.Round(pose.Center.Y) - height / 2, width, height);
+        return pose.InteriorBounds(1);
     }
 
     private void PaintBattlefieldScanState(Card card, int owner, Rectangle face, int copies)

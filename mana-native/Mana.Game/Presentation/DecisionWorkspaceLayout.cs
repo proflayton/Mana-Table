@@ -95,6 +95,36 @@ internal static class DecisionWorkspaceLayout
             <= Vector2.DistanceSquared(v.Center.ToVector2(), bounds.Center.ToVector2()) ? h : v;
     }
 
+    // HUD facts cannot disappear merely because the nearest free position needs
+    // movement on both axes. Sweep the finite obstacle-edge origin intervals;
+    // keep every measured piece and its font size rather than resizing content.
+    internal static Rectangle? TranslateComplete(IReadOnlyList<Rectangle> pieces, Rectangle viewport, IReadOnlyList<Rectangle> occupied)
+    {
+        if (Translate(pieces, viewport, occupied) is { } simple) return simple;
+        if (pieces.Count == 0) return null;
+        var bounds = pieces.Aggregate(Rectangle.Union);
+        if (bounds.Width > viewport.Width || bounds.Height > viewport.Height) return null;
+        int maxX = viewport.Right - bounds.Width, maxY = viewport.Bottom - bounds.Height;
+        var forbidden = (from piece in pieces from obstacle in occupied
+            select (Left: obstacle.Left - (piece.Right - bounds.Left), Right: obstacle.Right - (piece.Left - bounds.Left),
+                Top: obstacle.Top - (piece.Bottom - bounds.Top), Bottom: obstacle.Bottom - (piece.Top - bounds.Top))).ToArray();
+        int preferredX = Math.Clamp(bounds.X, viewport.Left, maxX);
+        int preferredY = Math.Clamp(bounds.Y, viewport.Top, maxY);
+        var candidates = forbidden.SelectMany(area => new[] { Math.Clamp(area.Left, viewport.Left, maxX), Math.Clamp(area.Right, viewport.Left, maxX) })
+            .Append(preferredX).Append(viewport.Left).Append(maxX).Distinct().OrderBy(x => Math.Abs(x - preferredX));
+        Rectangle? best = null; long bestDistance = long.MaxValue;
+        foreach (int x in candidates) {
+            long dx = x - preferredX;
+            if (dx * dx > bestDistance) continue;
+            var blocked = forbidden.Where(area => x > area.Left && x < area.Right)
+                .Select(area => (Start: area.Top, End: area.Bottom)).OrderBy(interval => interval.Start);
+            if (NearestGap(viewport.Top, maxY, 0, preferredY, blocked) is not { } y) continue;
+            long dy = y - preferredY, distance = dx * dx + dy * dy;
+            if (distance < bestDistance) { best = new(x, y, bounds.Width, bounds.Height); bestDistance = distance; }
+        }
+        return best;
+    }
+
     private static int? NearestGap(int low, int high, int extent, int target, IEnumerable<(int Start, int End)> orderedBlocked)
     {
         int cursor = low, distance = int.MaxValue; int? best = null;

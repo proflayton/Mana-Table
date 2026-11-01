@@ -6,6 +6,65 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Restore the seated table plane: 1 November 2026
+
+**Isolated projection prototype; human motion review pending.** The player liked
+the older test's card arrival because it felt like sitting at a table, then
+identified the regression precisely: “the play mats turn everything to a top
+down view.” Their supplied MTG Arena battlefield references show cards lying on
+one foreshortened surface, with a cast rising for reading before landing among
+the player's permanents. This is an observation of those references; the exact
+camera model is our implementation choice.
+
+The existing `card-play.v1` lab journey supplies the comparison: play Forest,
+announce Grizzly Bears on the stack, then settle that same occurrence beside
+Forest. Mat-relative packing already keeps Forest in place. The earlier oval
+layout moved it when Bears arrived, so restoring its packing would lose a useful
+property. Retained paired keyframes also show that both layouts use the same
+upright reveal; their resting poses differ because the mat layout removed tilt,
+shear and perspective. These sampled frames establish poses, not uninterrupted
+motion or human acceptance.
+
+The prototype projects cloth, permanent faces, attachment strips and family
+envelopes through the existing `TableWorld` seated plane after owner-relative
+packing, then applies the existing pan/zoom camera once. The same card pose
+drives its artwork, hit target, landing motion and state-label area. Upright
+card captions fit inside their actual projected surfaces instead of their
+enclosing screen rectangles. Public land totals, counter types and incoming
+combat belong to a separate measured, fixed seat HUD beside the existing player
+resources. One readout plan owns their full text, painted pieces, scoped targets
+and camera reservations. They remain readable while the table moves; camera
+occlusion no longer hides the player's state. Counted state overflow opens the
+existing complete detail reader. Placement tries full-font arrangements before
+using a separately reserved counted-state target; land and incoming-combat facts
+remain visible in that fallback. Full current owner names stay in ordinary
+arrangements. The bounded terminal slot uses the same public seating ordinal
+shown beside the portrait, rather than truncating a long deck/player name or
+renumbering with the viewing seat. If no complete measured placement exists,
+the existing nameplate explicitly offers **Read resources**, opening the current
+owner's full read-only workspace. It does not publish overlapping HUD content
+or change portrait targeting. Fixed seat controls and zone rails retain
+their authority. Engine state, action permissions, card identity and hand/stack
+readers are unchanged.
+
+The player's first projection preview still felt less like a table, and the
+mats felt too close. That review is **issues/direction**, not acceptance. The
+follow-up restores the existing continuous oval rim and increases the constant
+world-space gaps while keeping every mat's dimensions and card packing. Side
+mat gaps increase from 16 to 32 units, and the near/far gap becomes 68. A wider
+50-unit side candidate collided with the fixed exile rail in the tapped-land
+journey and was rejected. The table material continues beneath the fixed hand;
+cards and mats retain their existing board clip. These are prototype choices
+for a further human motion and spacing review.
+
+Review the continuous hand → stack → battlefield journey, a tapped card at each
+seat, attachments, four-player ownership and a focused mat at both small and
+large windows. Confirm that tapping remains a quarter turn relative to its seat,
+labels stay readable, inspection never chooses a target, and reduced motion
+settles directly on the same plane. Automated `seated-plane` presentation checks
+cover geometry and scoped input; they do not establish that the table feels
+physical or that a dense battlefield is readable.
+
 ## Reconsider history and logs: 1 November 2026
 
 **First payment/history implementation candidate; human review pending.** The player rejected

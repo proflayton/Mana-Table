@@ -44,6 +44,7 @@ internal static class PresentationSmoke
         EffectTransitionChecks.Run(Check);
         RoleLaneAvoidanceChecks.Run(Check);
         SharedTableStudyChecks.Run(Check);
+        TableSurfaceProjectionChecks.Run(Check);
         StudyFocusChecks.Run(Check);
         BattlefieldFocusChecks.Run(Check);
         FocusedBattlefieldGroupingChecks.Run(Check);

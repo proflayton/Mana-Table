@@ -914,6 +914,26 @@ quarter turn yields the same mat dimensions, area, 16:9 proportions and role-row
 frames, including actual duels. Role lanes and complete families fit inside the
 hem; prepared personal/counter spaces stay clear of card families. Neighbouring
 mats retain a bare-table gap, and empty fields keep their seat and mat bounds.
+The seated-plane source candidate after 0.2.322 also checks the actual mat/card
+quads against one shared projection, half-pixel rectangle centers, tapped
+silhouettes, inscribed upright text, attachment edges and stable occurrence
+placement. The existing presentation lanes run these regressions in CI; no new
+engine campaign or CI process is required. A focused local journey is:
+
+```powershell
+dotnet run --project mana-native/Mana.Table.Tests -- --smoke-headless-presentation --presentation-group seated-plane --profile "$env:TEMP\ManaTableSeatedPlane-$([Guid]::NewGuid())"
+```
+
+The `match-header` presentation group covers the measured fixed player-state
+HUD at both review sizes, 100%/130% text and two/three/four seats. Land/combat
+facts and complete counter labels remain readable through focus, pan, zoom and
+Home; explicit overflow opens every omitted state through the current player's
+noncommitting detail target. No-fit placement is exercised deliberately rather
+than allowing an unchecked overlapping origin. Real long preset/deck names at
+130% text exercise the bounded seat marker and complete owner details. A truly
+impossible placement must return a typed no-fit result and leave an explicit,
+current resource-reading nameplate target; it must not throw or claim an
+intersecting plan is clear.
 Existing sparse/dense/tapped checks and `AttachmentStackChecks` protect complete
 assemblies in two-, three- and four-player games and foreign-controlled
 attachments without changing their controller or individual permissions. Actual
@@ -939,10 +959,9 @@ its canonical inspectable source hit and response-target continuity;
 exact bill separate. The shared family packer and continuous-face inscription
 corrections do not weaken those assertions or certify extreme dense-board clarity.
 The native camera journey retains its actual W pan, then uses Home before the
-deliberate obstruction zoom. Capturing a larger window cannot change that zoom's
-starting position through time spent holding W. The check requires an actual
-projected readout/portrait intersection, complete paint/input retirement and
-restoration on Home.
+deliberate zoom. Capturing a larger window cannot change that zoom's starting
+position through time spent holding W. Player-state paint and hit targets stay
+in the same measured HUD coordinates instead of disappearing behind a portrait.
 The attachment group also exercises actual automatic focus at both window sizes
 with two local typed states and six mana colors: a crowded foreign-host field,
 an ordinary three-player top field and the local four-player field. Displayed
@@ -963,9 +982,13 @@ sprite/triangle coordinates, transformed clip rounding, canonical measurement,
 pixel-snapped text density and rejected invalid scopes. Drawing groups cover
 nested visible/hidden paint, complete rollback, publication rejection for open
 groups and protection of enclosing camera/clip scopes. Opponent resource checks
-compare projected/clipped counter hits and text observations during camera
-movement, including whole-group omission at registered fixed HUD geometry, while
-preserving the anchored portrait, mana, public piles and local resource HUD.
+compare actual fixed counter hits and text observations during camera movement,
+including reachable state-detail controls, while preserving the anchored portrait,
+mana, public piles and local resource HUD. Dense overview captions that cannot
+fit at full font require a physical hover-to-reader journey; glyphs must not
+escape their surface. These checks do not establish human readability or motion
+acceptance. Review the actual oval-table play sequence and focused battlefield at
+both window sizes with realistic art, ordinary/reduced motion and tapped cards.
 `FullBattlefieldSmoke` (the existing
 `--smoke-full-battlefield` mode) appends a three-player journey through the actual
 reduced-motion setting, keyboard pan, wheel zoom and Home. It checks unchanged

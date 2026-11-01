@@ -354,6 +354,7 @@ internal sealed partial class TableApplication : IDisposable
             spread: spreadCollection == null ? null : new(spreadCollection, spreadTarget, spreadAreaTop), spreadMeasure: MeasureSpreadPacketHeader,
             groupCombatCandidates: GroupedCombatReview);
         PrepareCardCollection();
+        PrepareSeatReadouts();
         UpdateBoardView();
         PrepareStudyAttentionArea();
         PrepareMatchPresentation();

@@ -20,8 +20,7 @@ internal sealed partial class TableApplication
     private void DrawStudyFamily(StudyBattlefieldFamily family)
     {
         if (family.CohortCount <= 1) return;
-        var bounds = boardView.Apply(family.Bounds); bounds.Inflate(2, 2);
-        canvas.Border(bounds, new Color(105, 134, 137) * .55f);
+        canvas.CardFrame(boardView.Apply(family.Surface), new Color(105, 134, 137) * .55f, 1);
         if (!StudyFamilyNameVisible(family)) return;
         var name = boardView.Apply(family.NameBounds);
         canvas.Fill(name, new(13, 24, 30));

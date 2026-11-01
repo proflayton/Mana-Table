@@ -36,6 +36,14 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "match-header") MatchHeaderInteractionChecks.Run(profile, Check);
                 else if (group == "attachment-stack") AttachmentStackChecks.Run(profile, Check);
                 else if (group == "pending-effects") PendingEffectPresentationChecks.Run(profile, Check);
+                else if (group == "seated-plane") {
+                    TableSurfaceProjectionChecks.Run(Check);
+                    SharedTableStudyChecks.Run(Check);
+                    AttachmentStackChecks.Run(profile, Check);
+                    BoardViewChecks.Run(Check);
+                    CardPlayChecks.Run(Check);
+                    CardPlayChecks.RunPresentation(profile, Check);
+                }
                 else throw new ArgumentException("Unknown headless presentation group: " + group);
                 return;
             }
@@ -88,6 +96,7 @@ internal static partial class HeadlessPresentationSmoke
             QuietPriorityPresentationChecks.Run(profile, Check);
             PriorityContinuationChecks.Run(profile, Check);
             MatchHeaderInteractionChecks.Run(profile, Check);
+            TableSurfaceProjectionChecks.Run(Check);
             KeyboardCameraChecks.Run(profile, Check);
             BackgroundInputChecks.Run(profile, Check);
             PriorityNotificationChecks.Run(profile, Check);
