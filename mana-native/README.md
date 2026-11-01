@@ -45,6 +45,11 @@ right-click cancels. An available hand land's secondary Play land shortcut uses
 quiet text with hover feedback.
 Required selections, mana payment and combat retain their direct clicks and
 compact faces. Right-click inspects a currently visible face without choosing it.
+Source candidate after 0.2.313: choice and ordering galleries also expose
+**Read card** beneath their offered and already disclosed context cards. It opens
+the full inspector without selecting or submitting; **Back to choices** or Escape
+restores the staged choices. Selection and confirmation remain separate from
+reading. Read-only reveals retain their existing click-to-read card reader.
 
 The opening Keep/Mulligan decision also uses the normal hand reader. Reading
 never keeps, redraws or plays a card. Required London mulligan bottom-card clicks

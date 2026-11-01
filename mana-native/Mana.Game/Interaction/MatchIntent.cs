@@ -23,6 +23,7 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record OpenStackWorkload(string Key) : MatchIntent;
     internal sealed record CloseStackWorkload : MatchIntent;
     internal sealed record InspectCard(Card Card) : MatchIntent;
+    internal sealed record ReadChoice(int Slot) : MatchIntent;
     internal sealed record InspectOccurrence(string Id) : MatchIntent;
     internal sealed record UseCard(Card Card, bool CloseOverlay = false, bool DismissZone = false) : MatchIntent;
     internal sealed record UseStackCard(Card Card, Card Reported, int Index, bool PayingSource) : MatchIntent;

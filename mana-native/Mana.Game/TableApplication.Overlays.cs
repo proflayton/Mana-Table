@@ -68,15 +68,15 @@ internal sealed partial class TableApplication
         if (CardPresentation.CommanderTaxDetails(card) is { Length: > 0 } taxDetails) stateText = taxDetails + (stateText.Length > 0 ? "\n" + stateText : "");
         if (CardPresentation.Counters(card) is { Length: > 0 } counters) stateText += "\nCounters: " + string.Join("; ", counters.Select(c => c.Key + " × " + c.Value));
         string effectiveDetails = onBattlefield ? string.Join("\n", CardPresentation.AbilityDetails(card)) : "";
-        return TextPages((stateText.Length > 0 ? stateText + "\n\n" : "") + card.Text
-            + (effectiveDetails.Length > 0 ? "\n\nCurrent abilities\n" + effectiveDetails : ""), ReadingPageSize(1050));
+        return canvas.TextPages((stateText.Length > 0 ? stateText + "\n\n" : "") + card.Text
+            + (effectiveDetails.Length > 0 ? "\n\nCurrent abilities\n" + effectiveDetails : ""), .8f, 660, 333, 80);
     }
     private void DrawInspector()
     {
         if (inspected == null) return;
         var original = inspected;
         var card = InspectorFace(original);
-        ModalFrame(card.Name, new MatchIntent.CloseInspector());
+        ModalFrame(card.Name, new MatchIntent.CloseInspector(), inspectedChoice != null ? "Back to choices" : "Close");
         var inspectedPose = new Pose(new(447, 460), new(380, 532));
         PaintCard(card, inspectedPose, false, false);
         if (!inspectBack) PaintAttachedCardState(CardViews.Current(match, original), inspectedPose);
@@ -86,7 +86,7 @@ internal sealed partial class TableApplication
         if (card.Damage > 0) values += "   Damage marked: " + card.Damage;
         canvas.Text(values, 686, 287, Ink, .78f, 674, 3);
         var paragraphs = matchReadingPages; int page = inspectPage;
-        canvas.Text(paragraphs[page], 686, 378, Ink, .8f, 660, 17);
+        canvas.Text(paragraphs[page], 686, 378, Ink, .8f, 660, 80);
         if (paragraphs.Length > 1) {
             Button("inspect-prev", "Previous", 686, 727, 135, new MatchIntent.SetPage(MatchPage.Inspect, page - 1), page > 0);
             Button("inspect-next", "More rules", 831, 727, 145, new MatchIntent.SetPage(MatchPage.Inspect, page + 1), page + 1 < paragraphs.Length);

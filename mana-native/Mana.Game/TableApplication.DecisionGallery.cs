@@ -137,6 +137,9 @@ internal sealed partial class TableApplication
                     canvas.Line(center + new Vector2(-8, 0), center + new Vector2(-2, 6), Gold, 3);
                     canvas.Line(center + new Vector2(-2, 6), center + new Vector2(9, -7), Gold, 3);
                 }
+                if (!readOnly && item.Card is { FaceDown: false })
+                    MenuAction("choice-read:" + entry.Slot, "Read card", new(x, 646, column, 42),
+                        new MatchIntent.ReadChoice(entry.Slot), size: .68f);
                 if (available && item.Card == null) hits.Add(new(buttonId, Scope, new(x, 304, 150, 329), new MatchIntent.SelectChoice(captured.Index!.Value)));
             } else {
                 int columnWidth = sourcePreview != null ? 465 : 585;
@@ -153,6 +156,8 @@ internal sealed partial class TableApplication
                 if (available) hits.Add(new(buttonId, Scope, bounds, new MatchIntent.SelectChoice(captured.Index!.Value)));
             }
         }
+        if (portraits && !readOnly && candidates.Any(entry => entry.Item.Card is { FaceDown: false }))
+            canvas.Text("Read card enlarges a card without selecting it. Right-click also reads.", 206, 711, Muted, .6f, 1188, 2);
         if (filtered.Length == 0) canvas.CenterText(!readOnly && candidates.Length == 0 && items.Length > 0
             ? "No cards match this choice." : "No matching cards or choices.", new(209, 356, 1177, 90), Muted, 1);
         if (filtered.Length > capacity) {

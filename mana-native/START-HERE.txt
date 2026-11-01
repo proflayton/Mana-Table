@@ -286,6 +286,11 @@ single click and stay compact. Right-click uses the same full-card reader.
 Required selections, auxiliary views and alternate faces retain a read-only
 inspector when the table reader is unavailable. Actions stay beside the live
 card; inspecting never activates an ability or casts from a public zone.
+Source candidate after 0.2.313: in a choice or ordering gallery, choose Read card
+beneath an offered or already disclosed card to inspect its full face and rules
+without selecting it. Back to choices or Escape retains your staged choices.
+Clicking the card still selects it; Confirm submits. Face-down cards stay concealed.
+Read-only reveals retain their existing click-to-read card reader.
 Battlefield cards keep the same visual form as the table grows.
 Source-only until the next release: hold WASD or the
 arrow keys to pan the camera; hold Shift to move faster. Use the wheel over the
