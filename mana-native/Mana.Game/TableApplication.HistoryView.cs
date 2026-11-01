@@ -166,7 +166,7 @@ internal sealed partial class TableApplication
         if (payments.LastOrDefault(item => item.Payment!.PoolAfter != null)?.Payment is { } remainder)
             text.AppendLine("Mana remaining: " + HistoryMana(remainder.PoolAfter) + ".\n");
         foreach (var record in payments.Where(item => item.Payment!.Kind is "completed" or "cancelled" or "restored")) {
-            string label = record.Payment!.Kind switch { "completed" => "Payment completed.", "cancelled" => "Payment cancelled; already committed costs are shown above.", _ => "The certified mana activation was restored. Its earlier commitment remains recorded." };
+            string label = record.Payment!.Kind switch { "completed" => "Payment completed.", "cancelled" => "Payment cancelled; already committed costs are shown above.", _ => "Mana was restored. Its earlier commitment remains recorded." };
             text.AppendLine(label);
         }
         foreach (var record in payments.Where(item => item.Payment!.Kind == "produced")) {
