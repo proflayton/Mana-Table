@@ -32,7 +32,8 @@ internal sealed class BattlefieldLayoutContext
         return new(obstacles, RoleLaneAvoidance.Arrange(ordinary, obstacles, separate));
     }
 
-    internal static IEnumerable<Rectangle> ReserveObjects(GameSnapshot state, IReadOnlyList<SeatGeometry> seats, bool includeDecisionDock = true)
+    internal static IEnumerable<Rectangle> ReserveObjects(GameSnapshot state, IReadOnlyList<SeatGeometry> seats, bool includeDecisionDock = true,
+        bool includeTableAnchored = true)
     {
         for (int playerIndex = 0; playerIndex < state.Players.Length; playerIndex++) {
             var player = state.Players[playerIndex];
@@ -46,13 +47,17 @@ internal sealed class BattlefieldLayoutContext
             }
             else yield return new((int)geometry.Hand.X - 83, (int)geometry.Hand.Y - 30, 166, 90);
 
-            foreach (var pile in geometry.Piles) {
-                yield return PileGeometry.Create(pile.Pose, player.Zone(pile.Zone).Count, pile.Compact).Reservation;
+            foreach (var pile in geometry.Piles.Where(pile => includeTableAnchored || !pile.TableAnchored)) {
+                yield return PileGeometry.Create(pile, player.Zone(pile.Zone).Count).Reservation;
             }
-            var command = geometry.CommandLink;
-            yield return new((int)command.X - 56, (int)command.Y - 3, 112,
-                player.Zone("Command").Count > 0 ? 52 : 30);
-            foreach (var commander in geometry.Commanders) {
+            if (geometry.ZoneStation is { } station) {
+                if (includeTableAnchored) { yield return station.CommandLabel; yield return station.CommandActions; }
+            } else {
+                var command = geometry.CommandLink;
+                yield return new((int)command.X - 56, (int)command.Y - 3, 112,
+                    player.Zone("Command").Count > 0 ? 52 : 30);
+            }
+            foreach (var commander in geometry.Commanders.Where(card => includeTableAnchored || !card.TableAnchored)) {
                 var bounds = commander.Pose.Bounds;
                 bounds.Inflate(7, 12);
                 yield return bounds;

@@ -91,31 +91,62 @@ internal sealed partial class TableApplication
     private void DrawSeatObjects(Player player)
     {
         var geometry = tableScene!.Seat(player.Id).Geometry;
+        if (geometry.ZoneStation != null) canvas.BeginClip(BoardViewport);
         foreach (var node in geometry.Commanders) {
-            canvas.CardFrame(node.Pose with { Size = node.Pose.Size + new Vector2(13) }, Gold * .35f, 1);
+            var backing = node.Pose with { Size = node.Pose.Size + new Vector2(13) };
+            canvas.CardFrame(node.TableAnchored ? boardView.Apply(backing) : backing, Gold * .35f, 1);
             DrawSceneCard(node);
         }
-        var commandLink = geometry.CommandLink;
-        int cx = (int)commandLink.X, cy = (int)commandLink.Y;
-        canvas.CenterText("Command " + player.Zone("Command").Count, new(cx - 52, cy, 104, 24), Gold * .85f, .48f);
-        hits.Add(new("zone:" + player.Id + ":Command", Scope, new(cx - 56, cy - 3, 112, 30), new MatchIntent.OpenZone(player.Id, "Command")));
-        if (AvailableZoneCount(player, "Command") is > 0 and var available) {
-            var badge = new Rectangle(cx - 51, cy + 25, 102, 22);
-            canvas.Panel(badge, new(15, 41, 54), ActionAccent, 4);
-            canvas.CenterText(available + " available", badge, ActionAccent, .5f, true);
-            hits.Add(new("zone-actions:" + player.Id + ":Command", Scope, badge, new MatchIntent.OpenZone(player.Id, "Command")));
+        if (geometry.ZoneStation != null) {
+            var label = DisplayCommandLabel(geometry);
+            int available = AvailableZoneCount(player, "Command");
+            Color ink = available > 0 ? ActionAccent : Gold * .85f;
+            DrawStationCaption("Command", label with { Height = label.Height / 2 }, ink);
+            DrawStationCaption(available > 0 ? available + " ready" : player.Zone("Command").Count.ToString(),
+                new(label.X, label.Y + label.Height / 2, label.Width, label.Height / 2), ink);
+            hits.Add(new("zone:" + player.Id + ":Command", Scope, label,
+                new MatchIntent.OpenZone(player.Id, "Command"), Shape: point => BoardViewport.Contains(point) && label.Contains(point)));
+            if (available > 0) hits.Add(new("zone-actions:" + player.Id + ":Command", Scope, label,
+                new MatchIntent.OpenZone(player.Id, "Command"), Shape: point => BoardViewport.Contains(point) && label.Contains(point)));
+        } else {
+            var commandLink = geometry.CommandLink;
+            int cx = (int)commandLink.X, cy = (int)commandLink.Y;
+            canvas.CenterText("Command " + player.Zone("Command").Count, new(cx - 52, cy, 104, 24), Gold * .85f, .48f);
+            hits.Add(new("zone:" + player.Id + ":Command", Scope, new(cx - 56, cy - 3, 112, 30), new MatchIntent.OpenZone(player.Id, "Command")));
+            if (AvailableZoneCount(player, "Command") is > 0 and var available) {
+                var badge = new Rectangle(cx - 51, cy + 25, 102, 22);
+                canvas.Panel(badge, new(15, 41, 54), ActionAccent, 4);
+                canvas.CenterText(available + " available", badge, ActionAccent, .5f, true);
+                hits.Add(new("zone-actions:" + player.Id + ":Command", Scope, badge, new MatchIntent.OpenZone(player.Id, "Command")));
+            }
         }
-        foreach (var pile in geometry.Piles) DrawWorldPile(player, pile.Zone, pile.Pose, pile.Compact);
+        foreach (var pile in geometry.Piles) DrawWorldPile(player, pile);
+        if (geometry.ZoneStation != null) canvas.EndClip();
     }
-    private void DrawWorldPile(Player player, string zone, Pose pose, bool compact = false)
+    private void DrawStationCaption(string text, Rectangle bounds, Color color)
     {
+        // Paint the measured font directly. CenterText would silently shrink a
+        // caption when the user requests larger text.
+        float font = .43f * boardView.Scale;
+        int width = canvas.TextWidth(text, font);
+        int height = (int)MathF.Ceiling(canvas.TextSize(text, font, width + 2, 1).Y);
+        int y = bounds.Center.Y - height / 2;
+        canvas.Text(text, bounds.Center.X - width / 2 + 1, y + 1, Color.Black * .85f, font, width + 2, 1);
+        canvas.Text(text, bounds.Center.X - width / 2, y, color, font, width + 2, 1);
+    }
+    private void DrawWorldPile(Player player, PilePlan pile)
+    {
+        string zone = pile.Zone; bool compact = pile.Compact;
         var value = player.Zone(zone); var top = zone == "Library" ? value.TopCard : value.Cards.LastOrDefault();
-        var geometry = PileGeometry.Create(pose, value.Count, compact);
+        var canonical = PileGeometry.Create(pile, value.Count);
+        var geometry = DisplayPileGeometry(pile, value.Count);
         canvas.Surface(null, geometry.Shadow, Color.Black * .4f);
         for (int i = 0; i < geometry.Layers.Count; i++)
             canvas.Surface(null, geometry.Layers[i], i % 2 == 0 ? new Color(154, 149, 131) : new Color(54, 58, 56));
-        pose = geometry.Top;
-        if (compact) {
+        var pose = geometry.Top;
+        if (pile.TableAnchored) {
+            DrawStationCaption(zone, geometry.Label, Ink);
+        } else if (compact) {
             canvas.Rounded(geometry.Label, new Color(17, 25, 28) * .85f, 3);
             canvas.CenterText((zone == "Graveyard" ? "Grave" : zone) + " " + value.Count, geometry.Label, Ink, .43f);
         } else {
@@ -123,16 +154,29 @@ internal sealed partial class TableApplication
             canvas.CenterText(value.Count.ToString(), geometry.Count, Ink, .56f, true);
             canvas.CenterText(zone == "Graveyard" ? "Grave" : zone, geometry.Label, Muted, .45f);
         }
-        hits.Add(new("zone:" + player.Id + ":" + zone, Scope, geometry.HitBounds, new MatchIntent.OpenZone(player.Id, zone), Shape: geometry.Contains));
+        hits.Add(new("zone:" + player.Id + ":" + zone, Scope, geometry.HitBounds, new MatchIntent.OpenZone(player.Id, zone),
+            Shape: point => (!pile.TableAnchored || BoardViewport.Contains(point)) && geometry.Contains(point)));
         // Browser members open their pile. A separately disclosed top remains
         // directly readable even when the rest of its zone is concealed.
         bool publicPile = zone is "Graveyard" or "Exile";
         if (top != null && !top.FaceDown && !tableScene!.PlayAccess.Contains(player.Id, zone, top)
             && (!publicPile || !SpreadContains(CardIdentity(top)) && !PublicCollectionReturning(player.Id, zone, top)))
-            DrawTableCard(publicPile ? CardIdentity(top) : "pile:" + player.Id + ":" + zone + ":" + CardIdentity(top), top, pose, zone, player.Id,
-            "pile-card:" + player.Id + ":" + zone, new MatchIntent.OpenZone(player.Id, zone), (displayed, focus) => PaintCard(top, displayed, false, IsCardActionable(top), focus),
-            opensZone: value.Cards.Any(card => CardViews.Same(card, top)));
+            DrawTableCard(publicPile ? CardIdentity(top) : "pile:" + player.Id + ":" + zone + ":" + CardIdentity(top), top, canonical.Top, zone, player.Id,
+            "pile-card:" + player.Id + ":" + zone, new MatchIntent.OpenZone(player.Id, zone),
+            (displayed, focus) => PaintCard(top, displayed, false, IsCardActionable(top), focus,
+                fallback: pile.TableAnchored && !focus ? StationCardFallback(top, displayed) : null),
+            opensZone: value.Cards.Any(card => CardViews.Same(card, top)), tableAnchored: pile.TableAnchored);
         else PaintBack(pose, value.Count == 0 ? .3f : 1);
+        if (pile.TableAnchored) {
+            // A quantity belongs to its stack, not a second caption panel.
+            var count = geometry.Count;
+            string quantity = value.Count.ToString();
+            float font = .6f * boardView.Scale;
+            int width = canvas.TextWidth(quantity, font, true);
+            int height = (int)MathF.Ceiling(canvas.TextSize(quantity, font, width + 2, 1, true).Y);
+            canvas.Text(quantity, count.Right - width + 1, count.Bottom - height + 1, Color.Black, font, width + 2, 1, true);
+            canvas.Text(quantity, count.Right - width, count.Bottom - height, Ink, font, width + 2, 1, true);
+        }
         DrawZoneActionBadge(player, zone, pose);
     }
     private void DrawHero(Player player, Vector2 center, bool own, int index)
@@ -258,7 +302,7 @@ internal sealed partial class TableApplication
             var counters = DrawPublicPlayerCounters(player, counterX, counterY, counterWidth, growUp);
             if (!counters.IsEmpty) seatReadoutBounds.Add(counters);
         }
-        if (TableStudyEnabled && own) DrawLandState(player, new(8, 800, 220, 100));
+        if (own && tableScene?.Seat(player.Id).Geometry.LandReadoutArea is { } landArea) DrawLandState(player, landArea);
         if (caption != null) {
             var measured = canvas.TextSize(caption, .53f, statusArea.Width, 80, true);
             seatReadoutBounds.Add(new(statusArea.X, statusArea.Y, measured.X, measured.Y));

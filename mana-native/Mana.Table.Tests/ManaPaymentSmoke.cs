@@ -567,7 +567,7 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
                 paint.Add(("card-frame", bounds));
             }
             var phases = frame.Hits.Where(hit => hit.Intent is MatchIntent.TogglePhaseStop).ToArray();
-            var arc = Mana.Renderer.TurnControlLayout.For(frame.Scene!.Seat(view.Match!.ViewerId).Geometry.Hero).ArcBounds;
+            var arc = frame.Scene!.Seat(view.Match!.ViewerId).Geometry.TurnControls.ArcBounds;
             var fullPaint = paint.Select(part => part.Bounds).DefaultIfEmpty().Aggregate(Microsoft.Xna.Framework.Rectangle.Union);
             Capture("reader-body-phase-before-assert");
             File.WriteAllText(Path.Combine(view.Profile, "reader-body-phase-before-assert.json"), JsonSerializer.Serialize(new {
@@ -891,7 +891,7 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
         if (phases.Length == 0) return (false, false, false, default, default);
         var paint = Microsoft.Xna.Framework.Rectangle.Union(footer.Bounds,
             new(panel.Bounds.X + 2, panel.Bounds.Y + 5, panel.Bounds.Width, panel.Bounds.Height));
-        var arc = Mana.Renderer.TurnControlLayout.For(scene.Seat(state.ViewerId).Geometry.Hero).ArcBounds;
+        var arc = scene.Seat(state.ViewerId).Geometry.TurnControls.ArcBounds;
         var occupied = frame.Cards.Select(card => card.Display.Bounds)
             .Concat(frame.Hits.Where(hit => hit.Id == "read-card-action" || hit.Id == "source-actions-surface"
                 || hit.Id.StartsWith("source-action", StringComparison.Ordinal) || hit.Id.StartsWith("source-placement:", StringComparison.Ordinal)
@@ -942,7 +942,7 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
         foreach (var player in state.Players) {
             var hero = scene.Seat(player.Id).Geometry.Hero;
             obstacles.Add(new((int)hero.X - 58, (int)hero.Y - 58, 116, 116));
-            obstacles.AddRange(Mana.Renderer.TurnControlLayout.For(hero).Reservations);
+            obstacles.AddRange(scene.Seat(player.Id).Geometry.TurnControls.Reservations);
             if (player.Id != selected.Id && view.ManaPoolBadge(player.Id) is { } other) obstacles.Add(other.Bounds);
         }
         var texts = frame.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Text>().ToArray();
@@ -1006,10 +1006,36 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
     private bool CaptionClearsSeat()
     {
         if (view.ManaJourney is not { } journey) return false;
-        var hero = view.Frame!.Scene!.Seat(view.Match!.ViewerId).Geometry.Hero;
-        return !Mana.Renderer.TurnControlLayout.For(hero).Reservations.Any(area => area.Intersects(journey.Bounds))
-            && !new Microsoft.Xna.Framework.Rectangle((int)hero.X - 58, (int)hero.Y - 58, 116, 116).Intersects(journey.Bounds)
-            && (view.ManaPoolBadge(view.Match.ViewerId) is not { } pool || !pool.Bounds.Intersects(journey.Bounds));
+        var seat = view.Frame!.Scene!.Seat(view.Match!.ViewerId).Geometry;
+        var hero = seat.Hero;
+        var portrait = new Microsoft.Xna.Framework.Rectangle((int)hero.X - 58, (int)hero.Y - 58, 116, 116);
+        var pool = view.ManaPoolBadge(view.Match.ViewerId)?.Bounds ?? default;
+        bool clear = !seat.TurnControls.Reservations.Any(area => area.Intersects(journey.Bounds))
+            && !portrait.Intersects(journey.Bounds) && !pool.Intersects(journey.Bounds);
+        // Retain the first concrete disagreement with the former test-only
+        // reconstruction. The assertion consumes the exact prepared controls
+        // used by production paint and hits, including its explicit priority rail.
+        var reconstructed = Mana.Renderer.TurnControlLayout.For(hero);
+        if (!clear || !reconstructed.Reservations.SequenceEqual(seat.TurnControls.Reservations)) {
+            string path = Path.Combine(view.Profile, "caption-seat-clearance-first.json");
+            if (!File.Exists(path)) using (var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write))
+                JsonSerializer.Serialize(stream, new {
+                    lab.StageIndex, view.Now, viewport, view.TextScale, journey.SourceId, journey.SourceZone, journey.Bounds,
+                    seat.PlayerId, hero, portrait, pool,
+                    preparedPriority = seat.TurnControls.PriorityArea,
+                    preparedReservations = seat.TurnControls.Reservations.ToArray(),
+                    reconstructedPriority = reconstructed.PriorityArea,
+                    reconstructedReservations = reconstructed.Reservations.ToArray(),
+                    preparedCollisions = seat.TurnControls.Reservations.Where(area => area.Intersects(journey.Bounds)).ToArray(),
+                    reconstructedCollisions = reconstructed.Reservations.Where(area => area.Intersects(journey.Bounds)).ToArray(),
+                    clear, portraitClear = !portrait.Intersects(journey.Bounds), poolClear = !pool.Intersects(journey.Bounds),
+                    currentHits = view.Hits.Where(hit => hit.Id.StartsWith("phase-stop:", StringComparison.Ordinal)
+                        || hit.Id is "confirm" or "cancel" or "priority-auto" or "priority-hold")
+                        .Select(hit => new { hit.Id, hit.Bounds }).ToArray(),
+                    scope = "First current source caption versus actual prepared seat controls and former test-only reconstruction; no exclusion of portrait, mana or phase reservations."
+                }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true });
+        }
+        return clear;
     }
     private void Load(int stage) { recordedReplies.AddRange(lab.ManaPaymentReplies); lab.Replay(stage); view.Accept(lab.State); Move(new(12, 65)); }
     private float Scale => Math.Min(viewport.X / 1600f, viewport.Y / (float)view.DesignHeight);
@@ -1051,9 +1077,12 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
                         naturalWidth = metrics.TextWidth(text.Value ?? "", text.Size, text.Bold, currentFrame.Drawing.TextScale) };
                 }).ToArray() : null,
                 seats = frame?.Scene is { } scene && view.Match is { } state ? state.Players.Select(player => {
-                    var hero = scene.Seat(player.Id).Geometry.Hero;
+                    var geometry = scene.Seat(player.Id).Geometry;
+                    var hero = geometry.Hero;
                     return new { player.Id, hero, portrait = new Microsoft.Xna.Framework.Rectangle((int)hero.X - 58, (int)hero.Y - 58, 116, 116),
-                        controls = Mana.Renderer.TurnControlLayout.For(hero).Reservations.ToArray(),
+                        controls = geometry.TurnControls.Reservations.ToArray(),
+                        preparedPriority = geometry.TurnControls.PriorityArea,
+                        reconstructedControls = Mana.Renderer.TurnControlLayout.For(hero).Reservations.ToArray(),
                         badge = view.ManaPoolBadge(player.Id) is { } badge ? badge with { Parts = badge.Parts.ToArray() } : null };
                 }).ToArray() : null,
                 poolReadingClearsContext = PoolReadingClearsContext(view), poolReadingIsolated = PoolReadingIsolated(view)

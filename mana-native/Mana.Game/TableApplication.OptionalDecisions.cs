@@ -138,7 +138,7 @@ internal sealed partial class TableApplication
         foreach (var player in recipients) {
             var pile = tableScene?.Seats.FirstOrDefault(seat => seat.PlayerId == player.Id)?.Geometry.Piles.FirstOrDefault(candidate => candidate.Zone == "Library");
             if (pile == null) { missingPiles.Add(player); continue; }
-            var pose = pile.Pose;
+            var pose = DisplayPileGeometry(pile, player.Zone("Library").Count).Top;
             int badgeHeight = LibraryRecipientHeight(state, player, 212);
             var badge = new Rectangle(Math.Clamp((int)pose.Center.X - 106, 12, 1376),
                 Math.Clamp(pose.Bounds.Bottom + 7, 64, 745 - badgeHeight), 212, badgeHeight);

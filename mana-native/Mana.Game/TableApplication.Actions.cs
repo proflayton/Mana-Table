@@ -34,11 +34,16 @@ internal sealed partial class TableApplication
         var owner = match?.Players.FirstOrDefault(player => player.Zone(departure.Destination).Cards.Any(card => card.VisualId == departure.Card.VisualId));
         var pile = tableScene?.Seats.FirstOrDefault(seat => seat.PlayerId == owner?.Id)?.Geometry.Piles.FirstOrDefault(pile => pile.Zone == departure.Destination);
         if (pile == null) return origin;
-        var destination = pile.Pose;
+        var destination = DisplayPileGeometry(pile, owner!.Zone(departure.Destination).Count).Top;
         float progress = preferences.ReducedMotion ? 1 : Math.Clamp((float)((now - departure.Started) / .65), 0, 1);
         progress = progress * progress * (3 - 2 * progress);
         return origin with { Center = Vector2.Lerp(origin.Center, destination.Center, progress),
-            Size = Vector2.Lerp(origin.Size, destination.Size, progress), Angle = MathHelper.Lerp(origin.Angle, destination.Angle, progress) };
+            Size = Vector2.Lerp(origin.Size, destination.Size, progress),
+            Angle = origin.Angle + MathHelper.WrapAngle(destination.Angle - origin.Angle) * progress,
+            Tilt = MathHelper.Lerp(origin.Tilt, destination.Tilt, progress),
+            Perspective = MathHelper.Lerp(origin.Perspective, destination.Perspective, progress),
+            Shear = MathHelper.Lerp(origin.Shear, destination.Shear, progress),
+            Elevation = MathHelper.Lerp(origin.Elevation, destination.Elevation, progress) };
     }
     private void DrawActionCallout()
     {

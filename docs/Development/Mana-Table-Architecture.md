@@ -1589,9 +1589,33 @@ A genuine no-fit result is explicit: the existing nameplate offers resource
 reading instead of publishing overlap or throwing for valid content. That
 workspace retains the full owner, land/combat facts and all public states.
 Detail inspection resolves the current player and does not answer a game
-decision. Portraits, unspent mana, command cards and
-public piles retain their fixed seat geometry. Local counter space remains
-reserved while empty.
+decision. Portraits and unspent mana retain fixed seat geometry. Local counter
+space remains reserved while empty.
+
+The source prototype after 0.2.326 gives command cards and the library,
+graveyard and exile piles one `SeatZoneLayout` in the existing personal area of
+each mat. It binds the current player ID, distinct piles, both actual commander
+occurrences and upright captions to that mat's physical frame. `PileGeometry`
+prepares the exposed top, layers, caption, quantity, exact hit and reservation.
+The native application maps that complete geometry through the current camera
+once. Zone ownership is the snapshot's containing player; neither a card's former
+controller nor the player allowed to play it can relocate its destination pile.
+
+`SceneCard.TableAnchored`, `PilePlan.TableAnchored` and the copied presentation
+request describe placement space, not permission or a new zone. The ordinary
+zone-name camera default stays unchanged: required-choice faces, public spreads,
+play-access fans, held cards and full readers keep their own fixed placement.
+A public spread retains an explicit physical entrance anchor while its expanded
+cards reset that placement policy. Close, draw and departure transitions use the
+same current pile top; a departure interpolates all projected-pose fields.
+Moving station objects join canonical camera footprints and are excluded from
+fixed obstacles. Fixed readout preparation does not chase the current camera.
+
+The local portrait and phase controls occupy the near-left apron rather than
+covering the personal cards. `SeatGeometry` owns their position and the separate
+land readout reservation. The mat dimensions, role packing and counter band stay
+the same. This is an experience prototype with human review pending; automated
+ownership and input checks do not approve its spatial clarity.
 
 Automatic focus first translates the complete projected mat clear of prepared
 controls and measured HUD pieces at normal focus zoom. If it cannot fit there,
@@ -1602,7 +1626,7 @@ neither path repacks cards or changes the accepted match snapshot.
 `BeginTransform`/`EndTransform` scopes; `Canvas` composes nested views through
 `BoardView.Compose` before the viewport scale for sprites, triangles and clips.
 Text measurement remains in canonical units while raster density includes world
-zoom and its origin snaps in final pixel space. The upper command/pile rail and
+zoom and its origin snaps in final pixel space. Station captions and the
 side held hands clear neighbouring material and card input. Cross-controller attachments still follow their
 host spatially without changing their actual controller index or permissions.
 All study roles and player counts use the same constrained family-block packer,

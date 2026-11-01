@@ -90,21 +90,21 @@ internal sealed partial class TableApplication
     private Pose DrawTableCard(string id, Card card, Pose rest, string zone, int? owner,
         string hitId, UiIntent activate, Action<Pose, bool> paint, Vector2? entrance = null, float entranceDelay = 0,
         bool opensZone = false, int choiceSlot = -1, Rectangle? activationBounds = null, Rectangle? readingAnchor = null, Rectangle? clip = null,
-        bool directPlacement = false, bool registerHit = true)
+        bool directPlacement = false, bool registerHit = true, bool tableAnchored = false)
     {
         if (choiceSlot < 0 && id == CardIdentity(card) && ReleasedPlayPose(card, zone) is { } submitted) {
-            rest = submitted; directPlacement = true; clip = null;
+            rest = submitted; directPlacement = true; clip = null; tableAnchored = false;
         }
         var play = choiceSlot < 0 && id == CardIdentity(card) && zone is "Stack" or "Battlefield"
             ? matchPresentation.CardCues.LastOrDefault(cue => cue.Kind == CueKind.Play && cue.VisualId == id) : null;
         if (play?.PlayerId is { } actor)
             entrance = matchPresentation.Cards.TryGetPreviousPose(id, out var preceding) ? preceding.Center : SeatHand(actor);
         var entry = matchPresentation.Cards.Prepare(new(id, card, rest, zone, owner, hitId, activate,
-            entrance, entranceDelay, opensZone, choiceSlot, activationBounds, play == null ? null : (float)(now - play.Started), play?.Reveal ?? true, readingAnchor, directPlacement));
+            entrance, entranceDelay, opensZone, choiceSlot, activationBounds, play == null ? null : (float)(now - play.Started), play?.Reveal ?? true, readingAnchor, directPlacement, tableAnchored));
         var hit = entry.Hit;
         if (clip is { } viewport && !entry.Focused)
             hit = hit with { Bounds = Rectangle.Intersect(hit.Bounds, viewport), Shape = point => viewport.Contains(point) && entry.Hit.Contains(point) };
-        if (zone == "Battlefield" && choiceSlot < 0 && !entry.Focused && !BattlefieldFocused)
+        if ((zone == "Battlefield" || tableAnchored) && choiceSlot < 0 && !entry.Focused && !BattlefieldFocused)
             hit = hit with { Bounds = Rectangle.Intersect(hit.Bounds, BoardViewport), Shape = point => BoardViewport.Contains(point) && entry.Hit.Contains(point) };
         if (registerHit) hits.Add(hit);
         if (entry.Layer == CardPresentationLayer.Table) {
@@ -118,7 +118,8 @@ internal sealed partial class TableApplication
 
     private void ComposeCard(PresentedCard entry, Action<Pose, bool> compose)
     {
-        bool clipped = entry.Zone == "Battlefield" && entry.Layer == CardPresentationLayer.Returning && !BattlefieldFocused;
+        bool clipped = (entry.Zone == "Battlefield" || entry.Request.TableAnchored)
+            && entry.Layer == CardPresentationLayer.Returning && !BattlefieldFocused;
         if (clipped) canvas.BeginClip(BoardViewport);
         bool liveReader = DrawRulesReader(entry) || DrawSourceActionReader(entry);
         if (!liveReader) {

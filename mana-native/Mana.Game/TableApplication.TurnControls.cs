@@ -66,15 +66,17 @@ internal sealed partial class TableApplication
                     occupied.Add(seat.Geometry.TurnControls.HoldBounds);
                     occupied.Add(seat.Geometry.TurnControls.AlertBounds);
                     if (StateClarity.PlayerStates(player).Length > 0 && seat.Geometry.PublicCounterArea is { } counters) occupied.Add(counters);
-                    occupied.Add(new(8, 800, 220, 100));
+                    if (seat.Geometry.LandReadoutArea is { } landArea) occupied.Add(landArea);
                 }
-                foreach (var commander in seat.Geometry.Commanders) AddCard(commander.Pose with { Size = commander.Pose.Size + new Vector2(13) });
-                var command = seat.Geometry.CommandLink;
-                occupied.Add(new((int)command.X - 52, (int)command.Y, 104, 24));
+                foreach (var commander in seat.Geometry.Commanders) {
+                    var pose = commander.Pose with { Size = commander.Pose.Size + new Vector2(13) };
+                    AddCard(commander.TableAnchored ? boardView.Apply(pose) : pose);
+                }
+                occupied.Add(DisplayCommandLabel(seat.Geometry));
                 if (AvailableZoneCount(player, "Command") > 0)
-                    occupied.Add(new((int)command.X - 51, (int)command.Y + 25, 102, 22));
+                    occupied.Add(DisplayCommandActions(seat.Geometry));
                 foreach (var pile in seat.Geometry.Piles) {
-                    var paint = PileGeometry.Create(pile.Pose, player.Zone(pile.Zone).Count, pile.Compact);
+                    var paint = DisplayPileGeometry(pile, player.Zone(pile.Zone).Count);
                     occupied.Add(paint.Shadow.Bounds); occupied.Add(paint.Top.Bounds); occupied.AddRange(paint.Layers.Select(layer => layer.Bounds));
                     occupied.Add(paint.Label);
                     if (!paint.Count.IsEmpty) occupied.Add(paint.Count);

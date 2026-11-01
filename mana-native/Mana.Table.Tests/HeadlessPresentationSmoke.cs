@@ -38,6 +38,7 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "pending-effects") PendingEffectPresentationChecks.Run(profile, Check);
                 else if (group == "seated-plane") {
                     TableSurfaceProjectionChecks.Run(Check);
+                    SeatZoneChecks.Run(profile, Check);
                     SharedTableStudyChecks.Run(Check);
                     AttachmentStackChecks.Run(profile, Check);
                     BoardViewChecks.Run(Check);
@@ -97,6 +98,7 @@ internal static partial class HeadlessPresentationSmoke
             PriorityContinuationChecks.Run(profile, Check);
             MatchHeaderInteractionChecks.Run(profile, Check);
             TableSurfaceProjectionChecks.Run(Check);
+            SeatZoneChecks.Run(profile, Check);
             KeyboardCameraChecks.Run(profile, Check);
             BackgroundInputChecks.Run(profile, Check);
             PriorityNotificationChecks.Run(profile, Check);

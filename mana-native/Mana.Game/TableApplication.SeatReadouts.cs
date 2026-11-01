@@ -65,12 +65,16 @@ internal sealed partial class TableApplication
                 }
             } else occupied.AddRange(geometry.TurnControls.Reservations);
             foreach (var card in geometry.Commanders) occupied.Add((card.Pose with { Size = card.Pose.Size + new Vector2(13) }).Bounds);
-            var command = geometry.CommandLink;
             // Reserve the complete label/action rail even before a cast becomes
             // available, so priority and camera changes cannot move the HUD.
-            occupied.Add(new((int)command.X - 56, (int)command.Y - 3, 112, 52));
+            if (geometry.ZoneStation is { } station) {
+                occupied.Add(station.CommandLabel); occupied.Add(station.CommandActions);
+            } else {
+                var command = geometry.CommandLink;
+                occupied.Add(new((int)command.X - 56, (int)command.Y - 3, 112, 52));
+            }
             foreach (var pile in geometry.Piles)
-                occupied.Add(PileGeometry.Create(pile.Pose, player.Zone(pile.Zone).Count, pile.Compact).Reservation);
+                occupied.Add(PileGeometry.Create(pile, player.Zone(pile.Zone).Count).Reservation);
         }
         return occupied;
     }

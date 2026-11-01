@@ -129,13 +129,47 @@ internal static class MatchHeaderInteractionChecks
                                 && hit.Intent is MatchIntent.OpenPlayerState intent && intent.PlayerId == owner,
                             journey + ": the visible state control owns the same actual fixed target and current player identity: " + id);
                     }
-                    var fixedHits = frame.Hits.Where(hit => hit.Id.StartsWith("focus:", StringComparison.Ordinal)
-                        || hit.Id.StartsWith("zone:", StringComparison.Ordinal) || hit.Id is "study-focus-return").ToArray();
-                    check(current.Pieces.All(piece => fixedHits.All(hit => !hit.Bounds.Intersects(piece)))
+                    bool TableZoneControl(TableHit hit)
+                    {
+                        if (hit.Intent is not MatchIntent.OpenZone open) return false;
+                        var geometry = frame.Scene!.Seats.FirstOrDefault(seat => seat.PlayerId == open.PlayerId)?.Geometry;
+                        return open.Zone == "Command" ? geometry?.ZoneStation != null
+                            : geometry?.Piles.Any(pile => pile.Zone == open.Zone && pile.TableAnchored) == true;
+                    }
+                    var seatHits = frame.Hits.Where(hit => hit.Id.StartsWith("focus:", StringComparison.Ordinal)
+                        || hit.Id.StartsWith("player:", StringComparison.Ordinal) || hit.Id.StartsWith("hand-zone:", StringComparison.Ordinal)
+                        || hit.Id.StartsWith("zone:", StringComparison.Ordinal) || hit.Id.StartsWith("zone-actions:", StringComparison.Ordinal)
+                        || hit.Id is "study-focus-return").ToArray();
+                    // A current physical pile/commander follows the table, while
+                    // a held card, portrait, reading surface or legacy zone rail
+                    // remains fixed. Manual navigation may carry table objects
+                    // behind the HUD; that must not make the HUD chase the camera.
+                    var fixedHits = seatHits.Where(hit => overview || !TableZoneControl(hit)).ToArray();
+                    var fixedCards = frame.Cards.Where(card => overview || !card.Request.UsesTableCamera
+                        || card.Focused || card.Layer == CardPresentationLayer.Reader).ToArray();
+                    bool clear = current.Pieces.All(piece => fixedHits.All(hit => !hit.Bounds.Intersects(piece)))
                             && frame.Scene.Seats.All(seat => view.ManaPoolBadge(seat.PlayerId)!.Parts.All(part => current.Pieces.All(piece => !part.Bounds.Intersects(piece))))
-                            && current.Pieces.All(piece => frame.Cards.Where(card => !BoardView.AffectsZone(card.Zone)).All(card => !Overlap(card.Display, piece)))
-                            && (!overview || current.Pieces.All(piece => frame.Scene.Seats.All(seat => !seat.Geometry.PlaymatBounds!.Value.Intersects(piece)))),
-                        journey + ": the measured HUD clears names, current rail controls, mana, held cards and command faces, with no overview cloth overlap");
+                            && current.Pieces.All(piece => fixedCards.All(card => !Overlap(card.Display, piece)))
+                            && (!overview || current.Pieces.All(piece => frame.Scene.Seats.All(seat => !seat.Geometry.PlaymatBounds!.Value.Intersects(piece))));
+                    if (!clear) {
+                        string failure = Path.Combine(path, "hud-clearance-first-failure.json");
+                        if (!File.Exists(failure)) using (var stream = new FileStream(failure, FileMode.CreateNew, FileAccess.Write))
+                            System.Text.Json.JsonSerializer.Serialize(stream, new {
+                                journey, overview, owner, size, scale, camera = frame.BoardView, frame.Stamp.Scope,
+                                hud = current.Pieces,
+                                fixedControls = fixedHits.Select(hit => new { hit.Id, hit.Bounds, tableZone = TableZoneControl(hit),
+                                    hit.Scope, intent = hit.Intent.ToString(), collides = current.Pieces.Any(hit.Bounds.Intersects) }).ToArray(),
+                                movingZoneControls = seatHits.Where(TableZoneControl).Select(hit => new { hit.Id, hit.Bounds,
+                                    collides = current.Pieces.Any(hit.Bounds.Intersects) }).ToArray(),
+                                cards = frame.Cards.Select(card => new { card.Id, card.Zone, card.Request.TableAnchored,
+                                    card.Request.UsesTableCamera, card.Focused, card.Layer, bounds = card.Display.Bounds,
+                                    protectedInThisView = fixedCards.Contains(card), collides = current.Pieces.Any(piece => Overlap(card.Display, piece)) }).ToArray(),
+                                mana = frame.Scene.Seats.Select(seat => new { seat.PlayerId, badge = view.ManaPoolBadge(seat.PlayerId) }).ToArray(),
+                                scope = "Actual prepared occurrence camera policy and owner/zone station policy; fixed HUD, portrait, mana, held-card and reader protections remain active."
+                            }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true, IncludeFields = true });
+                    }
+                    check(clear,
+                        journey + ": the measured HUD clears fixed names, portraits, held cards, readers and mana; overview also clears physical zone controls, command faces and cloth");
                 }
             }
             CheckHud("Overview", true);

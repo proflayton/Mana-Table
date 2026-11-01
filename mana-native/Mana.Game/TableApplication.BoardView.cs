@@ -95,7 +95,7 @@ internal sealed partial class TableApplication
         if (enabled) {
             // Existing displayed poses include transient elevation/flight. Guard
             // those too, without retaining faces in the view controller.
-            foreach (var card in matchPresentation.Cards.Cards.Where(card => BoardView.AffectsZone(card.Zone) && !card.Focused))
+            foreach (var card in matchPresentation.Cards.Cards.Where(card => card.Request.UsesTableCamera && !card.Focused))
                 footprints.Add(boardView.Inverse(card.Display).Bounds);
         }
         boardView = boardViewMotion.Update(new(state.Id, state.Turn, state.ActivePlayerId, state.ViewerId,

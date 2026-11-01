@@ -188,10 +188,12 @@ internal sealed partial class TableApplication
         foreach (var world in plan.WorldCards) {
             if (dragging && dragSource?.Card is { } held && CardViews.Same(held, world.Card)) continue;
             var pose = spreadView.Apply(world.Pose);
+            var anchor = plan.Anchors.FirstOrDefault(card => card.Id == world.Id);
+            Vector2? entrance = world.Entrance is { } source && anchor?.TableAnchored == true ? boardView.Apply(source) : world.Entrance;
             DrawTableCard(world.Id, world.Card, pose, world.Zone, world.Owner,
                 "card:" + world.Card.Key + ":" + world.Card.VisualId, new MatchIntent.UseCard(world.Card),
                 (displayed, focused) => PaintSceneCard(world.Card, displayed, world.Zone, world.Owner, focused),
-                entrance: world.Entrance, clip: plan.CameraArea,
+                entrance: entrance, clip: plan.CameraArea,
                 directPlacement: spreadCameraUsed && (spreadPanning || spreadKeyboardPanning || spreadView != plan.View)
                     && readingId != world.Id);
         }

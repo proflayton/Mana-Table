@@ -17,12 +17,12 @@ internal sealed partial class TableApplication
     private bool EmptyPublicCollection => spreadCollection is CardCollectionTarget.PublicZone
         && tableScene?.Spread?.WorldCards.Count == 0;
 
-    private PileGeometry? PublicCollectionPile(CardCollectionTarget.PublicZone target)
+    private PileGeometry? PublicCollectionPile(CardCollectionTarget.PublicZone target, bool displayed = true)
     {
         var pile = tableScene?.Seats.FirstOrDefault(seat => seat.PlayerId == target.PlayerId)?.Geometry.Piles
             .FirstOrDefault(pile => pile.Zone == target.ZoneName);
         var zone = match?.Players.FirstOrDefault(player => player.Id == target.PlayerId)?.Zone(target.ZoneName);
-        return pile == null || zone == null ? null : PileGeometry.Create(pile.Pose, zone.Count, pile.Compact);
+        return pile == null || zone == null ? null : displayed ? DisplayPileGeometry(pile, zone.Count) : PileGeometry.Create(pile, zone.Count);
     }
 
     private void QueuePublicCollectionReturn()
@@ -58,8 +58,10 @@ internal sealed partial class TableApplication
     {
         ReconcilePublicCollectionReturns();
         foreach (var (target, ids) in publicCollectionReturns.ToArray()) {
-            if (PublicCollectionPile(target) is not { } pile) { publicCollectionReturns.Remove(target); continue; }
+            if (PublicCollectionPile(target, displayed: false) is not { } pile
+                || ZonePile(target.PlayerId, target.ZoneName) is not { } pilePlan) { publicCollectionReturns.Remove(target); continue; }
             var zone = match!.Players.First(player => player.Id == target.PlayerId).Zone(target.ZoneName);
+            var destination = DisplayZonePose(pilePlan, pile.Top);
             foreach (string id in ids.ToArray()) {
                 var card = zone.Cards.FirstOrDefault(card => !card.FaceDown && CardIdentity(card) == id);
                 if (card == null || SpreadContains(id) || tableScene!.PlayAccess.Contains(target.PlayerId, target.ZoneName, card)) {
@@ -70,8 +72,10 @@ internal sealed partial class TableApplication
                 if (dragging && dragSource?.Card is { } held && CardViews.Same(held, card)) { ids.Remove(id); continue; }
                 var display = DrawTableCard(id, card, pile.Top, target.ZoneName, target.PlayerId,
                     "return-card:" + id, UiIntent.None,
-                    (pose, _) => PaintCard(card, pose, false, false), registerHit: false);
-                if (Vector2.Distance(display.Center, pile.Top.Center) < 2 && Vector2.Distance(display.Size, pile.Top.Size) < 2)
+                    (pose, _) => PaintCard(card, pose, false, false,
+                        fallback: pilePlan.TableAnchored ? StationCardFallback(card, pose) : null), clip: pilePlan.TableAnchored ? BoardViewport : null,
+                    registerHit: false, tableAnchored: pilePlan.TableAnchored);
+                if (Vector2.Distance(display.Center, destination.Center) < 2 && Vector2.Distance(display.Size, destination.Size) < 2)
                     ids.Remove(id);
             }
             if (ids.Count == 0) publicCollectionReturns.Remove(target);

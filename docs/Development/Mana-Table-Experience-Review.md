@@ -6,6 +6,62 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Keep public piles with their player's mat: 1 November 2026
+
+**Source prototype; human review pending.** The player found the rectangular
+seated table much better, then asked for library, graveyard, exile and command
+ownership to be clearer. In the preceding candidate, battlefield cards followed
+the seated mat plane but the public piles and commanders remained upright fixed
+screen objects. The left player's pile row sat immediately above the viewer's
+row, and the far player's library was separated from their other zones by the
+held hand and portrait. These are observations of the actual native capture;
+another label or color alone would leave that spatial ambiguity.
+
+The supplied MTG Arena screenshots place each player's piles near that player's
+side of the battlefield. Wizards' [Arena mobile gameplay
+guide](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-january-2021-01-21)
+describes opening each graveyard, library or exile object to inspect its known
+cards and count. [MTGO's multiplayer
+guide](https://www.mtgo.com/getting-started/getting-started-multiplayer) retains
+zone access within each player's section. Neither game's two-player or split
+screen layout establishes a four-seat seated-table solution. MTGO's automatic
+shrinking and duplicated zone displays are not part of this adaptation.
+
+This candidate puts the three distinct piles and up to two current commanders
+in the reserved personal area of their own mat. The mat-relative arrangement,
+physical seat facing and seated projection supply the ownership relationship;
+upright measured captions preserve reading direction. The arrangement retains
+the existing battlefield lanes and counter band. The local life and phase
+controls move into the near-left table apron so they do not cover the personal
+cards. Quantities stay on the actual pile, and a commander's compact tax stamp
+stays with its own face. Missing artwork shows a complete name when it fits;
+otherwise the same source-attached hover and full reader supply the identity.
+Tiny mana-cost or type fragments are suppressed, including at minimum zoom.
+A library remains a face-down
+stack unless its actual top is disclosed. Graveyard and exile retain their
+separate current collections. These are presentation placements of already
+authorized objects, not additional knowledge or permission to play them.
+
+The journey is: identify a player's pile beside that player's permanents; hover
+its disclosed top to read it; open that exact owner's current public collection;
+read an occurrence; return to the same physical pile. Opening or closing a
+collection issues no game command. A library choice or actual cast still follows
+its current engine-owned route. Cards with retained play access remain beside
+the permitted player's hand with their real owner and source zone; they are not
+duplicated into the pile to suggest a second physical occurrence. Arena's
+[Hideaway presentation](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-streets-new-capenna-2022-04-21)
+tucks its exiled card beneath the producing source, illustrating why source
+relationship and an owner's general exile collection must remain separate facts.
+
+Review two, three and four seats from every viewer, with both commanders, empty
+zones, a disclosed library top, concealed exile and a crowded field. Check the
+whole hover/open/read/return gesture at 1000x740 and a larger window, including
+130% text. Pan, zoom and focus must carry the piles with the same mat while
+preserving the current owner/zone hit and card identity. A card leaving the
+battlefield must travel to its actual current zone anchor. Automated geometry
+and command checks establish those scoped invariants, not readability or human
+acceptance of the new arrangement.
+
 ## Restore the seated table plane: 1 November 2026
 
 **Isolated projection prototype; human motion review pending.** The player liked
