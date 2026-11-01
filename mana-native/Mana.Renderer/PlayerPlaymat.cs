@@ -9,8 +9,12 @@ namespace Mana.Renderer;
 /// pending decisions never change its size or proportions.</summary>
 public static class PlayerPlaymat
 {
-    public const int HemInset = 12, MinimumGap = 16;
+    public const int HemInset = 12, MinimumGap = 32;
     public static Rectangle CanonicalBounds => new(0, 0, 512, 288);
+    // A fixed physical perimeter: close to the far/near mats, with only the
+    // side apron required by the existing command and public-pile rails. The
+    // far player's portrait, held hand and zone controls remain fixed seat HUD.
+    public static Rectangle TabletopPlacement => new(72, 136, 1456, 708);
     public static Rectangle PersonalArea => new(162, 144, 188, 132);
     public static Rectangle CanonicalCounterBand => new(12, 216, 150, 60);
 
@@ -35,10 +39,10 @@ public static class PlayerPlaymat
     {
         if (duel && seat is not (1 or 3)) throw new ArgumentOutOfRangeException(nameof(seat));
         var center = seat switch {
-            0 => new Point(384, 448),
+            0 => new Point(368, 448),
             1 => new Point(800, 304),
-            2 => new Point(1216, 448),
-            3 => new Point(800, 608),
+            2 => new Point(1232, 448),
+            3 => new Point(800, 660),
             _ => throw new ArgumentOutOfRangeException(nameof(seat))
         };
         var origin = CanonicalBounds.Center;

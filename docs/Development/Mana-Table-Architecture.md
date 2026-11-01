@@ -1542,7 +1542,7 @@ decision. Every command still passes current game/decision scope checks.
 The native launcher selects `SharedTableStudy` by default when building
 `TableScene` for two, three and four seats. `--classic-table` retains the previous layout,
 and the Experience Lab offers the study through `--table-study`. It uses fixed controller role lanes
-and flat scan faces without global density/stack repacking. Multiplayer packing
+and complete source-card faces without global density/stack repacking. Multiplayer packing
 uses seat-local coordinates and turns complete assemblies into their stable
 world lanes: left/right quarter turns, far seat half turn, local seat upright.
 Two-player framing keeps its upright faces. Tap rotation is relative to that
@@ -1554,39 +1554,56 @@ personal readout area and counter band. `Project` places that 16:9 template with
 an exact integer quarter turn and translation. Every seat has the same physical
 width, depth and area in two-, three- and four-player games; neither density nor
 priority stretches a mat or its rows. `SharedTableStudy` and `DuelTableStudy`
-consume those projected rows. Duels retain viewer-upright card art while using
-the same physical mat frame. A 12-design-unit hem and at least 16 units of bare
-table keep neighbouring materials distinct, including an empty battlefield.
-`SeatGeometry` prepares `PlaymatBounds`, `PublicReadoutArea`, `PublicCounterArea`
-and `TurnControls` with each scene seat. Painting, public readouts, camera focus
-and fixed-control avoidance consume that geometry. The local priority area is
-beside its mat's right edge; its phase arc retains its actual portrait-relative
-targets. The local command rail clears the side player's cloth.
-Automatic focus first translates the complete projected mat clear of the
-prepared local phase, portrait, counter and mana spaces at the normal focus
-zoom. If the wide mat cannot fit there, it frames within the clear strip above
-those controls. The counter space remains reserved while empty so receiving a
-first counter does not move the focused field. Manual camera control retains
-precedence; neither path repacks cards or changes match state.
-`TableApplication.Playmats` paints wood, cloth, backing, stitches and seat crests
-using the same `BoardView` exactly once. It adds no hits or game state and does
-not apply `TableWorld` a second time. `DrawList` records balanced
+pack those owner-relative rows before any viewing transform. Duels retain their
+established card facing. A 12-design-unit hem and constant bare-table gaps keep
+neighbouring materials distinct, including an empty battlefield.
+
+The source candidate after 0.2.322 applies one `TableSurfaceProjection` to cloth,
+permanent faces, attachments and family envelopes. It reuses `TableWorld`'s
+seated plane and projection origin; the outer `BoardView` pan/zoom follows once.
+`SeatGeometry` exposes canonical placement and the actual projected mat surface
+and bounds. The same composed card pose owns texture, outline, motion and pointer
+geometry; upright state text fits inside its projected face. The rectangular
+tabletop and wood grain share that plane, with close far/near edges, measured
+side support for the existing card rails and wider constant mat gaps around the center.
+Painting adds no rules state or command authority.
+
+Permanent state stamps measure the actual chosen font and reserve its real
+line height. Each row uses the horizontal slice of the projected quadrilateral
+at both row edges; a small tilted card must not lose its counter marker because
+a central inscribed rectangle or guessed padding is narrower. The selected
+font is painted as measured instead of being silently reduced to a short badge.
+Missing-art identity and live state consume that same face plan. A complete
+fallback title is painted only when it fits beside essential P/T and counters;
+optional keyword glyphs yield to its measured footprint. Compact identity uses
+the complete source-attached hover and full reader instead of a clipped or
+overwritten title. Hand/reader fallback painting keeps its separate full-card path.
+
+Player status is a separate fixed HUD layer. `SeatReadoutPlan` measures an
+opponent's land totals, incoming combat and public states at the actual text
+scale. One immutable plan supplies paint, current scoped detail targets and
+camera/attention reservations. Full-font arrangements precede an explicit
+counted state-detail fallback. Its bounded seat marker matches the portrait;
+free-form deck/player names remain complete in normal arrangements and details.
+A genuine no-fit result is explicit: the existing nameplate offers resource
+reading instead of publishing overlap or throwing for valid content. That
+workspace retains the full owner, land/combat facts and all public states.
+Detail inspection resolves the current player and does not answer a game
+decision. Portraits, unspent mana, command cards and
+public piles retain their fixed seat geometry. Local counter space remains
+reserved while empty.
+
+Automatic focus first translates the complete projected mat clear of prepared
+controls and measured HUD pieces at normal focus zoom. If it cannot fit there,
+it uses an aspect-preserving clear region rather than a strip that assumes all
+obstacles are below the camera. Manual camera control retains precedence;
+neither path repacks cards or changes the accepted match snapshot.
+`DrawList` records balanced
 `BeginTransform`/`EndTransform` scopes; `Canvas` composes nested views through
 `BoardView.Compose` before the viewport scale for sprites, triangles and clips.
 Text measurement remains in canonical units while raster density includes world
-zoom and its origin snaps in final pixel space. Battlefield assemblies lie on
-the mat; command cards, public piles, portraits and unspent mana stay anchored
-beside it. Opponents' auxiliary public counters, land counts and combat status
-move with their world view; local resources retain their HUD placement. Their
-hits and copied observations use the same projection and board clip, retiring
-offscreen regions. Each measured auxiliary group is omitted as a whole when it
-would cover registered fixed physical HUD geometry. A balanced `DrawList` group discards
-that paint together; the application also retires its matching hits and probes.
-This affects the readout's presentation, not card rendering, rules or public state.
-The upper command/pile rail and side held hands clear neighbouring material
-and card input. Counter/state painters return their measured footprint, so land
-counts and combat status follow the actual text height within the prepared
-owner-relative readout space. Cross-controller attachments still follow their
+zoom and its origin snaps in final pixel space. The upper command/pile rail and
+side held hands clear neighbouring material and card input. Cross-controller attachments still follow their
 host spatially without changing their actual controller index or permissions.
 All study roles and player counts use the same constrained family-block packer,
 trying row and balanced cohort shapes before reducing face scale. The separate

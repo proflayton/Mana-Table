@@ -122,6 +122,11 @@ internal sealed partial class TableApplication
         ModalFrame(player.Name, new MatchIntent.CloseView());
         Button("player-mana", "Mana pool", 1130, 211, 220, new MatchIntent.OpenManaPool(player.Id), height: 36);
         canvas.Text(player.Life + " LIFE", 212, 202, Ink, 2, 1090, 1, true);
+        var lands = PublicResources.Lands(player);
+        canvas.Text(lands.Total + (lands.Total == 1 ? " land" : " lands") + " · " + lands.Untapped + " untapped · " + lands.Tapped + " tapped",
+            570, 204, Ink, .7f, 530, 1, true);
+        int incoming = match.Combat?.Attackers.Count(attack => attack.HasDefender && attack.DefendingPlayerId == player.Id) ?? 0;
+        if (incoming > 0) canvas.Text(incoming + " INCOMING", 570, 232, Red, .6f, 530, 1, true);
         string handLimit = player.MaxHandSize is { } maximum ? $"Maximum hand size: {maximum} · Discard during this player's cleanup" : "No maximum hand size";
         canvas.Text($"{player.Zone("Hand").Count} cards in hand · {handLimit}", 213, 258, Muted, .7f, 1090, 1);
         DrawPlayerCounterDetails(player, 213, 290, 1090);

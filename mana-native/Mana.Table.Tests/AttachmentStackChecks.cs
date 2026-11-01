@@ -31,12 +31,15 @@ internal static class AttachmentStackChecks
                 var host = nodes.Single(node => node.Id == child.Attachment!.RootId);
                 var edge = child.Attachment!.Edge(child.Pose);
                 var hostSeat = scene.Seat(host.Owner);
-                var cloth = hostSeat.Geometry.PlaymatBounds!.Value; cloth.Inflate(-PlayerPlaymat.HemInset, -PlayerPlaymat.HemInset);
+                var cloth = hostSeat.Geometry.PlaymatPlacement!.Value; cloth.Inflate(-PlayerPlaymat.HemInset, -PlayerPlaymat.HemInset);
                 var lane = PlayerPlaymat.Lane(hostSeat.Index, host.StudyFamily!.Role, state.Players.Length == 2);
                 check(host.StudyFamily!.Bounds.Contains(child.Pose.Bounds) && !edge.Intersects(host.Pose.Bounds)
                     && scene.Seat(child.Owner).BattlefieldCard(child.Id) == child
-                    && cloth.Contains(host.StudyFamily.Bounds) && lane.Contains(host.StudyFamily.Bounds)
-                    && !hostSeat.Geometry.PublicReadoutArea!.Value.Intersects(host.StudyFamily.Bounds),
+                    && TableSurfaceProjection.Bounds(cloth).Contains(host.StudyFamily.Bounds)
+                    && TableSurfaceProjection.Bounds(lane).Contains(host.StudyFamily.Bounds)
+                    && TableSurfaceProjectionChecks.InPlacement(cloth, child.Pose)
+                    && !TableSurfaceProjectionChecks.Overlap(TableSurfaceProjection.Surface(PlayerPlaymat.Project(hostSeat.Index,
+                        PlayerPlaymat.PersonalArea, state.Players.Length == 2)), host.StudyFamily.Surface),
                     $"Each complete attachment assembly fits its host's mat hem and owner-relative row while retaining its actual controller lookup: {child.Id}, viewer {viewer}, edge {edge}, host {host.Pose.Bounds}, assembly {host.StudyFamily.Bounds}");
                 check(Array.IndexOf(nodes.ToArray(), child) < Array.IndexOf(nodes.ToArray(), host),
                     "Attachments paint beneath the host without obscuring its current stats");
@@ -232,7 +235,8 @@ internal static class AttachmentStackChecks
                 var hit = view.HitAt(point);
                 check(node.Owner == state.ViewerId && node.Attachment.RootOwner == focus.Owner
                         && hit is { Card: { } hitCard } && hitCard.VisualId == node.Id && hitCard.Key == node.Card.Key,
-                    $"{size.X}px: the crowded foreign Aura's exposed edge retains its exact current controller, card key and physical hit after focus");
+                    $"{size.X}px: the crowded foreign Aura's exposed edge retains its exact current controller, card key and physical hit after focus; "
+                        + $"point {point}, edge {node.Attachment.Edge(card.Display)}, pose {card.Display}, camera {view.BoardView}, actual {hit?.Id} {hit?.Card?.VisualId}");
                 Tick(point, ButtonState.Pressed); Tick(point); Settle();
                 check(frame.Cards.Single(card => card.Focused) is { } reader
                         && reader.Id == node.Id && reader.Request.Owner == node.Owner && reader.Card.Key == node.Card.Key

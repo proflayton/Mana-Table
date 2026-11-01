@@ -3,6 +3,7 @@ using Mana.Contracts;
 using Mana.Renderer;
 using Mana.Scenarios;
 using Mana.Table.Presentation;
+using Mana.Table.Interaction;
 using Microsoft.Xna.Framework;
 using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
 using Keys = Microsoft.Xna.Framework.Input.Keys;
@@ -15,9 +16,7 @@ internal static class MatchHeaderInteractionChecks
 {
     internal static void Run(string profile, Action<bool, string> check)
     {
-        CheckPlaymatReadouts(profile, check);
-        CheckPlaymatResourceCamera(profile, check);
-        CheckSidePlaymatReadouts(profile, check);
+        CheckSeatHudReadouts(profile, check);
         CheckManaReadingLateLayers(profile, check);
         foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) })
         foreach (float scale in new[] { 1f, 1.3f }) {
@@ -70,339 +69,249 @@ internal static class MatchHeaderInteractionChecks
         }
     }
 
-    private static void CheckPlaymatResourceCamera(string profile, Action<bool, string> check)
-    {
-        var baseline = FourPlayerTableScenario.Create()[0].Snapshot;
-        const int topId = 2;
-        var viewport = new Rectangle(0, 54, 1600, 724);
-        foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) })
-        foreach (float textScale in new[] { 1f, 1.3f })
-        foreach (int count in new[] { 3, 4 }) {
-            var state = baseline with {
-                Players = baseline.Players.Take(count).Select(player => player.Id == baseline.ViewerId ? player : player with {
-                    Mana = new[] { "W", "U", "B", "R", "G", "C" }.ToImmutableDictionary(symbol => symbol, _ => 1),
-                    States = [new("counter:energy", "Energy", "counter", player.Id, null, "Public energy counters."),
-                        new("counter:poison", "Poison", "counter", player.Id + 1, null, "Public poison counters.")]
-                }).ToImmutableArray(),
-                Combat = new([new(baseline.Viewer!.Zone("Battlefield").Cards[0].VisualId, topId, [], [])], [], null)
-            };
-            string path = Path.Combine(profile, $"playmat-camera-resources-{count}-{size.X}-{textScale}");
-            Directory.CreateDirectory(path);
-            new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = textScale }.Save(path);
-            var engine = new InteractionScenarioEngine(); engine.Present(state);
-            using var run = new PresentationRun(TestTableServices.For(engine), path, engine.State, size);
-            run.EnableLiveTableStudy();
-            var view = run.View;
-            PresentationFrame frame = null!;
-            PresentationFrame Tick(double seconds = .02, Keys? key = null, Point? logical = null, int wheel = 0)
-            {
-                var pointer = logical is { } point
-                    ? RenderViewport.Fit(size, view.DesignHeight).ToPhysical(point.ToVector2()).ToPoint() : new Point(-100, -100);
-                return frame = run.Tick(TimeSpan.FromSeconds(seconds),
-                    new(pointer.X, pointer.Y, wheel, default, default, default, default, default),
-                    key is { } held ? new(held) : new());
-            }
-            void Home() { Tick(key: Keys.Home); Tick(); }
-            Tick(); Tick();
-            var original = view.Match;
-            var canonical = frame.Scene!.BattlefieldDrawOrder.ToDictionary(card => card.Id, card => card.Pose);
-            bool IsAuxHit(string id, int owner) => id == "player-counters:" + owner
-                || id.StartsWith("player-state:" + owner + ":", StringComparison.Ordinal) || id == "player-state-more:" + owner;
-            var observed = frame.Observe().Text;
-            var groups = view.WorldReadouts.ToDictionary(pair => pair.Key, pair => new {
-                World = pair.Value, Badge = view.CounterBadge(pair.Key)!,
-                Hits = frame.Hits.Where(hit => IsAuxHit(hit.Id, pair.Key)).ToArray(),
-                Text = observed.Where(text => text.Bounds.Height > 0 && pair.Value.Canonical.Any(bounds =>
-                    bounds.Intersects(new Rectangle(text.Bounds.X, text.Bounds.Y, text.Bounds.Width, text.Bounds.Height)))).ToArray(),
-                Name = frame.Hits.Single(hit => hit.Id == "focus:" + pair.Key).Bounds,
-                Portrait = frame.Hits.Single(hit => hit.Id == "player:" + pair.Key).Bounds,
-                Mana = view.ManaPoolBadge(pair.Key)!.Bounds
-            });
-            var fixedReadouts = view.SeatReadouts.Where(bounds => !groups.Values.Any(group =>
-                group.World.Canonical.Any(piece => bounds.Contains(piece)))).ToArray();
-            check(groups.Count == count - 1 && groups.All(pair => pair.Value.World.Visible
-                    && pair.Value.Badge.Chips.Length == 2 && pair.Value.Hits.Length == 3 && pair.Value.Text.Length >= 4
-                    && pair.Value.World.Canonical.All(frame.Scene!.Seat(pair.Key).Geometry.PublicReadoutArea!.Value.Contains)),
-                $"{count} seats, {size.X}px {textScale:P0}: every opponent starts with complete visible world counters and land readouts, distinct from fixed identity and mana");
-
-            void CheckView(string journey)
-            {
-                var camera = view.BoardView;
-                Rectangle Visible(Rectangle world) => Rectangle.Intersect(camera.Apply(world), viewport);
-                check(ReferenceEquals(view.Match, original) && engine.Replies.Count == 0
-                        && frame.Scene!.BattlefieldDrawOrder.All(card => canonical[card.Id] == card.Pose),
-                    journey + ": camera navigation retains the exact authoritative snapshot, canonical occurrences and zero game commands");
-                var textNow = frame.Observe().Text;
-                foreach (var (owner, group) in groups) {
-                    var current = view.WorldReadouts[owner];
-                    var projected = group.World.Canonical.Select(Visible).Where(bounds => !bounds.IsEmpty).ToArray();
-                    bool blocked = projected.Any(bounds => FixedReadoutObstruction(frame, view, state, fixedReadouts, bounds));
-                    bool expected = projected.Length > 0 && !blocked;
-                    check(current.Canonical.SequenceEqual(group.World.Canonical) && current.Visible == expected
-                            && current.Displayed.SequenceEqual(expected ? projected : []),
-                        journey + $": opponent {owner}'s complete world group is projected once and shown exactly when actual fixed paint leaves it clear"
-                            + $" (expected={expected}, visible={current.Visible}, pieces={projected.Length}, blocked={blocked})");
-                    var badge = view.CounterBadge(owner);
-                    check(expected ? badge != null && badge.Bounds == Visible(group.Badge.Bounds)
-                            && projected.All(piece => view.SeatReadouts.Any(bounds => bounds.Contains(piece)))
-                        : badge == null && projected.All(piece => !view.SeatReadouts.Contains(piece)),
-                        journey + ": counter and measured-readout probes follow the same complete visibility decision as paint");
-                    check(frame.Hits.Single(hit => hit.Id == "focus:" + owner).Bounds == group.Name
-                            && frame.Hits.Single(hit => hit.Id == "player:" + owner).Bounds == group.Portrait
-                            && view.ManaPoolBadge(owner)!.Bounds == group.Mana,
-                        journey + ": world resources preserve fixed portraits, player names and mana controls");
-                    foreach (var world in group.Hits) {
-                        var bounds = Visible(world.Bounds);
-                        var hit = frame.Hits.SingleOrDefault(candidate => candidate.Id == world.Id);
-                        var chipCenters = group.Badge.Chips.Select(chip => camera.Apply(chip.Bounds.Center)).ToArray();
-                        var samples = chipCenters.Append(bounds.Center).Append(new(bounds.Center.X, 53)).ToArray();
-                        check(!expected || bounds.IsEmpty ? hit == null : hit != null && hit.Bounds == bounds
-                                && hit.Scope == world.Scope && hit.Intent == world.Intent && hit.Shape != null
-                                && viewport.Contains(hit.Bounds) && samples.All(point => hit.Contains(point)
-                                    == (viewport.Contains(point) && bounds.Contains(point) && world.Contains(camera.Inverse(point)))),
-                            journey + ": actual visible resource controls retain their scope and inverse pointer geometry; hidden groups leave no hit: " + world.Id);
-                        if (expected && hit != null && world.Id == "player-counters:" + owner) {
-                            var paintedCenters = chipCenters.Where(point => viewport.Contains(point) && bounds.Contains(point)).ToArray();
-                            check(paintedCenters.All(point => world.Contains(camera.Inverse(point)) && hit.Contains(point)),
-                                journey + ": the aggregate counter control accepts each actual visible painted chip");
-                            var gapCandidates = group.Badge.Chips.SelectMany(chip => new[] {
-                                new Point(chip.Bounds.Right + 1, chip.Bounds.Center.Y),
-                                new Point(chip.Bounds.Center.X, chip.Bounds.Bottom + 1)
-                            }).Append(world.Bounds.Center);
-                            var gaps = gapCandidates.Where(point => world.Bounds.Contains(point)
-                                    && !group.Badge.Chips.Any(chip => chip.Bounds.Contains(point)))
-                                .Select(camera.Apply).Where(point => bounds.Contains(point) && viewport.Contains(point)
-                                    && !group.Badge.Chips.Any(chip => chip.Bounds.Contains(camera.Inverse(point)))).ToArray();
-                            if (gaps.Length > 0) check(gaps.All(point => !world.Contains(camera.Inverse(point)) && !hit.Contains(point)),
-                                journey + ": blank space between painted counter rows remains noninteractive through the inverse camera shape");
-                        }
-                    }
-                    foreach (var text in group.Text) {
-                        var bounds = Visible(new(text.Bounds.X, text.Bounds.Y, text.Bounds.Width, text.Bounds.Height));
-                        bool painted = textNow.Any(item => item.Value == text.Value && item.Bounds == ObservedBounds.From(bounds)
-                            && MathF.Abs(item.Size - text.Size * camera.Scale) < .001f);
-                        check(painted == (expected && !bounds.IsEmpty),
-                            journey + ": observed resource text agrees with the complete group's actual clipped paint: " + text.Value);
-                    }
-                }
-            }
-            foreach (int focus in frame.Scene!.Seats.Where(seat => seat.PlayerId != state.ViewerId).Select(seat => seat.PlayerId).ToArray()) {
-                view.OpenBattlefield(focus); Tick(); Tick(.7);
-                check(!view.BoardView.IsIdentity, "Each actual opponent focus moves the camera over its existing mat");
-                CheckView($"{count} seats, {size.X}px {textScale:P0}, focus {focus}");
-                Home(); CheckView("Home restores every opponent's clear overview readout group");
-                check(view.BoardView.IsIdentity && groups.Keys.All(owner => view.WorldReadouts[owner].Visible),
-                    "Home restores all overview groups rather than retaining an earlier camera's occlusion");
-            }
-            if (count == 3 && textScale == 1.3f) {
-                // Same physical gesture as the reported 1000px GPU capture:
-                // three bounded W steps, then four wheel notches at the table.
-                Tick(.05, Keys.W); Tick(.05, Keys.W); Tick(.05, Keys.W); Tick();
-                Tick(logical: new(800, 420), wheel: 480); Tick(logical: new(800, 420), wheel: 480);
-                bool actualCollision = groups[topId].World.Canonical.Select(bounds => Rectangle.Intersect(view.BoardView.Apply(bounds), viewport))
-                    .Any(bounds => !bounds.IsEmpty && FixedReadoutObstruction(frame, view, state, fixedReadouts, bounds));
-                check(view.BoardView.Scale > 1.9f && actualCollision && !view.WorldReadouts[topId].Visible,
-                    $"{size.X}px: zooming the three-player table reaches actual fixed seat paint and suppresses the whole obstructed top group");
-                CheckView("Three-player zoom keeps fixed objects clear and retires the complete obstructed resource group");
-                Home(); CheckView("Home restores the previously obstructed three-player resource group");
-                check(view.WorldReadouts[topId].Visible && view.CounterBadge(topId) is { Chips.Length: 2 },
-                    "The same top counters and land totals return together after Home, without changing or replaying game state");
-            }
-        }
-    }
-
-    private static bool FixedReadoutObstruction(PresentationFrame frame, TableApplication.Probe view,
-        GameSnapshot state, IReadOnlyList<Rectangle> fixedReadouts, Rectangle bounds)
-    {
-        if (fixedReadouts.Any(item => item.Intersects(bounds))) return true;
-        foreach (var card in frame.Cards.Where(card => !BoardView.AffectsZone(card.Zone))) {
-            var body = new CardPaintGeometry(card.Display);
-            if (PoseOverlaps(body.Backing, bounds) || PoseOverlaps(body.Shadow, bounds)) return true;
-        }
-        foreach (var seat in frame.Scene!.Seats) {
-            var player = state.Players.Single(player => player.Id == seat.PlayerId);
-            if (frame.Hits.SingleOrDefault(hit => hit.Id == "focus:" + player.Id)?.Bounds.Intersects(bounds) == true
-                    || view.ManaPoolBadge(player.Id)?.Parts.Any(part => part.Bounds.Intersects(bounds)) == true) return true;
-            if (seat.Geometry.Commanders.Any(card => PoseOverlaps(card.Pose with { Size = card.Pose.Size + new Vector2(13) }, bounds))) return true;
-            var command = seat.Geometry.CommandLink;
-            if (new Rectangle((int)command.X - 52, (int)command.Y, 104, 24).Intersects(bounds)) return true;
-            foreach (var pile in seat.Geometry.Piles) {
-                var paint = PileGeometry.Create(pile.Pose, player.Zone(pile.Zone).Count, pile.Compact);
-                if (paint.Label.Intersects(bounds) || !paint.Count.IsEmpty && paint.Count.Intersects(bounds)
-                        || PoseOverlaps(paint.Top, bounds) || PoseOverlaps(paint.Shadow, bounds)
-                        || paint.Layers.Any(layer => PoseOverlaps(layer, bounds))) return true;
-            }
-            float radius = player.Id == state.ViewerId ? 40 : 34;
-            foreach (var circle in new[] { (seat.Geometry.Hero, radius + 5), (seat.Geometry.Hero + new Vector2(0, 6), radius + 7) }) {
-                var nearest = Vector2.Clamp(circle.Item1, new(bounds.Left, bounds.Top), new(bounds.Right, bounds.Bottom));
-                if (Vector2.DistanceSquared(nearest, circle.Item1) < circle.Item2 * circle.Item2) return true;
-            }
-            if (player.Id == state.ViewerId) continue;
-            var phase = seat.Geometry.Hero + new Vector2(seat.Index == 2 ? 59 : -59, 0);
-            if (frame.Drawing.Commands.OfType<DrawCommand.Circle>().Any(circle => circle.Center == phase && circle.Radius == 15)) {
-                var nearest = Vector2.Clamp(phase, new(bounds.Left, bounds.Top), new(bounds.Right, bounds.Bottom));
-                if (Vector2.DistanceSquared(nearest, phase) < 15 * 15) return true;
-            }
-            int count = Math.Min(7, player.Zone("Hand").Count);
-            for (int index = 0; index < count; index++) {
-                var back = TableLayout.HiddenHand(seat.Index, index, count);
-                back = back with { Center = back.Center + seat.Geometry.Hand - TableLayout.SeatHand(seat.Index) };
-                if (PoseOverlaps(back, bounds) || PoseOverlaps(back with { Center = back.Center + new Vector2(3, 6) }, bounds)) return true;
-            }
-        }
-        return false;
-    }
-
-    private static bool PoseOverlaps(Pose pose, Rectangle bounds)
-    {
-        if (!pose.Bounds.Intersects(bounds)) return false;
-        var face = pose.Corners;
-        Vector2[] rectangle = [new(bounds.Left, bounds.Top), new(bounds.Right, bounds.Top),
-            new(bounds.Right, bounds.Bottom), new(bounds.Left, bounds.Bottom)];
-        foreach (var polygon in new[] { face, rectangle }) {
-            for (int index = 0; index < polygon.Length; index++) {
-                var edge = polygon[(index + 1) % polygon.Length] - polygon[index];
-                var axis = new Vector2(-edge.Y, edge.X);
-                float faceMin = face.Min(point => Vector2.Dot(point, axis)), faceMax = face.Max(point => Vector2.Dot(point, axis));
-                float rectMin = rectangle.Min(point => Vector2.Dot(point, axis)), rectMax = rectangle.Max(point => Vector2.Dot(point, axis));
-                if (faceMax <= rectMin || rectMax <= faceMin) return false;
-            }
-        }
-        return true;
-    }
-
-    private static void CheckSidePlaymatReadouts(string profile, Action<bool, string> check)
+    private static void CheckSeatHudReadouts(string profile, Action<bool, string> check)
     {
         foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) })
-        foreach (float scale in new[] { 1f, 1.3f })
-        foreach (string counterKind in new[] { "Poison", "Experience" }) {
-            string path = Path.Combine(profile, $"playmat-side-readouts-{size.X}-{scale}-{counterKind}");
-            Directory.CreateDirectory(path);
-            new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = scale }.Save(path);
-            var baseline = TappedResourcesScenario.Create()[3].Snapshot;
-            var state = baseline with { Players = baseline.Players.Select(player => player.Id == baseline.ViewerId ? player : player with {
-                Mana = new[] { "W", "U", "B", "R", "G", "C" }.ToImmutableDictionary(symbol => symbol, _ => 1),
-                States = [new("counter:energy", "Energy", "counter", 2, null, "Two public energy counters."),
-                    new("counter:second", counterKind, "counter", 3, null, "Three public counters.")],
-                Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Count = 7 }
-                    : zone.Name != "Battlefield" ? zone : zone with { Count = zone.Count + 2, Cards = [.. zone.Cards,
-                        new Card { VisualId = "sidebar-ring-" + player.Id, Name = "Sol Ring", Type = "Artifact" },
-                        new Card { VisualId = "sidebar-study-" + player.Id, Name = "Rhystic Study", Type = "Enchantment" }] }).ToImmutableArray()
-            }).ToImmutableArray() };
-            var engine = new InteractionScenarioEngine(); engine.Present(state);
-            using var run = new PresentationRun(TestTableServices.For(engine), path, engine.State, size);
-            run.EnableLiveTableStudy();
-            run.Tick(TimeSpan.FromSeconds(.02), new(-100, -100, 0, default, default, default, default, default));
-            var frame = run.Tick(TimeSpan.FromSeconds(.02), new(-100, -100, 0, default, default, default, default, default));
-            var view = run.View;
-            foreach (var side in frame.Scene!.Seats.Where(seat => seat.Index is 0 or 2)) {
-                var badge = view.CounterBadge(side.PlayerId)!;
-                var pool = view.ManaPoolBadge(side.PlayerId)!;
-                var name = frame.Hits.Single(hit => hit.Id == "focus:" + side.PlayerId);
-                var world = view.WorldReadouts[side.PlayerId];
-                var personal = side.Geometry.PublicReadoutArea!.Value;
-                var readouts = world.Displayed.Append(name.Bounds).Append(badge.Bounds).Distinct().ToArray();
-                var obstacles = frame.Cards.Select(card => (Kind: "card:" + card.Id, Bounds: card.Display.Bounds)).ToList();
-                obstacles.Add(("painted life ring", new((int)side.Geometry.Hero.X - 39, (int)side.Geometry.Hero.Y - 39, 78, 78)));
-                for (int index = 0; index < 7; index++) {
-                    var back = TableLayout.HiddenHand(side.Index, index, 7);
-                    back = back with { Center = back.Center + side.Geometry.Hand - TableLayout.SeatHand(side.Index) + new Vector2(3, 6) };
-                    obstacles.Add(("held hand shadow:" + index, back.Bounds));
-                }
-                var manaCollision = pool.Parts.SelectMany(part => obstacles.Where(obstacle => obstacle.Bounds.Intersects(part.Bounds))
-                    .Select(obstacle => $"mana {part.Key} {part.Bounds} intersects {obstacle.Kind} {obstacle.Bounds}"))
-                    .Concat(pool.Parts.SelectMany(part => readouts.Where(readout => readout.Intersects(part.Bounds))
-                        .Select(readout => $"mana {part.Key} {part.Bounds} intersects readout {readout}"))).FirstOrDefault();
-                check(pool.Parts.Length == 6 && manaCollision == null
-                        && pool.Parts.All(part => view.HitAt(part.Bounds.Center)?.Id == "mana-pool:" + side.PlayerId + ":" + part.Key),
-                    $"Side {side.Index}, {size.X}px {scale:P0}: six full-size mana pips clear actual permanents, held cards, life and readouts while retaining their own inspection targets; " + manaCollision);
-                var collisions = readouts.SelectMany(readout => obstacles.Where(obstacle => obstacle.Bounds.Intersects(readout))
-                    .Select(obstacle => $"readout {readout} intersects {obstacle.Kind} {obstacle.Bounds}")).Take(4).ToArray();
-                check(world.Visible && world.Canonical.All(personal.Contains)
-                        && world.Displayed.All(piece => view.SeatReadouts.Any(bounds => bounds.Contains(piece)))
-                        && badge.Chips.Length == 2 && badge.Chips.All(chip => chip.MeasuredWidth <= chip.AvailableWidth)
-                        && badge.Chips.All(chip => frame.Drawing.Commands.OfType<DrawCommand.Text>()
-                            .Any(text => text.Value == chip.Text && text.Size == .6f
-                                && badge.Bounds.Contains(new Point(text.X, text.Y))))
-                        && readouts.Length >= 4 && collisions.Length == 0,
-                    $"Side {side.Index}, {size.X}px {scale:P0}: full-font Energy/{counterKind} and measured tapped/untapped totals clear physical support cards, held hands, life and commanders; "
-                    + string.Join("; ", collisions));
-            }
-        }
-    }
-
-    private static void CheckPlaymatReadouts(string profile, Action<bool, string> check)
-    {
-        foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) })
-        foreach (float scale in new[] { 1f, 1.3f })
-        foreach (int count in new[] { 2, 3, 4 }) {
-            string path = Path.Combine(profile, $"playmat-readouts-{count}-{size.X}-{scale}");
+        foreach (float scale in new[] { 1f, 1.3f }) foreach (int count in new[] { 2, 3, 4 }) {
+            string path = Path.Combine(profile, $"seat-hud-{count}-{size.X}-{scale}");
             Directory.CreateDirectory(path);
             new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = scale }.Save(path);
             var baseline = FourPlayerTableScenario.Create()[0].Snapshot;
-            var state = baseline with { Players = baseline.Players.Take(count).ToImmutableArray() };
+            var state = baseline with { Players = baseline.Players.Take(count).Select(player => player.Id == baseline.ViewerId ? player : player with {
+                Mana = new[] { "W", "U", "B", "R", "G", "C" }.ToImmutableDictionary(symbol => symbol, _ => 1),
+                States = [new("counter:energy", "Energy", "counter", 2, null, "Two public energy counters."),
+                    new("counter:experience", "Experience", "counter", 3, null, "Three public experience counters.")],
+                Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Count = 7 } : zone.Name != "Command" ? zone : zone with {
+                    Count = 2, Cards = [zone.Cards[0], zone.Cards[0] with { VisualId = "hud-partner-" + player.Id }]
+                }).ToImmutableArray()
+            }).ToImmutableArray() };
             int topId = TableLayout.Opponents(state)[count == 2 ? 0 : 1].Id;
-            state = state with {
-                Players = state.Players.Select(player => player.Id != topId ? player : player with {
-                    Name = "Top player",
-                    Mana = new[] { "W", "U", "B", "R", "G", "C" }.ToImmutableDictionary(symbol => symbol, _ => 1),
-                    States = [new("counter:energy", "Energy", "counter", 2, null, "Two public energy counters."),
-                        new("counter:poison", "Poison", "counter", 3, null, "Three public poison counters.")],
-                    Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Count = 7 }
-                        : zone.Name != "Command" ? zone : zone with { Count = 2,
-                            Cards = [zone.Cards[0], zone.Cards[0] with { VisualId = "readout-partner-" + player.Id }] }).ToImmutableArray()
-                }).ToImmutableArray(),
-                Combat = new([new(state.Viewer!.Zone("Battlefield").Cards[0].VisualId, topId, [], [])], [], null)
-            };
+            state = state with { Combat = new([new(state.Viewer!.Zone("Battlefield").Cards[0].VisualId, topId, [], [])], [], null) };
             var engine = new InteractionScenarioEngine(); engine.Present(state);
             using var run = new PresentationRun(TestTableServices.For(engine), path, engine.State, size);
             run.EnableLiveTableStudy();
-            run.Tick(TimeSpan.FromSeconds(.02), new(-100, -100, 0, default, default, default, default, default));
-            var frame = run.Tick(TimeSpan.FromSeconds(.02), new(-100, -100, 0, default, default, default, default, default));
-            var view = run.View;
-            var top = frame.Scene!.Seat(topId);
-            var name = frame.Hits.Single(hit => hit.Id == "focus:" + topId);
-            var badge = view.CounterBadge(topId)!;
-            var pool = view.ManaPoolBadge(topId)!;
-            check(top.Geometry.Commanders.Count == 2 && pool.Parts.Length == 6 && badge.Chips.Length == 2
-                    && frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value == "1 INCOMING")
-                    && badge.Chips.All(chip => chip.MeasuredWidth <= chip.AvailableWidth),
-                $"{count}-seat {size.X}px {scale:P0}: the actual top HUD includes both commanders, six mana colors, two complete counter types and incoming combat");
-            var world = view.WorldReadouts[topId];
-            var personal = top.Geometry.PublicReadoutArea!.Value;
-            var readouts = world.Displayed.Append(name.Bounds).Append(badge.Bounds).Distinct().ToArray();
-            var obstacles = new List<(string Kind, Rectangle Bounds)>();
-            obstacles.AddRange(frame.Cards.Select(card => ("card:" + card.Id, card.Display.Bounds)));
-            foreach (var seat in frame.Scene.Seats) {
-                var player = state.Players.Single(player => player.Id == seat.PlayerId);
-                obstacles.AddRange(seat.Geometry.Piles.Select(pile => {
-                    var painted = PileGeometry.Create(pile.Pose, player.Zone(pile.Zone).Count, pile.Compact);
-                    return ("pile:" + player.Id + ":" + pile.Zone, Rectangle.Union(painted.HitBounds, painted.Shadow.Bounds));
-                }));
+            var view = run.View; PresentationFrame frame = null!; int wheel = 0;
+            void Tick(double seconds = .02, Point? point = null, ButtonState left = ButtonState.Released, Keys? key = null) {
+                var physical = RenderViewport.Fit(size, view.DesignHeight).ToPhysical((point ?? new Point(-100, -100)).ToVector2() + new Vector2(.5f));
+                frame = run.Tick(TimeSpan.FromSeconds(seconds), new((int)physical.X, (int)physical.Y, wheel, left, default, default, default, default),
+                    key is { } pressed ? new(pressed) : new());
             }
-            obstacles.AddRange(frame.Hits.Where(hit => hit.Bounds.Top >= 0 && hit.Bounds.Bottom <= 54)
-                .Select(hit => ("header:" + hit.Id, hit.Bounds)));
-            obstacles.Add(("current response area", view.StudyAttentionBounds));
-            obstacles.AddRange(pool.Parts.Select(part => ("mana:" + part.Key, part.Bounds)));
-            foreach (var other in frame.Scene.Seats.Where(seat => seat.PlayerId != topId))
-                obstacles.Add(("other mat:" + other.PlayerId, other.Geometry.PlaymatBounds!.Value));
-            for (int index = 0; index < 7; index++) {
-                var back = TableLayout.HiddenHand(top.Index, index, 7);
-                back = back with { Center = back.Center + top.Geometry.Hand - TableLayout.SeatHand(top.Index) + new Vector2(3, 6) };
-                obstacles.Add(("held hand shadow:" + index, back.Bounds));
+            Tick(); Tick();
+            var snapshot = view.Match;
+            var canonical = frame.Scene!.BattlefieldDrawOrder.ToDictionary(card => card.Id, card => card.Pose);
+            var plans = view.ReadoutPlans.ToDictionary(pair => pair.Key, pair => pair.Value);
+            var viewport = new Rectangle(0, 54, 1600, 724);
+            check(plans.Count == count - 1 && plans.Values.All(plan => plan.HiddenStates == 0 && plan.States.Count == 2
+                    && plan.Pieces.All(viewport.Contains)) && frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value == "1 INCOMING"),
+                $"{count} seats, {size.X}px {scale:P0}: every opponent owns a complete measured upright HUD with two full counter types, land totals and incoming combat");
+            check(plans.All(pair => pair.Value.Text.Single(item => item.Role == SeatReadoutTextRole.LandTotal).Text
+                        .StartsWith(state.Players.Single(player => player.Id == pair.Key).Name + " · ", StringComparison.Ordinal))
+                    && plans.Values.Select(plan => plan.Text.Single(item => item.Role == SeatReadoutTextRole.LandTotal).Text).Distinct().Count() == plans.Count,
+                "Equal land totals at different seats retain distinct complete visible owner names in their measured first line");
+            void CheckHud(string journey, bool overview) {
+                check(ReferenceEquals(view.Match, snapshot) && engine.Replies.Count == 0
+                        && frame.Scene!.BattlefieldDrawOrder.All(card => canonical[card.Id] == card.Pose),
+                    journey + ": camera movement preserves the authoritative snapshot, physical occurrences and zero game commands");
+                foreach (var (owner, plan) in plans) {
+                    var current = view.ReadoutPlans[owner];
+                    var badge = view.CounterBadge(owner);
+                    check(current.Pieces.SequenceEqual(plan.Pieces) && current.States.Select(item => item.Text).SequenceEqual(plan.States.Select(item => item.Text))
+                            && badge is { Chips.Length: 2 } && badge.Chips.All(chip => chip.MeasuredWidth <= chip.AvailableWidth)
+                            && current.Text.All(item => frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value == item.Text
+                                && text.X == item.Bounds.X && text.Y == item.Bounds.Y && text.Size == item.Size))
+                            && current.States.All(item => frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value == item.Text
+                                && text.X == item.Bounds.X + 6 && text.Y == item.Bounds.Y + 2 && text.Size == .6f)),
+                        journey + $": opponent {owner}'s complete public data remains at the same full font and fixed measured coordinates");
+                    foreach (var item in current.States) {
+                        string id = "player-state:" + owner + ":" + item.Id;
+                        var hit = frame.Hits.Single(candidate => candidate.Id == id);
+                        check(hit.Bounds == item.Bounds && hit.Scope == frame.Stamp.Scope && view.HitAt(item.Bounds.Center)?.Id == id
+                                && hit.Intent is MatchIntent.OpenPlayerState intent && intent.PlayerId == owner,
+                            journey + ": the visible state control owns the same actual fixed target and current player identity: " + id);
+                    }
+                    var fixedHits = frame.Hits.Where(hit => hit.Id.StartsWith("focus:", StringComparison.Ordinal)
+                        || hit.Id.StartsWith("zone:", StringComparison.Ordinal) || hit.Id is "study-focus-return").ToArray();
+                    check(current.Pieces.All(piece => fixedHits.All(hit => !hit.Bounds.Intersects(piece)))
+                            && frame.Scene.Seats.All(seat => view.ManaPoolBadge(seat.PlayerId)!.Parts.All(part => current.Pieces.All(piece => !part.Bounds.Intersects(piece))))
+                            && current.Pieces.All(piece => frame.Cards.Where(card => !BoardView.AffectsZone(card.Zone)).All(card => !Overlap(card.Display, piece)))
+                            && (!overview || current.Pieces.All(piece => frame.Scene.Seats.All(seat => !seat.Geometry.PlaymatBounds!.Value.Intersects(piece)))),
+                        journey + ": the measured HUD clears names, current rail controls, mana, held cards and command faces, with no overview cloth overlap");
+                }
             }
-            var overlap = readouts.SelectMany(readout => obstacles.Where(obstacle => obstacle.Bounds.Intersects(readout))
-                .Select(obstacle => new { Readout = readout, Obstacle = obstacle })).FirstOrDefault();
-            check(world.Visible && world.Canonical.All(personal.Contains)
-                    && world.Displayed.All(piece => view.SeatReadouts.Any(bounds => bounds.Contains(piece)))
-                    && readouts.Length >= 5 && overlap == null,
-                $"{count}-seat {size.X}px {scale:P0}: measured top identity, land counts, public states and incoming status clear actual cards, piles, hands, mana, headers, response space and other mats"
-                + (overlap == null ? "" : $"; readout {overlap.Readout} intersects {overlap.Obstacle.Kind} {overlap.Obstacle.Bounds}"));
-            check(engine.Replies.Count == 0 && view.HitAt(top.Geometry.Hero.ToPoint())?.Id == "player:" + topId
-                    && view.HitAt(name.Bounds.Center)?.Id == name.Id,
-                $"{count}-seat {size.X}px {scale:P0}: readable names retain inspection while the portrait keeps its real player target, without game commands");
+            CheckHud("Overview", true);
+            if (count > 2) foreach (int owner in plans.Keys) {
+                view.OpenBattlefield(owner); Tick(.7);
+                check(view.BoardView.Scale > 1 && plans.Values.SelectMany(plan => plan.Pieces).All(piece =>
+                        frame.Cards.Where(card => card.Zone == "Battlefield" && card.Request.Owner == owner).All(card => !Overlap(card.Display, piece))),
+                    "Focus frames the same complete mat clear of the fixed readable state HUD");
+                CheckHud("Focus " + owner, false);
+                Tick(key: Keys.Home); Tick(.7); CheckHud("Home", true);
+            }
+            Tick(.05, key: Keys.W); Tick(.05, key: Keys.W); Tick(); wheel = 480; Tick(point: new(800, 420)); Tick(.7);
+            check(view.BoardView.Scale > 1, "Wheel zoom enlarges the physical table independently of the readable fixed HUD");
+            CheckHud("Manual pan and zoom", false);
+            var first = plans.Values.First(); var chip = first.States[0];
+            Tick(point: chip.Bounds.Center); Tick(point: chip.Bounds.Center, left: ButtonState.Pressed); Tick(point: chip.Bounds.Center);
+            check(view.Overlay == "player" && engine.Replies.Count == 0,
+                "The actual readable public-state chip opens its full details after camera movement without a game command");
+        }
+        var metrics = new TextMetrics();
+        Rectangle[] diagonalPieces = [new(0, 0, 20, 20)];
+        Rectangle[] diagonalObstacles = [new(0, 0, 100, 30), new(0, 0, 30, 100)];
+        check(DecisionWorkspaceLayout.Translate(diagonalPieces, new(0, 0, 100, 100), diagonalObstacles) == null
+                && DecisionWorkspaceLayout.TranslateComplete(diagonalPieces, new(0, 0, 100, 100), diagonalObstacles) == new Rectangle(30, 30, 20, 20)
+                && DecisionWorkspaceLayout.TranslateComplete(diagonalPieces, new(0, 0, 100, 100), [new(0, 0, 100, 100)]) == null,
+            "Full measured HUD placement finds a clear diagonal slot that one-axis movement misses and reports genuinely full space without intersecting paint");
+        var playerLong = FourPlayerTableScenario.Create()[0].Snapshot.Players[1] with {
+            States = [new("counter:long", string.Join(" ", Enumerable.Repeat("Full public label", 80)), "counter", 3, null, "Full detail"),
+                new("counter:energy", "Energy", "counter", 2, null, "Energy detail")]
+        };
+        var overflow = Mana.Table.Presentation.SeatReadoutPlan.Build(playerLong, 0, 2, "", false, (text, size, bold) => metrics.TextWidth(text, size, bold, 1.3f),
+            (text, size, width, bold) => metrics.TextSize(text, size, width, 80, bold, 1.3f));
+        check(overflow.HiddenStates == 2 && overflow.States.Single() is { More: true, Text: "+2 states" }
+                && overflow.Bounds.Height < 160 && overflow.States[0].Bounds.Height < 40,
+            "An omitted long public state retains a counted detail target without inflating visible chips to its hidden wrapped-text height");
+        var constrainedPlayer = playerLong with { States = Enumerable.Range(0, 5).Select(index =>
+            new PlayerState("counter:resource-" + index, "Public resource " + index, "counter", index + 1, null, "Full state detail " + index)).ToImmutableArray() };
+        SeatReadoutPlan Plan(int width = 224, bool? horizontal = null, bool counted = false) => SeatReadoutPlan.Build(constrainedPlayer, 0, 2,
+            "1 INCOMING", true, (text, size, bold) => metrics.TextWidth(text, size, bold, 1.3f),
+            (text, size, measureWidth, bold) => metrics.TextSize(text, size, measureWidth, 80, bold, 1.3f), width, horizontal, counted);
+        var pinned = Plan(counted: true);
+        var admitted = (SeatReadoutPlan.Place([Plan(), Plan(264), Plan(horizontal: false)], pinned, pinned.Bounds, []) as SeatReadoutPlacement.Placed)?.Plan;
+        check(ReferenceEquals(admitted, pinned) && admitted!.HiddenStates == 5 && admitted.States.Single() is { More: true, Text: "+5 states" }
+                && admitted.Text.Any(item => item.Role == SeatReadoutTextRole.LandTotal)
+                && admitted.Text.Any(item => item.Role == SeatReadoutTextRole.LandState)
+                && admitted.Text.Any(item => item.Role == SeatReadoutTextRole.Incoming && item.Text == "1 INCOMING")
+                && admitted.Pieces.All(pinned.Bounds.Contains),
+            "A deliberately constrained HUD tries every full-font arrangement, then retains land/combat facts and the complete counted-state target in its reserved slot");
+        check(SeatReadoutPlan.Place([Plan(), Plan(264), Plan(horizontal: false)], pinned, pinned.Bounds, [pinned.Bounds])
+                is SeatReadoutPlacement.NoFit { PlayerId: 1, SeatOrdinal: 2 },
+            "A truly impossible measured placement returns a typed read-only workspace requirement without throwing or claiming an intersecting plan succeeded");
+        CheckOverflowReader(profile, constrainedPlayer.States, check);
+        CheckOverflowReader(profile, constrainedPlayer.States, check, impossible: true);
+        CheckLongOwnerNames(profile, check);
+    }
+
+    private static void CheckLongOwnerNames(string profile, Action<bool, string> check)
+    {
+        string[] names = ["You", "Witherbloom Pestilence - Secrets of Strixhaven · AI 1",
+            "Explorers of the Deep - The Lost Caverns of Ixalan · AI 2", "Veloci-Ramp-Tor - The Lost Caverns of Ixalan · AI 3"];
+        foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) }) foreach (int count in new[] { 2, 3, 4 })
+        foreach (int viewer in new[] { 0, count - 1 }) {
+            string path = Path.Combine(profile, $"long-owner-hud-{count}-{size.X}-viewer-{viewer}");
+            Directory.CreateDirectory(path);
+            new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f }.Save(path);
+            var baseline = FourPlayerTableScenario.Create()[0].Snapshot;
+            var state = baseline with { ViewerId = viewer, Decision = null, DecisionOwnerId = null, PriorityPlayerId = null,
+                Players = baseline.Players.Take(count).Select((player, ordinal) => player with {
+                    Name = names[ordinal], Mana = new[] { "W", "U", "B", "R", "G", "C" }.ToImmutableDictionary(symbol => symbol, _ => 1),
+                    States = [new("counter:energy", "Energy", "counter", 2, null, "Two public energy counters."),
+                        new("counter:experience", "Experience", "counter", 3, null, "Three public experience counters.")],
+                    Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Cards = [] } : zone.Name != "Command" ? zone : zone with {
+                        Count = 2, Cards = [zone.Cards[0], zone.Cards[0] with { VisualId = "long-owner-partner-" + player.Id }]
+                    }).ToImmutableArray()
+                }).ToImmutableArray() };
+            int incomingOwner = state.Players.First(player => player.Id != viewer).Id;
+            state = state with { Combat = new([new(state.Viewer!.Zone("Battlefield").Cards[0].VisualId, incomingOwner, [], [])], [], null) };
+            var engine = new InteractionScenarioEngine(); engine.Present(state);
+            using var run = new PresentationRun(TestTableServices.For(engine), path, engine.State, size);
+            run.EnableLiveTableStudy();
+            var view = run.View; PresentationFrame frame = null!;
+            void Tick(Point? point = null, ButtonState left = ButtonState.Released) {
+                var physical = RenderViewport.Fit(size, view.DesignHeight).ToPhysical((point ?? new Point(-100, -100)).ToVector2() + new Vector2(.5f));
+                frame = run.Tick(TimeSpan.FromSeconds(.02), new((int)physical.X, (int)physical.Y, 0, left, default, default, default, default));
+            }
+            Tick(); Tick();
+            var viewport = new Rectangle(0, 54, 1600, 724);
+            foreach (var (owner, plan) in view.ReadoutPlans) {
+                var player = state.Players.Single(player => player.Id == owner);
+                int ordinal = state.Players.IndexOf(player) + 1;
+                var nameplate = frame.Hits.Single(hit => hit.Id == "focus:" + owner);
+                var title = plan.Text.Single(item => item.Role == SeatReadoutTextRole.LandTotal);
+                check(plan.SeatOrdinal == ordinal && plan.Pieces.All(viewport.Contains)
+                        && (title.Text.StartsWith(player.Name + " · ", StringComparison.Ordinal)
+                            || title.Text.StartsWith("Seat " + ordinal + " · ", StringComparison.Ordinal))
+                        && frame.Drawing.Commands.OfType<DrawCommand.CenterText>().Any(text => text.Value == ordinal.ToString()
+                            && nameplate.Bounds.Contains(text.Bounds))
+                        && plan.Pieces.All(piece => frame.Hits.Where(hit => hit.Id.StartsWith("focus:", StringComparison.Ordinal)
+                            || hit.Id.StartsWith("zone:", StringComparison.Ordinal)).All(hit => !piece.Intersects(hit.Bounds)))
+                        && view.ReadoutPlans.Where(other => other.Key != owner).All(other => plan.Pieces.All(piece => other.Value.Pieces.All(area => !piece.Intersects(area)))),
+                    $"Long preset-style owner {owner}, {count} seats, {size.X}px, viewer {viewer}: full names or their explicit stable public ordinal remain readable without throwing, overlapping peers or relabelling with the viewing seat");
+            }
+            var selected = view.ReadoutPlans.Values.First(plan => plan.PlayerId == incomingOwner);
+            check(selected.Text.Any(item => item.Role == SeatReadoutTextRole.Incoming && item.Text.Contains("1 INCOMING", StringComparison.Ordinal))
+                    && selected.Text.Any(item => item.Role == SeatReadoutTextRole.LandState),
+                "Long names preserve actual incoming combat and untapped/tapped land facts in the visible admitted plan");
+            var entry = selected.States.First();
+            string target = entry.More ? "player-state-more:" + selected.PlayerId : "player-state:" + selected.PlayerId + ":" + entry.Id;
+            var hit = frame.Hits.Single(item => item.Id == target);
+            check(view.HitAt(hit.Bounds.Center)?.Id == hit.Id && hit.Scope == frame.Stamp.Scope,
+                "A long-name owner's visible public-state affordance retains its actual current player and scoped physical target");
+            Tick(hit.Bounds.Center); Tick(hit.Bounds.Center, ButtonState.Pressed); Tick(hit.Bounds.Center);
+            check(view.Overlay == "player" && frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value == state.Players.Single(player => player.Id == incomingOwner).Name)
+                    && engine.Replies.Count == 0,
+                "Long-name state reading preserves the full unparsed source owner name and public details without a rules command");
         }
     }
+
+    private static void CheckOverflowReader(string profile, ImmutableArray<PlayerState> states, Action<bool, string> check, bool impossible = false)
+    {
+        string path = Path.Combine(profile, impossible ? "hud-no-fit-workspace-1000-130" : "hud-overflow-reader-1000-130");
+        Directory.CreateDirectory(path);
+        new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f }.Save(path);
+        var baseline = FourPlayerTableScenario.Create()[0].Snapshot;
+        var state = baseline with { Players = baseline.Players.Select(player => player.Id != 1 ? player : player with { States = states }).ToImmutableArray(),
+            Combat = new([new(baseline.Viewer!.Zone("Battlefield").Cards[0].VisualId, 1, [], [])], [], null) };
+        var engine = new InteractionScenarioEngine(); engine.Present(state);
+        var size = new Point(1000, 740);
+        using var run = new PresentationRun(TestTableServices.For(engine), path, engine.State, size);
+        run.EnableLiveTableStudy();
+        var view = run.View; PresentationFrame frame = null!;
+        if (impossible) view.SetReadoutPlacer((arrangements, reserved, viewport, occupied) => SeatReadoutPlan.Place(arrangements, reserved, viewport,
+            reserved.PlayerId == 1 ? [viewport] : occupied));
+        void Tick(Point? point = null, ButtonState left = ButtonState.Released) {
+            var physical = RenderViewport.Fit(size, view.DesignHeight).ToPhysical((point ?? new Point(-100, -100)).ToVector2() + new Vector2(.5f));
+            frame = run.Tick(TimeSpan.FromSeconds(.02), new((int)physical.X, (int)physical.Y, 0, left, default, default, default, default));
+        }
+        void Click(string id) {
+            var hit = frame.Hits.Single(item => item.Id == id);
+            check(view.HitAt(hit.Bounds.Center)?.Id == id && hit.Scope == frame.Stamp.Scope,
+                "The full public-state journey uses its actual current scoped target: " + id);
+            Tick(hit.Bounds.Center); Tick(hit.Bounds.Center, ButtonState.Pressed); Tick(hit.Bounds.Center);
+        }
+        Tick(); Tick();
+        var plan = view.ReadoutPlans.GetValueOrDefault(1);
+        if (impossible) {
+            check(plan == null && frame.Drawing.Commands.OfType<DrawCommand.CenterText>().Any(text => text.Value == "Read resources")
+                    && frame.Hits.Single(hit => hit.Id == "focus:1").Intent is MatchIntent.OpenPlayerState { PlayerId: 1 }
+                    && frame.Hits.Single(hit => hit.Id == "player:1").Intent is MatchIntent.UsePlayer { PlayerId: 1 },
+                "True no-fit publishes no overlapping HUD and explicitly labels the existing nameplate Read resources while retaining portrait targeting authority");
+        } else check(plan is { HiddenStates: > 0 } && plan.States.Any(item => item.More), "Several player-state types expose a counted complete detail reader instead of disappearing");
+        string game = view.Match!.Id; string? decision = view.Match.Decision?.Id;
+        Click(impossible ? "focus:1" : "player-state-more:1");
+        var lands = Mana.Magic.PublicResources.Lands(state.Players[1]);
+        check(frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value == lands.Total + " lands · " + lands.Untapped + " untapped · " + lands.Tapped + " tapped")
+                && frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value == "1 INCOMING"),
+            "The complete read-only player workspace includes actual land totals, tapped/untapped counts and incoming combat");
+        foreach (var (item, index) in states.Select((item, index) => (item, index))) {
+            var text = frame.Drawing.Commands.OfType<DrawCommand.Text>().Select(value => value.Value).ToArray();
+            check(view.Overlay == "player" && text.Contains(Mana.Magic.StateClarity.StateCaption(item)) && text.Contains(item.Detail)
+                    && view.Match!.Id == game && view.Match.Decision?.Id == decision && engine.Replies.Count == 0,
+                "The counted public-state reader retains every omitted type, exact total and full detail for its current player without a game command: " + item.Id);
+            if (index < states.Length - 1) Click("counter-details-next");
+        }
+        Click("close-overlay");
+        check(view.Overlay.Length == 0 && (impossible ? !view.ReadoutPlans.ContainsKey(1) : view.ReadoutPlans[1].HiddenStates == plan!.HiddenStates) && engine.Replies.Count == 0,
+            "Closing complete public-state reading restores the same fixed counted facts without changing the rules state");
+        if (impossible) {
+            view.OpenBattlefield(1); Tick();
+            check(view.StudyFocusOwner == 1 && engine.Replies.Count == 0,
+                "The Battlefield navigation still focuses the same player when their existing nameplate explicitly offers complete resource reading");
+        }
+    }
+
+    private static bool Overlap(Pose pose, Rectangle bounds) => TableSurfaceProjectionChecks.Overlap(pose,
+        new(new(bounds.X + bounds.Width / 2f, bounds.Y + bounds.Height / 2f), bounds.Size.ToVector2()));
 
     private static void CheckManaReadingLateLayers(string profile, Action<bool, string> check)
     {

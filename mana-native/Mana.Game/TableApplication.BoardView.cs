@@ -111,6 +111,7 @@ internal sealed partial class TableApplication
         // A focused mat must not put its reachable cards beneath fixed local
         // controls. Keep the normal zoom when the complete mat can move clear.
         var occupied = localSeat.TurnControls.Reservations.ToList();
+        occupied.AddRange(seatReadoutPlans.Values.SelectMany(plan => plan.Pieces));
         occupied.Add(new((int)localSeat.Hero.X - 55, (int)localSeat.Hero.Y - 55, 110, 110));
         // Reserve the physical counter space even while empty, so receiving a
         // first counter does not move an already focused battlefield.
@@ -118,14 +119,13 @@ internal sealed partial class TableApplication
         if (viewer is { } player) {
             if (PlanManaHalo(player, 3).Bounds is { IsEmpty: false } mana) occupied.Add(mana);
         }
-        if (DecisionWorkspaceLayout.Translate([shown], area, occupied) is { } clear)
+        if (DecisionWorkspaceLayout.TranslateComplete([shown], area, occupied) is { } clear)
             return preferred with { Offset = preferred.Offset + (clear.Location - shown.Location).ToVector2() };
 
-        // A wide mat can use the clear strip above the prepared portrait/phase
-        // surfaces. Only the camera changes; occurrences retain their layout.
-        int bottom = occupied.Where(bounds => bounds.Intersects(area)).Select(bounds => bounds.Top)
-            .DefaultIfEmpty(area.Bottom).Min();
-        area.Height = Math.Clamp(bottom - area.Top, 1, area.Height);
-        return BoardView.Frame(mat, area);
+        // Fixed HUD can border either side of the available camera space. Fit
+        // into an actual clear region; a top readout must never collapse the
+        // camera to the one-pixel strip above it.
+        return DecisionWorkspaceLayout.Fit(shown, area, occupied) is { } fitted
+            ? BoardView.Frame(mat, fitted) : BoardView.Identity;
     }
 }

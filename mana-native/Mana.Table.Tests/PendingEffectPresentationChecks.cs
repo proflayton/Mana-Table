@@ -84,7 +84,7 @@ internal static class PendingEffectPresentationChecks
                 check(!view.StudyAttentionBounds.Intersects(targetCard.Display.Bounds)
                         && view.HitAt(targetCenter)?.Card?.VisualId == target.VisualId
                         && frame.Scene!.Seats.All(seat => {
-                            var mat = seat.Geometry.PlaymatBounds!.Value;
+                            var mat = seat.Geometry.PlaymatPlacement!.Value;
                             return (long)mat.Width * mat.Height == 512L * 288;
                         }) && engine.Replies.Count == 0,
                     "Equal physical mats keep their area while the transient damage context leaves the actual legal card face and its center input exposed");
@@ -155,8 +155,15 @@ internal static class PendingEffectPresentationChecks
                     "Focused target inspection keeps the numeric pending effect, exact target and counter recipient visible and leaves the current priority answer exposed without submitting it");
                 var retained = view.ReferencePreviewBounds!.Value;
                 var retainedState = view.Match;
-                for (int step = 0; step < 8; step++) Tick(retained.Center, keyboard: new(Keys.D));
-                Tick(retained.Center);
+                for (int step = 0; step < 80; step++) {
+                    var currentTarget = frame.Cards.Single(card => card.Id == target.VisualId).Display.Bounds;
+                    if (retained.Intersects(currentTarget)) break;
+                    var delta = currentTarget.Center - retained.Center;
+                    var cameraKey = Math.Abs(delta.X) > Math.Abs(delta.Y)
+                        ? delta.X > 0 ? Keys.D : Keys.A : delta.Y > 0 ? Keys.S : Keys.W;
+                    Tick(view.ReferencePreviewBounds?.Center ?? retained.Center, advance: .05, keyboard: new(cameraKey));
+                }
+                Tick(view.ReferencePreviewBounds?.Center ?? retained.Center);
                 var movedTarget = frame.Cards.Single(card => card.Id == target.VisualId).Display.Bounds;
                 var movedRecipient = frame.Cards.Single(card => card.Id == recipient.VisualId).Display.Bounds;
                 var currentConfirm = frame.Hits.Single(hit => hit.Id == "confirm");

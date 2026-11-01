@@ -6,6 +6,103 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Restore the seated table plane: 1 November 2026
+
+**Isolated projection prototype; human motion review pending.** The player liked
+the older test's card arrival because it felt like sitting at a table, then
+identified the regression precisely: “the play mats turn everything to a top
+down view.” Their supplied MTG Arena battlefield references show cards lying on
+one foreshortened surface, with a cast rising for reading before landing among
+the player's permanents. This is an observation of those references; the exact
+camera model is our implementation choice.
+
+The existing `card-play.v1` lab journey supplies the comparison: play Forest,
+announce Grizzly Bears on the stack, then settle that same occurrence beside
+Forest. Mat-relative packing already keeps Forest in place. The earlier oval
+layout moved it when Bears arrived, so restoring its packing would lose a useful
+property. Retained paired keyframes also show that both layouts use the same
+upright reveal; their resting poses differ because the mat layout removed tilt,
+shear and perspective. These sampled frames establish poses, not uninterrupted
+motion or human acceptance.
+
+The prototype projects cloth, permanent faces, attachment strips and family
+envelopes through the existing `TableWorld` seated plane after owner-relative
+packing, then applies the existing pan/zoom camera once. The same card pose
+drives its artwork, hit target, landing motion and state-label area. Upright
+card captions fit inside their actual projected surfaces instead of their
+enclosing screen rectangles. Public land totals, counter types and incoming
+combat belong to a separate measured, fixed seat HUD beside the existing player
+resources. One readout plan owns their full text, painted pieces, scoped targets
+and camera reservations. They remain readable while the table moves; camera
+occlusion no longer hides the player's state. Counted state overflow opens the
+existing complete detail reader. Placement tries full-font arrangements before
+using a separately reserved counted-state target; land and incoming-combat facts
+remain visible in that fallback. Full current owner names stay in ordinary
+arrangements. The bounded terminal slot uses the same public seating ordinal
+shown beside the portrait, rather than truncating a long deck/player name or
+renumbering with the viewing seat. If no complete measured placement exists,
+the existing nameplate explicitly offers **Read resources**, opening the current
+owner's full read-only workspace. It does not publish overlapping HUD content
+or change portrait targeting. Fixed seat controls and zone rails retain
+their authority. Engine state, action permissions, card identity and hand/stack
+readers are unchanged.
+
+The player's first projection preview still felt less like a table, and the
+mats felt too close. That review is **issues/direction**, not acceptance. The
+first follow-up restored the existing continuous oval rim and increased the constant
+world-space gaps while keeping every mat's dimensions and card packing. Side
+mat gaps increase from 16 to 32 units, and the near/far gap becomes 68. A wider
+50-unit side candidate collided with the fixed exile rail in the tapped-land
+journey and was rejected. The table material continues beneath the fixed hand;
+cards and mats retain their existing board clip. These are prototype choices
+for a further human motion and spacing review.
+
+After reviewing candidate `15d5758`, the player said it felt closer but rejected
+the round table and the excessive clearance between its edge and the mats.
+That is **issues/direction**, not acceptance. The next candidate uses an actual
+rectangular tabletop on the same seated plane, rather than an inset pretending
+to be a closer edge. Its constant physical footprint leaves 24 units behind the
+far mat and 40 in front of the near mat; the latter also supports the existing
+near commander's backing. Side aprons retain only the width required for the
+unchanged command and pile rails. The far portrait, held hand and zone controls
+remain fixed seat HUD. This preserves the physical card/mat plane, wider center
+gaps, card dimensions and stable packing; it does not move the zone rails or
+claim that their side clearance has been solved. Human review of this exact
+rectangular candidate remains pending.
+
+The same candidate fixes a real small-window paint failure at 130% text: a
+tilted Llanowar Elves had current 3/3 but its fixed padding left one pixel too
+little for that label, and its guessed badge height suppressed the counter.
+State rows now measure the actual font and counter glyph against horizontal
+slices of the projected card. Both complete labels fit without reducing their
+minimum fonts, colliding with each other, or replacing the printed card face.
+The production-composition regression runs in the existing pure and headless
+presentation checks; the full GPU battlefield journey still tests the actual
+paint and pointer behavior at 1000×740 and 1540×980.
+
+Actual-image review of `22bead4` then found a separate fallback-face collision:
+Serra Angel's flying/vigilance glyphs crossed its title, and Luminarch Aspirant's
+counter occupied the end of its title. Missing artwork still needs a complete,
+readable identity. The follow-up shares one measured identity/state allocation
+between fallback face paint and state paint. Essential current P/T and counter
+amounts retain their measured fonts. A whole fallback title is admitted only
+when it fits beside those essential rows; optional keyword glyphs yield to the
+actual title footprint. When that small overview cannot fit the whole title,
+it omits that on-face title and retains the existing complete source-attached
+hover name and full-card reader. It never paints a shortened or overlapped name.
+The production regression checks the actual text and glyph drawing commands,
+the observed Serra Angel/Luminarch Aspirant/Tireless Tracker cases, and their
+real hover → full reader → close gestures at both windows and text scales,
+with no game commands. Human review of this follow-up remains pending.
+
+Review the continuous hand → stack → battlefield journey, a tapped card at each
+seat, attachments, four-player ownership and a focused mat at both small and
+large windows. Confirm that tapping remains a quarter turn relative to its seat,
+labels stay readable, inspection never chooses a target, and reduced motion
+settles directly on the same plane. Automated `seated-plane` presentation checks
+cover geometry and scoped input; they do not establish that the table feels
+physical or that a dense battlefield is readable.
+
 ## Reconsider history and logs: 1 November 2026
 
 **First payment/history implementation candidate; human review pending.** The player rejected

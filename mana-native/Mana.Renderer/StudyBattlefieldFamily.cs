@@ -9,9 +9,10 @@ public sealed record StudyBattlefieldCohort(string FrontCardId, IReadOnlyList<st
 
 /// <summary>Study-only spatial association. The engine's cards, states and
 /// permissions remain on each SceneCard; this record grants no group action.</summary>
-public sealed record StudyBattlefieldFamily(string Id, string Name, string Role, Rectangle Bounds,
+public sealed record StudyBattlefieldFamily(string Id, string Name, string Role, Pose Surface,
     Rectangle NameBounds, Rectangle BodyBounds, IReadOnlyList<StudyBattlefieldCohort> Cohorts)
 {
+    public Rectangle Bounds => Surface.Bounds;
     public int TotalCount => Cohorts.Sum(cohort => cohort.MemberIds.Count);
     public int CohortCount => Cohorts.Count;
     public string LabelCardId => Cohorts[0].FrontCardId;

@@ -59,7 +59,7 @@ internal sealed partial class TableApplication
                         var phase = hero + new Vector2(seat.Index == 2 ? 59 : -59, 0);
                         occupied.Add(new((int)phase.X - 15, (int)phase.Y - 15, 30, 30));
                     }
-                    if (seat.Geometry.PublicReadoutArea is { } well) occupied.Add(boardView.Apply(well));
+                    if (seatReadoutPlans.TryGetValue(player.Id, out var readout)) occupied.AddRange(readout.Pieces);
                 } else {
                     occupied.AddRange(seat.Geometry.TurnControls.PhaseBounds);
                     occupied.Add(seat.Geometry.TurnControls.AutoBounds);
@@ -117,7 +117,6 @@ internal sealed partial class TableApplication
         // Outward from the side portrait: this pocket contains neither its
         // inward-facing mana nor the command-zone card below its name.
         var center = hero + new Vector2(seat == 2 ? 59 : -59, 0);
-        if (TableStudyEnabled) fixedSeatCircles.Add((center, 15));
         var fill = new Color(17, 26, 30);
         canvas.Circle(center, 15, Gold * .8f);
         canvas.Circle(center, 13, fill);

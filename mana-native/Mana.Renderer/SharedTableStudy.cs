@@ -128,8 +128,9 @@ public static class SharedTableStudy
                 familyNodes = familyNodes.Select(node => node with { Pose = TurnPose(node.Pose) }).ToList();
                 var bodyBounds = familyNodes.Select(node => node.Pose.Bounds).Aggregate(Rectangle.Union);
                 nameBounds = TurnBounds(nameBounds);
+                var familyBounds = Rectangle.Union(bodyBounds, nameBounds.IsEmpty ? bodyBounds : nameBounds);
                 var family = new StudyBattlefieldFamily(slot.Family.Id, slot.Family.Name, kind,
-                    Rectangle.Union(bodyBounds, nameBounds.IsEmpty ? bodyBounds : nameBounds), nameBounds, bodyBounds,
+                    new(new(familyBounds.X + familyBounds.Width / 2f, familyBounds.Y + familyBounds.Height / 2f), familyBounds.Size.ToVector2()), nameBounds, bodyBounds,
                     Array.AsReadOnly(cohortPlans.Select(cohort => cohort with { Bounds = TurnBounds(cohort.Bounds) }).ToArray()));
                 nodes.AddRange(familyNodes.Select(node => node with { StudyFamily = family }));
             }

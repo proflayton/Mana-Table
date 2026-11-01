@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Mana.Contracts;
+using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -211,7 +212,8 @@ internal sealed partial class TableApplication
         internal bool Held => game.held;
         internal PublicCounterBadge? CounterBadge(int player) => game.publicCounterBadges.TryGetValue(player, out var badge) ? badge : null;
         internal IReadOnlyList<Rectangle> SeatReadouts => game.seatReadoutBounds;
-        internal IReadOnlyDictionary<int, WorldSeatReadout> WorldReadouts => game.worldSeatReadouts;
+        internal IReadOnlyDictionary<int, SeatReadoutPlan> ReadoutPlans => game.seatReadoutPlans;
+        internal void SetReadoutPlacer(SeatReadoutPlacer place) => game.seatReadoutPlacer = place;
         internal PublicResourcePaint? ManaPoolBadge(int player) => game.manaPoolBadges.TryGetValue(player, out var badge) ? badge : null;
         internal PublicResourcePaint? ManaPoolDetail => game.overlay == "mana" ? game.manaPoolDetail : null;
         internal AttachmentBadgePaint? AttachmentBadge(string id) => game.attachmentBadges.TryGetValue(id, out var badge) ? badge : null;

@@ -15,9 +15,53 @@ public readonly record struct Pose(Vector2 Center, Vector2 Size, float Angle = 0
         var local = new Vector2((u - .5f) * Size.X, (v - .5f) * Size.Y);
         float c = MathF.Cos(Angle), s = MathF.Sin(Angle);
         var d = new Vector2(local.X * c - local.Y * s, local.X * s + local.Y * c);
-        return Center + new Vector2(d.X + Shear * d.Y, d.Y * Tilt) / (1 + d.Y * Perspective);
+        return OffsetPoint(d);
     }
+    public Vector2 OffsetPoint(Vector2 offset) => Center
+        + new Vector2(offset.X + Shear * offset.Y, offset.Y * Tilt) / (1 + offset.Y * Perspective);
     public Vector2[] Corners => [Point(0, 0), Point(1, 0), Point(1, 1), Point(0, 1)];
+    // Upright state text must fit the actual projected face, not its enclosing
+    // screen rectangle. A centered rectangle is bounded by all four edges.
+    public Rectangle InteriorBounds(int inset = 0) => InteriorBounds(Corners, Center, inset);
+    // Allocate an upright label row against its actual horizontal slices. A
+    // whole-face inscribed rectangle wastes the wide end of a tilted card and
+    // can incorrectly suggest there is no room for two measured state rows.
+    public Rectangle InteriorBand(int top, int bottom, int inset = 0)
+    {
+        if (bottom <= top) return Rectangle.Empty;
+        var corners = Corners;
+        (float Left, float Right)? Slice(int y)
+        {
+            var xs = new List<float>(4);
+            for (int index = 0; index < corners.Length; index++) {
+                var a = corners[index]; var b = corners[(index + 1) % corners.Length];
+                if (y < Math.Min(a.Y, b.Y) || y > Math.Max(a.Y, b.Y)) continue;
+                if (Math.Abs(b.Y - a.Y) < .001f) { xs.Add(a.X); xs.Add(b.X); }
+                else xs.Add(a.X + (b.X - a.X) * (y - a.Y) / (b.Y - a.Y));
+            }
+            return xs.Count < 2 ? null : (xs.Min(), xs.Max());
+        }
+        if (Slice(top) is not { } upper || Slice(bottom) is not { } lower) return Rectangle.Empty;
+        int left = (int)MathF.Ceiling(Math.Max(upper.Left, lower.Left)) + inset;
+        int right = (int)MathF.Floor(Math.Min(upper.Right, lower.Right)) - inset;
+        return new(left, top, Math.Max(0, right - left), bottom - top);
+    }
+    internal static Rectangle InteriorBounds(IReadOnlyList<Vector2> corners, Vector2 center, int inset = 0)
+    {
+        float halfWidth = (corners.Max(point => point.X) - corners.Min(point => point.X)) / 2;
+        float halfHeight = (corners.Max(point => point.Y) - corners.Min(point => point.Y)) / 2;
+        float scale = 1;
+        for (int index = 0; index < corners.Count; index++) {
+            var edge = corners[(index + 1) % corners.Count] - corners[index];
+            float denominator = Math.Abs(edge.Y) * halfWidth + Math.Abs(edge.X) * halfHeight;
+            if (denominator > 0) scale = Math.Min(scale, Math.Abs(Cross(edge, center - corners[index])) / denominator);
+        }
+        int left = (int)MathF.Ceiling(center.X - halfWidth * scale) + inset;
+        int top = (int)MathF.Ceiling(center.Y - halfHeight * scale) + inset;
+        int right = (int)MathF.Floor(center.X + halfWidth * scale) - inset;
+        int bottom = (int)MathF.Floor(center.Y + halfHeight * scale) - inset;
+        return new(left, top, Math.Max(0, right - left), Math.Max(0, bottom - top));
+    }
     public Rectangle Bounds {
         get {
             var corners = Corners;

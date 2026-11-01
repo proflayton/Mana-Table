@@ -10,7 +10,8 @@ public sealed class SeatGeometry
     public int PlayerId { get; }
     public int Index { get; }
     public Rectangle? PlaymatBounds { get; }
-    public Rectangle? PublicReadoutArea { get; }
+    public Rectangle? PlaymatPlacement { get; }
+    public Pose? PlaymatSurface { get; }
     public Rectangle? PublicCounterArea { get; }
     public Vector2 Hero { get; }
     public Vector2 Hand { get; }
@@ -23,9 +24,10 @@ public sealed class SeatGeometry
     {
         PlayerId = player.Id;
         Index = seat;
-        PlaymatBounds = study ? PlayerPlaymat.Bounds(seat, duel) : null;
-        PublicReadoutArea = study ? PlayerPlaymat.Project(seat, PlayerPlaymat.PersonalArea, duel) : null;
-        PublicCounterArea = study ? PlayerPlaymat.Project(seat, PlayerPlaymat.CanonicalCounterBand, duel) : null;
+        PlaymatPlacement = study ? PlayerPlaymat.Bounds(seat, duel) : null;
+        PlaymatSurface = PlaymatPlacement is { } placement ? TableSurfaceProjection.Surface(placement) : null;
+        PlaymatBounds = PlaymatSurface?.Bounds;
+        PublicCounterArea = study ? TableSurfaceProjection.Surface(PlayerPlaymat.Project(seat, PlayerPlaymat.CanonicalCounterBand, duel)).InteriorBounds() : null;
         Hero = TableLayout.Hero(seat);
         Hand = TableLayout.SeatHand(seat);
         bool own = seat == 3, side = seat is 0 or 2;

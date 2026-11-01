@@ -8,6 +8,7 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
+    private static readonly Rectangle StudyFocusNavigationBounds = new(276, 72, 152, 34);
     private int? studyFocusOwner;
     private string studyFocusGame = "";
     private int studyFocusViewer;
@@ -47,7 +48,7 @@ internal sealed partial class TableApplication
     private void DrawStudyFocusNavigation()
     {
         if (!StudyFocusActive || OverlayOpen) return;
-        var bounds = new Rectangle(276, 72, 152, 34);
+        var bounds = StudyFocusNavigationBounds;
         string id = "study-focus-return";
         bool hover = IsControlHovered(id);
         if (hover) canvas.Rounded(bounds, new Color(51, 77, 84) * .65f, 5);

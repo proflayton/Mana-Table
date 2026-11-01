@@ -9,22 +9,23 @@ namespace Mana.Renderer;
 // or hidden information enter this camera/layout layer.
 public static class TableWorld
 {
+    public static readonly Vector2 Origin = new(800, 415);
     public const float Depth = 2100, Pitch = .72f;
     public static Vector2 Project(Vector2 point)
     {
         float scale = 1 / (1 - point.Y / Depth);
-        return new(800 + point.X * scale, 415 + point.Y * Pitch * scale);
+        return Origin + new Vector2(point.X * scale, point.Y * Pitch * scale);
     }
     public static Vector2 Unproject(Vector2 screen)
     {
-        float y = (screen.Y - 415) / (Pitch + (screen.Y - 415) / Depth);
-        return new((screen.X - 800) * (1 - y / Depth), y);
+        float y = (screen.Y - Origin.Y) / (Pitch + (screen.Y - Origin.Y) / Depth);
+        return new((screen.X - Origin.X) * (1 - y / Depth), y);
     }
     public static Pose Card(Vector2 center, Vector2 size, float angle = 0, float lift = 0)
     {
         float scale = 1 / (1 - center.Y / Depth);
         var point = Project(center);
-        return new(point - new Vector2(0, lift), size * scale, angle, Pitch * scale, -1 / Depth, (point.X - 800) / Depth, lift);
+        return new(point - new Vector2(0, lift), size * scale, angle, Pitch * scale, -1 / Depth, (point.X - Origin.X) / Depth, lift);
     }
     public static float SeatAngle(int seat) => seat switch { 0 => MathF.PI / 2, 1 => MathF.PI, 2 => -MathF.PI / 2, _ => 0 };
     public static Vector2 SeatPoint(int seat, float across, float outward) => seat switch {

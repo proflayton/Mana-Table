@@ -41,7 +41,7 @@ internal sealed partial class TableApplication
         if (!BattlefieldFocused && !CardCollectionOpen) DrawLiftedCards();
         // Your seat stays in front of the fan and readable during card travel.
         if (state.Viewer is { } local) DrawHero(local, SeatHero(local.Id), true, 3);
-        DrawOpponentSeatAuxiliaries();
+        DrawOpponentSeatReadouts();
         DrawPriorityHandoff();
         DrawGameHeader(); DrawCombatBar(); DrawActionCallout(); DrawPublicAnnouncement();
         DrawTurnCallout();
@@ -154,7 +154,7 @@ internal sealed partial class TableApplication
         int? choice = match == null ? null : TableChoices.Index(match, card);
         bool selected = choice is { } index ? decisions.Selections.Contains(index) : card.Highlighted || GroupBlockSelected(card) || card.CombatId.Length > 0 && selectedCombat == card.CombatId;
         bool legal = IsCardActionable(card);
-        bool scanFace = zone == "Battlefield" && !focus && !pose.IsProjected && pose.Size.X < 300
+        bool scanFace = zone == "Battlefield" && !focus && pose.Size.X < 300
             && tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) is { ScanFace: true };
         if (zone == "Battlefield") PaintAbilityEffects(card, pose);
         if (scanFace) PaintBattlefieldScanFace(card, pose, owner, selected, legal, focus, groupFront || focus, groupCount);
@@ -195,8 +195,10 @@ internal sealed partial class TableApplication
         if (zone == "Battlefield" && (groupFront || focus)) PaintAttachmentBadge(card, pose, owner, compact && !focus);
         if (zone == "Battlefield" && !scanFace && (groupFront || focus)) PaintPreparedMarker(card, pose, owner);
     }
-    private void PaintCard(Card card, Pose pose, bool selected, bool legal, bool focus = false, float opacity = 1)
+    private Rectangle? PaintCard(Card card, Pose pose, bool selected, bool legal, bool focus = false, float opacity = 1,
+        CardFallbackLayout? fallback = null)
     {
+        Rectangle? paintedIdentity = null;
         var body = new CardPaintGeometry(pose);
         if (selected) canvas.Glow(pose.Center, pose.Size * 1.2f, Gold * .18f);
         canvas.Surface(null, body.Shadow, Color.Black * ((pose.Elevation > 0 ? .27f : .4f) * opacity));
@@ -223,12 +225,29 @@ internal sealed partial class TableApplication
                 int nameWidth = r.Width - 10, nameHeight = Math.Max(0, r.Height - 37);
                 // Missing artwork must not turn identity into an ellipsis.
                 // Small battlefield cards keep the complete source hover name.
-                if (nameWidth > 0 && card.Name.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+                if (fallback is { } allocation) {
+                    if (!allocation.Name.IsEmpty) {
+                        canvas.Text(card.Name, allocation.Name.X, allocation.Name.Y, Ink * opacity,
+                            allocation.NameSize, allocation.Name.Width, 80, true);
+                        paintedIdentity = allocation.Name;
+                    }
+                } else if (nameWidth > 0 && card.Name.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
                         .All(word => canvas.TextWidth(word, nameSize, true) <= nameWidth)
-                    && canvas.TextSize(card.Name, nameSize, nameWidth, 80, true).Y <= nameHeight)
+                    && canvas.TextSize(card.Name, nameSize, nameWidth, 80, true).Y <= nameHeight) {
                     canvas.Text(card.Name, r.X + 5, r.Y + 5, Ink * opacity, nameSize, nameWidth, 80, true);
-                canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, r.X + 5, r.Bottom - 27, Gold * opacity, .54f, r.Width - 10, 1);
-                if (pose.Size.X > 130) canvas.Text(card.Type, r.X + 6, r.Y + (int)(r.Height * .62f), Muted * opacity, .5f, r.Width - 12, 2);
+                    paintedIdentity = new(r.X + 5, r.Y + 5, nameWidth, canvas.TextSize(card.Name, nameSize, nameWidth, 80, true).Y);
+                }
+                void Detail(string text, int x, int y, float size, int width, int lines, Color color)
+                {
+                    if (text.Length == 0 || width <= 0) return;
+                    var measured = canvas.TextSize(text, size, width, lines);
+                    var bounds = new Rectangle(x, y, measured.X, measured.Y);
+                    if (fallback != null && (fallback.Reserved.Any(bounds.Intersects)
+                        || !fallback.Name.IsEmpty && fallback.Name.Intersects(bounds))) return;
+                    canvas.Text(text, x, y, color * opacity, size, width, lines);
+                }
+                Detail(card.ManaCost == "no cost" ? "" : card.ManaCost, r.X + 5, r.Bottom - 27, .54f, r.Width - 10, 1, Gold);
+                if (pose.Size.X > 130) Detail(card.Type, r.X + 6, r.Y + (int)(r.Height * .62f), .5f, r.Width - 12, 2, Muted);
             }
         }
         if (legal || selected) {
@@ -244,6 +263,7 @@ internal sealed partial class TableApplication
             canvas.Line(pose.Point(.99f, .03f), pose.Point(.99f, .5f), Ink * light * .5f, 1);
         }
         if (focus) canvas.CardFrame(body.FocusFrame, Ink * .5f, CardPaintGeometry.FocusFrameWidth);
+        return paintedIdentity;
     }
     private void PaintBack(Pose pose, float opacity = 1)
     {

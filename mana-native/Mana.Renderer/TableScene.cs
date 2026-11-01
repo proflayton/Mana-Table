@@ -154,7 +154,20 @@ public sealed class TableScene
         if (sharedTableStudy) {
             // A foreign-controlled Aura follows its host spatially, while lookup,
             // input permissions and controller collections retain its actual owner.
-            var all = seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards.Select(node => (cluster.Kind, Node: node))).ToArray();
+            var families = seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards)
+                .Select(node => node.StudyFamily).OfType<StudyBattlefieldFamily>().DistinctBy(family => family.Id)
+                .ToDictionary(family => family.Id, family => family with {
+                    Surface = TableSurfaceProjection.Project(family.Surface),
+                    NameBounds = family.NameBounds.IsEmpty ? Rectangle.Empty : TableSurfaceProjection.Surface(family.NameBounds).InteriorBounds(),
+                    BodyBounds = TableSurfaceProjection.Bounds(family.BodyBounds),
+                    Cohorts = Array.AsReadOnly(family.Cohorts.Select(cohort => cohort with {
+                        Bounds = TableSurfaceProjection.Bounds(cohort.Bounds) }).ToArray())
+                }, StringComparer.Ordinal);
+            var all = seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards.Select(node =>
+                (cluster.Kind, Node: node with {
+                    Pose = TableSurfaceProjection.Project(node.Pose),
+                    StudyFamily = node.StudyFamily == null ? null : families[node.StudyFamily.Id]
+                }))).ToArray();
             seats = seats.Select(seat => new SceneSeat(seat.Geometry, all.Where(item => item.Node.Owner == seat.PlayerId)
                 .GroupBy(item => item.Kind).Select(group => new BattlefieldCluster(group.Key, group.Select(item => item.Node).ToArray())).ToArray())).ToList();
         }
