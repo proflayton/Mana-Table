@@ -12,6 +12,7 @@ internal sealed partial class TableApplication
 {
     private string priorityAbilityId = "";
     private int priorityAbilityTextPage;
+    private int priorityAbilityListPage;
 
     private PriorityAbility[] PriorityAbilityOptions()
     {
@@ -44,20 +45,16 @@ internal sealed partial class TableApplication
         if (enabled) hits.Add(new(id, ScopeFor(action), bounds, action));
     }
 
-    // Drawing and reader avoidance share the exact measured source entry. This
-    // pocket belongs to the player's timing controls, including between prompts.
+    // Only the collapsed entry reserves table space. The explicitly opened
+    // list owns overlay input; opening it never changes an engine preference.
     private Rectangle AbilityPassingControlBounds()
     {
         var abilities = PriorityAbilityOptions();
         if (match == null || abilities.Length == 0) return Rectangle.Empty;
         var priority = LocalTurnControls.PriorityArea;
-        int left = Math.Max(priority.X, PendingStackLeft + PendingStackWidth + 14);
-        int width = priority.Right - left;
-        int headingHeight = canvas.TextSize("ACTIVATION STOPS", .48f, width - 46, 1, true).Y;
-        int sourceHeight = canvas.TextSize(abilities[0].SourceName, .66f, width - 28, 80, true).Y;
-        int statusHeight = canvas.TextSize("Skipping until your next turn", .48f, width - 28, 1).Y;
-        int height = Math.Max(72, 8 + headingHeight + 4 + sourceHeight + 6 + statusHeight + 8);
-        var area = new Rectangle(left, priority.Top - height - 14, width, height);
+        int width = canvas.TextWidth($"Activation stops · {abilities.Length}", .62f, true) + 40;
+        int height = Math.Max(40, canvas.TextSize("Activation stops", .62f, width - 40, 1, true).Y + 12);
+        var area = new Rectangle(priority.Right - width, priority.Top - height - 8, width, height);
         if (TableStudyEnabled && StudyHudObstacles.Any(bounds => bounds.Intersects(area))) {
             var occupied = StudyHudObstacles.Append(PlacePortraitPriorityArea(PortraitPriorityArea())).ToArray();
             area = DecisionWorkspaceLayout.Place(priority, width, height, occupied,
@@ -69,22 +66,82 @@ internal sealed partial class TableApplication
     private void DrawPriorityAbilityControl(PriorityAbility[] abilities)
     {
         if (abilities.Length == 0 || AbilityPassingControlBounds() is not { IsEmpty: false } bounds) return;
-        var first = abilities[0];
         int ignored = abilities.Count(ability => ability.IgnoredUntilNextTurn);
         const string id = "ability-auto-pass-open";
         bool hover = IsControlHovered(id);
-        PaintControlSurface(id, bounds, ignored > 0 ? new(24, 49, 55) : new(23, 34, 43), hover ? Blue : new Color(73, 92, 106), true);
-        string heading = abilities.Length == 1 ? "ACTIVATION STOP" : $"{abilities.Length} ACTIVATION STOPS";
-        canvas.Text(heading, bounds.X + 14, bounds.Y + 8, ignored > 0 ? Blue : Gold, .48f, bounds.Width - 46, 1, true);
-        int sourceTop = bounds.Y + 12 + canvas.TextSize(heading, .48f, bounds.Width - 46, 1, true).Y;
-        canvas.Text(first.SourceName, bounds.X + 14, sourceTop, Ink, .66f, bounds.Width - 28, 80, true);
-        string status = ignored == 0 ? "Choose what Auto stops for"
-            : abilities.Length == 1 ? "Skipping until your next turn" : $"{ignored} skipping until your next turn";
-        int statusHeight = canvas.TextSize(status, .48f, bounds.Width - 28, 1).Y;
-        canvas.Text(status, bounds.X + 14, bounds.Bottom - statusHeight - 8, Muted, .48f, bounds.Width - 28, 1);
-        canvas.Text("›", bounds.Right - 29, bounds.Y + 4, hover ? Ink : Muted, .85f, 20, 1, true);
-        var action = new MatchIntent.OpenPriorityPassing(first.Id);
+        canvas.CenterText($"Activation stops · {abilities.Length}", new(bounds.X, bounds.Y, bounds.Width - 26, bounds.Height),
+            hover ? Ink : ignored > 0 ? Blue : Muted, .62f, true);
+        canvas.CenterText("›", new(bounds.Right - 26, bounds.Y, 24, bounds.Height), hover ? Ink : Muted, .85f, true);
+        if (hover) {
+            canvas.Line(new(bounds.Left + 8, bounds.Bottom - 3), new(bounds.Right - 8, bounds.Bottom - 3), Blue);
+            DrawTurnHint($"{ignored} skipping until your next turn · Open activation stops", bounds.Center.ToVector2());
+        }
+        var action = new MatchIntent.OpenPriorityPassing();
         hits.Add(new(id, ScopeFor(action), bounds, action));
+    }
+
+    private void DrawPriorityAbilityList()
+    {
+        var abilities = PriorityAbilityOptions();
+        if (abilities.Length == 0) return;
+        // Expand the workspace before splitting a large list. Complete names
+        // and readable rules keep their size, including with enlarged text.
+        (int Name, string Rules, int Height) Measure(PriorityAbility ability, int width) {
+            int name = canvas.TextSize(ability.SourceName, .76f, width - 36, 80, true).Y;
+            var pages = canvas.TextPages(ability.Text, .62f, width - 36, 220, 80);
+            string rules = pages[0] + (pages.Length > 1 ? "\nRead complete ability ›" : "");
+            int body = canvas.TextSize(rules, .62f, width - 36, 80).Y;
+            return (name, rules, name + body + 68);
+        }
+        bool wide = abilities.Sum(ability => Measure(ability, 508).Height + 12) > 540;
+        int width = wide ? 590 : 508, columns = wide ? 2 : 1;
+        List<List<(PriorityAbility Ability, Rectangle Bounds, int Name, string Rules)>> pages = [[]];
+        int column = 0, top = 0;
+        foreach (var ability in abilities) {
+            var measured = Measure(ability, width);
+            if (top > 0 && top + measured.Height > 540) { column++; top = 0; }
+            if (column == columns) { pages.Add([]); column = 0; }
+            pages[^1].Add((ability, new(column * (width + 24), top, width, measured.Height), measured.Name, measured.Rules));
+            top += measured.Height + 12;
+        }
+        int page = Math.Clamp(priorityAbilityListPage, 0, pages.Count - 1);
+        Rectangle content;
+        if (wide) {
+            ModalFrame("Activation stops", new MatchIntent.CloseView(), "Back to table", 750);
+            // The modal owns its empty body too, so no hidden table card can
+            // receive a click. The backdrop is a deliberate collapse gesture.
+            var close = hits.ToArray(); hits.Clear();
+            var closeIntent = new MatchIntent.CloseView();
+            hits.Add(new("ability-list-backdrop", ScopeFor(closeIntent), new(0, 60, 1600, 840), closeIntent, ShowPointer: false));
+            hits.Add(new("ability-list-body", ScopeFor(closeIntent), new(166, 94, 1268, 750), new UiIntent.Block(closeIntent.ScopeKind), ShowPointer: false));
+            foreach (var hit in close) hits.Add(hit);
+            content = new(192, 226, 1204, 540);
+        } else {
+            int height = Math.Max(280, top + 190);
+            var drawer = SystemDrawer("Activation stops", "ability-list-", new MatchIntent.CloseView(), height, "close-overlay");
+            content = new(drawer.X + 28, drawer.Y + 132, 508, top);
+        }
+        int ignored = abilities.Count(ability => ability.IgnoredUntilNextTurn);
+        canvas.Text($"{ignored} of {abilities.Length} skipping until your next turn", content.X, content.Y - 45, Blue, .6f, content.Width, 2, true);
+        foreach (var row in pages[page]) {
+            var bounds = row.Bounds; bounds.Offset(content.Location);
+            string id = "ability-read:" + row.Ability.Id;
+            bool hover = IsControlHovered(id);
+            if (hover) canvas.Rounded(bounds, new Color(35, 60, 69), 5);
+            canvas.Text(row.Ability.SourceName, bounds.X + 14, bounds.Y + 9, Ink, .76f, bounds.Width - 36, 80, true);
+            canvas.Text(row.Rules, bounds.X + 14, bounds.Y + row.Name + 17, Muted, .62f, bounds.Width - 36, 80);
+            string status = row.Ability.IgnoredUntilNextTurn ? "Skipping · until your next turn" : "Stops Auto";
+            canvas.Text(status + "   ›", bounds.X + 14, bounds.Bottom - 34, row.Ability.IgnoredUntilNextTurn ? Blue : Gold, .58f, bounds.Width - 36, 2, true);
+            canvas.Line(new(bounds.X + 14, bounds.Bottom), new(bounds.Right - 14, bounds.Bottom), Muted * .25f);
+            var read = new MatchIntent.ReadPriorityAbility(row.Ability.Id);
+            hits.Add(new(id, ScopeFor(read), bounds, read));
+        }
+        if (pages.Count > 1) {
+            int y = content.Bottom + 12;
+            MenuAction("ability-list-prev", "‹ Previous", new(content.X, y, 200, 44), new MatchIntent.SetPage(MatchPage.PriorityAbilities, page - 1), page > 0);
+            canvas.CenterText($"{page + 1} / {pages.Count}", new(content.X + 208, y, 90, 44), Muted, .62f);
+            MenuAction("ability-list-next", "More activations ›", new(content.Right - 300, y, 300, 44), new MatchIntent.SetPage(MatchPage.PriorityAbilities, page + 1), page + 1 < pages.Count);
+        }
     }
 
     private void DrawAbilityAutoPass()
@@ -102,9 +159,15 @@ internal sealed partial class TableApplication
         hits.Clear(); hovered = null; ClearCardComposition();
         canvas.Fill(new(0, 60, 1600, 840), Color.Black * .4f);
         var panel = new Rectangle(400, 137, 1060, 661);
+        var closeIntent = new MatchIntent.CloseView();
+        hits.Add(new("ability-reader-backdrop", ScopeFor(closeIntent), new(0, 60, 1600, 840), closeIntent, ShowPointer: false));
+        hits.Add(new("ability-reader-body", ScopeFor(closeIntent), panel, new UiIntent.Block(closeIntent.ScopeKind), ShowPointer: false));
         canvas.Panel(panel, new(17, 28, 35), Gold * .65f, 9);
-        canvas.Text("Auto · This activation", 426, 160, Gold, .92f, 650, 2, true);
         int closeWidth = Math.Max(196, canvas.TextWidth("Back to table", .76f) + 24);
+        int listWidth = Math.Max(180, canvas.TextWidth("Back to list", .76f) + 24);
+        int listX = 1434 - closeWidth - listWidth - 12;
+        canvas.Text("Auto · This activation", 426, 160, Gold, .92f, listX - 442, 2, true);
+        Button("ability-list-back", "Back to list", listX, 156, listWidth, new MatchIntent.OpenPriorityPassing(), height: 40);
         Button("close-overlay", "Back to table", 1434 - closeWidth, 156, closeWidth, new MatchIntent.CloseView(), height: 40);
         int nameHeight = canvas.TextSize(ability.SourceName, .96f, 1008, 80, true).Y;
         canvas.Text(ability.SourceName, 426, 218, Ink, .96f, 1008, 80, true);

@@ -80,7 +80,7 @@ internal sealed partial class TableApplication
         expandedStackWorkload = ""; workloadSnapshot = stackEligibilitySnapshot = null;
         cachedWorkloads = []; cachedStackEligibility = false;
         publicCollectionReturns.Clear(); deferredCardComposition.Clear();
-        if (overlay is "inspect" or "stack" or "action" or "ability-auto-pass") overlay = "";
+        if (overlay is "inspect" or "stack" or "action" or "ability-auto-pass" or "priority-stops") overlay = "";
         pointerSurface = null; hovered = null; notice = ""; noticeUntil = 0;
         hits.RevokePublished(); Frame = null;
         // Camera, chat, audio preferences and historical action records retain

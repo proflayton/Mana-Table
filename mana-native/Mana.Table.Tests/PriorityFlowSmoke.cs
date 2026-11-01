@@ -89,14 +89,24 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
                     ActorId: 0, ActionLabel: "Pass once" } && view.DecisionText.Length == 0
                 && !view.Hits.Any(hit => hit.Id == "instructions")
                 && view.Hits.Any(hit => hit.Id == "ability-auto-pass-open"
-                    && hit.Intent is MatchIntent.OpenPriorityPassing { AbilityId: "optional-mesa" })
-                && Text().Contains("Arid Mesa") && !view.Hits.Any(hit => hit.Id == "ability-pass:optional-mesa"),
-                "The current role and real pass action explain priority while the named activation entry reads before changing its preference");
+                    && hit.Bounds.Height <= 48 && hit.Intent is MatchIntent.OpenPriorityPassing { AbilityId: "" })
+                && !Text().Contains("Arid Mesa") && !view.Hits.Any(hit => hit.Id == "ability-pass:optional-mesa"),
+                "The current response and pass action remain visible beside a compact activation-list entry without a persistent source panel");
             var activation = view.Hits.Single(hit => hit.Id == "ability-auto-pass-open").Bounds;
             Check(view.StackRows.All(row => !row.Bounds.Intersects(activation))
                 && view.Hits.Where(hit => hit.Id.StartsWith("stack-queue-", StringComparison.Ordinal)).All(hit => !hit.Bounds.Intersects(activation)),
-                "The named activation stays clear of every pending-effect row and stack navigation control");
+                "The collapsed activation-list entry stays clear of every pending-effect row and stack navigation control");
             MoveHit("ability-auto-pass-open");
+        }); Click();
+        Step(() => {
+            var ability = ((PriorityPayload)engine.State.Decision!.Payload).Abilities.Single();
+            Check(view.Overlay == "priority-stops" && Text().Contains(ability.SourceName) && Text().Contains(ability.Text)
+                && view.Hits.Any(hit => hit.Id == "ability-read:" + ability.Id
+                    && hit.Intent is MatchIntent.ReadPriorityAbility { Id: "optional-mesa" })
+                && !view.Hits.Any(hit => hit.Id.StartsWith("ability-pass:", StringComparison.Ordinal))
+                && view.Match?.Decision?.Id == engine.State.Decision.Id && engine.Replies.Count == 0,
+                "Opening activation stops lists the exact source and complete ability without changing the unanswered decision or its preference");
+            Observe("activation-list"); Capture("01a-activation-list"); MoveHit("ability-read:" + ability.Id);
         }); Click();
         Step(() => {
             var ability = ((PriorityPayload)engine.State.Decision!.Payload).Abilities.Single();
@@ -105,7 +115,13 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
                     && hit.Intent is MatchIntent.SetPriorityAbility { Id: "optional-mesa", Ignored: true })
                 && view.Match?.Decision?.Id == engine.State.Decision.Id && engine.Replies.Count == 0,
                 "Reading the named activation shows its exact rules and separate scoped Skip action without changing the decision or sending a command");
-            Observe("activation-reader"); Capture("01a-activation-reader"); MoveHit("close-overlay");
+            Observe("activation-reader"); Capture("01b-activation-reader"); MoveHit("ability-list-back");
+        }); Click();
+        Step(() => {
+            Check(view.Overlay == "priority-stops" && view.Hits.Any(hit => hit.Id == "ability-read:optional-mesa")
+                && view.Match?.Decision?.Id == engine.State.Decision!.Id && engine.Replies.Count == 0,
+                "Back to list returns to the exact activation choices without changing a preference or answering priority");
+            Observe("activation-list-returned"); MoveHit("close-overlay");
         }); Click();
         Step(() => {
             Check(view.Overlay.Length == 0 && view.Match?.Decision?.Id == engine.State.Decision!.Id && engine.Replies.Count == 0,

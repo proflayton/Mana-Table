@@ -39,6 +39,7 @@ internal sealed partial class TableApplication
                 case "leave-table": DrawLeaveTable(); break;
                 case "help": DrawHelp(); break;
                 case "ability-auto-pass": DrawAbilityAutoPass(); break;
+                case "priority-stops": DrawPriorityAbilityList(); break;
                 case "hand-placement": DrawHandPlacement(); break;
                 case "combat": DrawCombatReview(); break;
                 case "blockers": DrawBlockerReview(); break;

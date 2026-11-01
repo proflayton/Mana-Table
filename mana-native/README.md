@@ -148,6 +148,23 @@ Auto/Full control and Hold use portrait-side icons with hover explanations;
 F toggles Auto and Ctrl holds priority for the current turn. Wait for action,
 Take control and the readable Pass once action live beside that same portrait.
 Required targets, searches and payment remain at their source/decision surfaces.
+
+Source candidate: **Activation stops · N** is a compact entry beside Auto, with a
+minimum 40-pixel hit height. It opens a named list instead of reserving a source
+card on the battlefield. The list counts skipped activations separately and
+keeps complete measured source names, readable rules previews and stop/skip
+status. Same-source abilities retain separate entries and exact IDs. A long
+preview offers **Read complete ability**. Selecting an entry reads that exact
+ability's complete rules under
+**Auto · This activation**. **Back to list** returns to the entries; **Back to
+table**, Escape or an outside click collapses the view without changing Auto,
+Hold or saved stop rules. Larger lists first expand into measured columns before
+using navigation for entries that still do not fit. Exact action scopes, expiry
+and disclosed-artwork permissions remain unchanged. The
+[experience review](../docs/Development/Mana-Table-Experience-Review.md#readable-passing-controls-1-november-2026)
+records the Arena tuck/fan/tuck and MTGO source-menu references, their Commander
+limitations and this candidate's pending validation and human review.
+
 These views consume the existing decision model and automation gate; the layout
 does not grant new autoplay permissions or a guaranteed engine phase waypoint.
 Human visual review of this iteration is pending; earlier preview acceptance

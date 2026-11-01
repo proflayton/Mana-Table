@@ -166,11 +166,13 @@ internal sealed partial class TableApplication
             case MatchIntent.AdjustMasterVolume setting when overlay == "settings": SetMasterVolume(preferences.Audio.Master.Volume + setting.PercentagePoints / 100f); FinishAudioAdjustment(); break;
             case MatchIntent.CycleTextScale:
                 preferences = preferences with { TextScale = preferences.TextScale < 1.1f ? 1.15f : preferences.TextScale < 1.25f ? 1.3f : 1 }; SavePreferences(); break;
+            case MatchIntent.OpenPriorityPassing { AbilityId.Length: 0 } when PriorityAbilityOptions().Length > 0:
+                overlay = "priority-stops"; break;
             case MatchIntent.OpenPriorityPassing open when PriorityAbilityOptions()
-                .FirstOrDefault(ability => open.AbilityId.Length == 0 || ability.Id == open.AbilityId) is { } ability:
+                .FirstOrDefault(ability => ability.Id == open.AbilityId) is { } ability:
                 overlay = "ability-auto-pass"; priorityAbilityId = ability.Id; priorityAbilityTextPage = 0; break;
             case MatchIntent.ReadPriorityAbility read when PriorityAbilityOptions().Any(ability => ability.Id == read.Id):
-                priorityAbilityId = read.Id; priorityAbilityTextPage = 0; break;
+                overlay = "ability-auto-pass"; priorityAbilityId = read.Id; priorityAbilityTextPage = 0; break;
             case MatchIntent.SetPriorityAbility setting when PriorityAbilityOptions().FirstOrDefault(ability => ability.Id == setting.Id) is { } ability:
                 SetAbilityAutoPass(ability, setting.Ignored); break;
             case MatchIntent.OpenDecisionHelp: overlay = "help"; inspectPage = 0; break;
@@ -188,6 +190,7 @@ internal sealed partial class TableApplication
             case MatchPage.History: historyPage = Math.Max(0, value); break;
             case MatchPage.PriorityQueue: stackQueuePage = Math.Max(0, value); break;
             case MatchPage.PriorityText: priorityAbilityTextPage = Math.Max(0, value); break;
+            case MatchPage.PriorityAbilities: priorityAbilityListPage = Math.Max(0, value); break;
             case MatchPage.Placement: placementPage = Math.Max(0, value); break;
             case MatchPage.PlayerDamage: playerDamagePage = Math.Max(0, value); break;
             case MatchPage.PlayerCounter: playerCounterPage = Math.Max(0, value); break;

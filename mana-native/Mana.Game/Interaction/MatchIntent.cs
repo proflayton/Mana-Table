@@ -3,7 +3,7 @@ using Mana.Contracts;
 namespace Mana.Table.Interaction;
 
 internal enum MatchView { Settings, History, Help, Concede, LeaveTable, TableState }
-internal enum MatchPage { Choice, Inspect, Zone, Combat, Change, History, PriorityQueue, PriorityText, Placement, PlayerDamage, PlayerCounter, TableState, AllocationRules }
+internal enum MatchPage { Choice, Inspect, Zone, Combat, Change, History, PriorityQueue, PriorityText, PriorityAbilities, Placement, PlayerDamage, PlayerCounter, TableState, AllocationRules }
 
 // Input describes a player intent. Rendering cannot retain application callbacks
 // or gain authority by choosing a debug control name.
@@ -30,7 +30,7 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record UsePlayer(int PlayerId) : MatchIntent;
     internal sealed record ChooseRecipient(int PlayerId) : MatchIntent;
     internal sealed record SetPage(MatchPage PageKind, int Page) : MatchIntent {
-        internal override InteractionScopeKind ScopeKind => PageKind == MatchPage.PriorityText ? InteractionScopeKind.Playback : InteractionScopeKind.Current;
+        internal override InteractionScopeKind ScopeKind => PageKind is MatchPage.PriorityText or MatchPage.PriorityAbilities ? InteractionScopeKind.Playback : InteractionScopeKind.Current;
     }
     internal sealed record ExpandCardCollection(Mana.Renderer.CardCollectionTarget Target) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record FoldCardCollection : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
