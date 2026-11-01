@@ -18,6 +18,10 @@ different proof scopes. See the [testing guide](Mana-Table-Testing.md#api-test-p
 
 ## Local command diagnostics
 
+The [match history and evidence proposal](Mana-Table-History.md) audits the
+current retention and presentation gaps and defines the next migration. It is
+a design proposal, not implemented archival storage or a replay capability.
+
 The source implementation after 0.2.290 adds viewer-local command diagnostics at
 `Mana.Client/ClientSession`. Its optional typed callback describes admission,
 dispatch, provider return, observation return and actual replica acceptance as
