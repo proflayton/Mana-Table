@@ -6,6 +6,47 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Prefer the current mana yield: 1 November 2026
+
+**Source candidate after 0.2.315; human gameplay review pending.** Exact-candidate
+local validation and CI belong in the pull request record. The player's The
+Eternity Elevator had 32 charge counters, but automatic mana used its three
+colorless-mana mode. The retained real-input baseline also lost the upgraded
+yield on a small generic bill and could not cover a larger generic bill.
+
+The journey uses the existing payment controls: the player requests automatic
+funding for the current unpaid bill; the engine chooses an offered legal mode,
+taps its physical source once, pays that bill and leaves the actual remaining
+mana visible in the pool. No new control or card-name exception is introduced.
+The card keeps its charge counters because the upgraded mode has only a tap cost.
+
+The rules basis is the player's printed card and the engine's current granted
+ability. [Wizards' station release notes](https://magic.wizards.com/en/news/feature/edge-of-eternities-release-notes)
+explain that reaching a station threshold grants its listed abilities according
+to the current counter count. The Elevator's 20+ mode produces one chosen color
+equal to its charge counters. At 32 counters, automatic funding should consider
+that 32-mana mode alongside its base mode, including when both can cover the
+present bill.
+
+Larger output does not replace bill legality. A specific `{C}` requirement can
+need the three-colorless mode: [colorless is not one of Magic's five colors](https://magic.wizards.com/en/keyword-glossary).
+An any-one-color burst also cannot become a mixture of colors. Equivalent
+supported tap-only modes on one source prefer the greater current output;
+restricted, destructive, coupled or otherwise unknown modes keep their existing
+handling. A manual selection still chooses that exact ability. Current amounts
+are copied without resolving an ability or evaluating random expressions.
+
+Review the existing Auto gesture through source tap, paid symbols and remaining
+pool at ordinary and enlarged text sizes. Include the colorless exception, a
+mixed-color bill and manual mode selection. Real-engine completion and quantity
+checks establish rules and input safety; human approval of the payment feedback
+remains pending for the exact released candidate.
+
+Known separate issue: the generic Station detail reminder can claim creature
+status for a Spacecraft without printed power/toughness. [The station mechanics](https://magic.wizards.com/en/news/feature/edge-of-eternities-mechanics)
+describe that distinction. The Elevator's actual granted ability supplies this
+payment's rules state; correcting the reminder remains a separate task.
+
 ## Read cards while choosing: 1 November 2026
 
 **Card-choice reading revision after 0.2.313; human gameplay review pending.**

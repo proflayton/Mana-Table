@@ -1,14 +1,9 @@
 package forge.api;
 
 import forge.game.ability.ApiType;
-import forge.game.card.CounterEnumType;
-import forge.game.cost.CostPartMana;
-import forge.game.cost.CostTap;
-import forge.game.replacement.ReplacementType;
+import forge.game.mana.ManaSourceFacts;
 import forge.game.spellability.SpellAbility;
 import forge.game.spellability.AbilityManaPart;
-import forge.game.trigger.TriggerType;
-import forge.game.zone.ZoneType;
 
 import java.util.*;
 
@@ -143,63 +138,12 @@ final class ManaProductionProjection {
     }
     private static Map<String, Integer> bundle(String color, int amount) { return Map.of(color, amount); }
     private static Integer amount(SpellAbility ability) {
-        String value = ability.getParamOrDefault("Amount", "1");
-        Integer literal = integer(value);
-        if (literal != null) return literal;
-        String expression = value.contains("$") ? value : ability.getSVar(value);
-        String prefix = "Count$CardCounters.";
-        if (!expression.startsWith(prefix)) return null;
-        String counter = expression.substring(prefix.length());
-        if (!counter.matches("[A-Z][A-Z0-9_]*") || !simpleTapSourceIsStable(ability)) return null;
-        long count;
-        if (counter.equals("ALL")) count = ability.getHostCard().getCounters().entrySet().stream().mapToLong(entry -> entry.getCount()).sum();
-        else {
-            try { count = ability.getHostCard().getCounters(CounterEnumType.valueOf(counter)); }
-            catch (IllegalArgumentException unsupported) { return null; }
-        }
-        return count >= 0 && count <= 1024 ? (int) count : null;
+        return ManaSourceFacts.currentAmount(ability);
     }
 
     /** A source-state projection guard, separate from timing and payment legality. */
     static boolean simpleTapSourceIsStable(SpellAbility ability) {
-        return simpleTapSourceHasStableInputs(ability) && ambientManaOutcomeIsStable(ability);
-    }
-
-    /** The route's own finite inputs; unrelated concealed originals are not inputs. */
-    private static boolean simpleTapSourceHasStableInputs(SpellAbility ability) {
-        var source = ability.getHostCard();
-        var actor = ability.getActivatingPlayer();
-        var mana = ability.getManaPart();
-        if (actor == null || source == null || source.isFaceDown() || !source.isInZone(ZoneType.Battlefield)
-                || source.getController() != actor || ability.getRootAbility() != ability || ability.getSubAbility() != null
-                || !ability.getAdditionalAbilities().isEmpty() || !ability.getAdditionalAbilityLists().isEmpty()
-                || mana == null || mana.getSourceCard() != source || mana.addsCounters(ability) || mana.addKeywords(ability)
-                || !mana.getManaRestrictions().isEmpty() || !mana.getExtraManaRestriction().isEmpty()
-                || mana.getTriggersWhenSpent() || mana.isCannotCounterPaidWith() || mana.isCombatMana() || mana.isPersistentMana()
-                || ability.hasParam("Defined") && !ability.getParam("Defined").equals("You") || ability.getPayCosts() == null
-                || ability.getPayCosts().getCostParts().stream().filter(CostTap.class::isInstance).count() != 1
-                || ability.getPayCosts().getCostParts().stream().anyMatch(cost -> !(cost instanceof CostTap)
-                    && !(cost instanceof CostPartMana part && part.getMana().isZero()))) return false;
-        return true;
-    }
-
-    private static boolean ambientManaOutcomeIsStable(SpellAbility ability) {
-        var source = ability.getHostCard();
-        var actor = ability.getActivatingPlayer();
-        // This is a current public source-state fact, not a hypothetical payment
-        // or replacement simulation. A face-down permanent's current rules state
-        // is public and can include granted traits. Its concealed original is not
-        // an input: neither its identity nor its intrinsic traits are inspected.
-        for (ZoneType zone : List.of(ZoneType.Battlefield, ZoneType.Command))
-            for (var card : source.getGame().getCardsIn(zone)) {
-                if (!card.getView().canBeShownTo(actor.getView())) return false;
-                var current = card.getCurrentState();
-                if (current.getReplacementEffects(false).stream().anyMatch(replacement -> replacement.zonesCheck(card.getZone())
-                        && (replacement.getMode() == ReplacementType.ProduceMana || replacement.getMode() == ReplacementType.Tap))) return false;
-                if (current.getTriggers().stream().anyMatch(trigger -> trigger.zonesCheck(card.getZone())
-                        && Set.of(TriggerType.Taps, TriggerType.TapAll, TriggerType.TapsForMana, TriggerType.ManaAdded).contains(trigger.getMode()))) return false;
-            }
-        return true;
+        return ManaSourceFacts.simpleTapSourceIsStable(ability);
     }
     private static Integer integer(String text) {
         try { return Integer.valueOf(text); } catch (NumberFormatException ignored) { return null; }

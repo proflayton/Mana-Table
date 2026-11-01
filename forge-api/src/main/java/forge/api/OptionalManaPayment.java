@@ -82,6 +82,7 @@ final class OptionalManaPayment {
             if (source.isFaceDown() || !source.getView().canBeShownTo(payer.getView())) continue;
             int routes = 0;
             ManaCostBeingPaid best = remaining;
+            long bestOutput = 0;
             Step chosen = null;
             for (SpellAbility original : source.getManaAbilities()) {
                 if (++routes > MAX_ROUTES) return null;
@@ -94,7 +95,8 @@ final class OptionalManaPayment {
                 @SuppressWarnings("unchecked") var alternatives = (List<Map<String, Object>>) production.get("alternatives");
                 for (var alternative : alternatives) {
                     @SuppressWarnings("unchecked") var colors = (Map<String, Integer>) alternative.get("colors");
-                    if (colors.values().stream().mapToLong(Integer::longValue).sum() > MAX_UNITS) continue;
+                    long output = colors.values().stream().mapToLong(Integer::longValue).sum();
+                    if (output > MAX_UNITS) continue;
                     var candidate = new ManaCostBeingPaid(remaining);
                     boolean supported = true;
                     for (var color : colors.entrySet()) {
@@ -105,8 +107,10 @@ final class OptionalManaPayment {
                         for (int unit = 0; unit < color.getValue() && !candidate.isPaid(); unit++)
                             candidate.ai_payMana(color.getKey(), payer.getManaPool());
                     }
-                    if (supported && candidate.getConvertedManaCost() < best.getConvertedManaCost()) {
-                        best = candidate; chosen = new Step(null, original, Map.copyOf(colors));
+                    if (supported && candidate.getConvertedManaCost() < remaining.getConvertedManaCost()
+                            && (candidate.getConvertedManaCost() < best.getConvertedManaCost()
+                                || candidate.getConvertedManaCost() == best.getConvertedManaCost() && output > bestOutput)) {
+                        best = candidate; bestOutput = output; chosen = new Step(null, original, Map.copyOf(colors));
                     }
                 }
             }

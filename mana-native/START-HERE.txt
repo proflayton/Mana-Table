@@ -374,6 +374,11 @@ reduced motion shows current values immediately. Click an indicator for names
 and current totals. This is separate from untapped lands and other mana sources.
 Mana normally empties as steps and phases end; effects can retain or convert it.
 The display follows the actual pool during priority, payment and those changes.
+Source candidate: automatic mana prefers the larger supported output among
+equivalent tap-only modes on the same card. Numeric costs can use colored or
+colorless mana; a specific {C} cost still needs colorless mana. An any-one-color
+ability produces a single chosen color. Explicit ability selection keeps your
+chosen mode.
 Right-click to inspect complete rules and alternate faces during a selection.
 Card pictures download when available;
 text works offline. Choice galleries include a name filter and selection counts.
