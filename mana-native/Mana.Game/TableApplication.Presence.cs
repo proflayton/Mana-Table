@@ -20,7 +20,8 @@ internal sealed partial class TableApplication
             // Condensed seats without a library representation have no transfer
             // origin. Never animate from their former overview location.
             if (tableScene != null && library == null) continue;
-            var origin = library?.Pose ?? TableWorld.Pile(seat, 0);
+            var origin = library == null ? TableWorld.Pile(seat, 0)
+                : DisplayPileGeometry(library, player.Zone("Library").Count).Top;
             int count = Math.Min(7, player.Zone("Hand").Count);
             // Large real draw batches retain their full count in event feedback;
             // only a bounded handful of anonymous backs travel at once.

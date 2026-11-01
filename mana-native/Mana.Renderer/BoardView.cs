@@ -61,7 +61,8 @@ public readonly record struct BoardView(Vector2 Offset, float Zoom = 1)
         return new(screen.Center.ToVector2() - world.Center.ToVector2() * zoom, zoom);
     }
 
-    // Zone piles and command controls stay anchored with the player resources
-    // in this first experiment. Only the battlefield participates in framing.
+    // The ordinary zone default remains narrow. Physical station occurrences
+    // opt in explicitly; another face in the same zone may be a fixed reader,
+    // access fan, required choice or expanded public collection.
     public static bool AffectsZone(string zone) => zone == "Battlefield";
 }

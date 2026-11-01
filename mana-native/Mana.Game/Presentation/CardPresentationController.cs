@@ -75,7 +75,7 @@ internal sealed class CardPresentationController
             || context.PassivePinnedReading && request.Id == pinnedId && request.Zone == pinnedZone) && !context.Dragging;
         bool focused = !request.Card.FaceDown && pinnedId == request.Id && pinnedZone == request.Zone && readable;
         if (request.Card.FaceDown) { transitions.Remove(request.Id); playFlights.Remove(request.Id); }
-        var view = request.ChoiceSlot < 0 && BoardView.AffectsZone(request.Zone) ? boardView : BoardView.Identity;
+        var view = request.UsesTableCamera ? boardView : BoardView.Identity;
         var rest = view.Apply(request.Rest);
         if (focused) {
             readerTarget ??= context.KeepBattlefieldAnchor && request.Zone == "Battlefield"
@@ -95,7 +95,7 @@ internal sealed class CardPresentationController
             && request.PlayAge is >= 0 and < PlayRevealSeconds;
         if (!reduced && !focused && !request.Card.FaceDown && request.PlayAge is >= 0) playFlights.Add(request.Id);
         if (reduced) playFlights.Remove(request.Id);
-        bool useBoardMotion = !focused && !revealPlay && BoardView.AffectsZone(request.Zone) && request.ChoiceSlot < 0;
+        bool useBoardMotion = !focused && !revealPlay && request.UsesTableCamera;
         bool collapse = pendingCollapses.Remove(request.Id);
         if (request.PlayAge != null) collapse = false;
         bool hadPrevious = previousDisplayedPoses.TryGetValue(request.Id, out var previous);

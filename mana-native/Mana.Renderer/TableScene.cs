@@ -14,6 +14,7 @@ public sealed record SceneCard(string Id, Card Card, Pose Pose, string Zone, int
     public bool ScanFace { get; init; }
     public StudyBattlefieldFamily? StudyFamily { get; init; }
     public BattlefieldAttachment? Attachment { get; init; }
+    public bool TableAnchored { get; init; }
 
     internal static SceneCard Create(Card card, Pose pose, string zone, int owner, int index, Vector2? entrance)
     {
@@ -23,7 +24,11 @@ public sealed record SceneCard(string Id, Card Card, Pose Pose, string Zone, int
         return new(id, card, pose, zone, owner, entrance);
     }
 }
-public sealed record PilePlan(string Zone, Pose Pose, bool Compact);
+public sealed record PilePlan(string Zone, Pose Pose, bool Compact)
+{
+    public bool TableAnchored { get; init; }
+    public Rectangle? Caption { get; init; }
+}
 public sealed record HandPlan(int Total, string? Raised, SceneCard[] Cards);
 
 /// <summary>A painted front and the exact public occurrences represented behind it.
@@ -180,10 +185,13 @@ public sealed class TableScene
         var zone = state.Players.FirstOrDefault(player => player.Id == target.PlayerId)?.Zone(target.ZoneName);
         if (zone == null) return [];
         var pile = geometry.FirstOrDefault(seat => seat.PlayerId == target.PlayerId)?.Piles.FirstOrDefault(pile => pile.Zone == target.ZoneName);
-        var anchor = pile == null ? new Pose(new(800, 744), new(49, 69)) : PileGeometry.Create(pile.Pose, zone.Count, pile.Compact).Top;
-        var cards = zone.Cards.Where(card => !card.FaceDown && CardViews.Identity(card).Length > 0).Select((card, index) => SceneCard.Create(card,
-            access.Groups.SelectMany(group => group.Cards).FirstOrDefault(item => CardViews.Same(item.Scene.Card, card))?.Scene.Pose ?? anchor,
-            target.ZoneName, target.PlayerId, index, anchor.Center)).ToArray();
+        var anchor = pile == null ? new Pose(new(800, 744), new(49, 69)) : PileGeometry.Create(pile, zone.Count).Top;
+        var cards = zone.Cards.Where(card => !card.FaceDown && CardViews.Identity(card).Length > 0).Select((card, index) => {
+            var accessCard = access.Groups.SelectMany(group => group.Cards).FirstOrDefault(item => CardViews.Same(item.Scene.Card, card))?.Scene;
+            var source = accessCard?.Pose ?? anchor;
+            return SceneCard.Create(card, source, target.ZoneName, target.PlayerId, index, source.Center)
+                with { TableAnchored = accessCard == null && pile?.TableAnchored == true };
+        }).ToArray();
         return [new(target.Id, "", "", [], cards)];
     }
 }

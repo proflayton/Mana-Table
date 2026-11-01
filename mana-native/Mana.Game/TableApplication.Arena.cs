@@ -138,8 +138,10 @@ internal sealed partial class TableApplication
             (displayed, focus) => {
                 if (node.Attachment != null && !focus && displayed.Size.X < 300) PaintBattlefieldAttachment(node, displayed,
                     card.Highlighted || GroupBlockSelected(card) || card.CombatId.Length > 0 && selectedCombat == card.CombatId || TableChoices.Index(match!, card) is { } choice && decisions.Selections.Contains(choice), IsCardActionable(card));
-                else PaintSceneCard(card, displayed, node.Zone, node.Owner, focus, node.Compact, node.GroupFront, node.GroupCount);
-            }, node.Entrance, node.EntranceDelay, readingAnchor: node.Attachment?.Edge(node.Pose));
+                else PaintSceneCard(card, displayed, node.Zone, node.Owner, focus, node.Compact, node.GroupFront, node.GroupCount, node.TableAnchored);
+            }, node.Zone == "Hand" && ZonePile(node.Owner, "Library") is { TableAnchored: true } library
+                ? DisplayPileGeometry(library, match!.Players.Single(player => player.Id == node.Owner).Zone("Library").Count).Top.Center : node.Entrance,
+            node.EntranceDelay, readingAnchor: node.Attachment?.Edge(node.Pose), tableAnchored: node.TableAnchored);
         if (!string.IsNullOrEmpty(card.CombatId)) {
             var anchor = node.ScanFace && readingId == node.Id ? boardView.Apply(node.Pose) : pose;
             if (node.Attachment is { } attachment && !node.Card.FaceDown) {
@@ -149,7 +151,8 @@ internal sealed partial class TableApplication
             cardPositions[card.CombatId] = anchor;
         }
     }
-    private void PaintSceneCard(Card card, Pose pose, string zone, int owner, bool focus, bool compact = false, bool groupFront = true, int groupCount = 1)
+    private void PaintSceneCard(Card card, Pose pose, string zone, int owner, bool focus, bool compact = false, bool groupFront = true, int groupCount = 1,
+        bool tableAnchored = false)
     {
         int? choice = match == null ? null : TableChoices.Index(match, card);
         bool selected = choice is { } index ? decisions.Selections.Contains(index) : card.Highlighted || GroupBlockSelected(card) || card.CombatId.Length > 0 && selectedCombat == card.CombatId;
@@ -158,10 +161,11 @@ internal sealed partial class TableApplication
             && tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) is { ScanFace: true };
         if (zone == "Battlefield") PaintAbilityEffects(card, pose);
         if (scanFace) PaintBattlefieldScanFace(card, pose, owner, selected, legal, focus, groupFront || focus, groupCount);
-        else PaintCard(card, pose, selected, legal, focus, zone == "Battlefield" && card.PhasedOut && !focus ? .42f : 1);
+        else PaintCard(card, pose, selected, legal, focus, zone == "Battlefield" && card.PhasedOut && !focus ? .42f : 1,
+            tableAnchored && !focus ? StationCardFallback(card, pose) : null);
         if (zone == "Battlefield" && card.PhasedOut) PaintPhasedOutline(pose);
         if (zone == "Command") {
-            PaintCommanderTax(card, pose);
+            PaintCommanderTax(card, pose, tableAnchored && !focus && pose.Size.X < 300);
             if (focus && pose.Size.X >= 300) PaintCommanderTaxDetails(card, pose);
         }
         if (choice != null && selected) {
@@ -239,7 +243,7 @@ internal sealed partial class TableApplication
                 }
                 void Detail(string text, int x, int y, float size, int width, int lines, Color color)
                 {
-                    if (text.Length == 0 || width <= 0) return;
+                    if (fallback?.ShowDetails == false || text.Length == 0 || width <= 0) return;
                     var measured = canvas.TextSize(text, size, width, lines);
                     var bounds = new Rectangle(x, y, measured.X, measured.Y);
                     if (fallback != null && (fallback.Reserved.Any(bounds.Intersects)

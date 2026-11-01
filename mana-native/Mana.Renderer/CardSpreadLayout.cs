@@ -126,7 +126,8 @@ public sealed class CardSpreadPlan
                         + (packetColumns - count) * (CardSize.X + gap) / 2,
                     y + padding + header + CardSize.Y / 2 + row * (CardSize.Y + gap) + bend * bend * 34);
                 var card = packet.Cards[index];
-                world.Add(card with { Pose = new(center, CardSize, bend * .075f), Entrance = card.Pose.Center, EntranceDelay = 0 });
+                world.Add(card with { Pose = new(center, CardSize, bend * .075f), Entrance = card.Pose.Center, EntranceDelay = 0,
+                    TableAnchored = false });
             }
             x += width + packetGap; rowBottom = Math.Max(rowBottom, bounds.Bottom);
         }

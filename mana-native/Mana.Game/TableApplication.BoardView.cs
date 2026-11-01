@@ -72,7 +72,7 @@ internal sealed partial class TableApplication
         }
         if (TableStudyEnabled) {
             var targetView = manualBoardView ?? (StudyFocusActive
-                ? FrameStudyMat(tableScene.Seat(studyFocusOwner!.Value).Geometry.PlaymatBounds!.Value,
+                ? FrameStudyMat(tableScene.Seat(studyFocusOwner!.Value).Geometry,
                     tableScene.Seat(state.ViewerId).Geometry, state.Viewer)
                 : BoardView.Identity);
             boardView = boardViewMotion.Navigate(state.Id, state.ViewerId, targetView, now, preferences.ReducedMotion,
@@ -95,7 +95,7 @@ internal sealed partial class TableApplication
         if (enabled) {
             // Existing displayed poses include transient elevation/flight. Guard
             // those too, without retaining faces in the view controller.
-            foreach (var card in matchPresentation.Cards.Cards.Where(card => BoardView.AffectsZone(card.Zone) && !card.Focused))
+            foreach (var card in matchPresentation.Cards.Cards.Where(card => card.Request.UsesTableCamera && !card.Focused))
                 footprints.Add(boardView.Inverse(card.Display).Bounds);
         }
         boardView = boardViewMotion.Update(new(state.Id, state.Turn, state.ActivePlayerId, state.ViewerId,
@@ -103,13 +103,16 @@ internal sealed partial class TableApplication
             now, footprints, enabled ? TableViewGeometry.FixedReservations(state, tableScene) : [], new(0, 54, 1600, 724));
     }
 
-    private BoardView FrameStudyMat(Rectangle mat, SeatGeometry localSeat, Player? viewer)
+    private BoardView FrameStudyMat(SeatGeometry subject, SeatGeometry localSeat, Player? viewer)
     {
-        var area = new Rectangle(195, 170, 995, 530);
+        // Frame the complete physical setup, including zones beside the cloth.
+        // A near-seat row needs the clear width between both side portraits.
+        var mat = TableViewGeometry.PlayerSetupBounds(subject);
+        var area = subject.Index == 3 ? new Rectangle(160, 170, 1280, 530) : new Rectangle(195, 170, 995, 530);
         var preferred = BoardView.Frame(mat, area);
         var shown = preferred.Apply(mat);
-        // A focused mat must not put its reachable cards beneath fixed local
-        // controls. Keep the normal zoom when the complete mat can move clear.
+        // Reachable cards and captions must clear fixed local controls. Keep
+        // the normal zoom when the complete setup can move clear.
         var occupied = localSeat.TurnControls.Reservations.ToList();
         occupied.AddRange(seatReadoutPlans.Values.SelectMany(plan => plan.Pieces));
         occupied.Add(new((int)localSeat.Hero.X - 55, (int)localSeat.Hero.Y - 55, 110, 110));

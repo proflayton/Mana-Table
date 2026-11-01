@@ -6,6 +6,92 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Keep public piles with their player's mat: 1 November 2026
+
+**Source prototype; right-caption revision human review pending.** The player found
+the rectangular seated table much better, then asked for library, graveyard, exile and command
+ownership to be clearer. In the preceding candidate, battlefield cards followed
+the seated mat plane but the public piles and commanders remained upright fixed
+screen objects. The left player's pile row sat immediately above the viewer's
+row, and the far player's library was separated from their other zones by the
+held hand and portrait. These are observations of the actual native capture;
+another label or color alone would leave that spatial ambiguity.
+
+The single-identity layout in `75c96dc4` received positive visual feedback, with
+an issue on the right player's low Command caption. Its fixed mat-local offset
+became a large vertical gap after the seat's quarter turn. That upright caption
+now follows the actual commander paint envelope, including frame and shadow,
+with the existing hit, reservation and camera plan consuming its new bounds.
+The placement correction remains pending human review.
+
+The supplied MTG Arena screenshots place each player's piles near that player's
+side of the battlefield. Wizards' [Arena mobile gameplay
+guide](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-january-2021-01-21)
+describes opening each graveyard, library or exile object to inspect its known
+cards and count. [MTGO's multiplayer
+guide](https://www.mtgo.com/getting-started/getting-started-multiplayer) retains
+zone access within each player's section. Neither game's two-player or split
+screen layout establishes a four-seat seated-table solution. MTGO's automatic
+shrinking and duplicated zone displays are not part of this adaptation.
+
+The player liked the ownership arrangement in `133b8bdd`, but found the local
+portrait and phase wheel off to the side awkward. Record that candidate's human
+review as **issues** for the portrait placement; this feedback does not approve
+every pile interaction. The same supplied Arena references keep the player's
+life portrait centered above the hand. Restoring that seat anchor is the next
+revision, with human review still pending.
+
+The next centered capture duplicated the player name in a resource heading and
+again below the portrait. The player reported that repetition in `77e9ea4e`;
+record the candidate as having an identity-presentation issue. The follow-up
+uses one measured name-and-land header beneath the portrait, followed by tapped
+and untapped facts and public states. That same header owns the existing focus
+gesture; a placed header replaces the old portrait name and standalone seat
+number. A bounded seat header or the complete resource reader remains available
+when a full arrangement cannot fit. The supplied Arena references show a single
+seat identity; this portrait-associated resource arrangement is our adaptation.
+The hand count remains useful because the displayed fan is capped at seven.
+Final human review remains pending.
+
+The revision keeps opponents' three distinct piles and up to two current
+commanders in their mats' reserved personal areas. The local piles and commanders
+form one upright row on the near-left wooden apron, immediately beside the local
+mat. Their mat-relative placement, seat facing and shared projection supply the
+ownership relationship while the centered portrait, phase wheel and hand retain
+their space. Upright measured captions preserve reading direction. The physical
+mat dimensions, battlefield lanes, counter band and card sizes are preserved;
+the local command caption uses an inline name and quantity below the row.
+This four-seat apron arrangement is our adaptation, not a demonstrated Arena
+Commander layout. Quantities stay on the actual pile, and a commander's compact
+tax stamp stays with its own face. Missing artwork shows a complete name when it fits;
+otherwise the same source-attached hover and full reader supply the identity.
+Tiny mana-cost or type fragments are suppressed, including at minimum zoom.
+A library remains a face-down
+stack unless its actual top is disclosed. Graveyard and exile retain their
+separate current collections. These are presentation placements of already
+authorized objects, not additional knowledge or permission to play them.
+
+The journey is: identify a player's pile beside that player's permanents; hover
+its disclosed top to read it; open that exact owner's current public collection;
+read an occurrence; return to the same physical pile. Opening or closing a
+collection issues no game command. A library choice or actual cast still follows
+its current engine-owned route. Cards with retained play access remain beside
+the permitted player's hand with their real owner and source zone; they are not
+duplicated into the pile to suggest a second physical occurrence. Arena's
+[Hideaway presentation](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-streets-new-capenna-2022-04-21)
+tucks its exiled card beneath the producing source, illustrating why source
+relationship and an owner's general exile collection must remain separate facts.
+
+Review two, three and four seats from every viewer, with both commanders, empty
+zones, a disclosed library top, concealed exile and a crowded field. Check the
+whole hover/open/read/return gesture at 1000x740 and a larger window, including
+130% text. Pan, zoom and focus must carry the piles with the same player's setup,
+including the local apron row, while
+preserving the current owner/zone hit and card identity. A card leaving the
+battlefield must travel to its actual current zone anchor. Automated geometry
+and command checks establish those scoped invariants, not readability or human
+acceptance of the new arrangement.
+
 ## Restore the seated table plane: 1 November 2026
 
 **Isolated projection prototype; human motion review pending.** The player liked

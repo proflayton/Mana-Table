@@ -934,11 +934,33 @@ than allowing an unchecked overlapping origin. Real long preset/deck names at
 impossible placement must return a typed no-fit result and leave an explicit,
 current resource-reading nameplate target; it must not throw or claim an
 intersecting plan is clear.
+The identity follow-up requires one actual measured name/land header and its
+exact current focus hit, without a duplicate portrait caption. Existing focus
+journeys click that header. Only its own intentional hit shares the header's
+bounds; other player controls and fixed resources remain protected. The hand
+count remains once because its visible fan is bounded to seven cards.
 Existing sparse/dense/tapped checks and `AttachmentStackChecks` protect complete
 assemblies in two-, three- and four-player games and foreign-controlled
 attachments without changing their controller or individual permissions. Actual
 phase controls and prepared priority reservations remain separate from faces;
 pile and dual-commander checks still protect every neighbouring mat.
+The source zone-ownership prototype after 0.2.326 adds `SeatZoneChecks` to that
+same `seated-plane` group and the full headless lane. It covers two/three/four
+players and every viewer, both actual partner commanders, hundred-card exposed
+stack clearance, current concealed faces, measured full zone captions, and real
+caption/commander inspection at both window sizes with 130% text. The current
+player and zone must survive opening, reading, closing and camera movement with
+no gameplay command. The centered-portrait revision also combines a full seven-card
+hand, both partners, six floating mana colors and two public counter types. Actual
+pile, caption, commander backing/shadow and count paint must clear the prepared
+portrait/phase/mana/hand targets; public state and zone hits retain their owner.
+The near row is checked on the table beside its mat, closer to that mat than any
+foreign mat; opponent rows stay inside their cloth. Automatic focus includes
+the complete physical setup, and the wood support check consumes the prepared
+pile plan rather than rebuilding an obsolete label. Explicit table-placement
+checks also keep a public spread,
+play-access fan and full reader separate from its physical origin. These checks
+do not establish human acceptance of the prototype or cached artwork quality.
 The old assertion that every card must avoid an always-empty action rectangle
 is replaced by the actual pending-attention/source/target journeys: temporary
 attention must retain current legal card targets and their real displayed hit

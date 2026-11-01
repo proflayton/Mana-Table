@@ -71,6 +71,15 @@ internal sealed partial class TableApplication
         if (tableScene?.PlayAccess.Groups.Any(group => group.PlayerId == player.Id && group.Zone == zone) == true) return;
         int count = AvailableZoneCount(player, zone);
         if (count == 0) return;
+        if (ZonePile(player.Id, zone) is { TableAnchored: true } pile) {
+            var geometry = DisplayPileGeometry(pile, player.Zone(zone).Count);
+            canvas.CardFrame(pose, ActionAccent * .75f, 2);
+            var bounds = geometry.Count.IsEmpty ? geometry.Label : Rectangle.Union(geometry.Label, geometry.Count);
+            hits.Add(new("zone-actions:" + player.Id + ":" + zone, Scope, bounds,
+                new MatchIntent.OpenZone(player.Id, zone),
+                Shape: point => BoardViewport.Contains(point) && (geometry.Label.Contains(point) || geometry.Count.Contains(point))));
+            return;
+        }
         var badge = new Rectangle((int)pose.Center.X - 43, pose.Bounds.Top - 14, 86, 23);
         canvas.Panel(badge, new(15, 41, 54), ActionAccent, 4);
         canvas.CenterText(count + " available", badge, ActionAccent, .49f, true);

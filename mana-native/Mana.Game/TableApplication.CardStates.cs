@@ -9,10 +9,26 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private void PaintCommanderTax(Card card, Pose pose)
+    private (string Label, float Size, Rectangle Bounds) StationTaxStamp(Card card, Pose pose)
+    {
+        string label = "+" + CardPresentation.CommanderTax(card);
+        float size = .48f * boardView.Scale;
+        var measured = canvas.TextSize(label, size, 2000, 1, true);
+        var anchor = pose.Point(.5f, .88f);
+        return (label, size, new((int)MathF.Round(anchor.X - measured.X / 2f),
+            (int)MathF.Round(anchor.Y - measured.Y / 2f), measured.X + 2, measured.Y + 2));
+    }
+
+    private void PaintCommanderTax(Card card, Pose pose, bool station = false)
     {
         int tax = CardPresentation.CommanderTax(card);
         if (tax <= 0) return;
+        if (station) {
+            var stamp = StationTaxStamp(card, pose);
+            canvas.Text(stamp.Label, stamp.Bounds.X + 1, stamp.Bounds.Y + 1, Color.Black, stamp.Size, stamp.Bounds.Width, 1, true);
+            canvas.Text(stamp.Label, stamp.Bounds.X, stamp.Bounds.Y, Gold, stamp.Size, stamp.Bounds.Width, 1, true);
+            return;
+        }
         var badge = new Rectangle((int)pose.Center.X - 35, pose.Bounds.Top - 10, 70, 24);
         canvas.Panel(badge, new(47, 35, 18), Gold, 5);
         canvas.CenterText($"TAX +{tax}", badge, Gold, .52f, true);

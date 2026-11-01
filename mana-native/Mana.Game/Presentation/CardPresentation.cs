@@ -92,7 +92,12 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
 internal sealed record CardPresentationRequest(string Id, Card Card, Pose Rest, string Zone,
     int? Owner, string HitId, UiIntent Activate, Vector2? Entrance = null, float EntranceDelay = 0,
     bool OpensZone = false, int ChoiceSlot = -1, Rectangle? ActivationBounds = null, float? PlayAge = null, bool RevealPlay = true,
-    Rectangle? ReadingAnchor = null, bool DirectPlacement = false);
+    Rectangle? ReadingAnchor = null, bool DirectPlacement = false, bool TableAnchored = false)
+{
+    // Placement space belongs to this occurrence, not its rules zone. A public
+    // exile card can sit on the table, beside the hand, or in an open spread.
+    public bool UsesTableCamera => ChoiceSlot < 0 && (TableAnchored || BoardView.AffectsZone(Zone));
+}
 
 internal enum CardPresentationLayer { Table, Playing, Returning, Reader }
 
@@ -125,24 +130,4 @@ internal readonly record struct CardHitGeometry(Pose Display, Pose? Anchor, Rect
     }
     public bool Contains(Point point) => Display.Contains(point)
         || Anchor?.Contains(point) == true || Activation?.Contains(point) == true;
-}
-
-/// <summary>The physical card body shared by painting and reader placement.</summary>
-internal readonly record struct CardPaintGeometry(Pose Face)
-{
-    internal const int FocusFrameWidth = 2;
-    public Pose Shadow => Face with {
-        Center = Face.Center + new Vector2(4 + Face.Elevation * .18f, (Face.IsProjected ? 5 : 10) + Face.Elevation),
-        Size = Face.Size + new Vector2(7)
-    };
-    public Pose Backing => Face with { Size = Face.Size + new Vector2(4) };
-    public Pose FocusFrame => Backing;
-    public Rectangle FrameBounds {
-        get {
-            var frame = FocusFrame.Bounds;
-            frame.Inflate(FocusFrameWidth / 2, FocusFrameWidth / 2);
-            return frame;
-        }
-    }
-    public Rectangle Bounds => Rectangle.Union(FrameBounds, Shadow.Bounds);
 }

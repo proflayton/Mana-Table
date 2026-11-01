@@ -17,6 +17,7 @@ internal static class CardPresentationChecks
         CurrentInteractionState(check);
         OpeningHandReading(check);
         ProviderNeutralReading(check);
+        TableZonePlacement(check);
         var first = new Card { Key = "first-key", VisualId = "first", Name = "First" };
         var second = new Card { Key = "second-key", VisualId = "second", Name = "Second" };
         var state = Snapshot(first, second);
@@ -229,6 +230,47 @@ internal static class CardPresentationChecks
         check(!TableChoices.IsDirect(ability)
                 && DecisionDockPresentation.From(ability, new()).Status == DecisionDockStatus.AbilityChoice,
             "Explicit ability-selection semantics retain their interaction route when a provider supplies card/player preview metadata");
+    }
+
+    private static void TableZonePlacement(Action<bool, string> check)
+    {
+        foreach (string zone in new[] { "Command", "Graveyard", "Exile", "Library" }) {
+            var card = new Card { Key = "zone-current-key", VisualId = "zone-current-occurrence", Name = "Disclosed zone source" };
+            var state = Snapshot(card);
+            state = state with { Players = [state.Viewer! with { Zones = [new(zone, 1, [card], zone == "Library" ? card : null)] }] };
+            var context = new CardPresentationContext(state, "zone-placement", false, false, false, false);
+            var controller = new CardPresentationController();
+            var pose = TableSurfaceProjection.Project(new Pose(new(1080, 580), new(48, 67), MathF.PI / 2));
+            var view = new BoardView(new(-600, -250), 1.25f);
+            var request = new CardPresentationRequest(card.VisualId, card, pose, zone, 0, "zone-card",
+                new MatchIntent.UseCard(card), TableAnchored: true);
+            controller.BeginFrame(context, null, .016f, true, view);
+            var placed = controller.Prepare(request); controller.EndFrame();
+            check(placed.Display == view.Apply(pose) && placed.Hit.Contains(placed.Display.Center.ToPoint())
+                    && !placed.Hit.Contains(pose.Center.ToPoint()) && placed.Request.Owner == 0 && placed.Card.Key == card.Key,
+                zone + " table placement applies one camera to its actual face and pointer geometry without changing owner or command identity");
+            check(controller.Toggle(placed.Hit, context), zone + " table placement opens its current disclosed source for reading");
+            controller.BeginFrame(context, null, .016f, true, view);
+            controller.Prepare(request); controller.EndFrame();
+            controller.BeginFrame(context, null, .016f, true, view);
+            var reader = controller.Prepare(request); controller.EndFrame();
+            var moved = new BoardView(new(-210, -130), 1.1f);
+            controller.BeginFrame(context, null, .016f, true, moved);
+            var retained = controller.Prepare(request); controller.EndFrame();
+            check(reader.Focused && retained.Focused && retained.Display == reader.Display && retained.Rest == moved.Apply(pose),
+                zone + " reading remains fixed while its physical table anchor follows the camera");
+            controller.Toggle(retained.Hit, context);
+            controller.BeginFrame(context, null, .016f, true, moved);
+            var returned = controller.Prepare(request); controller.EndFrame();
+            check(!returned.Focused && returned.Display == moved.Apply(pose),
+                zone + " reader returns to its current physical station rather than its former overview position");
+            var fanPose = new Pose(new(1270, 810), new(92, 129));
+            controller.BeginFrame(context, null, .016f, true, moved);
+            var fan = controller.Prepare(request with { Rest = fanPose, TableAnchored = false }); controller.EndFrame();
+            check(fan.Display == fanPose && fan.View.IsIdentity && !BoardView.AffectsZone(zone)
+                    && !(request with { ChoiceSlot = 0 }).UsesTableCamera,
+                zone + " access fans and required choices retain their own placement space despite sharing the table pile's rules zone");
+        }
     }
 
     private static void CurrentInteractionState(Action<bool, string> check)

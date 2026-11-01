@@ -22,7 +22,7 @@ internal sealed partial class TableApplication
         var geometry = tableScene?.Seats.FirstOrDefault(seat => seat.PlayerId == owner?.Id)?.Geometry;
         string zone = location?.Zone ?? decision.Context.Source?.Zone ?? "";
         var pile = geometry?.Piles.FirstOrDefault(candidate => candidate.Zone == zone);
-        var anchor = sourcePose?.Bounds ?? pile?.Pose.Bounds
+        var anchor = sourcePose?.Bounds ?? (pile == null ? (Rectangle?)null : DisplayPileGeometry(pile, owner!.Zone(zone).Count).Top.Bounds)
             ?? new Rectangle((int)(geometry?.Hero.X ?? 800) - 55, (int)(geometry?.Hero.Y ?? 744) - 55, 110, 110);
         return (anchor, sourcePose, reported, zone);
     }
@@ -35,7 +35,7 @@ internal sealed partial class TableApplication
             : zone == "Hand" ? tableScene.Hand.Cards.FirstOrDefault(card => card.Id == identity)
             : tableScene.PlayAccess.Groups.SelectMany(group => group.Cards).FirstOrDefault(card => card.Scene.Id == identity)?.Scene
             ?? (zone == "Command" ? tableScene.Seats.FirstOrDefault(seat => seat.PlayerId == owner)?.Geometry.Commanders.FirstOrDefault(card => card.Id == identity) : null));
-        Pose? pose = node == null ? null : BoardView.AffectsZone(zone) ? boardView.Apply(node.Pose) : node.Pose;
+        Pose? pose = node == null ? null : node.TableAnchored || BoardView.AffectsZone(zone) ? boardView.Apply(node.Pose) : node.Pose;
         if (BattlefieldFocused && zone == "Battlefield" && battlefieldFocusPlan?.Tile(identity) is { } tile) pose = tile.ArtPose;
         return matchPresentation.Cards.Pinned is { Focused: true, ReaderTarget: { } target } reader
             && reader.Id == identity && reader.Zone == zone ? target : pose;

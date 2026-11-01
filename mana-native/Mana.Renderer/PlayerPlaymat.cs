@@ -11,9 +11,8 @@ public static class PlayerPlaymat
 {
     public const int HemInset = 12, MinimumGap = 32;
     public static Rectangle CanonicalBounds => new(0, 0, 512, 288);
-    // A fixed physical perimeter: close to the far/near mats, with only the
-    // side apron required by the existing command and public-pile rails. The
-    // far player's portrait, held hand and zone controls remain fixed seat HUD.
+    // A fixed physical perimeter supports the mats and seat-side personal rows.
+    // Portraits and held hands remain fixed seat HUD objects.
     public static Rectangle TabletopPlacement => new(72, 136, 1456, 708);
     public static Rectangle PersonalArea => new(162, 144, 188, 132);
     public static Rectangle CanonicalCounterBand => new(12, 216, 150, 60);

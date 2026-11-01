@@ -19,6 +19,8 @@ public sealed class SeatGeometry
     public Vector2 CommandLink { get; }
     public IReadOnlyList<SceneCard> Commanders { get; }
     public IReadOnlyList<PilePlan> Piles { get; }
+    public SeatZoneLayout? ZoneStation { get; }
+    public Rectangle? LandReadoutArea { get; }
 
     private SeatGeometry(Player player, int seat, bool study, bool duel = false)
     {
@@ -31,48 +33,33 @@ public sealed class SeatGeometry
         Hero = TableLayout.Hero(seat);
         Hand = TableLayout.SeatHand(seat);
         bool own = seat == 3, side = seat is 0 or 2;
-        CommandLink = own ? new(191, 647) : seat == 2 ? new(1380, 520)
-            : side ? TableWorld.Project(TableWorld.SeatPoint(seat, -270, 645)) : new(1100, 156);
-        var leaders = player.Zone("Command").Cards.Take(2).ToArray();
-        Commanders = Array.AsReadOnly(leaders.Select((card, index) => {
-            Vector2 center = own ? new(-516 + index * 82, 202)
-                : side ? TableWorld.SeatPoint(seat, -262 + index * 91, 525)
-                : TableWorld.SeatPoint(seat, -359 - index * 85, 302);
-            var size = own ? leaders.Length > 1 ? new Vector2(62, 87) : new Vector2(81, 114) : new Vector2(69, 97);
-            return SceneCard.Create(card, TableWorld.Card(center, size, TableWorld.SeatAngle(seat)), "Command", player.Id, index, Hero);
-        }).ToArray());
-        Piles = Array.AsReadOnly(new[] { "Library", "Graveyard", "Exile" }
-            .Select((zone, index) => new PilePlan(zone, TableWorld.Pile(seat, index), side)).ToArray());
-        if (study) {
+        if (!study) {
+            CommandLink = own ? new(191, 647) : seat == 2 ? new(1380, 520)
+                : side ? TableWorld.Project(TableWorld.SeatPoint(seat, -270, 645)) : new(1100, 156);
+            var leaders = player.Zone("Command").Cards.Take(2).ToArray();
+            Commanders = Array.AsReadOnly(leaders.Select((card, index) => {
+                Vector2 center = own ? new(-516 + index * 82, 202)
+                    : side ? TableWorld.SeatPoint(seat, -262 + index * 91, 525)
+                    : TableWorld.SeatPoint(seat, -359 - index * 85, 302);
+                var size = own ? leaders.Length > 1 ? new Vector2(62, 87) : new Vector2(81, 114) : new Vector2(69, 97);
+                return SceneCard.Create(card, TableWorld.Card(center, size, TableWorld.SeatAngle(seat)), "Command", player.Id, index, Hero);
+            }).ToArray());
+            Piles = Array.AsReadOnly(new[] { "Library", "Graveyard", "Exile" }
+                .Select((zone, index) => new PilePlan(zone, TableWorld.Pile(seat, index), side)).ToArray());
+        } else {
+            // Personal cards use their seat's physical frame. The local life
+            // counter stays centered; its zone row sits beside the near mat.
+            if (own) {
+                LandReadoutArea = new(8, 840, 300, 60);
+            }
             if (side) {
                 Hero -= new Vector2(0, 40);
                 Hand = new(seat == 0 ? 84 : 1516, Hand.Y - 80);
             }
-            CommandLink = own ? new(280, 720) : seat == 1 ? new(948, 144) : new(seat == 0 ? 125 : 1490, 602);
-            Commanders = Array.AsReadOnly(leaders.Select((card, index) => {
-                var center = own ? new Vector2(360 + index * 60, 750) : seat == 1 ? new Vector2(917 + index * 62, 100)
-                    : new Vector2((seat == 0 ? 75 : 1450) + index * 75, 554);
-                return SceneCard.Create(card, new(center, own ? new(48, 67) : new(58, 81)), "Command", player.Id, index, Hero);
-            }).ToArray());
-            Piles = Array.AsReadOnly(new[] { "Library", "Graveyard", "Exile" }.Select((zone, index) => {
-                // The top seat's zone rail stays above its own material: the
-                // library left of the held hand, commanders right of the life
-                // counter and mana, then its two public piles. None borrows the
-                // right-hand player's mat, even when that field is empty.
-                var center = own ? new Vector2(42 + index * 60, 736) : seat == 1
-                    ? index == 0 ? new Vector2(540, 95) : new Vector2(index == 1 ? 1030 : 1071, 105)
-                    : new Vector2((seat == 0 ? 42 : 1400) + index * (seat == 0 ? 56 : 65), 650);
-                return new PilePlan(zone, new(center, new(39, 55)), true);
-            }).ToArray());
-        }
-        if (study && duel) {
-            if (seat == 1) {
-                CommandLink = new(1280, 181);
-                Commanders = Array.AsReadOnly(leaders.Select((card, index) => SceneCard.Create(card,
-                    new(new(1240 + index * 80, 130), new(58, 81)), "Command", player.Id, index, Hero)).ToArray());
-                Piles = Array.AsReadOnly(new[] { "Library", "Graveyard", "Exile" }.Select((zone, index) =>
-                    new PilePlan(zone, new(new(1295 + index * 80, 245), new(39, 55)), true)).ToArray());
-            }
+            ZoneStation = new(player, seat, duel, Hero);
+            Commanders = ZoneStation.Commanders;
+            Piles = ZoneStation.Piles;
+            CommandLink = ZoneStation.CommandLabel.Center.ToVector2();
         }
         TurnControls = TurnControlLayout.For(Hero, study && own ? PlaymatBounds!.Value.Right + 12 : null);
     }

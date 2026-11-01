@@ -228,12 +228,12 @@ internal static class TableSurfaceProjectionChecks
                             var geometry = seat.Geometry;
                             return geometry.Commanders.SelectMany(card => (card.Pose with { Size = card.Pose.Size + new Vector2(13) }).Corners).All(OnWood)
                                 && geometry.Piles.All(pile => {
-                                    var body = PileGeometry.Create(pile.Pose, 100, pile.Compact);
+                                    var body = PileGeometry.Create(pile, 100);
                                     return body.Shadow.Corners.Concat(body.Top.Corners).Concat(body.Layers.SelectMany(layer => layer.Corners))
                                         .Concat(Corners(body.Label).Select(point => point.ToVector2())).All(OnWood);
                                 });
                         }),
-                    $"{count} players, viewer {viewer}: one fixed rectangular tabletop leaves a modest mat border and supports every side/near commander backing and full pile shadow/layers/label without moving the far seat HUD"
+                    $"{count} players, viewer {viewer}: one fixed rectangular tabletop leaves a modest mat border and supports every side/near commander backing and complete prepared pile shadow, layers and caption"
                         + (outside.Count > 0 ? "; outside: " + string.Join(", ", outside) : ""));
             }
         }

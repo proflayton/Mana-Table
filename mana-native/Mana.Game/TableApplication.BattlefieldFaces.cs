@@ -9,7 +9,7 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private sealed record CardFallbackLayout(Rectangle Name, float NameSize, IReadOnlyList<Rectangle> Reserved);
+    private sealed record CardFallbackLayout(Rectangle Name, float NameSize, IReadOnlyList<Rectangle> Reserved, bool ShowDetails = true);
     private sealed record BattlefieldScanLayout(Rectangle Face, float StatsSize, Rectangle StatsRow,
         Rectangle BadgeRow, bool BadgeRoom, CardFallbackLayout? Fallback);
     // Every battlefield occurrence keeps the same original printing used in
@@ -47,12 +47,23 @@ internal sealed partial class TableApplication
     private void DrawStudyBattlefieldName()
     {
         if (!TableStudyEnabled || OverlayOpen || dragging || readingId != null
-            || HitAt(pointer) is not { Card: { } card, Zone: "Battlefield", PlayerId: { } owner }
-            || tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) is not { ScanFace: true } node) return;
-        var displayed = boardView.Apply(node.Pose);
-        if (node.Attachment == null && node.StudyFamily is { CohortCount: > 1 } family && StudyFamilyNameVisible(family)) return;
+            || HitAt(pointer) is not { Card: { } card, Zone: { } zone, PlayerId: { } owner } hit) return;
+        var node = zone == "Battlefield" ? tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) : null;
+        Pose displayed;
+        if (node is { ScanFace: true }) {
+            displayed = boardView.Apply(node.Pose);
+            if (node.Attachment == null && node.StudyFamily is { CohortCount: > 1 } family && StudyFamilyNameVisible(family)) return;
+        } else {
+            var current = match == null ? null : CardViews.InZones(match).Where(occurrence => occurrence.PlayerId == owner
+                && occurrence.Zone == zone && !occurrence.Card.FaceDown && CardViews.Same(occurrence.Card, card))
+                .Select(occurrence => occurrence.Card).FirstOrDefault();
+            var station = matchPresentation.Cards.Cards.LastOrDefault(entry => entry.Hit.Id == hit.Id && entry.Hit.Scope == hit.Scope
+                && entry.Request.TableAnchored && !entry.Focused && entry.Request.Owner == owner && entry.Zone == zone);
+            if (current == null || station == null || zone is not ("Command" or "Library" or "Graveyard" or "Exile")) return;
+            card = current; displayed = station.Display;
+        }
         string name = card.FaceDown ? "Face-down permanent" : card.Name;
-        if (node.Attachment is { } attached && attached.RootOwner != owner)
+        if (node?.Attachment is { } attached && attached.RootOwner != owner)
             name += " · " + match!.Players.First(player => player.Id == owner).Name;
         const float size = .7f;
         int width = Math.Min(380, canvas.TextWidth(name, size, true) + 16);
@@ -62,6 +73,36 @@ internal sealed partial class TableApplication
         canvas.Panel(bounds, new(13, 24, 30), HoverAccent, 4);
         canvas.Text(name, bounds.X + 8, bounds.Y + 5, Ink, size, bounds.Width - 16, 80, true);
         // This is a read-only identity cue, not a second card or action surface.
+    }
+
+    private CardFallbackLayout? StationCardFallback(Card card, Pose pose)
+    {
+        if (pose.Size.X >= 300 || card.FaceDown || resources.Card(card) != null) return null;
+        var face = pose.InteriorBounds(4);
+        int quantityHeight = Math.Max((int)MathF.Ceiling(20 * boardView.Scale),
+            canvas.TextSize("999", .6f * boardView.Scale, 2000, 1, true).Y + 4);
+        face.Height = Math.Max(0, Math.Min(face.Bottom, pose.Bounds.Bottom - quantityHeight) - face.Top);
+        var tax = CardPresentation.CommanderTax(card) > 0 ? StationTaxStamp(card, pose).Bounds : Rectangle.Empty;
+        var candidates = new List<Rectangle>();
+        if (tax.IsEmpty || !tax.Intersects(face)) candidates.Add(face);
+        else {
+            candidates.Add(new(face.X, face.Y, face.Width, Math.Max(0, tax.Top - face.Top - 2)));
+            candidates.Add(new(face.X, face.Y, Math.Max(0, tax.Left - face.Left - 2), face.Height));
+            candidates.Add(new(Math.Min(face.Right, tax.Right + 2), face.Y, Math.Max(0, face.Right - tax.Right - 2), face.Height));
+        }
+        float size = .5f * boardView.Scale;
+        Rectangle name = Rectangle.Empty;
+        foreach (var area in candidates.OrderByDescending(area => area.Width * area.Height)) {
+            if (area.Width <= 0 || area.Height <= 0
+                || card.Name.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+                    .Any(word => canvas.TextWidth(word, size, true) > area.Width)) continue;
+            var measured = canvas.TextSize(card.Name, size, area.Width, 80, true);
+            if (measured.Y > area.Height) continue;
+            name = new(area.X, area.Y, area.Width, measured.Y); break;
+        }
+        // Tiny missing-art faces either show a complete identity or use the
+        // source-attached hover/reader. Mana/type fragments are not identities.
+        return new(name, size, [], ShowDetails: false);
     }
 
     private static Rectangle BattlefieldScanLabelArea(Pose pose)
