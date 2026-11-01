@@ -365,6 +365,23 @@ and its existing `test=true` borrowing contract remains unchanged. Controller
 swaps, cost calculation and manual-producer discovery are not certified pure.
 The bulk planner must therefore remain deferred during a manual Undo window.
 
+`forge-game/ManaSourceFacts` owns the bounded current counter amount and stable
+tap-source facts shared by `ComputerUtilMana` and the API's
+`ManaProductionProjection`. A known zero differs from unknown. These reads do
+not evaluate the general amount DSL, resolve an ability or grant permission to
+pay. Counter-changing costs, coupled effects, restrictions and ambient mana/tap
+interactions retain the conservative fallback.
+
+After legacy source and mode ordering, `ComputerUtilMana` copies supported
+tap-only output quantities once and stably reorders eligible positions on the
+same physical source by greater output. Equal quantities retain the prior color
+preference; complex modes keep their positions. This avoids a mixed-domain
+comparator cycle and leaves different sources and live bill legality with their
+existing owners. `OptionalManaPayment` uses greater output only to break a tie
+between stable routes that reduce the current bill equally. Its actual remaining
+bill still takes precedence, including explicit colorless requirements and the
+single-color nature of an `Any` output.
+
 Human source catalogs carry a smaller `ManaCostPreview`, not the bot's private
 action semantics. It contains nominal costs, cost knowledge and read-only funding
 facts bound to the observed source-query revision. Payment publications separately

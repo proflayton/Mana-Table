@@ -27,6 +27,7 @@ import forge.game.keyword.Keyword;
 import forge.game.mana.Mana;
 import forge.game.mana.ManaCostBeingPaid;
 import forge.game.mana.ManaPool;
+import forge.game.mana.ManaSourceFacts;
 import forge.game.phase.PhaseType;
 import forge.game.player.Player;
 import forge.game.player.PlayerPredicates;
@@ -219,6 +220,8 @@ public class ComputerUtilMana {
                 return ability1.compareTo(ability2);
             });
 
+            preferEquivalentTapOutputs(newAbilities);
+
             if (DEBUG_MANA_PAYMENT) {
                 System.out.println("Sorted Abilities: " + newAbilities);
             }
@@ -269,6 +272,30 @@ public class ComputerUtilMana {
                     sourcesForShards.replaceValues(shard, finalAbilities);
                 }
             }
+        }
+    }
+
+    private static void preferEquivalentTapOutputs(List<SpellAbility> abilities) {
+        // Keep source/resource preferences and complex modes in their original
+        // positions. A pairwise override of the legacy comparator could create
+        // a comparison cycle when a third, unsupported mode is present.
+        Map<Card, List<Integer>> positions = new LinkedHashMap<>();
+        for (int index = 0; index < abilities.size(); index++)
+            positions.computeIfAbsent(abilities.get(index).getHostCard(), ignored -> new ArrayList<>()).add(index);
+        for (var sourcePositions : positions.values()) {
+            if (sourcePositions.size() < 2) continue;
+            List<Integer> eligible = new ArrayList<>();
+            Map<SpellAbility, Integer> output = new IdentityHashMap<>();
+            for (int index : sourcePositions) {
+                SpellAbility ability = abilities.get(index);
+                Integer units = ManaSourceFacts.comparableTapOutput(ability);
+                if (units != null && units > 0) { eligible.add(index); output.put(ability, units); }
+            }
+            // Stable ties retain the existing color preference. Quantities are
+            // copied once, with no payment, DSL evaluation or source mutation.
+            var ordered = eligible.stream().map(abilities::get)
+                    .sorted(Comparator.comparingInt((SpellAbility ability) -> output.get(ability)).reversed()).toList();
+            for (int index = 0; index < eligible.size(); index++) abilities.set(eligible.get(index), ordered.get(index));
         }
     }
 

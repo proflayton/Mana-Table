@@ -661,6 +661,21 @@ classification validation. Its authored observations test presentation and
 command safety; the Java journeys supply the rules evidence. Window captures
 and human readability review remain separate.
 
+`ScalingManaPaymentTest` exercises real The Eternity Elevator abilities through
+the human `InputPayMana` Auto path at 19, 20 and 32 charge counters. It checks a
+small generic bill, a bill larger than the base output, colored and explicit
+colorless requirements, one-color production alongside a second source, exact
+remaining pool quantities and one physical tap without removing charge counters.
+Astral Cornucopia covers a different counter producer and variable name. The
+same class checks optional-payment funding, preserved manual mode selection,
+destructive-cost exclusion and read-only quantity facts without RNG, pool, tap
+or undoable-state mutation. It runs in the normal Java test suite; the focused
+command also retains the existing projection and payment guard checks:
+
+```powershell
+mvn -pl forge-api -am test '-Dtest=ScalingManaPaymentTest,ActionOperationProjectionTest,OptionalManaPaymentTest,ManaAvailabilityExperienceTest' '-Dsurefire.failIfNoSpecifiedTests=false'
+```
+
 `ManaPoolPaymentQuoteTest` exercises the internal fixed-bill pool query with real
 mana provenance. It checks exact unit identity and occurrence counts, unchanged
 pool order, events, rules timestamps, reversal barriers and ability metadata;
