@@ -17,7 +17,7 @@ internal sealed partial class TableApplication
                 if (open.View == MatchView.Help) inspectPage = 0;
                 break;
             case MatchIntent.CloseView: overlay = ""; textFocus = false; break;
-            case MatchIntent.CloseInspector: overlay = ""; inspected = null; break;
+            case MatchIntent.CloseInspector: overlay = ""; inspected = null; inspectedChoice = null; break;
             case MatchIntent.CloseZone: zoneName = null; break;
             case MatchIntent.ViewBattlefield: decisions.Collapsed = true; textFocus = false; CloseAllocationDetail(); break;
             case MatchIntent.OpenDecision: decisions.Collapsed = false; break;
@@ -27,6 +27,7 @@ internal sealed partial class TableApplication
             case MatchIntent.OpenStackWorkload open: OpenStackWorkload(open.Key); break;
             case MatchIntent.CloseStackWorkload: expandedStackWorkload = ""; break;
             case MatchIntent.InspectCard read: Inspect(read.Card); break;
+            case MatchIntent.ReadChoice read: InspectChoice(read.Slot); break;
             case MatchIntent.InspectOccurrence read:
                 if (matchPresentation.Cards.Cards.LastOrDefault(card => card.Id == read.Id) is { } occurrence)
                     ToggleCardReader(occurrence.Hit);

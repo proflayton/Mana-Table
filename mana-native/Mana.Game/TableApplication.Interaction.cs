@@ -40,6 +40,16 @@ internal sealed partial class TableApplication
     private IEnumerable<Card> AllCards() => match?.Players.SelectMany(p => p.Zones).SelectMany(z => z.Cards) ?? [];
     private IEnumerable<Card> VisibleCards() => match == null ? [] : CardViews.Visible(match);
     private static bool SameVisibleCard(Card a, Card b) => CardViews.Same(a, b);
+    private void InspectChoice(int slot)
+    {
+        // A disclosed slot belongs to this exact decision, even when several
+        // faces have identical names or no live card handle. Reading is not a
+        // choice and does not extend a disclosure into another prompt.
+        if (!ReadingGalleryOpen || ChoiceFace(slot) is not { FaceDown: false } face) return;
+        inspectedChoice = (Scope, slot); inspected = face;
+        CollapseCardReading();
+        inspectBack = false; inspectPage = 0; overlay = "inspect";
+    }
     private void Inspect(Card card)
     {
         if (InspectAllocationAtPointer()) return;

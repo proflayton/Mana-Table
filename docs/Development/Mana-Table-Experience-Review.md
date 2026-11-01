@@ -6,6 +6,53 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Read cards while choosing: 1 November 2026
+
+**Card-choice reading revision after 0.2.313; human gameplay review pending.**
+Automated validation and exact-candidate CI belong in the pull request record.
+The reported **Choose cards** screen offers Mind Stone and
+Skybreaker, Sword of Bashenga at a size that makes their rules unreadable. The
+player needs to examine either card before deciding which to put on the bottom
+of the library, without selecting it or losing the current selection.
+
+[Magic Online's zoom redesign](https://www.mtgo.com/news/frame-refactor)
+distinguishes ordinary card actions from a deliberate Large Zoom reading view
+that is easy to open and dismiss. Its developers also explain why hiding basic
+card information behind unfamiliar input combinations is insufficient. Their
+hover-zoom work explicitly considers unwanted popups while moving across a
+collection. [Arena's mobile developer article](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-january-2021-01-21)
+separates holding a card to read its detail from selecting and dragging cards
+for a mulligan. These are game precedents for noncommitting inspection; neither
+source documents our exact **Read card** action beneath a choice.
+
+Our adaptation gives each offered card and already disclosed context card in a
+choice or ordering gallery a quiet, visible **Read card** action beneath its
+face and selection marker. Face-down cards have no reading action.
+The face retains its existing selection click. **Read card** instead opens the
+existing full inspector with the exact card's complete face and readable rules.
+Rules pages use their measured display height, so **More rules** retains the
+remaining text of a multiline card instead of clipping its final lines.
+It resolves the original current choice scope and disclosure slot, rather than
+using a filtered position or treating a visual ID as permission. An ineligible
+but disclosed card can be read without becoming a selectable choice.
+
+**Back to choices** or Escape returns to the current choice collection with its staged
+cards intact. Reading and returning send no engine reply; the explicit
+confirmation still submits the selection. A changed input, revoked disclosure
+or concealed face must not leave a captured card readable. Right-click remains
+a supplemental reading gesture, rather than the only way to discover details.
+Read-only reveals retain their existing click-to-read card reader.
+
+This candidate retains deliberate reading instead of adding hover enlargement
+or moving the choice row whenever the pointer crosses it. The intended benefit
+is keeping rapid bulk selection usable while making reading discoverable.
+MTGO's Large Zoom does not establish that this extra action is comfortable for
+a large Commander collection. Review the complete choose/read/return/confirm
+journey at 1000 x 740 and a larger window, including enlarged text, selected and
+unselected cards, duplicate printings, full-art cards, disclosure withdrawal and
+an input changing during inspection. Record human review for the exact candidate;
+automated command and geometry checks cannot supply that approval.
+
 ## Readable passing controls: 1 November 2026
 
 **Activation-stop list revision after 0.2.311; human gameplay review pending.**

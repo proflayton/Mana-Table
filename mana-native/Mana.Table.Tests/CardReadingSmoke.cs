@@ -314,10 +314,19 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
     {
         Step(.15, () => MoveHit("choice:2"));
         Step(.25, () => Check(ChoiceCompact(0) && view.HoverPreview == null && view.Selections.Count == 0,
-            "Hovering a selectable anonymous face keeps it compact and makes no choice")); RightClick();
+            "Hovering a selectable anonymous face keeps it compact and makes no choice"));
+        Step(0, () => {
+            var read = view.Hits.Single(hit => hit.Id == "choice-read:0");
+            Check(read.Intent is Mana.Table.Interaction.MatchIntent.ReadChoice { Slot: 0 }
+                && !read.Bounds.Intersects(view.Hits.Single(hit => hit.Id == "choice:2").Bounds)
+                && HitReachable(read.Id),
+                "A visible Read card action has its own reachable target outside the original anonymous choice's selection area");
+            Capture("05a-visible-choice-reading"); MoveHit(read.Id);
+        }); Click();
         Prepared(() => view.Overlay == "inspect", 2, () => {
             Check(view.Overlay == "inspect" && view.Selections.Count == 0 && scenario.Replies.Count == repliesBeforeReveal + 1,
-                "Right-click reads the current private gallery face without selecting it or sending a game command");
+                "Read card opens the current private gallery face without selecting it or sending a game command");
+            Capture("05a-choice-details");
             MoveHit("close-overlay");
         }, "A visible scoped gallery face must support explicit inspection"); Click();
         Prepared(() => view.Overlay.Length == 0 && ChoiceCompact(0), 2, () => MoveHit("choice:2"), "Closing inspection restores the same compact choice"); Click();
@@ -347,7 +356,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
                 "All three identical faces preserve their separate authoritative indices without automatic confirmation");
             Capture("05c-multichoice-selected"); Move(new(10, 70));
         });
-        Step(.06, () => MoveHit("choice:2")); RightClick();
+        Step(.06, () => MoveHit("choice-read:0")); Click();
         Prepared(() => view.Overlay == "inspect", 2, () => {
             Check(view.Overlay == "inspect" && view.Selections.SequenceEqual([2, 5, 9]),
                 "Explicitly inspecting a selected anonymous face preserves every staged choice");
@@ -700,7 +709,12 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         var state = view.Match!;
         var scene = TableScene.Build(state, new(-1, -1), null, null, false, CardPresentation.IsResource);
         var nodes = state.Players.SelectMany(p => scene.Battlefield(p.Id).SelectMany(c => c.Cards)).ToArray();
-        return ((OrderingPayload)state.Decision!.Payload).Selection.Choices.All(choice => nodes.SingleOrDefault(c => c.Id == choice.CardId) is { } node
+        var selection = state.Decision?.Payload switch {
+            OrderingPayload ordering => ordering.Selection,
+            OptionsPayload options => options.Selection,
+            _ => null
+        };
+        return selection != null && selection.Choices.All(choice => nodes.SingleOrDefault(c => c.Id == choice.CardId) is { } node
             && view.DisplayedPose(choice.CardId) is { } displayed
             && Microsoft.Xna.Framework.Vector2.Distance(displayed.Center, node.Pose.Center) < 2
             && Microsoft.Xna.Framework.Vector2.Distance(displayed.Size, node.Pose.Size) < 2);
