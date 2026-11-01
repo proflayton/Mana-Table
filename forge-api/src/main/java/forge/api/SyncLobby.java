@@ -77,7 +77,7 @@ final class SyncLobby {
             conversation = new TableConversation(); conversation.join(0, slots.get(0).name);
             revision = 1;
             long epoch = ++transportEpoch;
-            server = new SyncTransport.Server(this::dispatch, this::joinSeat, seat -> disconnected(epoch, seat)); connection = server.local(0);
+            server = new SyncTransport.Server(this::dispatch, this::joinSeat, seat -> disconnected(epoch, seat), Set.of("match-history")); connection = server.local(0);
             try { port = transport.equals("local") ? 0 : server.listen(); } catch (java.io.IOException e) { close(); throw new IllegalStateException("Could not host the table", e); }
             if (port != 0) {
                 // Endpoint metadata is discovered once, off the command pipe.
@@ -185,6 +185,7 @@ final class SyncLobby {
             case "observe": return table == null ? null : table.seat(seat).state();
             case "reply": requireMatch(); return table.seat(seat).action(p);
             case "sourceActions": requireMatch(); return table.seat(seat).sourceActions(p);
+            case "history": requireMatch(); return table.seat(seat).history(p);
             case "concede": requireMatch(); return table.seat(seat).concede(p);
             case "tempoPresented": requireMatch(); return table.seat(seat).tempoPresented(p);
             case "tempo": {

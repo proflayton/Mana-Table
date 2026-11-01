@@ -78,6 +78,7 @@ public class InputPayManaOfCostPayment extends InputPayMana {
 
     @Override
     protected void onCancel() {
+        recordPaymentEnd("cancelled");
         stop();
     }
 

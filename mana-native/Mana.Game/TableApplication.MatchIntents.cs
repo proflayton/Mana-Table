@@ -9,15 +9,18 @@ internal sealed partial class TableApplication
     private void HandleMatchIntent(MatchIntent intent)
     {
         switch (intent) {
-            case MatchIntent.OpenHistory: overlay = "history"; historyPage = 0; noticeUntil = 0; break;
+            case MatchIntent.OpenHistory: OpenHistory(); break;
             case MatchIntent.OpenView open:
+                if (open.View == MatchView.History) { OpenHistory(); break; }
                 overlay = open.View switch { MatchView.Settings => "settings", MatchView.History => "history", MatchView.Help => "help",
                     MatchView.Concede => "concede", MatchView.LeaveTable => "leave-table", _ => "table-state" };
-                if (open.View == MatchView.History) historyPage = 0;
                 if (open.View == MatchView.Help) inspectPage = 0;
                 break;
             case MatchIntent.CloseView: overlay = ""; textFocus = false; break;
-            case MatchIntent.CloseInspector: overlay = ""; inspected = null; inspectedChoice = null; break;
+            case MatchIntent.CloseInspector:
+                if (historyInspector) ReturnToHistory();
+                else { overlay = ""; inspected = null; inspectedChoice = null; }
+                break;
             case MatchIntent.CloseZone: zoneName = null; break;
             case MatchIntent.ViewBattlefield: decisions.Collapsed = true; textFocus = false; CloseAllocationDetail(); break;
             case MatchIntent.OpenDecision: decisions.Collapsed = false; break;
@@ -188,7 +191,6 @@ internal sealed partial class TableApplication
             case MatchPage.Zone: zonePage = Math.Max(0, value); break;
             case MatchPage.Combat: combatPage = Math.Max(0, value); break;
             case MatchPage.Change: changePage = Math.Max(0, value); break;
-            case MatchPage.History: historyPage = Math.Max(0, value); break;
             case MatchPage.PriorityQueue: stackQueuePage = Math.Max(0, value); break;
             case MatchPage.PriorityText: priorityAbilityTextPage = Math.Max(0, value); break;
             case MatchPage.PriorityAbilities: priorityAbilityListPage = Math.Max(0, value); break;

@@ -226,6 +226,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
                 "Auto resumes after the visible action despite intervening snapshot refreshes"),
             "Auto must resume once the visible stack announcement finishes");
         QueueRevealChecks();
+        QueueHistoryChecks();
 
     }
     // Reporting needs no further input update or rendered frame after the last checked action.

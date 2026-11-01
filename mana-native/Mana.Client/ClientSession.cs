@@ -27,7 +27,8 @@ public sealed partial class ClientSession
     private readonly Queue<RestorePriorityAbility> pendingSettings = [];
     private RestorePriorityAbility? activeSetting;
     public ClientSession(IMatchConnection connection, ITableSetup? setup = null, TimeProvider? clock = null,
-        ISourceActions? sourceActions = null, ObservationDeliveryMode observationDelivery = ObservationDeliveryMode.Polled)
+        ISourceActions? sourceActions = null, ObservationDeliveryMode observationDelivery = ObservationDeliveryMode.Polled,
+        IMatchHistory? history = null)
     {
         if (!Enum.IsDefined(observationDelivery)) throw new ArgumentOutOfRangeException(nameof(observationDelivery));
         this.connection = connection;
@@ -36,10 +37,12 @@ public sealed partial class ClientSession
         diagnostics = new(RecordDiagnostic, () => replica.Epoch, () => DiagnosticRecorded != null);
         advance = new(connection, diagnostics);
         SourceActions = new(sourceActions, Post);
+        History = new(history, Post);
         ObservationDelivery = observationDelivery;
     }
     public ObservationDeliveryMode ObservationDelivery { get; }
     public SourceActionSession SourceActions { get; }
+    public MatchHistorySession History { get; }
     public GameSnapshot? State => replica.Current;
     public Lobby? Lobby => lobbyReplica.Current;
     public ExecutionBatch ExecutionChanges { get; private set; } = ExecutionBatch.Empty;
@@ -220,6 +223,7 @@ public sealed partial class ClientSession
         } } catch (FiniteYieldOwnershipException error) { ReportFailure(error, true); return false; }
         // Revocation and state commit share one boundary. Notification runs
         // outside it, so callbacks cannot block a background source on the gate.
+        History.Observe(state);
         diagnosticAccepted = true;
         diagnosticReported = true;
         diagnostics.Publication(diagnosticPrevious, state, true, diagnosticAudience, commandObservation);
@@ -399,7 +403,7 @@ public sealed partial class ClientSession
     public void Close()
     {
         ClearAllOptionalPaymentPolicies();
-        StopFiniteIntent(); CancelAdvance(); SourceActions.Close(); pendingSettings.Clear();
+        StopFiniteIntent(); CancelAdvance(); SourceActions.Close(); History.Close(); pendingSettings.Clear();
         lock (observationGate) { Closed = true; RevokeObservationIngress(); BeginCommand(); }
         commandTask = RevokeAtCloseAsync(commandTask, finiteRevocations.Values.ToArray());
     }

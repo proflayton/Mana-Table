@@ -1972,6 +1972,25 @@ of a historic incident which was never recorded.
 
 ## Profiles and artifacts
 
+The payment/history source slice after 0.2.317 extends the existing tests rather
+than adding a replay harness. `MatchHistoryTest`, `ScalingManaPaymentTest`,
+`ExecutionJourneyTest`, `ExecutionDisclosureTest` and `SyncTransportTest` cover
+actual bills, output/spending, preview suppression, refunds/restoration,
+audience filtering, pre-eviction capture, cursor bounds and capability negotiation.
+Run them with the normal `forge-api -am` Maven test selection on Java 17 and 21.
+
+`Mana.Client.Tests` registers `MatchHistoryRegression` and
+`MatchHistoryArchiveRegression`: typed admission, stale generations, gaps,
+background storage, restart, late final chunks, unobserved tails, corruption,
+byte limits, public/private export and safe report focus. The existing headless
+presentation runner includes `HistoryWireChecks`. The real headless-engine
+journey calls `HistoryEngineJourney` through the actual Java RPC/native decoder;
+use a freshly packaged matching engine, not an older release JAR. Both existing
+card-reading native CI sizes exercise the History reading journey at 130% text,
+including stable selection, card inspection/return, disclosure revocation,
+saved-match navigation and zero game commands. Preserve first failures and
+physical captures; human readability review remains separate.
+
 The normal app profile is `%LOCALAPPDATA%\ManaTableNative`. Development and test
 runs use `--profile <fresh-directory>`; never use a player's installed profile
 or production installation for lifecycle tests.

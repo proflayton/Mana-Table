@@ -23,6 +23,7 @@ internal static class Program
             using var instance = WindowsUpdateInstaller.EnterInstance();
             var build = AppBuild.Load(AppContext.BaseDirectory);
             using var diagnostics = new ClientDiagnosticJournal(profile, build);
+            using var historyArchive = new MatchHistoryArchive(profile, build);
             var incremental = IncrementalAppUpdates.TryCreate(build);
             IAppUpdates appUpdates = incremental ?? (IAppUpdates)new GitHubAppUpdates(build);
             using var updateLifetime = (IDisposable)appUpdates;
@@ -46,6 +47,8 @@ internal static class Program
                 async Task InitializeEngine() { await engine.InitializeAsync(); await automated.StartAsync(); }
                 var services = new TableServices(engine, engine, engine, InitializeEngine) {
                     Diagnostics = diagnostics.Record,
+                    MatchHistoryProvider = engine as IMatchHistory,
+                    HistoryArchive = historyArchive,
                     SourceActions = engine as ISourceActions, Printings = engine as ICardPrintings,
                     Tokens = engine as IDeckTokens,
                     Library = engine as IDeckLibrary, Workshop = engine as IDeckWorkshop,
@@ -60,6 +63,7 @@ internal static class Program
                 game.Run();
             } finally {
                 automated.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                historyArchive.DisposeAsync().AsTask().GetAwaiter().GetResult();
                 engine.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
             return 0;

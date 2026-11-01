@@ -79,6 +79,9 @@ public final class MatchActivity {
     private int ownTurns, cardsDrawn, landsPlayed, spellsCast, mulligans, commanderCasts;
     private ExecutionTracker.Reference eventExecution;
     private java.util.function.BiFunction<ExecutionTracker.Reference, GameEvent, ExecutionTracker.Reference> executionFilter = (ignored, event) -> null;
+    private java.util.function.BiConsumer<Entry, Boolean> history = (entry, disclosed) -> { };
+
+    void history(java.util.function.BiConsumer<Entry, Boolean> sink) { history = sink; }
 
     void executionFilter(java.util.function.BiFunction<ExecutionTracker.Reference, GameEvent, ExecutionTracker.Reference> filter) {
         executionFilter = filter;
@@ -224,6 +227,10 @@ public final class MatchActivity {
                 && !card.isFaceDown() && card.canBeShownTo(viewer);
     }
 
+    // New factual payloads use the same admission boundary as ordinary activity.
+    boolean historyVisible(CardView card) { return visible(card); }
+    boolean historyPublic(CardView card) { return publicOccurrence(card) && visible(card); }
+
     private String cardName(CardView card) { return visible(card) ? card.getCurrentState().getName() : "a face-down or hidden card"; }
     private boolean publicFaceDown(CardView card) {
         return card != null && card.isFaceDown() && card.getZone() == ZoneType.Battlefield && card.canBeShownTo(viewer);
@@ -359,6 +366,9 @@ public final class MatchActivity {
                 detail, outcome, count, change, cause, interruptsQuietYield, impact, stackId,
                 execution == null ? null : execution.id(), execution == null ? null : execution.step());
         entries.addLast(added);
+        boolean publicFact = (card == null || !visible(card) || publicOccurrence(card))
+                && (cause == null || publicHistoryReference(cause.cardId()));
+        history.accept(added, publicFact);
         retainFinite(added);
         if (cause != null && change != null && change.kind().equals("counters")) {
             latestCounterCause = cause.id();
@@ -375,6 +385,12 @@ public final class MatchActivity {
             if (oldestId.equals(latestCounterCause) && entriesAfterLatestCounterCause < 120) break;
             entries.removeIf(entry -> entry.cause() != null && entry.cause().id().equals(oldestId));
         }
+    }
+
+    private boolean publicHistoryReference(String id) {
+        if (id == null) return false;
+        return visibleIds.values().stream().anyMatch(known -> known.id().equals(id)
+                && publicOccurrence(known.view()) && visible(known.view()));
     }
 
     @Subscribe public void committed(ExecutionTracker.Committed committed) {

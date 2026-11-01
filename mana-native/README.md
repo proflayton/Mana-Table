@@ -32,6 +32,20 @@ definitions and live characteristics remain authoritative engine state.
 
 ## Table interaction and state
 
+Source candidate after 0.2.317: History opens one play with its full source name,
+current disclosed card and measured costs/results. Previous/Next play or the
+left/right keys navigate; Home returns to newest. Incoming plays preserve the
+selected occurrence. Read current card opens a noncommitting inspector; Back to
+history or Escape returns. Closing History reconciles the current live decision,
+and the configured decision clock continues while reading.
+
+Saved matches are available in History and through Recent matches on the home
+screen. The profile's `history` directory contains bounded local archives. Save
+report writes JSON containing public facts by default; Report includes my private
+choices explicitly opts into that viewer's private records. Reports are local
+files with no automatic upload. Records cannot reconstruct games played before
+this feature. See the [history design and current scope](../docs/Development/Mana-Table-History.md).
+
 Hover highlights a card without enlarging it. During ordinary priority, clicking
 a hand, battlefield or command-zone card opens its reader; clicking that card
 again, empty space or Escape dismisses it. The full original face stays visible,

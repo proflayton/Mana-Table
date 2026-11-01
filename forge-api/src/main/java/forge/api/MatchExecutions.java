@@ -29,6 +29,9 @@ final class MatchExecutions {
     private final Set<String> finiteDescendants = new HashSet<>();
     private boolean finiteOverflow;
     private volatile Frame latest = new Frame(1, 0, List.of(), List.of());
+    @FunctionalInterface interface HistorySink { void accept(Occurrence occurrence, Transition transition, boolean publicSource); }
+    private HistorySink history = (occurrence, transition, disclosed) -> { };
+    void history(HistorySink sink) { history = sink; }
 
     MatchExecutions(ExecutionTracker rules, PlayerView viewer, MatchActivity activity) {
         this.rules = rules; this.viewer = viewer; this.activity = activity;
@@ -53,6 +56,7 @@ final class MatchExecutions {
                 occurrence.kind(), occurrence.actorPlayerId(), cardId, name, occurrence.step(), occurrence.outcome(),
                 occurrence.ruleKind(), occurrence.ruleResult()));
         transitions.addLast(new Transition(transition.sequence(), occurrence.id(), occurrence.step(), occurrence.outcome(), occurrence.ruleResult()));
+        recordHistory(admitted.get(occurrence.id()), transitions.peekLast(), publicZone && visible);
         retainFinite(occurrence.id());
         copyFrame();
     }
@@ -89,6 +93,7 @@ final class MatchExecutions {
                     || occurrence.source() != null || occurrence.actorPlayerId() != null || !activity.publicCommitted(event)) return null;
             admitted.put(occurrence.id(), new Occurrence(occurrence.id(), occurrence.parentId(), occurrence.budgetRootId(),
                     occurrence.kind(), null, null, null, occurrence.step(), occurrence.outcome(), occurrence.ruleKind(), occurrence.ruleResult()));
+            recordHistory(admitted.get(occurrence.id()), null, true);
             retainFinite(occurrence.id());
             copyFrame();
         }
@@ -161,4 +166,14 @@ final class MatchExecutions {
 
     /** An event-time value copy; safe for IPC polling without reading rules objects. */
     Frame frame() { return latest; }
+
+    private void recordHistory(Occurrence occurrence, Transition transition, boolean publicSource) {
+        // Admission of a public child never grants this viewer its hidden
+        // caller's identity. Apply the same closure as the live frame.
+        String parent = admitted.containsKey(occurrence.parentId()) ? occurrence.parentId() : null;
+        String root = admitted.containsKey(occurrence.budgetRootId()) ? occurrence.budgetRootId() : occurrence.id();
+        history.accept(new Occurrence(occurrence.id(), parent, root, occurrence.kind(), occurrence.actorPlayerId(),
+                occurrence.sourceCardId(), occurrence.sourceName(), occurrence.step(), occurrence.outcome(),
+                occurrence.ruleKind(), occurrence.ruleResult()), transition, publicSource);
+    }
 }

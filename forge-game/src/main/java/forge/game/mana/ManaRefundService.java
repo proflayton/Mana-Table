@@ -22,6 +22,7 @@ public class ManaRefundService {
 
     public void refundManaPaid() {
         PlayerCollection payers = new PlayerCollection(sa.getActivatingPlayer());
+        boolean changed = !sa.getPayingMana().isEmpty() || !sa.getPayingManaAbilities().isEmpty();
 
         // move non-undoable paying mana back to floating
         for (Map.Entry<Player, List<Mana>> e : sa.getPayingMana().stream().collect(Collectors.groupingBy(Mana::getPlayer)).entrySet()) {
@@ -53,6 +54,8 @@ public class ManaRefundService {
         // update battlefield of all activating players - to redraw cards used to pay mana as untapped
         for (Player p : payers) {
             p.getGame().fireEvent(new GameEventZone(ZoneType.Battlefield, p, EventValueChangeType.ComplexUpdate, null));
+            if (changed && !p.getGame().getExecutions().paymentIsPreview())
+                p.getGame().fireEvent(forge.game.event.ManaPaymentReceipt.restored(p, sa));
         }
     }
 }

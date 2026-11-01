@@ -9,6 +9,8 @@ namespace Mana.Table;
 public sealed record TableServices(IEngineCatalog Catalog, ITableSetup Tables, IMatchConnection Match, Func<Task> Initialize)
 {
     public Action<ClientDiagnostic>? Diagnostics { get; init; }
+    public IMatchHistory? MatchHistoryProvider { get; init; }
+    public IMatchHistoryArchive? HistoryArchive { get; init; }
     public ISourceActions? SourceActions { get; init; }
     public ICardPrintings? Printings { get; init; }
     public IDeckTokens? Tokens { get; init; }

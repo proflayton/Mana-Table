@@ -28,6 +28,8 @@ internal sealed partial class TableApplication
             DrawHomeDecks();
         }
         DrawUpdateFooter(true);
+        if (!deckEditor && services.HistoryArchive != null && setupModal.Length == 0)
+            MenuAction("home-history", "Recent matches", new(1000, 939, 280, 44), new HistoryIntent.Open(true), !busy);
         if (setupModal.Length > 0) DrawSetupModal();
         DrawWorkshopDialog();
     }

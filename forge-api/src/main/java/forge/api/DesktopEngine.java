@@ -66,7 +66,7 @@ public final class DesktopEngine implements AutoCloseable {
         var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]), simulationTables);
         engine.resources = Path.of(args[0]);
         engine.documents.loadAnalysisFormats(engine.resources);
-        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo", "automated-seats", "certified-one-step-undo"))));
+        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo", "automated-seats", "certified-one-step-undo", "match-history"))));
         try (engine; var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = input.readLine()) != null) {
@@ -96,6 +96,9 @@ public final class DesktopEngine implements AutoCloseable {
         if (error instanceof StaleObservationException && request != null && request.has("method")
                 && request.get("method").isJsonPrimitive() && request.get("method").getAsString().equals("automatedState"))
             reply.addProperty("errorCode", StaleObservationException.CODE);
+        if (error instanceof HistoryUnavailableException && request != null && request.has("method")
+                && request.get("method").isJsonPrimitive() && request.get("method").getAsString().equals("matchHistory"))
+            reply.addProperty("errorCode", HistoryUnavailableException.CODE);
         return reply;
     }
 
@@ -141,6 +144,7 @@ public final class DesktopEngine implements AutoCloseable {
                 case "matchState" -> seat.match().state();
                 case "matchAction" -> seat.match().action(p);
                 case "matchSourceActions" -> seat.match().sourceActions(p);
+                case "matchHistory" -> seat.match().history(p);
                 case "matchConcede" -> seat.match().concede(p);
                 case "matchTempoPresented" -> seat.match().tempoPresented(p);
                 default -> throw new IllegalArgumentException("Command is not available on a seat connection");
@@ -295,6 +299,11 @@ public final class DesktopEngine implements AutoCloseable {
                 if (multiplayer != null && multiplayer.connected()) yield multiplayer.match().sourceActions(p);
                 if (match == null) throw new IllegalStateException("No active match");
                 yield match.sourceActions(p);
+            }
+            case "matchHistory" -> {
+                if (multiplayer != null && multiplayer.connected()) yield multiplayer.match().history(p);
+                if (match == null) throw new IllegalStateException("No active match");
+                yield match.history(p);
             }
             case "matchTempoPresented" -> {
                 if (multiplayer != null && multiplayer.connected()) yield multiplayer.match().tempoPresented(p);

@@ -199,6 +199,8 @@ public class AbilityManaPart implements java.io.Serializable {
         }
 
         manaPool.addMana(this.lastManaProduced);
+        if (!game.getExecutions().paymentIsPreview())
+            game.fireEvent(forge.game.event.ManaPaymentReceipt.produced(player, sa, this.lastManaProduced));
 
         final Map<AbilityKey, Object> runParams = AbilityKey.mapFromCard(source);
         runParams.put(AbilityKey.Player, player);

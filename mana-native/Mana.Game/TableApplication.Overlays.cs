@@ -28,7 +28,7 @@ internal sealed partial class TableApplication
             switch (overlay) {
                 case "inspect": DrawInspector(); break;
                 case "settings": DrawSettings(); break;
-                case "history": DrawHistory(); break;
+                case "history": break; // Also available from the home screen; composed last.
                 case "action": DrawActionDetails(); break;
                 case "player": DrawPlayerDetails(); break;
                 case "mana": DrawManaDetails(); break;
@@ -76,7 +76,8 @@ internal sealed partial class TableApplication
         if (inspected == null) return;
         var original = inspected;
         var card = InspectorFace(original);
-        ModalFrame(card.Name, new MatchIntent.CloseInspector(), inspectedChoice != null ? "Back to choices" : "Close");
+        ModalFrame(card.Name, historyInspector ? new HistoryIntent.BackFromCard() : new MatchIntent.CloseInspector(),
+            historyInspector ? "Back to history" : inspectedChoice != null ? "Back to choices" : "Close");
         var inspectedPose = new Pose(new(447, 460), new(380, 532));
         PaintCard(card, inspectedPose, false, false);
         if (!inspectBack) PaintAttachedCardState(CardViews.Current(match, original), inspectedPose);
@@ -113,24 +114,6 @@ internal sealed partial class TableApplication
         MenuAction("text-size", $"Text size  {preferences.TextScale:P0}", new(x, y + 681, 500, 40), new MatchIntent.CycleTextScale(), size: .78f);
         MenuAction("updates-settings", "Updates", new(x, y + 751, 240, 40), new ShellIntent.OpenUpdates(), size: .75f);
         canvas.Text("F11  Fullscreen", x + 293, y + 764, Muted, .65f, 207, 1);
-    }
-    private void DrawHistory()
-    {
-        ModalFrame("Match history", new MatchIntent.CloseView());
-        var events = match!.Notices.Reverse().Select(message => (Label: "NOTICE", Message: message))
-            .Concat(match.Activity.Reverse().Select(entry => (Label: "TURN " + entry.Turn, Message: entry.Message + (entry.Detail.Length > 0 ? " " + entry.Detail : "")))).ToArray(); int count = 10;
-        int page = Math.Clamp(historyPage, 0, Math.Max(0, (events.Length - 1) / count));
-        int row = 0;
-        foreach (var entry in events.Skip(page * count).Take(count)) {
-            int y = 189 + row++ * 49;
-            canvas.Text(entry.Label, 204, y + 1, Gold, .58f, 96, 1, true);
-            canvas.Text(entry.Message, 317, y, Ink, .75f, 1032, 2);
-            canvas.Line(new(204, y + 40), new(1370, y + 40), Muted * .12f);
-        }
-        if (events.Length == 0) canvas.Text("No events have been reported for this game yet.", 206, 214, Muted, .9f);
-        Button("history-prev", "Newer", 205, 739, 145, new MatchIntent.SetPage(MatchPage.History, page - 1), page > 0);
-        Button("history-next", "Older", 362, 739, 145, new MatchIntent.SetPage(MatchPage.History, page + 1), (page + 1) * count < events.Length);
-        canvas.Text("Only events visible to your seat are shown.", 790, 752, Muted, .65f, 574, 1);
     }
     private void DrawPlayerDetails()
     {

@@ -41,7 +41,7 @@ internal sealed partial class TableApplication
             case ShellIntent.ReplayLabStage replay when !busy && replay.Stage >= 0 && replay.Stage < Lab.Stages.Count: ReplayLabStage(replay.Stage); break;
             case ShellIntent.SelectLabScenario selected when !busy && ExperienceScenarios.All.Any(scenario => scenario.Id == selected.ScenarioId): PresentLab(Lab.Select(selected.ScenarioId)); break;
             case ShellIntent.ExplainLabChange:
-                if (matchPresentation.Changes.Count > 0) OpenChanges(); else { overlay = "history"; historyPage = 0; }
+                if (matchPresentation.Changes.Count > 0) OpenChanges(); else OpenHistory();
                 break;
             case ShellIntent.ExitLab: RequestExit(); break;
         }

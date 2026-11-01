@@ -18,6 +18,12 @@ internal sealed partial class TableApplication
         internal Mana.Table.Presentation.PresentationFrame? Frame => game.Frame;
         internal bool Activate(Hit hit) => game.ActivateHit(hit);
         internal bool SubmitCurrent(DecisionCommand command) => game.Send(command);
+        internal bool AcceptHistory(HistoryBatch batch) => game.session.History.Accept(batch);
+        internal string? HistorySelectionId => game.SelectedHistory?.Id;
+        internal string HistoryDetailText => game.SelectedHistory is { } action ? game.HistoryDetails(action) : "";
+        internal bool HistoryPrivateReport => game.historyPrivateReport;
+        internal string? HistoryArchiveId => game.historyDocument?.Summary.ArchiveId;
+        internal string? HistoryInspectedCardId => game.historyInspector ? game.inspected?.VisualId : null;
         internal Mana.Renderer.BoardView BoardView => game.boardView;
         internal Rectangle StudyAttentionBounds => game.StudyActionArea;
         internal bool FollowTurnEnabled => game.followTurnEnabled;

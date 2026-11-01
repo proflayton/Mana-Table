@@ -77,7 +77,7 @@ internal sealed partial class TableApplication : IDisposable
     private double noticeUntil;
     private string? selectedCombat { get => interaction.SelectedCombat; set => interaction.SelectedCombat = value; }
     private string? zoneName;
-    private int zonePlayer, zonePage, deckPage, historyPage, inspectPage;
+    private int zonePlayer, zonePage, deckPage, inspectPage;
 
     private Card? hovered, inspected;
     private Point pointer, pressPoint;
@@ -100,6 +100,7 @@ internal sealed partial class TableApplication : IDisposable
         InteractionScopeKind.Experience => ExperienceScope,
         InteractionScopeKind.Chat => ChatScope,
         InteractionScopeKind.Settings => "settings:" + profile,
+        InteractionScopeKind.History => HistoryScope,
         InteractionScopeKind.Playback when match != null => match.Id + ":viewer:" + match.ViewerId + ":playback",
         InteractionScopeKind.PhaseStop when match != null => match.Id + ":viewer:" + match.ViewerId + ":playback:phase-stop:" + match.PhaseKey,
         InteractionScopeKind.Source when SourceActionsSupported => Scope + ":source:" + sourceActions.View.Generation + ":" + sourceActions.View.Context,
@@ -122,8 +123,10 @@ internal sealed partial class TableApplication : IDisposable
         catalog = services.Catalog; tables = services.Tables; matchConnection = services.Match;
         this.clock = clock ?? TimeProvider.System;
         this.restartedAfterUpdate = restartedAfterUpdate;
-        session = new(matchConnection, tables, this.clock, services.SourceActions, observationDelivery); updates = new(session);
+        session = new(matchConnection, tables, this.clock, services.SourceActions, observationDelivery, services.MatchHistoryProvider); updates = new(session);
         if (services.Diagnostics is { } diagnostics) session.DiagnosticRecorded += diagnostics;
+        if (services.HistoryArchive is { } historyArchive) session.History.Accepted += historyArchive.Record;
+        session.History.Updated += HistoryUpdated;
         catalogRead = new(updates.Enqueue); printingRead = new(updates.Enqueue);
         deckTokensRead = new(updates.Enqueue); tokenPrintingsRead = new(updates.Enqueue);
         deckWorkspace = new(services.Workshop, services.Analysis, updates.Enqueue);
@@ -141,7 +144,7 @@ internal sealed partial class TableApplication : IDisposable
     internal void ReceiveText(char character)
     {
         if (!InputReady) return;
-        if (updatesOpen || ActivityOpen || ExperienceOpen || CurrentManaReading) return;
+        if (updatesOpen || ActivityOpen || ExperienceOpen || CurrentManaReading || HistoryOpen || historyInspector) return;
         if (chatOpen && chatFocus) { ChatText(character); return; }
         if (match == null && deckEditor) { DeckText(character); return; }
         if (match == null) { SetupText(character); return; }
@@ -180,6 +183,7 @@ internal sealed partial class TableApplication : IDisposable
         => projectionCapture?.ObserveEnvironment(updateTime, ProjectionSettings(updateViewport), match);
     private void AcceptPresentation(GameSnapshot? previous, GameSnapshot? state)
     {
+        ReconcileHistory(previous, state);
         ReconcileManaReading(previous, state);
         bool restored = session.RestorationChanged;
         if (restored) ReconcileRestoredInteraction();
@@ -369,6 +373,7 @@ internal sealed partial class TableApplication : IDisposable
             hits.Add(new("notice", Scope, new(427, 64, 746, 60), new MatchIntent.OpenHistory()));
         }
         if (!updatesOpen && !ExperienceOpen && !ActivityOpen) DrawSocial();
+        if (HistoryOpen && !updatesOpen && !ExperienceOpen && !ActivityOpen && !StartupVisible) DrawHistory();
         if (!ActivityOpen && !string.IsNullOrWhiteSpace(error)) {
             int y = match == null ? 942 : 59;
             canvas.Panel(new(270, y, 1060, 46), new(71, 37, 38), Red, 7); canvas.Text(error, 284, y + 9, Ink, .76f, 980, 1);
@@ -382,6 +387,7 @@ internal sealed partial class TableApplication : IDisposable
         EndCardReading();
         var drawing = canvas.Complete();
         IsolateManaReadingInput();
+        IsolateHistoryInput();
         hits.Publish();
         Frame = new(drawing, hits.Published, tableScene, matchPresentation.Cards.Cards, DesignHeight,
             new(match?.Id, match?.Revision ?? 0, match?.Decision?.Id, Scope, time.TotalGameTime.TotalSeconds), boardView, followTurnEnabled);
@@ -389,7 +395,11 @@ internal sealed partial class TableApplication : IDisposable
     public void Dispose()
     {
         if (closing) return;
-        closing = true; CloseUpdateRequests(); deckWorkspace.Close(); deckPersistence.Close(); catalogRead.Close(); printingRead.Close(); deckTokensRead.Close(); tokenPrintingsRead.Close(); session.Close(); matchPresentation.Reset();
+        closing = true;
+        if (match is { } last) CloseHistoryArchive(last, !HistoryObserved(last));
+        historyReadCancellation?.Cancel(); historyReadCancellation?.Dispose();
+        ClearHistoryDetails(); historyDocument = null; archivedHistory = null;
+        CloseUpdateRequests(); deckWorkspace.Close(); deckPersistence.Close(); catalogRead.Close(); printingRead.Close(); deckTokensRead.Close(); tokenPrintingsRead.Close(); session.Close(); matchPresentation.Reset();
         projectionCapture = null;
         FinishAudioAdjustment();
         audioMixer?.Dispose();

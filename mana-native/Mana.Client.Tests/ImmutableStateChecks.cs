@@ -19,7 +19,7 @@ internal static class ImmutableStateChecks
             "Published match state has no mutable collection or writable property anywhere in its object graph");
 
         Type[] services = [typeof(IEngineCatalog), typeof(ICardPrintings), typeof(ITableSetup), typeof(ITableSeatSetup),
-            typeof(ITableSocial), typeof(IDeckLibrary), typeof(IDeckWorkshop), typeof(IDeckAnalysis), typeof(IDeckVersionHistory)];
+            typeof(ITableSocial), typeof(IDeckLibrary), typeof(IDeckWorkshop), typeof(IDeckAnalysis), typeof(IDeckVersionHistory), typeof(IMatchHistory)];
         foreach (var service in services)
             foreach (var method in service.GetMethods()) {
                 var result = method.ReturnType;

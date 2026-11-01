@@ -623,6 +623,12 @@ public class ComputerUtilMana {
 
     // returns null if unpayable
     private static List<SpellAbility> payManaCost(final ManaCostBeingPaid cost, final SpellAbility sa, final Player ai, final boolean test, boolean checkPlayable, boolean effect) {
+        try (var preview = ai.getGame().getExecutions().enterPaymentPreview(test)) {
+            return performManaPayment(cost, sa, ai, test, checkPlayable, effect);
+        }
+    }
+
+    private static List<SpellAbility> performManaPayment(final ManaCostBeingPaid cost, final SpellAbility sa, final Player ai, final boolean test, boolean checkPlayable, boolean effect) {
         if ((sa.isOffering() && sa.getSacrificedAsOffering() == null) || (sa.isEmerge() && sa.getSacrificedAsEmerge() == null)) {
             // nothing was chosen
             return null;
@@ -825,7 +831,9 @@ public class ComputerUtilMana {
 
         // The cost is still unpaid, so refund the mana and report
         if (!cost.isPaid()) {
+            boolean hadSpent = !manaSpentToPay.isEmpty();
             manapool.refundMana(manaSpentToPay);
+            if (!test && hadSpent) ai.getGame().fireEvent(forge.game.event.ManaPaymentReceipt.restored(ai, sa));
             if (test) {
                 resetPayment(paymentList);
                 // TODO should probably only record when canPlayAndPayFor

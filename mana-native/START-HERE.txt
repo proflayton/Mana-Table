@@ -22,6 +22,15 @@ during updates or uninstall. Players on v0.2.7 and earlier need to download the
 first updater-enabled installer manually. Everyone at a table should update.
 Windows x64 only. First startup loads the card catalog.
 
+Source candidate after 0.2.317: History shows one play, its source and actual
+costs/results. Previous/Next play (left/right keys) keeps you on that play while
+new actions arrive; Home explicitly returns to newest. Read current card opens
+a noncommitting reader. Back to history or Escape returns, and the game clock
+continues. Saved matches are also reachable through Recent matches on Home.
+Save report writes a local JSON file using public facts by default. The explicit
+private-choices option includes only your viewing seat's private records.
+Reports do not upload automatically, and older games cannot be reconstructed.
+
 The portable ZIP is an alternative: extract the entire folder and use its root
 launcher. Keep its full layout together; do not run inside the ZIP. Managed
 portable copies can offer Restart to update. Older flat ZIPs still use a manual

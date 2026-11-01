@@ -12,6 +12,31 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.testng.Assert.*;
 
 public class SyncTransportTest {
+    @Test(timeOut = 10000) public void optionalCapabilitiesAreNegotiatedWithoutChangingVersionOrCommandAuthority() throws Exception {
+        try (var server = new SyncTransport.Server((seat, method, args) -> Map.of("seat", seat), () -> 1,
+                ignored -> { }, Set.of("match-history")); var local = server.local(0);
+             var remote = new SyncTransport.Remote("127.0.0.1:" + server.listen())) {
+            assertEquals(SyncTransport.VERSION, 3);
+            assertEquals(local.capabilities(), Set.of("match-history"));
+            assertEquals(remote.capabilities(), local.capabilities());
+            remote.reconnect(); remote.request("observe", null);
+            assertEquals(remote.capabilities(), Set.of("match-history"));
+            assertThrows(UnsupportedOperationException.class, () -> local.capabilities().add("another"));
+        }
+    }
+    @Test(timeOut = 10000) public void legacyHandshakeWithoutCapabilitiesIsAnExplicitEmptyFeatureSet() throws Exception {
+        try (var listener = new java.net.ServerSocket(0)) {
+            var done = CompletableFuture.runAsync(() -> {
+                try (var socket = listener.accept(); var input = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+                     var output = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))) {
+                    input.readLine(); output.write("{\"version\":3,\"resume\":\"legacy\",\"seat\":1}\n"); output.flush();
+                    while (input.readLine() != null) { }
+                } catch (IOException failure) { throw new CompletionException(failure); }
+            });
+            try (var remote = new SyncTransport.Remote("127.0.0.1:" + listener.getLocalPort())) { assertTrue(remote.capabilities().isEmpty()); }
+            done.get(3, TimeUnit.SECONDS);
+        }
+    }
     @Test(timeOut = 10000) public void localAndNetworkUseTheSameAuthorityAndResumeTheSameSeat() throws Exception {
         var sequence = new AtomicInteger(); var seats = new AtomicInteger(1);
         try (var server = new SyncTransport.Server((seat, method, args) -> Map.of("seat", seat, "value", method.equals("add") ? sequence.incrementAndGet() : sequence.get()), seats::getAndIncrement)) {
