@@ -11,6 +11,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
 using Point = Microsoft.Xna.Framework.Point;
+using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Table;
 
@@ -18,6 +19,7 @@ internal static class PendingEffectPresentationChecks
 {
     internal static void Run(string profile, Action<bool, string> check)
     {
+        CheckRequiredObjectPlacement(check);
         foreach (bool study in new[] { false, true }) {
             string directory = Path.Combine(profile, study ? "pending-values-study" : "pending-values-normal");
             Directory.CreateDirectory(directory);
@@ -75,6 +77,28 @@ internal static class PendingEffectPresentationChecks
                 && frame.Cards.Single(card => card.Id == target.VisualId).Card is { Power: 7, Toughness: 8 }
                 && !frame.Hits.Any(hit => hit.Id is "instructions" or "decision-read-all") && frame.Hits.Any(hit => hit.Id == "cancel"),
                 "The actual targeting screen distinguishes the authoritative three damage and +3 loyalty receipt from twenty settled counters, preserves current P/T and cancel, and omits raw internal prompt text");
+            if (study) {
+                var targetCard = frame.Cards.Single(card => card.Id == target.VisualId);
+                var targetCenter = targetCard.Display.Center.ToPoint();
+                check(!view.StudyAttentionBounds.Intersects(targetCard.Display.Bounds)
+                        && view.HitAt(targetCenter)?.Card?.VisualId == target.VisualId
+                        && frame.Scene!.Seats.All(seat => {
+                            var mat = seat.Geometry.PlaymatBounds!.Value;
+                            return (long)mat.Width * mat.Height == 512L * 288;
+                        }) && engine.Replies.Count == 0,
+                    "Equal physical mats keep their area while the transient damage context leaves the actual legal card face and its center input exposed");
+                var snapshot = view.Match;
+                var canonical = frame.Scene!.BattlefieldDrawOrder.ToDictionary(card => card.Id, card => card.Pose);
+                view.OpenBattlefield(1); Tick(); Tick(advance: .7);
+                targetCard = frame.Cards.Single(card => card.Id == target.VisualId);
+                check(!view.StudyAttentionBounds.Intersects(targetCard.Display.Bounds)
+                        && view.HitAt(targetCard.Display.Center.ToPoint())?.Card?.VisualId == target.VisualId
+                        && ReferenceEquals(snapshot, view.Match) && engine.Replies.Count == 0
+                        && frame.Scene!.BattlefieldDrawOrder.All(card => canonical[card.Id] == card.Pose),
+                    "Focusing the required recipient moves the same mat and card while attention placement preserves its real target handle without reflow or a game command");
+                var returnHit = frame.Hits.Single(hit => hit.Id == "study-focus-return");
+                Tick(returnHit.Bounds.Center, ButtonState.Pressed); Tick(returnHit.Bounds.Center); Tick(advance: .7);
+            }
             Tick(advance: 20);
             check(Number("3") && Receipts() >= 2, "The exact trigger's attached counter receipt remains available throughout an unanswered targeting choice after transient feedback expires");
             var header = SourceHit();
@@ -136,6 +160,25 @@ internal static class PendingEffectPresentationChecks
                 "Choosing the visible highlighted recipient submits exactly its current engine-issued card key and decision scope");
         }
         CheckOptionalTargetProgress(profile, check);
+    }
+
+    private static void CheckRequiredObjectPlacement(Action<bool, string> check)
+    {
+        // A one-pixel move may cover more unrelated material while exposing a
+        // required recipient. A numeric penalty cannot make that a strict rule.
+        var protectedCard = new Rectangle(1008, 253, 100, 140);
+        var background = new List<Rectangle>();
+        for (int index = 0; index < 8; index++) {
+            background.Add(new(20 + index, 64, 1087 - index, 696));
+            background.Add(new(1543, 64 + index, 37, 696 - index));
+            background.Add(new(1107, 64 + index, 436, 328 - index));
+            background.Add(new(1107, 573, 436 - index, 187));
+        }
+        var area = DecisionWorkspaceLayout.Place(new(1325, 482, 1, 1), 420, 165, background,
+            bounded: true, minimumWidth: 420, minimumHeight: 165, protectedObjects: [protectedCard]);
+        var painted = area; painted.Inflate(8, 8);
+        check(area.Width == 420 && area.Height == 165 && !painted.Intersects(protectedCard),
+            "A full-size transient context keeps its required recipient clear even when exposing it costs more unrelated background overlap than a one-pixel target obstruction");
     }
 
     private static void CheckOptionalTargetProgress(string profile, Action<bool, string> check)

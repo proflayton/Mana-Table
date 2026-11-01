@@ -19,14 +19,14 @@ public sealed record TurnControlLayout(ImmutableArray<Vector2> Markers, Vector2 
     public Rectangle PriorityAction => new(PriorityArea.X, PriorityArea.Bottom - 40, PriorityArea.Width, 40);
     public ImmutableArray<Rectangle> Reservations => [ArcBounds, AutoBounds, HoldBounds, AlertBounds, PriorityArea];
 
-    public static TurnControlLayout For(Vector2 hero)
+    public static TurnControlLayout For(Vector2 hero, int? priorityLeft = null)
     {
         var markers = Enumerable.Range(0, 6).Select(index => {
             float angle = (200 + index * 28) * MathF.PI / 180;
             return hero + new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * 74;
         }).ToImmutableArray();
         return new(markers, hero + new Vector2(-53, 18), hero + new Vector2(53, 18),
-            new((int)hero.X + 146, (int)hero.Y - 36, 360, 70));
+            new(priorityLeft ?? (int)hero.X + 146, (int)hero.Y - 36, 360, 70));
     }
 
     private static Rectangle Bounds(Vector2 center, int radius)

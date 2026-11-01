@@ -117,13 +117,17 @@ internal sealed partial class TableApplication
         var plan = new List<ManaHaloPart>();
         int inner = seat == 3 ? 102 : 50;
         bool sideMatRail = TableStudyEnabled && seat is 0 or 2;
+        var localMat = TableStudyEnabled && seat == 3 ? tableScene?.Seat(player.Id).Geometry.PlaymatBounds : null;
         foreach (var entry in ordered) {
             int column = seat is 0 or 2 ? entry.Slot % 2 + entry.Slot / 6 * 2 : entry.Slot / 3;
             int row = seat is 0 or 2 ? entry.Slot % 6 / 2 : entry.Slot % 3;
             int width = widths[entry.Part.Key], x;
             int ColumnWidth(int col) => ordered.Where(e => (seat is 0 or 2 ? e.Slot % 2 + e.Slot / 6 * 2 : e.Slot / 3) == col)
                 .Select(e => widths[e.Part.Key]).DefaultIfEmpty(0).Max();
-            if (seat is 0 or 2) {
+            if (localMat is { } mat) {
+                int offset = Enumerable.Range(0, column).Sum(col => ColumnWidth(col) + 6);
+                x = mat.Right + 12 + offset;
+            } else if (seat is 0 or 2) {
                 int offset = Enumerable.Range(0, column).Sum(col => ColumnWidth(col) + 6);
                 x = sideMatRail ? seat == 0 ? 8 + offset : 1592 - offset - width
                     : seat == 0 ? (int)hero.X + inner + offset : (int)hero.X - inner - offset - width;
@@ -308,7 +312,7 @@ internal sealed partial class TableApplication
         foreach (var seat in match!.Players) {
             var portrait = SeatHero(seat.Id);
             occupied.Add(new((int)portrait.X - 58, (int)portrait.Y - 58, 116, 116));
-            occupied.AddRange(TurnControlLayout.For(portrait).Reservations);
+            occupied.AddRange(seat.Id == match.ViewerId ? LocalTurnControls.Reservations : TurnControlLayout.For(portrait).Reservations);
         }
         var area = DecisionActionArea(anchor, width, height, reserveBattlefield: true,
             additionalReservations: occupied, minimumWidth: width, boundedWorkspace: true);

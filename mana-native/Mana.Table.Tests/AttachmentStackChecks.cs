@@ -18,7 +18,8 @@ internal static class AttachmentStackChecks
     internal static void Run(string profile, Action<bool, string> check)
     {
         var stages = AttachmentScenario.Create();
-        var states = stages.Select(stage => stage.Snapshot).Append(stages[0].Snapshot with { Players = stages[0].Snapshot.Players.Take(2).ToImmutableArray() });
+        var states = stages.Select(stage => stage.Snapshot).Concat(new[] { 2, 3 }.Select(count =>
+            stages[0].Snapshot with { Players = stages[0].Snapshot.Players.Take(count).ToImmutableArray() }));
         foreach (var state in states) foreach (int viewer in state.Players.Select(player => player.Id)) {
             var scene = Build(state with { ViewerId = viewer });
             var nodes = scene.BattlefieldDrawOrder;
@@ -28,10 +29,14 @@ internal static class AttachmentStackChecks
             foreach (var child in nodes.Where(node => node.Attachment != null)) {
                 var host = nodes.Single(node => node.Id == child.Attachment!.RootId);
                 var edge = child.Attachment!.Edge(child.Pose);
+                var hostSeat = scene.Seat(host.Owner);
+                var cloth = hostSeat.Geometry.PlaymatBounds!.Value; cloth.Inflate(-PlayerPlaymat.HemInset, -PlayerPlaymat.HemInset);
+                var lane = PlayerPlaymat.Lane(hostSeat.Index, host.StudyFamily!.Role, state.Players.Length == 2);
                 check(host.StudyFamily!.Bounds.Contains(child.Pose.Bounds) && !edge.Intersects(host.Pose.Bounds)
                     && scene.Seat(child.Owner).BattlefieldCard(child.Id) == child
-                    && scene.Seat(host.Owner).Geometry.PlaymatBounds!.Value.Contains(host.StudyFamily.Bounds),
-                    $"Each attachment reserves space on its host's physical mat and retains its actual controller lookup: {child.Id}, viewer {viewer}, edge {edge}, host {host.Pose.Bounds}, assembly {host.StudyFamily.Bounds}");
+                    && cloth.Contains(host.StudyFamily.Bounds) && lane.Contains(host.StudyFamily.Bounds)
+                    && !hostSeat.Geometry.PublicReadoutArea!.Value.Intersects(host.StudyFamily.Bounds),
+                    $"Each complete attachment assembly fits its host's mat hem and owner-relative row while retaining its actual controller lookup: {child.Id}, viewer {viewer}, edge {edge}, host {host.Pose.Bounds}, assembly {host.StudyFamily.Bounds}");
                 check(Array.IndexOf(nodes.ToArray(), child) < Array.IndexOf(nodes.ToArray(), host),
                     "Attachments paint beneath the host without obscuring its current stats");
             }
@@ -110,7 +115,12 @@ internal static class AttachmentStackChecks
             check(view.HitAt(point)?.Card?.VisualId == id, "The attachment's exposed edge owns the actual physical pointer target");
             Tick(point, ButtonState.Pressed); Tick(point); Settle();
         }
-        Settle(); ClickEdge(AttachmentScenario.Boots);
+        Settle();
+        var phases = frame.Hits.Where(hit => hit.Intent is MatchIntent.TogglePhaseStop).Select(hit => hit.Bounds).ToArray();
+        check(phases.Length > 0 && frame.Cards.Where(card => card.Zone == "Battlefield")
+                .All(card => phases.All(bounds => !bounds.Intersects(card.Display.Bounds))),
+            "The actual prepared phase-control targets stay clear of every displayed attachment and battlefield card before inspection");
+        ClickEdge(AttachmentScenario.Boots);
         check(frame.Cards.Single(card => card.Id == AttachmentScenario.Boots).Focused && engine.Replies.Count == 0,
             "Clicking an attachment edge reads that exact card without activating or choosing it");
         check(view.AttachmentConnections.Count == 0, "A tucked attachment highlights its host without drawing a relationship line");
@@ -143,7 +153,7 @@ internal static class AttachmentStackChecks
                         card.Focused, card.Rest, card.Display, card.ReaderTarget, card.Request.ReadingAnchor,
                         hit = new { card.Hit.Id, card.Hit.Bounds, intent = card.Hit.Intent.ToString() } }).ToArray(),
                     seats = frame.Scene.Seats.Select(item => new { item.Index, item.PlayerId, item.Geometry.Hero,
-                        controls = TurnControlLayout.For(item.Geometry.Hero),
+                        controls = item.Geometry.TurnControls,
                         cards = item.Battlefield.SelectMany(cluster => cluster.Cards)
                             .Select(card => new { card.Id, card.Owner, card.Pose, card.GroupFront, card.Attachment }).ToArray() }).ToArray(),
                     phases = frame.Hits.Where(hit => hit.Intent is MatchIntent.TogglePhaseStop)

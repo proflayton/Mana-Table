@@ -277,7 +277,15 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
                 "W moves the three-player table while reduced motion is enabled");
             CheckThreePlayerCamera("Three-player reduced-motion pan");
             Capture("13-three-player-reduced-pan");
-            beforeZoom = view.BoardView.Scale; Move(new(800, 420)); Wheel(480);
+            // Native capture time can change the distance covered by held W.
+            // Start the deliberate obstruction gesture from Home rather than
+            // relying on a particular frame rate to stop below the portrait.
+            keyboard = new(Keys.Home);
+        });
+        Step(.04, () => {
+            keyboard = new();
+            Check(view.BoardView.IsIdentity, "The real Home gesture establishes the same starting view for the occlusion zoom at both window sizes");
+            beforeZoom = view.BoardView.Scale; Move(new(800, 240)); Wheel(480);
         });
         Step(.1, () => {
             Check(view.BoardView.Scale > beforeZoom,
@@ -285,9 +293,14 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             CheckThreePlayerCamera("Three-player reduced-motion zoom");
             CheckResourceOcclusion("Three-player reduced-motion zoom");
             int topId = TableLayout.Opponents(view.Match!)[1].Id;
-            Check(view.CounterBadge(topId) == null
+            var hero = view.Frame!.Scene!.Seat(topId).Geometry.Hero;
+            bool obstructed = view.WorldReadouts[topId].Canonical.Select(view.BoardView.Apply).Any(bounds => {
+                var nearest = Vector2.Clamp(hero, new(bounds.Left, bounds.Top), new(bounds.Right, bounds.Bottom));
+                return Vector2.DistanceSquared(nearest, hero) < 39 * 39;
+            });
+            Check(obstructed && !view.WorldReadouts[topId].Visible && view.CounterBadge(topId) == null
                     && !view.Frame!.Hits.Any(hit => hit.Id.StartsWith("player-state:" + topId + ":", StringComparison.Ordinal)),
-                "The actual zoomed top resource group retires both paint and counter controls when a fixed commander would obscure its subtotal");
+                "The actual zoomed top resource group retires both paint and counter controls when fixed seat objects would obscure it");
             Capture("14-three-player-reduced-zoom"); keyboard = new(Keys.Home);
         });
         Step(.04, () => keyboard = new());

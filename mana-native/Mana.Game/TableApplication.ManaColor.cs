@@ -1,5 +1,6 @@
 using Mana.Contracts;
 using Mana.Magic;
+using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
@@ -28,11 +29,39 @@ internal sealed partial class TableApplication
         var reservations = matchPresentation.Cards.Cards.Where(entry => producer == null || entry.Display.Bounds != anchor)
             .Select(entry => entry.Display.Bounds).ToList();
         if (manaJourneyPaint is { } bill) reservations.Add(bill.Bounds);
-        var room = DecisionActionArea(anchor, width, height,
-            additionalReservations: reservations, minimumWidth: width, boundedWorkspace: true);
-        // Glyph choices reserve their actual footprint rather than the wider
-        // minimum used by readable text workspaces.
-        var area = new Rectangle(room.Center.X - width / 2, room.Y, width, height);
+        Rectangle? aligned = null;
+        if (TableStudyEnabled && producer != null && choices.Length > 0) {
+            var preferred = new Rectangle(anchor.Center.X - width / 2, anchor.Top - height - 16, width, height);
+            var title = canvas.TextSize("Choose mana", .78f, width - 14, 1, true);
+            var pieces = new List<Rectangle> { new(preferred.X + 7, preferred.Y + 3, title.X, title.Y) };
+            int first = preferred.Center.X - (choices.Length * pitch - (pitch - side)) / 2;
+            for (int i = 0; i < choices.Length; i++)
+                pieces.Add(new(first + i * pitch - 3, preferred.Y + 33, 62, 62));
+            var footprint = pieces.Aggregate(Rectangle.Union);
+            int centerOffset = preferred.Center.X - footprint.Left;
+            int left = Math.Max(20, anchor.Left - centerOffset);
+            int right = Math.Min(1580 - footprint.Width, anchor.Right - centerOffset);
+            if (right >= left) {
+                // This gesture belongs to the tapped producer. Translate its
+                // complete title and largest orb faces within that source's
+                // column, rather than moving it over a neighboring resource.
+                var corridor = new Rectangle(left, 64 + footprint.Top - preferred.Top,
+                    right - left + footprint.Width, 696 - height + footprint.Height);
+                var occupied = StudyHudObstacles.Concat(reservations).Append(anchor).Distinct().Select(bounds => {
+                    bounds.Inflate(4, 4); return bounds;
+                }).ToArray();
+                if (DecisionWorkspaceLayout.Translate(pieces, corridor, occupied) is { } placed) {
+                    preferred.Offset(placed.X - footprint.X, placed.Y - footprint.Y);
+                    aligned = preferred;
+                }
+            }
+        }
+        var area = aligned ?? Rectangle.Empty;
+        if (aligned == null) {
+            var room = DecisionActionArea(anchor, width, height,
+                additionalReservations: reservations, minimumWidth: width, boundedWorkspace: true);
+            area = new(room.Center.X - width / 2, room.Y, width, height);
+        }
         decisionPanelBounds = area;
         canvas.Glow(area.Center.ToVector2(), new(width + 35, height + 30), new Color(8, 17, 23) * .95f);
         canvas.Text("Choose mana", area.X + 7, area.Y + 3, Ink, .78f, area.Width - 14, 1, true);

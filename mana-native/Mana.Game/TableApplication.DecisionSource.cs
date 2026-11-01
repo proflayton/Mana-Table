@@ -52,6 +52,7 @@ internal sealed partial class TableApplication
         var source = anchor; source.Inflate(sourcePadding, sourcePadding);
         bool includeDecisionDock = DecisionDockCanPaint;
         var occupied = new List<Rectangle> { source };
+        if (TableStudyEnabled && StudyAttentionActive) occupied.Add(StudyActionArea);
         if (includeDecisionDock) {
             occupied.Add(new(1240, 550, 350, 245));
             var passing = AbilityPassingControlBounds();
@@ -60,7 +61,7 @@ internal sealed partial class TableApplication
         if (additionalReservations != null) occupied.AddRange(additionalReservations);
         if (match is { } state && tableScene != null) {
             occupied.AddRange(TableViewGeometry.FixedReservations(state, tableScene, includeDecisionDock));
-            var turn = TurnControlLayout.For(SeatHero(state.ViewerId));
+            var turn = LocalTurnControls;
             var controls = turn.Markers.Append(turn.AutoCenter).Append(turn.HoldCenter).ToArray();
             int left = (int)controls.Min(point => point.X) - 22, top = (int)controls.Min(point => point.Y) - 22;
             occupied.Add(new(left, top, (int)controls.Max(point => point.X) + 22 - left,

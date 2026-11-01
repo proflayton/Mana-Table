@@ -10,8 +10,11 @@ public sealed class SeatGeometry
     public int PlayerId { get; }
     public int Index { get; }
     public Rectangle? PlaymatBounds { get; }
+    public Rectangle? PublicReadoutArea { get; }
+    public Rectangle? PublicCounterArea { get; }
     public Vector2 Hero { get; }
     public Vector2 Hand { get; }
+    public TurnControlLayout TurnControls { get; }
     public Vector2 CommandLink { get; }
     public IReadOnlyList<SceneCard> Commanders { get; }
     public IReadOnlyList<PilePlan> Piles { get; }
@@ -21,6 +24,8 @@ public sealed class SeatGeometry
         PlayerId = player.Id;
         Index = seat;
         PlaymatBounds = study ? PlayerPlaymat.Bounds(seat, duel) : null;
+        PublicReadoutArea = study ? PlayerPlaymat.Project(seat, PlayerPlaymat.PersonalArea, duel) : null;
+        PublicCounterArea = study ? PlayerPlaymat.Project(seat, PlayerPlaymat.CanonicalCounterBand, duel) : null;
         Hero = TableLayout.Hero(seat);
         Hand = TableLayout.SeatHand(seat);
         bool own = seat == 3, side = seat is 0 or 2;
@@ -41,9 +46,9 @@ public sealed class SeatGeometry
                 Hero -= new Vector2(0, 40);
                 Hand = new(seat == 0 ? 84 : 1516, Hand.Y - 80);
             }
-            CommandLink = own ? new(260, 720) : seat == 1 ? new(948, 144) : new(seat == 0 ? 125 : 1490, 602);
+            CommandLink = own ? new(280, 720) : seat == 1 ? new(948, 144) : new(seat == 0 ? 125 : 1490, 602);
             Commanders = Array.AsReadOnly(leaders.Select((card, index) => {
-                var center = own ? new Vector2(230 + index * 60, 682) : seat == 1 ? new Vector2(917 + index * 62, 100)
+                var center = own ? new Vector2(360 + index * 60, 750) : seat == 1 ? new Vector2(917 + index * 62, 100)
                     : new Vector2((seat == 0 ? 75 : 1450) + index * 75, 554);
                 return SceneCard.Create(card, new(center, own ? new(48, 67) : new(58, 81)), "Command", player.Id, index, Hero);
             }).ToArray());
@@ -67,6 +72,7 @@ public sealed class SeatGeometry
                     new PilePlan(zone, new(new(1295 + index * 80, 245), new(39, 55)), true)).ToArray());
             }
         }
+        TurnControls = TurnControlLayout.For(Hero, study && own ? PlaymatBounds!.Value.Right + 12 : null);
     }
 
     internal static SeatGeometry[] Build(GameSnapshot state, bool study = false)

@@ -63,8 +63,7 @@ internal static class SharedTableStudyChecks
             check(scenes.All(scene => scene.Seat(viewer).Index == 3 && scene.Seats.Single(seat => seat.PlayerId != viewer).Index == 1
                     && Cards(scene).All(card => card.ScanFace)
                     && Cards(scene).All(card => DuelTableStudy.MatchLane(scene.Seat(card.Owner).Index,
-                        BattlefieldLayout.Role(card.Card, CardPresentation.IsResource)).Contains(card.Pose.Bounds))
-                    && Cards(scene).All(card => !card.Pose.Bounds.Intersects(DuelTableStudy.ActionArea))),
+                        BattlefieldLayout.Role(card.Card, CardPresentation.IsResource)).Contains(card.Pose.Bounds))),
                 "Both two-player viewers retain actual player IDs, top/bottom framing and source-card faces in their role lanes across the old seven-group boundary");
             check(scenes.All(scene => !Cards(scene).Any(card => Cards(scene).Any(other => card.Owner != other.Owner
                     && card.Pose.Bounds.Intersects(other.Pose.Bounds)))),
@@ -141,14 +140,12 @@ internal static class SharedTableStudyChecks
         var cards = Cards(scene).ToArray();
         var overlap = cards.SelectMany(card => cards.Where(other => other.Owner != card.Owner && card.Pose.Bounds.Intersects(other.Pose.Bounds))
             .Select(other => new { First = card, Second = other })).FirstOrDefault();
-        var actionOverlap = cards.FirstOrDefault(card => card.Pose.Bounds.Intersects(SharedTableStudy.ActionArea));
-        var controls = TurnControlLayout.For(TableLayout.Hero(3)).Reservations;
+        var controls = scene.Seats.Single(seat => seat.Index == 3).Geometry.TurnControls.Reservations;
         check(cards.All(card => controls.All(bounds => !card.Pose.Bounds.Intersects(bounds))),
             "Study " + label + ": battlefield faces stay clear of the local portrait's phase and priority controls");
-        check(overlap == null && actionOverlap == null,
-            "Study " + label + ": controller faces remain separate from other players and the fixed action area"
-            + (overlap == null ? "" : $"; {overlap.First.Id} controller {overlap.First.Owner} bounds {overlap.First.Pose.Bounds} intersects {overlap.Second.Id} controller {overlap.Second.Owner} bounds {overlap.Second.Pose.Bounds}")
-            + (actionOverlap == null ? "" : $"; {actionOverlap.Id} bounds {actionOverlap.Pose.Bounds} intersects action area {SharedTableStudy.ActionArea}"));
+        check(overlap == null,
+            "Study " + label + ": controller faces remain separate from every other player's physical battlefield"
+            + (overlap == null ? "" : $"; {overlap.First.Id} controller {overlap.First.Owner} bounds {overlap.First.Pose.Bounds} intersects {overlap.Second.Id} controller {overlap.Second.Owner} bounds {overlap.Second.Pose.Bounds}"));
         var covered = scene.Seats.SelectMany(seat => seat.Geometry.Piles.Select(pile => new { Owner = seat.PlayerId, Kind = pile.Zone, Bounds = pile.Pose.Bounds })
                 .Concat(seat.Geometry.Commanders.Select(card => new { Owner = seat.PlayerId, Kind = "Command:" + card.Id, Bounds = card.Pose.Bounds })))
             .SelectMany(footprint => cards.Where(card => footprint.Bounds.Intersects(card.Pose.Bounds)).Select(card => new { Footprint = footprint, Card = card })).FirstOrDefault();
@@ -159,6 +156,9 @@ internal static class SharedTableStudyChecks
 
     private static void PlaymatBoundaries(GameSnapshot baseline, Action<bool, string> check)
     {
+        var roles = new[] { "Creatures", "Support", "Lands" };
+        Rectangle? referenceShape = null;
+        Dictionary<string, Rectangle>? referenceRows = null;
         foreach (int playerCount in new[] { 2, 3, 4 }) foreach (int viewer in baseline.Players.Take(playerCount).Select(player => player.Id)) {
             // Exercise the full physical command rail, not just this authored
             // scene's ordinary single commander, for every relative table seat.
@@ -170,13 +170,38 @@ internal static class SharedTableStudyChecks
             var scene = Build(state);
             bool duel = playerCount == 2;
             var mats = scene.Seats.Select(seat => seat.Geometry.PlaymatBounds!.Value).ToArray();
+            var local = scene.Seats.Single(seat => seat.Index == 3);
+            referenceShape ??= MatLocal(local.Geometry.PlaymatBounds!.Value, local.Geometry.PlaymatBounds.Value, local.Index);
+            referenceRows ??= roles.ToDictionary(role => role,
+                role => MatLocal(PlayerPlaymat.Lane(local.Index, role, duel), local.Geometry.PlaymatBounds!.Value, local.Index));
+            var shapes = scene.Seats.Select(seat => MatLocal(seat.Geometry.PlaymatBounds!.Value,
+                seat.Geometry.PlaymatBounds.Value, seat.Index)).ToArray();
+            check(shapes.All(shape => shape == referenceShape && shape.Width * 9 == shape.Height * 16)
+                    && mats.All(mat => mat.Width * mat.Height == referenceShape.Value.Width * referenceShape.Value.Height),
+                $"{playerCount}-player viewer {viewer}: every mat has the same unrotated dimensions, physical area and 16:9 proportions, including the actual duel");
+            check(scene.Seats.All(seat => roles.All(role => MatLocal(PlayerPlaymat.Lane(seat.Index, role, duel),
+                        seat.Geometry.PlaymatBounds!.Value, seat.Index) == referenceRows[role]))
+                    && scene.Seats.All(seat => roles.All(role => roles.All(other => role == other
+                        || !PlayerPlaymat.Lane(seat.Index, role, duel).Intersects(PlayerPlaymat.Lane(seat.Index, other, duel))))),
+                $"{playerCount}-player viewer {viewer}: the same separate owner-relative card rows rotate with each mat rather than stretching or trading space between seats");
+            check(scene.Seats.All(seat => {
+                    var mat = seat.Geometry.PlaymatBounds!.Value;
+                    var inside = mat; inside.Inflate(-PlayerPlaymat.HemInset, -PlayerPlaymat.HemInset);
+                    return seat.Geometry.PublicReadoutArea is { } personal && inside.Contains(personal)
+                        && MatLocal(personal, mat, seat.Index) == PlayerPlaymat.PersonalArea
+                        && seat.Geometry.PublicCounterArea is { } counters && inside.Contains(counters)
+                        && MatLocal(counters, mat, seat.Index) == PlayerPlaymat.CanonicalCounterBand
+                        && seat.Battlefield.SelectMany(cluster => cluster.Cards).Where(card => card.Attachment == null)
+                            .All(card => !personal.Intersects(card.StudyFamily!.Bounds) && !counters.Intersects(card.StudyFamily.Bounds));
+                }),
+                $"{playerCount}-player viewer {viewer}: prepared personal readouts and counters keep their owner-relative spaces clear of whole card families");
             check(mats.All(mat => mats.Where(other => other != mat).All(other =>
                     Math.Max(Math.Max(other.Left - mat.Right, mat.Left - other.Right),
                         Math.Max(other.Top - mat.Bottom, mat.Top - other.Bottom)) >= PlayerPlaymat.MinimumGap)),
                 $"{playerCount}-player viewer {viewer}: physical mats leave a bare-table gap between every pair of battlefields");
             check(scene.Seats.All(seat => {
                     var inside = seat.Geometry.PlaymatBounds!.Value; inside.Inflate(-PlayerPlaymat.HemInset, -PlayerPlaymat.HemInset);
-                    return new[] { "Creatures", "Support", "Lands" }.All(role => inside.Contains(PlayerPlaymat.Lane(seat.Index, role, duel)))
+                    return roles.All(role => inside.Contains(PlayerPlaymat.Lane(seat.Index, role, duel)))
                         && seat.Battlefield.SelectMany(cluster => cluster.Cards).Where(card => card.Attachment == null)
                             .All(card => inside.Contains(card.StudyFamily!.Bounds));
                 }),
@@ -202,6 +227,15 @@ internal static class SharedTableStudyChecks
                 $"{playerCount}-player viewer {viewer}: an empty battlefield retains its seat and the same physical mat rather than collapsing or reseating players");
         }
     }
+
+    // Recover the owner's rectangle independently of the production projection.
+    // A top duel retains upright card art, but its physical mat frame still turns.
+    private static Rectangle MatLocal(Rectangle world, Rectangle mat, int seat) => seat switch {
+        0 => new(world.Top - mat.Top, mat.Right - world.Right, world.Height, world.Width),
+        1 => new(mat.Right - world.Right, mat.Bottom - world.Bottom, world.Width, world.Height),
+        2 => new(mat.Bottom - world.Bottom, world.Left - mat.Left, world.Height, world.Width),
+        _ => new(world.Left - mat.Left, world.Top - mat.Top, world.Width, world.Height)
+    };
 
     private static void SideHandClearance(GameSnapshot baseline, Action<bool, string> check)
     {
@@ -394,11 +428,21 @@ internal static class SharedTableStudyChecks
             CardPresentation.IsResource, sharedTableStudy: true);
         var scutes = Cards(scene).Where(node => node.Owner == 2 && node.Card.Name == "Scute Swarm").ToArray();
         var family = scutes[0].StudyFamily!;
-        check(family is { TotalCount: 9, CohortCount: 4 } && family.BodyBounds.Width > family.BodyBounds.Height
+        var fronts = scutes.Where(node => node.GroupFront).ToArray();
+        check(family is { TotalCount: 9, CohortCount: 4 }
+                && family.Bounds.Width > 0 && family.Bounds.Height > 0
+                && family.BodyBounds.Width > 0 && family.BodyBounds.Height > 0
+                && family.Bounds.Contains(family.BodyBounds)
                 && scutes.Count(node => node.GroupFront) == 4
+                && family.Cohorts.All(cohort => cohort.Bounds.Width > 0 && cohort.Bounds.Height > 0
+                    && family.BodyBounds.Contains(cohort.Bounds)
+                    && fronts.Any(node => node.Id == cohort.FrontCardId && cohort.Bounds.Contains(node.Pose.Bounds)))
+                && fronts.All(node => !fronts.Any(other => other.Id != node.Id && node.Pose.Bounds.Intersects(other.Pose.Bounds)))
+                && scutes.All(node => node.Pose.Bounds.Width > 0 && node.Pose.Bounds.Height > 0
+                    && family.BodyBounds.Contains(node.Pose.Bounds) && node.Contains(node.Pose.Center.ToPoint()))
                 && scutes.All(node => node.Card.Key == "focus-action:" + node.Id)
                 && family.Cohorts.SelectMany(cohort => cohort.MemberIds).Order().SequenceEqual(scutes.Select(node => node.Id).Order()),
-            "Two-player rows keep all four Scute Swarm states in a compact horizontal family block without losing copies or exact action keys");
+            "Two-player rows keep four disjoint Scute Swarm cohort fronts and positive contained family/input geometry without losing nine copies or exact action keys");
         var families = scene.Seats.SelectMany(seat => seat.Battlefield.SelectMany(cluster => cluster.Cards
             .Select(node => node.StudyFamily!).DistinctBy(item => item.Id).Select(item => new { Seat = seat.Index, Family = item }))).ToArray();
         check(families.All(item => DuelTableStudy.MatchLane(item.Seat, item.Family.Role).Contains(item.Family.Bounds))

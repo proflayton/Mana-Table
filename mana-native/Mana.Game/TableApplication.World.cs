@@ -159,12 +159,8 @@ internal sealed partial class TableApplication
         bool hasCounters = StateClarity.PlayerStates(player).Length > 0;
         float radius = own ? 40 : 34;
         if (!own) {
-            int count = Math.Min(7, player.Zone("Hand").Count);
-            int arriving = preferences.ReducedMotion ? 0 : matchPresentation.PendingDraws(player.Id, now);
             var handCenter = SeatHand(player.Id);
-            for (int i = 0; i < Math.Max(0, count - arriving); i++) {
-                var back = TableLayout.HiddenHand(index, i, count);
-                back = back with { Center = back.Center + handCenter - TableLayout.SeatHand(index) };
+            foreach (var back in OpponentHandPoses(player, index)) {
                 if (TableStudyEnabled) {
                     fixedSeatSurfaces.Add(back);
                     fixedSeatSurfaces.Add(back with { Center = back.Center + new Vector2(3, 6) });
@@ -214,20 +210,10 @@ internal sealed partial class TableApplication
             Shape: p => Vector2.DistanceSquared(p.ToVector2(), center) <= (radius + 9) * (radius + 9)));
         string name = own ? "YOU" : localMatch && !ExperienceLabOpen
             ? "AI " + (TableLayout.SeatIndex(match, player.Id) + 1) + " · " + player.Name.Split('·')[0].Trim() : player.Name;
-        int x = (int)center.X - 94, y = (int)center.Y + (own ? 44 : 41);
-        if (own) { x = (int)center.X + 58; y = (int)center.Y - 22; }
-        if (!own && index == 1) { x = (int)center.X + 50; y = (int)center.Y - 32; }
-        var nameplate = new Rectangle(x, y, 188, 24);
         var manaHalo = PlanManaHalo(player, own ? 3 : index);
+        var nameplate = SeatNameplateArea(center, own, index, manaHalo);
+        int x = nameplate.X, y = nameplate.Y;
         bool topMatSeat = TableStudyEnabled && !own && index == 1;
-        if (own) { x = Math.Max((int)center.X + 58, manaHalo.Bounds.Right) + 8; nameplate = new(x, y, 100, 24); }
-        else if (topMatSeat) {
-            // A multiplayer name belongs below its held hand, between the
-            // library and mana. The actual duel has a separate clear rail to
-            // the right of the avatar; its battlefield begins higher up.
-            nameplate = TwoFieldTable ? new(904, 54, 188, 24) : new(496, 148, 208, 24);
-            x = nameplate.X; y = nameplate.Y;
-        } else if (index == 1) { x = Math.Max((int)center.X + 50, manaHalo.Bounds.Right) + 8; y = 64; nameplate = new(x, y, 188, 24); }
         if (!own) {
             seatReadoutBounds.Add(nameplate);
             if (TableStudyEnabled) fixedSeatLabels.Add(nameplate);
@@ -261,23 +247,50 @@ internal sealed partial class TableApplication
                 && Vector2.DistanceSquared(point.ToVector2(), center) > (radius + 9) * (radius + 9) : null));
     }
 
+    private IEnumerable<Pose> OpponentHandPoses(Player player, int index)
+    {
+        int count = Math.Min(7, player.Zone("Hand").Count);
+        int arriving = preferences.ReducedMotion ? 0 : matchPresentation.PendingDraws(player.Id, now);
+        var handCenter = SeatHand(player.Id);
+        for (int card = 0; card < Math.Max(0, count - arriving); card++) {
+            var back = TableLayout.HiddenHand(index, card, count);
+            yield return back with { Center = back.Center + handCenter - TableLayout.SeatHand(index) };
+        }
+    }
+
+    private Rectangle SeatNameplateArea(Vector2 center, bool own, int index, ManaHaloPlan mana)
+    {
+        if (own) return new(Math.Max((int)center.X + 58, mana.Bounds.Right) + 8, (int)center.Y - 22, 100, 24);
+        if (TableStudyEnabled && index == 1)
+            return TwoFieldTable ? new(904, 54, 188, 24) : new(496, 148, 208, 24);
+        return index == 1 ? new(Math.Max((int)center.X + 50, mana.Bounds.Right) + 8, 64, 188, 24)
+            : new((int)center.X - 94, (int)center.Y + 41, 188, 24);
+    }
+
     private List<Rectangle> DrawSeatAuxiliary(SeatAuxiliary auxiliary)
     {
         var (player, center, own, index, hasCounters, manaHalo, caption, incoming, originalStatusArea) = auxiliary;
-        bool topMatSeat = TableStudyEnabled && !own && index == 1;
-        bool sideMatSeat = TableStudyEnabled && !own && index is 0 or 2;
+        var geometry = TableStudyEnabled ? tableScene!.Seat(player.Id).Geometry : null;
+        var readoutArea = geometry?.PublicReadoutArea;
         var painted = new List<Rectangle>();
         Rectangle counterBounds = Rectangle.Empty;
         if (hasCounters) {
             int counterX = own ? (int)center.X - 390 : (int)center.X - 94;
-            int counterY = own ? (int)center.Y - 22 : index == 1 ? (int)center.Y + 35 : (int)center.Y - (sideMatSeat ? 66 : 64);
-            if (own && manaHalo.Parts.Length > 0) counterX = Math.Min(counterX, manaHalo.Bounds.Left - 196);
-            else if (topMatSeat) { counterX = TwoFieldTable ? 120 : 496; counterY = TwoFieldTable ? 180 : 389; }
-            else if (sideMatSeat) counterX = index == 0 ? 8 : 1448;
+            int counterY = own ? (int)center.Y - 22 : index == 1 ? (int)center.Y + 35 : (int)center.Y - 64;
+            int counterWidth = index == 1 && !own ? 144 : 188;
+            bool growUp = !own && index != 1;
+            if (own && geometry?.PublicCounterArea is { } counterArea) {
+                counterX = counterArea.X;
+                counterY = counterArea.Bottom - (player.States.Length > 0 ? 24 : 25);
+                counterWidth = counterArea.Width;
+                growUp = true;
+            } else if (!own && readoutArea is { } personal) {
+                counterX = personal.X; counterY = personal.Y; counterWidth = personal.Width;
+                growUp = false;
+            } else if (own && manaHalo.Parts.Length > 0) counterX = Math.Min(counterX, manaHalo.Bounds.Left - 196);
             else if (index == 1) counterY = Math.Max(counterY, manaHalo.Bounds.Bottom + 8);
-            int counterWidth = topMatSeat ? TwoFieldTable ? 144 : 180 : sideMatSeat ? 144 : index == 1 && !own ? 144 : 188;
             int firstCounterHit = hits.Count;
-            counterBounds = DrawPublicPlayerCounters(player, counterX, counterY, counterWidth, growUp: !own && index != 1);
+            counterBounds = DrawPublicPlayerCounters(player, counterX, counterY, counterWidth, growUp);
             if (!counterBounds.IsEmpty) seatReadoutBounds.Add(counterBounds);
             // The allocated counter row can contain empty space. Occlusion uses
             // its painted chips (including the overflow control), not that row.
@@ -288,11 +301,16 @@ internal sealed partial class TableApplication
         }
         int firstReadout = seatReadoutBounds.Count;
         Rectangle landBounds = Rectangle.Empty;
-        if (TableStudyEnabled) landBounds = DrawLandState(player, own ? 3 : index,
-            topMatSeat && !TwoFieldTable ? new Rectangle(496, counterBounds.IsEmpty ? 389 : counterBounds.Bottom + 4, 180, 100) : null);
+        if (TableStudyEnabled) {
+            var personal = readoutArea!.Value;
+            var landArea = own ? new Rectangle(8, 800, 220, 100)
+                : new Rectangle(personal.X, counterBounds.IsEmpty ? personal.Y : counterBounds.Bottom + 4, personal.Width, personal.Height);
+            landBounds = DrawLandState(player, landArea);
+        }
         if (caption != null) {
-            var statusArea = topMatSeat ? TwoFieldTable ? new Rectangle(120, Math.Max(238, counterBounds.Bottom + 4), 144, 80)
-                : new Rectangle(496, landBounds.Bottom + 4, 180, 80) : originalStatusArea;
+            var statusArea = !own && readoutArea is { } personal
+                ? new Rectangle(personal.X, landBounds.Bottom + 4, personal.Width, personal.Height)
+                : originalStatusArea;
             var measured = canvas.TextSize(caption, .53f, statusArea.Width, 80, true);
             seatReadoutBounds.Add(new(statusArea.X, statusArea.Y, measured.X, measured.Y));
             canvas.Text(caption, statusArea.X, statusArea.Y, incoming > 0 ? Red : Gold, .53f, statusArea.Width, 80, true);
@@ -321,7 +339,8 @@ internal sealed partial class TableApplication
             finally { pointer = screenPointer; canvas.EndTransform(); canvas.EndClip(); }
             var displayed = painted.Select(bounds => Rectangle.Intersect(boardView.Apply(bounds), BoardViewport))
                 .Where(bounds => !bounds.IsEmpty).ToArray();
-            bool visible = displayed.Length > 0 && !displayed.Any(SeatReadoutOccluded);
+            var well = tableScene!.Seat(auxiliary.Player.Id).Geometry.PublicReadoutArea!.Value;
+            bool visible = painted.All(well.Contains) && displayed.Length > 0 && !displayed.Any(SeatReadoutOccluded);
             canvas.EndGroup(visible);
             worldSeatReadouts[auxiliary.Player.Id] = new(Array.AsReadOnly(painted.ToArray()),
                 Array.AsReadOnly(visible ? displayed : []), visible);
@@ -390,15 +409,9 @@ internal sealed partial class TableApplication
         }
     }
 
-    private Rectangle DrawLandState(Player player, int seat, Rectangle? placement = null)
+    private Rectangle DrawLandState(Player player, Rectangle area)
     {
         var lands = PublicResources.Lands(player);
-        var area = placement ?? (seat switch {
-            0 => new Rectangle(8, 425, 144, 44),
-            2 => new Rectangle(1448, 425, 144, 44),
-            1 => TwoFieldTable ? new Rectangle(904, 84, 188, 44) : new Rectangle(496, 389, 180, 100),
-            _ => new Rectangle(320, 750, 240, 44)
-        });
         Rectangle painted = Rectangle.Empty;
         int titleHeight = Readout(lands.Total + (lands.Total == 1 ? " land" : " lands"), area.Y, .75f, true);
         int stateY = area.Y + Math.Max(23, titleHeight + 2);
