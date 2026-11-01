@@ -1582,9 +1582,14 @@ overwritten title. Hand/reader fallback painting keeps its separate full-card pa
 Player status is a separate fixed HUD layer. `SeatReadoutPlan` measures an
 opponent's land totals, incoming combat and public states at the actual text
 scale. One immutable plan supplies paint, current scoped detail targets and
-camera/attention reservations. Full-font arrangements precede an explicit
-counted state-detail fallback. Its bounded seat marker matches the portrait;
-free-form deck/player names remain complete in normal arrangements and details.
+camera/attention reservations. Its measured name/land header is the sole visible
+identity and the existing battlefield-focus target; the old portrait caption
+and separate ordinal yield when this header is placed. The relative plan starts
+beside the actual portrait, with land/tap facts before state rows. Placement
+releases that seat's obsolete caption reservation, retaining it on no-fit.
+Full-font arrangements precede an explicit counted state-detail fallback with
+one bounded seat label; full deck/player names remain in normal arrangements
+and details.
 A genuine no-fit result is explicit: the existing nameplate offers resource
 reading instead of publishing overlap or throwing for valid content. That
 workspace retains the full owner, land/combat facts and all public states.

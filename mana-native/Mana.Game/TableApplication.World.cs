@@ -231,9 +231,10 @@ internal sealed partial class TableApplication
             ? "AI " + (TableLayout.SeatIndex(match, player.Id) + 1) + " · " + player.Name.Split('·')[0].Trim() : player.Name;
         var manaHalo = PlanManaHalo(player, own ? 3 : index);
         var nameplate = SeatNameplateArea(center, own, index, manaHalo);
+        var measuredIdentity = TableStudyEnabled ? seatReadoutPlans.GetValueOrDefault(player.Id) : null;
         int x = nameplate.X, y = nameplate.Y;
         bool topMatSeat = TableStudyEnabled && !own && index == 1;
-        if (!own) {
+        if (!own && measuredIdentity == null) {
             seatReadoutBounds.Add(nameplate);
             string seatMarker = PublicSeatOrdinal(player.Id).ToString();
             int markerWidth = canvas.TextWidth(seatMarker, .6f, true) + 10;
@@ -260,9 +261,10 @@ internal sealed partial class TableApplication
         var auxiliary = new SeatAuxiliary(player, center, own, index, hasCounters, manaHalo, auxiliaryCaption, incoming, new(x + 4, y + 24, 180, 80));
         if (!TableStudyEnabled || own) DrawSeatAuxiliary(auxiliary);
         if (!own) DrawOpponentPhase(player, center, index);
-        if (!own) hits.Add(new("focus:" + player.Id, Scope, nameplate, seatReadoutWorkspaces.Contains(player.Id)
+        var identityBounds = measuredIdentity?.Header.Bounds ?? nameplate;
+        if (!own) hits.Add(new("focus:" + player.Id, Scope, identityBounds, seatReadoutWorkspaces.Contains(player.Id)
             ? new MatchIntent.OpenPlayerState(player.Id, "") : new MatchIntent.OpenZone(player.Id, "Battlefield"),
-            Shape: topMatSeat ? point => nameplate.Contains(point)
+            Shape: topMatSeat ? point => identityBounds.Contains(point)
                 && Vector2.DistanceSquared(point.ToVector2(), center) > (radius + 9) * (radius + 9) : null));
     }
 

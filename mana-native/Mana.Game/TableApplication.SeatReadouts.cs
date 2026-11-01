@@ -30,11 +30,14 @@ internal sealed partial class TableApplication
                 caption += (caption.Length > 0 ? " · " : "") + player.Zone("Hand").Count + " in hand";
             SeatReadoutPlan Build(int width = 224, bool? horizontal = null, bool countedOnly = false) => SeatReadoutPlan.Build(player, seat.Index, PublicSeatOrdinal(player.Id), caption, incoming > 0,
                 (text, size, bold) => canvas.TextWidth(text, size, bold),
-                (text, size, measureWidth, bold) => canvas.TextSize(text, size, measureWidth, 80, bold), width, horizontal, countedOnly);
-            return (Player: player.Id, Reserved: Build(countedOnly: true), Arrangements: new[] { Build(), Build(264), Build(horizontal: false) });
+                (text, size, measureWidth, bold) => canvas.TextSize(text, size, measureWidth, 80, bold), width, horizontal, countedOnly).AtPortrait(seat.Geometry.Hero);
+            var identitySlot = SeatNameplateArea(seat.Geometry.Hero, false, seat.Index, PlanManaHalo(player, seat.Index));
+            return (Player: player.Id, IdentitySlot: identitySlot, Reserved: Build(countedOnly: true), Arrangements: new[] { Build(), Build(264), Build(horizontal: false) });
         }).ToArray();
         foreach (var candidate in candidates) {
-            var protectedAreas = occupied.Concat(candidates.Where(other => other.Player != candidate.Player).SelectMany(other => other.Reserved.Pieces)).ToArray();
+            occupied.Remove(candidate.IdentitySlot);
+            var protectedAreas = occupied.Concat(candidates.Where(other => other.Player != candidate.Player
+                && !seatReadoutPlans.ContainsKey(other.Player) && !seatReadoutWorkspaces.Contains(other.Player)).SelectMany(other => other.Reserved.Pieces)).ToArray();
             switch (seatReadoutPlacer(candidate.Arrangements, candidate.Reserved, BoardViewport, protectedAreas)) {
                 case SeatReadoutPlacement.Placed placed:
                     seatReadoutPlans[candidate.Player] = placed.Plan;
@@ -42,6 +45,7 @@ internal sealed partial class TableApplication
                     break;
                 case SeatReadoutPlacement.NoFit failure:
                     seatReadoutWorkspaces.Add(failure.PlayerId);
+                    occupied.Add(candidate.IdentitySlot);
                     break;
             }
         }
@@ -83,6 +87,7 @@ internal sealed partial class TableApplication
     {
         foreach (var item in plan.Text) {
             var color = item.Role == SeatReadoutTextRole.Incoming ? Red : item.Role == SeatReadoutTextRole.Status ? Gold : Ink;
+            if (item.Role == SeatReadoutTextRole.LandTotal && item.Bounds.Contains(pointer)) color = Blue;
             canvas.Text(item.Text, item.Bounds.X, item.Bounds.Y, color, item.Size, item.Bounds.Width, 80, item.Bold);
             seatReadoutBounds.Add(item.Bounds);
         }

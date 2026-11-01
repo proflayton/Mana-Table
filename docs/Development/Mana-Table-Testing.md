@@ -934,6 +934,11 @@ than allowing an unchecked overlapping origin. Real long preset/deck names at
 impossible placement must return a typed no-fit result and leave an explicit,
 current resource-reading nameplate target; it must not throw or claim an
 intersecting plan is clear.
+The identity follow-up requires one actual measured name/land header and its
+exact current focus hit, without a duplicate portrait caption. Existing focus
+journeys click that header. Only its own intentional hit shares the header's
+bounds; other player controls and fixed resources remain protected. The hand
+count remains once because its visible fan is bounded to seven cards.
 Existing sparse/dense/tapped checks and `AttachmentStackChecks` protect complete
 assemblies in two-, three- and four-player games and foreign-controlled
 attachments without changing their controller or individual permissions. Actual

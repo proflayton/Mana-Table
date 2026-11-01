@@ -48,7 +48,8 @@ internal sealed partial class TableApplication
                 var mana = PlanManaHalo(player, seat.Index);
                 occupied.AddRange(mana.Parts.Select(part => part.Bounds));
                 if (!own) {
-                    occupied.Add(SeatNameplateArea(hero, false, seat.Index, mana));
+                    if (!seatReadoutPlans.ContainsKey(seat.PlayerId))
+                        occupied.Add(SeatNameplateArea(hero, false, seat.Index, mana));
                     foreach (var hand in OpponentHandPoses(player, seat.Index)) {
                         occupied.Add(hand.Bounds);
                         occupied.Add((hand with { Center = hand.Center + new Vector2(3, 6) }).Bounds);

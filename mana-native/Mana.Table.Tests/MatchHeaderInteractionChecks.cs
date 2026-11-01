@@ -114,6 +114,8 @@ internal static class MatchHeaderInteractionChecks
                     journey + ": camera movement preserves the authoritative snapshot, physical occurrences and zero game commands");
                 foreach (var (owner, plan) in plans) {
                     var current = view.ReadoutPlans[owner];
+                    var identity = current.Text.Single(item => item.Role == SeatReadoutTextRole.LandTotal);
+                    var identityHit = frame.Hits.Single(hit => hit.Id == "focus:" + owner);
                     var badge = view.CounterBadge(owner);
                     check(current.Pieces.SequenceEqual(plan.Pieces) && current.States.Select(item => item.Text).SequenceEqual(plan.States.Select(item => item.Text))
                             && badge is { Chips.Length: 2 } && badge.Chips.All(chip => chip.MeasuredWidth <= chip.AvailableWidth)
@@ -122,6 +124,13 @@ internal static class MatchHeaderInteractionChecks
                             && current.States.All(item => frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value == item.Text
                                 && text.X == item.Bounds.X + 6 && text.Y == item.Bounds.Y + 2 && text.Size == .6f)),
                         journey + $": opponent {owner}'s complete public data remains at the same full font and fixed measured coordinates");
+                    check(identityHit.Bounds == identity.Bounds && identityHit.Scope == frame.Stamp.Scope
+                            && identityHit.Intent is MatchIntent.OpenZone openIdentity && openIdentity.PlayerId == owner && openIdentity.Zone == "Battlefield"
+                            && view.HitAt(identity.Bounds.Center)?.Id == identityHit.Id
+                            && frame.Drawing.Commands.OfType<DrawCommand.Text>().Count(text => text.Value == identity.Text
+                                && text.X == identity.Bounds.X && text.Y == identity.Bounds.Y && text.Size == identity.Size) == 1
+                            && frame.Drawing.Commands.OfType<DrawCommand.CenterText>().All(text => text.Value?.EndsWith(" ↗", StringComparison.Ordinal) != true),
+                        journey + $": opponent {owner} has one measured owner/land identity, its actual scoped focus target, and no duplicate portrait-name label");
                     foreach (var item in current.States) {
                         string id = "player-state:" + owner + ":" + item.Id;
                         var hit = frame.Hits.Single(candidate => candidate.Id == id);
@@ -144,7 +153,10 @@ internal static class MatchHeaderInteractionChecks
                     // a held card, portrait, reading surface or legacy zone rail
                     // remains fixed. Manual navigation may carry table objects
                     // behind the HUD; that must not make the HUD chase the camera.
-                    var fixedHits = seatHits.Where(hit => overview || !TableZoneControl(hit)).ToArray();
+                    bool OwnIdentityControl(TableHit hit) => hit.Id == identityHit.Id && hit.Bounds == identity.Bounds
+                        && hit.Scope == frame.Stamp.Scope && hit.Intent is MatchIntent.OpenZone open
+                            && open.PlayerId == owner && open.Zone == "Battlefield";
+                    var fixedHits = seatHits.Where(hit => (overview || !TableZoneControl(hit)) && !OwnIdentityControl(hit)).ToArray();
                     var fixedCards = frame.Cards.Where(card => overview || !card.Request.UsesTableCamera
                         || card.Focused || card.Layer == CardPresentationLayer.Reader).ToArray();
                     bool clear = current.Pieces.All(piece => fixedHits.All(hit => !hit.Bounds.Intersects(piece)))
@@ -156,7 +168,7 @@ internal static class MatchHeaderInteractionChecks
                         if (!File.Exists(failure)) using (var stream = new FileStream(failure, FileMode.CreateNew, FileAccess.Write))
                             System.Text.Json.JsonSerializer.Serialize(stream, new {
                                 journey, overview, owner, size, scale, camera = frame.BoardView, frame.Stamp.Scope,
-                                hud = current.Pieces,
+                                hud = current.Pieces, ownIdentity = new { identity.Text, identity.Bounds, identityHit.Id },
                                 fixedControls = fixedHits.Select(hit => new { hit.Id, hit.Bounds, tableZone = TableZoneControl(hit),
                                     hit.Scope, intent = hit.Intent.ToString(), collides = current.Pieces.Any(hit.Bounds.Intersects) }).ToArray(),
                                 movingZoneControls = seatHits.Where(TableZoneControl).Select(hit => new { hit.Id, hit.Bounds,
@@ -169,12 +181,13 @@ internal static class MatchHeaderInteractionChecks
                             }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true, IncludeFields = true });
                     }
                     check(clear,
-                        journey + ": the measured HUD clears fixed names, portraits, held cards, readers and mana; overview also clears physical zone controls, command faces and cloth");
+                        journey + ": the measured HUD shares only its own exact identity focus target and clears other fixed controls, portraits, held cards, readers and mana; overview also clears physical zones, command faces and cloth");
                 }
             }
             CheckHud("Overview", true);
             if (count > 2) foreach (int owner in plans.Keys) {
-                view.OpenBattlefield(owner); Tick(.7);
+                var header = frame.Hits.Single(hit => hit.Id == "focus:" + owner);
+                Tick(point: header.Bounds.Center, left: ButtonState.Pressed); Tick(point: header.Bounds.Center); Tick(.7);
                 check(view.BoardView.Scale > 1 && plans.Values.SelectMany(plan => plan.Pieces).All(piece =>
                         frame.Cards.Where(card => card.Zone == "Battlefield" && card.Request.Owner == owner).All(card => !Overlap(card.Display, piece))),
                     "Focus frames the same complete mat clear of the fixed readable state HUD");
@@ -265,12 +278,17 @@ internal static class MatchHeaderInteractionChecks
                 check(plan.SeatOrdinal == ordinal && plan.Pieces.All(viewport.Contains)
                         && (title.Text.StartsWith(player.Name + " · ", StringComparison.Ordinal)
                             || title.Text.StartsWith("Seat " + ordinal + " · ", StringComparison.Ordinal))
-                        && frame.Drawing.Commands.OfType<DrawCommand.CenterText>().Any(text => text.Value == ordinal.ToString()
-                            && nameplate.Bounds.Contains(text.Bounds))
+                        && nameplate.Bounds == title.Bounds && nameplate.Scope == frame.Stamp.Scope
+                        && nameplate.Intent is MatchIntent.OpenZone open && open.PlayerId == owner && open.Zone == "Battlefield"
+                        && view.HitAt(nameplate.Bounds.Center)?.Id == nameplate.Id
+                        && frame.Drawing.Commands.OfType<DrawCommand.Text>().Count(text => text.Value == title.Text
+                            && text.X == title.Bounds.X && text.Y == title.Bounds.Y && text.Size == title.Size) == 1
+                        && frame.Drawing.Commands.OfType<DrawCommand.CenterText>().All(text => text.Value?.EndsWith(" ↗", StringComparison.Ordinal) != true
+                            && !(text.Value == ordinal.ToString() && nameplate.Bounds.Contains(text.Bounds)))
                         && plan.Pieces.All(piece => frame.Hits.Where(hit => hit.Id.StartsWith("focus:", StringComparison.Ordinal)
-                            || hit.Id.StartsWith("zone:", StringComparison.Ordinal)).All(hit => !piece.Intersects(hit.Bounds)))
+                            || hit.Id.StartsWith("zone:", StringComparison.Ordinal)).Where(hit => hit.Id != nameplate.Id).All(hit => !piece.Intersects(hit.Bounds)))
                         && view.ReadoutPlans.Where(other => other.Key != owner).All(other => plan.Pieces.All(piece => other.Value.Pieces.All(area => !piece.Intersects(area)))),
-                    $"Long preset-style owner {owner}, {count} seats, {size.X}px, viewer {viewer}: full names or their explicit stable public ordinal remain readable without throwing, overlapping peers or relabelling with the viewing seat");
+                    $"Long preset-style owner {owner}, {count} seats, {size.X}px, viewer {viewer}: one full-name or stable-public-seat header owns its exact target without a mirrored ordinal, duplicate portrait name, peer overlap or viewer relabelling");
             }
             var selected = view.ReadoutPlans.Values.First(plan => plan.PlayerId == incomingOwner);
             check(selected.Text.Any(item => item.Role == SeatReadoutTextRole.Incoming && item.Text.Contains("1 INCOMING", StringComparison.Ordinal))

@@ -8,7 +8,7 @@ does not establish that a person can understand or use the screen.
 
 ## Keep public piles with their player's mat: 1 November 2026
 
-**Source prototype; centered revision human review pending.** The player found
+**Source prototype; seat-identity revision human review pending.** The player found
 the rectangular seated table much better, then asked for library, graveyard, exile and command
 ownership to be clearer. In the preceding candidate, battlefield cards followed
 the seated mat plane but the public piles and commanders remained upright fixed
@@ -33,6 +33,18 @@ review as **issues** for the portrait placement; this feedback does not approve
 every pile interaction. The same supplied Arena references keep the player's
 life portrait centered above the hand. Restoring that seat anchor is the next
 revision, with human review still pending.
+
+The next centered capture duplicated the player name in a resource heading and
+again below the portrait. The player reported that repetition in `77e9ea4e`;
+record the candidate as having an identity-presentation issue. The follow-up
+uses one measured name-and-land header beneath the portrait, followed by tapped
+and untapped facts and public states. That same header owns the existing focus
+gesture; a placed header replaces the old portrait name and standalone seat
+number. A bounded seat header or the complete resource reader remains available
+when a full arrangement cannot fit. The supplied Arena references show a single
+seat identity; this portrait-associated resource arrangement is our adaptation.
+The hand count remains useful because the displayed fan is capped at seven.
+Final human review remains pending.
 
 The revision keeps opponents' three distinct piles and up to two current
 commanders in their mats' reserved personal areas. The local piles and commanders
