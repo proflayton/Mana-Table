@@ -23,7 +23,7 @@ internal sealed partial class TableApplication
         int title = Math.Clamp((int)(face.Height * .14f), 0, 18);
         face = new(face.X, face.Y + title, face.Width, Math.Max(0, face.Height - title));
         if (face.Width >= 24 && face.Height >= 24)
-            PaintBattlefieldScanState(card, owner, face, copies);
+            PaintBattlefieldScanState(card, owner, pose, copies);
         if (copies > 1) {
             string count = "\u00d7" + copies;
             int measured = canvas.TextWidth(count, .44f, true), width = measured + 6;
@@ -60,30 +60,47 @@ internal sealed partial class TableApplication
         return pose.InteriorBounds(1);
     }
 
-    private void PaintBattlefieldScanState(Card card, int owner, Rectangle face, int copies)
+    private void PaintBattlefieldScanState(Card card, int owner, Pose pose, int copies)
     {
         bool creature = CardPresentation.HasCombatStats(card);
+        var outline = pose.Bounds;
+        // The printing's title occupies the narrow upper edge. Allocate the
+        // remaining real quadrilateral by measured rows, rather than shrinking
+        // both axes of one rectangle and guessing badge heights.
+        int top = outline.Top + 1 + Math.Min(18, (int)(outline.Height * .06f));
+        int bottom = outline.Bottom - 1;
+        var face = pose.InteriorBand(top, bottom, 1);
+        if (face.IsEmpty) return;
         float size = face.Width >= 100 ? .62f : .52f;
         string stats = creature ? CurrentStats(card) : "";
         string damage = card.Damage > 0 ? card.Damage.ToString() : "";
-        int Measure() => (creature ? canvas.TextWidth(stats, size, true) + 10 : 0)
+        const float counterSize = .46f;
+        bool hasCounter = CounterMarker(card).Length > 0;
+        int counterHeight = hasCounter ? Math.Max(18, canvas.TextSize(CounterMarker(card), counterSize, 1000, 1, true).Y) : 0;
+        int Height() => creature || damage.Length > 0
+            ? Math.Max(canvas.TextSize(stats, size, 1000, 1, true).Y,
+                canvas.TextSize(damage, size, 1000, 1, true).Y) : 0;
+        int Measure() => (creature ? canvas.TextWidth(stats, size, true) + 4 : 0)
             + (damage.Length > 0 ? canvas.TextWidth(damage, size, true) + 18 : 0);
-        while (size > .375f && Measure() > face.Width) size = Math.Max(.375f, size - .025f);
-        int height = Math.Min(22, face.Height / 3), right = face.Right;
+        while (size > .375f && (Measure() > face.Width || Height() + counterHeight + (hasCounter ? 1 : 0) > face.Height))
+            size = Math.Max(.375f, size - .025f);
+        int height = Height();
+        var statsRow = pose.InteriorBand(bottom - height, bottom, 1);
+        int right = statsRow.Right;
         if (creature) {
-            int measured = canvas.TextWidth(stats, size, true), width = Math.Min(face.Width, measured + 10);
-            var bounds = new Rectangle(right - width, face.Bottom - height, width, height);
+            int measured = canvas.TextWidth(stats, size, true), width = Math.Min(statsRow.Width, measured + 4);
+            var bounds = new Rectangle(right - width, bottom - height, width, height);
             bool attached = card.AttachedTo != null || card.Attachments.Length > 0;
             canvas.Panel(bounds, new(13, 24, 30), attached ? Gold : new Color(106, 135, 143), 3);
             canvas.CenterText(stats, bounds, Ink, size, true);
-            RecordBattlefieldLabel(card, owner, "pt", stats, bounds, measured, width - 10);
+            RecordBattlefieldLabel(card, owner, "pt", stats, bounds, measured, width - 4);
             battlefieldStatsBounds[CardViews.Identity(card)] = new(bounds, measured);
             right = bounds.Left;
         }
-        if (damage.Length > 0 && right > face.Left) {
+        if (damage.Length > 0 && right > statsRow.Left) {
             int measured = canvas.TextWidth(damage, size, true), width = measured + 18;
-            if (width <= right - face.Left) {
-                var bounds = new Rectangle(right - width, face.Bottom - height, width, height);
+            if (width <= right - statsRow.Left) {
+                var bounds = new Rectangle(right - width, bottom - height, width, height);
                 canvas.Fill(bounds, new(25, 23, 28));
                 var center = new Vector2(bounds.Left + 6, bounds.Center.Y);
                 canvas.Line(center + new Vector2(-3, 4), center + new Vector2(3, -4), Red, 2);
@@ -92,14 +109,14 @@ internal sealed partial class TableApplication
                 RecordBattlefieldLabel(card, owner, "damage", damage, bounds, measured, width - 18);
             }
         }
-        bool badgeRoom = face.Top + 21 <= face.Bottom - (creature || damage.Length > 0 ? height : 0);
+        var badgeRow = pose.InteriorBand(top, top + Math.Max(18, counterHeight), 1);
+        bool badgeRoom = badgeRow.Bottom + 1 <= bottom - height;
         int copyWidth = copies > 1 ? canvas.TextWidth("×" + copies, .44f, true) + 10 : 0;
         int counterWidth = 0;
         if (CounterMarker(card).Length > 0 && badgeRoom) {
-            const float counterSize = .46f;
             int width = CounterMarkerWidth(card, counterSize);
-            if (width + copyWidth <= face.Width) {
-                var bounds = new Rectangle(face.Right - width, face.Top + 3, width, 18);
+            if (width + copyWidth <= badgeRow.Width) {
+                var bounds = new Rectangle(badgeRow.Right - width, badgeRow.Top, width, counterHeight);
                 canvas.Rounded(bounds, new(14, 32, 34), 3);
                 PaintCounterMarker(card, bounds, counterSize, owner);
                 counterWidth = width;
@@ -109,8 +126,8 @@ internal sealed partial class TableApplication
         if (card.Sick && creature) abilities.Insert(0, "summoning sick");
         if (card.PhasedOut) abilities.Insert(0, "phased out");
         for (int index = 0; badgeRoom && index < Math.Min(2, abilities.Count)
-            && copyWidth + 14 + index * 15 <= face.Width - counterWidth; index++)
-            PaintBattlefieldScanGlyph(abilities[index], new(face.Left + copyWidth + 8 + index * 15, face.Top + 12));
+            && copyWidth + 14 + index * 15 <= badgeRow.Width - counterWidth; index++)
+            PaintBattlefieldScanGlyph(abilities[index], new(badgeRow.Left + copyWidth + 8 + index * 15, badgeRow.Center.Y));
     }
 
     private void PaintBattlefieldScanGlyph(string ability, Vector2 center)

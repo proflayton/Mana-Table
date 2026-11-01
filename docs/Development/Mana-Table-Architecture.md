@@ -1563,9 +1563,16 @@ permanent faces, attachments and family envelopes. It reuses `TableWorld`'s
 seated plane and projection origin; the outer `BoardView` pan/zoom follows once.
 `SeatGeometry` exposes canonical placement and the actual projected mat surface
 and bounds. The same composed card pose owns texture, outline, motion and pointer
-geometry; upright state text fits inside its projected face. The oval rim and
-wood grain share that plane, with wider constant mat gaps around the center.
+geometry; upright state text fits inside its projected face. The rectangular
+tabletop and wood grain share that plane, with close far/near edges, measured
+side support for the existing card rails and wider constant mat gaps around the center.
 Painting adds no rules state or command authority.
+
+Permanent state stamps measure the actual chosen font and reserve its real
+line height. Each row uses the horizontal slice of the projected quadrilateral
+at both row edges; a small tilted card must not lose its counter marker because
+a central inscribed rectangle or guessed padding is narrower. The selected
+font is painted as measured instead of being silently reduced to a short badge.
 
 Player status is a separate fixed HUD layer. `SeatReadoutPlan` measures an
 opponent's land totals, incoming combat and public states at the actual text

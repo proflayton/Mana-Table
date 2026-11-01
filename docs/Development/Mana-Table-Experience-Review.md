@@ -49,13 +49,36 @@ readers are unchanged.
 
 The player's first projection preview still felt less like a table, and the
 mats felt too close. That review is **issues/direction**, not acceptance. The
-follow-up restores the existing continuous oval rim and increases the constant
+first follow-up restored the existing continuous oval rim and increased the constant
 world-space gaps while keeping every mat's dimensions and card packing. Side
 mat gaps increase from 16 to 32 units, and the near/far gap becomes 68. A wider
 50-unit side candidate collided with the fixed exile rail in the tapped-land
 journey and was rejected. The table material continues beneath the fixed hand;
 cards and mats retain their existing board clip. These are prototype choices
 for a further human motion and spacing review.
+
+After reviewing candidate `15d5758`, the player said it felt closer but rejected
+the round table and the excessive clearance between its edge and the mats.
+That is **issues/direction**, not acceptance. The next candidate uses an actual
+rectangular tabletop on the same seated plane, rather than an inset pretending
+to be a closer edge. Its constant physical footprint leaves 24 units behind the
+far mat and 40 in front of the near mat; the latter also supports the existing
+near commander's backing. Side aprons retain only the width required for the
+unchanged command and pile rails. The far portrait, held hand and zone controls
+remain fixed seat HUD. This preserves the physical card/mat plane, wider center
+gaps, card dimensions and stable packing; it does not move the zone rails or
+claim that their side clearance has been solved. Human review of this exact
+rectangular candidate remains pending.
+
+The same candidate fixes a real small-window paint failure at 130% text: a
+tilted Llanowar Elves had current 3/3 but its fixed padding left one pixel too
+little for that label, and its guessed badge height suppressed the counter.
+State rows now measure the actual font and counter glyph against horizontal
+slices of the projected card. Both complete labels fit without reducing their
+minimum fonts, colliding with each other, or replacing the printed card face.
+The production-composition regression runs in the existing pure and headless
+presentation checks; the full GPU battlefield journey still tests the actual
+paint and pointer behavior at 1000×740 and 1540×980.
 
 Review the continuous hand → stack → battlefield journey, a tapped card at each
 seat, attachments, four-player ownership and a focused mat at both small and

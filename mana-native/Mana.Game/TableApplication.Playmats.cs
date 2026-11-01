@@ -11,23 +11,23 @@ internal sealed partial class TableApplication
     {
         // Cloth and cards share the same seated plane before the outer camera.
         canvas.BeginTransform(boardView);
-        // The continuous oval edge supplies the seated table silhouette, even
-        // beneath the fixed hand. Its material uses the same world projection.
-        canvas.Polygon(TableWorld.Rim(-9, 32), Color.Black * .6f);
-        canvas.Polygon(TableWorld.Rim(0, 17), new(23, 25, 28));
-        canvas.Polygon(TableWorld.Rim(), new(89, 80, 65));
-        canvas.Polygon(TableWorld.Rim(5), new(48, 46, 43));
-        canvas.Polygon(TableWorld.Rim(24), new(67, 51, 40));
-        canvas.Polygon(TableWorld.Rim(28), new(49, 40, 33));
+        // The actual rectangular perimeter follows the same seated plane as
+        // the cloth. Its fixed apron supports the unchanged side/near card
+        // rails; no content count or camera focus can resize the furniture.
+        var tabletop = PlayerPlaymat.TabletopPlacement;
+        PlaneRounded(tabletop, Color.Black * .6f, 18, 22);
+        PlaneRounded(tabletop, new(23, 25, 28), 18, 12);
+        PlaneRounded(tabletop, new(89, 80, 65), 18);
+        var material = tabletop; material.Inflate(-4, -4);
+        PlaneRounded(material, new(48, 46, 43), 14);
+        material.Inflate(-4, -4);
+        PlaneRounded(material, new(49, 40, 33), 10);
         // Long, low-contrast grain belongs to the table, not to a screen overlay.
-        for (int i = 0; i < 100; i++) {
-            float y = -470 + i * 9.4f;
-            float extent = 820 * MathF.Sqrt(Math.Max(0, 1 - y * y / (480 * 480)));
-            PlaneLine(TableWorld.Origin + new Vector2(-extent, y), TableWorld.Origin + new Vector2(extent, y),
+        for (int i = 0; i < 80; i++) {
+            float y = material.Top + 10 + i * (material.Height - 20) / 80f;
+            PlaneLine(new(material.Left + 10, y), new(material.Right - 10, y),
                 (i % 3 == 0 ? new Color(117, 88, 57) : Color.Black) * .075f, 1);
         }
-        var inlay = TableWorld.Rim(53);
-        for (int i = 0; i < inlay.Length; i++) canvas.Line(inlay[i], inlay[(i + 1) % inlay.Length], new Color(162, 150, 119) * .25f, 1);
         canvas.EndTransform();
         canvas.BeginClip(BoardViewport);
         canvas.BeginTransform(boardView);
@@ -94,7 +94,7 @@ internal sealed partial class TableApplication
     private void PlaneLine(Vector2 from, Vector2 to, Color color, float width) =>
         canvas.Line(TableSurfaceProjection.Project(from), TableSurfaceProjection.Project(to), color, width);
 
-    private void PlaneRounded(Rectangle bounds, Color color, int radius)
+    private void PlaneRounded(Rectangle bounds, Color color, int radius, float drop = 0)
     {
         radius = Math.Clamp(radius, 0, Math.Min(bounds.Width, bounds.Height) / 2);
         var centers = new[] {
@@ -107,7 +107,7 @@ internal sealed partial class TableApplication
         for (int corner = 0; corner < centers.Length; corner++)
             for (int step = 0; step <= 6; step++) {
                 float angle = -MathF.PI / 2 + corner * MathF.PI / 2 + step * MathF.PI / 12;
-                points.Add(TableSurfaceProjection.Project(centers[corner] + new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * radius));
+                points.Add(TableSurfaceProjection.Project(centers[corner] + new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * radius) + new Vector2(0, drop));
             }
         canvas.Polygon(points, color);
     }

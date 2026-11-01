@@ -987,8 +987,12 @@ including reachable state-detail controls, while preserving the anchored portrai
 mana, public piles and local resource HUD. Dense overview captions that cannot
 fit at full font require a physical hover-to-reader journey; glyphs must not
 escape their surface. These checks do not establish human readability or motion
-acceptance. Review the actual oval-table play sequence and focused battlefield at
+acceptance. Review the actual rectangular-table play sequence and focused battlefield at
 both window sizes with realistic art, ordinary/reduced motion and tapped cards.
+The existing full-battlefield GPU journey also checks a small projected Llanowar
+Elves with current 3/3 and one counter at both sizes. The composed regression
+checks measured font height, full quantities, quad containment and separate
+state rows. Correct projected data alone does not prove those glyphs were drawn.
 `FullBattlefieldSmoke` (the existing
 `--smoke-full-battlefield` mode) appends a three-player journey through the actual
 reduced-motion setting, keyboard pan, wheel zoom and Home. It checks unchanged

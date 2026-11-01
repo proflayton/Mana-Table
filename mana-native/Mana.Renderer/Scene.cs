@@ -23,6 +23,29 @@ public readonly record struct Pose(Vector2 Center, Vector2 Size, float Angle = 0
     // Upright state text must fit the actual projected face, not its enclosing
     // screen rectangle. A centered rectangle is bounded by all four edges.
     public Rectangle InteriorBounds(int inset = 0) => InteriorBounds(Corners, Center, inset);
+    // Allocate an upright label row against its actual horizontal slices. A
+    // whole-face inscribed rectangle wastes the wide end of a tilted card and
+    // can incorrectly suggest there is no room for two measured state rows.
+    public Rectangle InteriorBand(int top, int bottom, int inset = 0)
+    {
+        if (bottom <= top) return Rectangle.Empty;
+        var corners = Corners;
+        (float Left, float Right)? Slice(int y)
+        {
+            var xs = new List<float>(4);
+            for (int index = 0; index < corners.Length; index++) {
+                var a = corners[index]; var b = corners[(index + 1) % corners.Length];
+                if (y < Math.Min(a.Y, b.Y) || y > Math.Max(a.Y, b.Y)) continue;
+                if (Math.Abs(b.Y - a.Y) < .001f) { xs.Add(a.X); xs.Add(b.X); }
+                else xs.Add(a.X + (b.X - a.X) * (y - a.Y) / (b.Y - a.Y));
+            }
+            return xs.Count < 2 ? null : (xs.Min(), xs.Max());
+        }
+        if (Slice(top) is not { } upper || Slice(bottom) is not { } lower) return Rectangle.Empty;
+        int left = (int)MathF.Ceiling(Math.Max(upper.Left, lower.Left)) + inset;
+        int right = (int)MathF.Floor(Math.Min(upper.Right, lower.Right)) - inset;
+        return new(left, top, Math.Max(0, right - left), bottom - top);
+    }
     internal static Rectangle InteriorBounds(IReadOnlyList<Vector2> corners, Vector2 center, int inset = 0)
     {
         float halfWidth = (corners.Max(point => point.X) - corners.Min(point => point.X)) / 2;

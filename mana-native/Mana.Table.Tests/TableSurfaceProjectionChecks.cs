@@ -45,11 +45,13 @@ internal static class TableSurfaceProjectionChecks
                 var card = TableSurfaceProjection.Project(flat);
                 var moved = camera.Apply(card);
                 var interior = moved.InteriorBounds(1);
+                var band = moved.InteriorBand(interior.Top, interior.Bottom, 1);
                 check(card.Corners.Zip(flat.Corners).All(pair => Near(pair.First, TableSurfaceProjection.Project(pair.Second)))
                         && moved.Corners.Zip(card.Corners).All(pair => Near(pair.First, camera.Apply(pair.Second)))
                         && InPlacement(placement, card) && moved.Contains(moved.Center.ToPoint())
                         && new[] { interior.Location, new Point(interior.Right, interior.Top),
                             new Point(interior.Right, interior.Bottom), new Point(interior.Left, interior.Bottom) }.All(moved.Contains)
+                        && Corners(band).All(moved.Contains)
                         && !moved.Contains(new(moved.Bounds.Left, moved.Bounds.Top)),
                     $"Seat {seat}, tapped {tapped}: cloth, face, upright state text and pointer share one projection followed by one camera transform");
             }
@@ -64,6 +66,8 @@ internal static class TableSurfaceProjectionChecks
                         .Zone("Battlefield").Cards.Single(card => card.VisualId == node.Id))),
             "A spell landing adds its exact current occurrence on the shared plane without moving the already-played Forest or replacing engine cards");
         PaintedCurrentState(check);
+        PaintedSmallCounterState(check);
+        FixedRailSupport(check);
     }
 
     private static void PaintedCurrentState(Action<bool, string> check)
@@ -87,14 +91,85 @@ internal static class TableSurfaceProjectionChecks
         foreach (var node in frame.Scene!.BattlefieldDrawOrder) {
             var card = frame.Cards.Single(item => item.Id == node.Id);
             var stats = app.TestPort.BattlefieldLabels(node.Id).SingleOrDefault(label => label.Kind == "pt");
-            var safe = card.Display.InteriorBounds(1);
-            int title = Math.Clamp((int)(safe.Height * .14f), 0, 18);
-            safe = new(safe.X, safe.Y + title, safe.Width, Math.Max(0, safe.Height - title));
-            int height = Math.Min(22, safe.Height / 3);
+            var text = frame.Drawing.Commands.OfType<DrawCommand.CenterText>()
+                .SingleOrDefault(command => command.Value == "12/13" && command.Bounds == stats?.Bounds);
+            int height = text == null ? 0 : new TextMetrics().TextSize("12/13", text.Size, 1000, 1, true).Y;
             check(node.ScanFace && node.Pose.IsProjected && stats is { Text: "12/13" }
-                    && stats.Bounds.Bottom == safe.Bottom && stats.Bounds.Height == height && safe.Contains(stats.Bounds)
+                    && stats.Bounds.Bottom == card.Display.Bounds.Bottom - 1 && stats.Bounds.Height == height
+                    && Corners(stats.Bounds).All(card.Display.Contains) && text is { Size: >= .375f }
                     && stats.MeasuredWidth <= stats.AvailableWidth && engine.Replies.Count == 0,
                 $"Seat {frame.Scene.Seat(node.Owner).Index}: the projected physical card uses the study renderer's upright, wholly contained current 12/13 instead of falling back to a flat-pose-only label path");
+        }
+    }
+
+    private static void PaintedSmallCounterState(Action<bool, string> check)
+    {
+        foreach (var viewport in new[] { new Point(1000, 740), new Point(1540, 980) }) {
+            string profile = Path.Combine(Path.GetTempPath(), "ManaTableSurfaceChecks", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(profile);
+            new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f }.Save(profile);
+            var engine = new InteractionScenarioEngine(); engine.Present(FullBattlefieldSmoke.Example("mixed"));
+            using var app = new TableApplication(TestTableServices.For(engine), profile, initialState: engine.State) { Automated = true };
+            app.Initialize(); app.SetTableStudy(true);
+            app.Update(new GameTime(), new(-100, -100, 0, default, default, default, default, default), new(), viewport);
+            var frame = app.ReadPresentation();
+            var card = frame.Cards.Single(card => card.Id == "mixed-0-4");
+            var labels = app.TestPort.BattlefieldLabels(card.Id);
+            var stats = labels.SingleOrDefault(label => label.Kind == "pt");
+            var counter = labels.SingleOrDefault(label => label.Kind == "counter");
+            var text = frame.Drawing.Commands.OfType<DrawCommand.CenterText>()
+                .SingleOrDefault(command => command.Value == "3/3" && command.Bounds == stats?.Bounds);
+            var metrics = new TextMetrics();
+            check(stats is { Text: "3/3" } && counter is { Text: "1" }
+                    && stats.MeasuredWidth <= stats.AvailableWidth && counter.MeasuredWidth <= counter.AvailableWidth
+                    && text is { Size: >= .375f }
+                    && stats.Bounds.Height >= metrics.TextSize("3/3", text.Size, 1000, 1, true, 1.3f).Y
+                    && counter.Bounds.Height >= metrics.TextSize("1", .46f, 1000, 1, true, 1.3f).Y
+                    && Corners(stats.Bounds).All(card.Display.Contains) && Corners(counter.Bounds).All(card.Display.Contains)
+                    && !stats.Bounds.Intersects(counter.Bounds) && engine.Replies.Count == 0,
+                $"{viewport.X}x{viewport.Y}, 130% text: the actual small tilted Llanowar Elves paints full current 3/3 and one-counter glyph at their measured fonts, wholly on the same card without overlap or a game command");
+        }
+    }
+
+    private static Point[] Corners(Rectangle bounds) => [bounds.Location, new(bounds.Right, bounds.Top),
+        new(bounds.Right, bounds.Bottom), new(bounds.Left, bounds.Bottom)];
+
+    private static void FixedRailSupport(Action<bool, string> check)
+    {
+        var baseline = FourPlayerTableScenario.Create()[0].Snapshot;
+        var tabletop = PlayerPlaymat.TabletopPlacement;
+        var outside = new List<string>();
+        bool OnWood(Vector2 screen)
+        {
+            var point = TableSurfaceProjection.Unproject(screen);
+            bool inside = point.X >= tabletop.Left + 8 && point.X <= tabletop.Right - 8
+                && point.Y >= tabletop.Top + 8 && point.Y <= tabletop.Bottom - 8;
+            if (!inside) outside.Add($"{screen} -> {point}");
+            return inside;
+        }
+        foreach (int count in new[] { 2, 3, 4 }) {
+            var state = baseline with { Players = baseline.Players.Take(count).Select(player => player with {
+                Zones = player.Zones.Select(zone => zone.Name != "Command" ? zone : zone with {
+                    Count = 2, Cards = [new Card { VisualId = "wood-leader-" + player.Id }, new Card { VisualId = "wood-partner-" + player.Id }]
+                }).ToImmutableArray()
+            }).ToImmutableArray() };
+            foreach (int viewer in state.Players.Select(player => player.Id)) {
+                outside.Clear();
+                var scene = Scene(state with { ViewerId = viewer });
+                check(scene.Seats.All(seat => seat.Geometry.PlaymatPlacement is { } placement
+                        && tabletop.Contains(new Rectangle(placement.X - 16, placement.Y - 16, placement.Width + 32, placement.Height + 32)))
+                        && scene.Seats.Where(seat => seat.Index != 1).All(seat => {
+                            var geometry = seat.Geometry;
+                            return geometry.Commanders.SelectMany(card => (card.Pose with { Size = card.Pose.Size + new Vector2(13) }).Corners).All(OnWood)
+                                && geometry.Piles.All(pile => {
+                                    var body = PileGeometry.Create(pile.Pose, 100, pile.Compact);
+                                    return body.Shadow.Corners.Concat(body.Top.Corners).Concat(body.Layers.SelectMany(layer => layer.Corners))
+                                        .Concat(Corners(body.Label).Select(point => point.ToVector2())).All(OnWood);
+                                });
+                        }),
+                    $"{count} players, viewer {viewer}: one fixed rectangular tabletop leaves a modest mat border and supports every side/near commander backing and full pile shadow/layers/label without moving the far seat HUD"
+                        + (outside.Count > 0 ? "; outside: " + string.Join(", ", outside) : ""));
+            }
         }
     }
 

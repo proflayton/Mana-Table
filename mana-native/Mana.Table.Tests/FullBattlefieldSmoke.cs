@@ -391,7 +391,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         if (steps.TryPeek(out var step) && view.Now - lastStep >= step.Delay) { steps.Dequeue(); step.Action(); lastStep = view.Now; }
     }
 
-    private static GameSnapshot Example(string mode)
+    internal static GameSnapshot Example(string mode)
     {
         int count = mode == "seven" ? 7 : mode == "eight" ? 8 : mode == "ten" ? 10 : mode == "mixed" ? 20 : 50;
         var state = PresentationSmoke.Example();
