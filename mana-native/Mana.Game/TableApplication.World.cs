@@ -101,9 +101,9 @@ internal sealed partial class TableApplication
             var label = DisplayCommandLabel(geometry);
             int available = AvailableZoneCount(player, "Command");
             Color ink = available > 0 ? ActionAccent : Gold * .85f;
-            DrawStationCaption("Command", label with { Height = label.Height / 2 }, ink);
+            DrawStationCaption("Command", DisplaySeatZoneBounds(geometry, geometry.ZoneStation.CommandName), ink);
             DrawStationCaption(available > 0 ? available + " ready" : player.Zone("Command").Count.ToString(),
-                new(label.X, label.Y + label.Height / 2, label.Width, label.Height / 2), ink);
+                DisplaySeatZoneBounds(geometry, geometry.ZoneStation.CommandQuantity), ink);
             hits.Add(new("zone:" + player.Id + ":Command", Scope, label,
                 new MatchIntent.OpenZone(player.Id, "Command"), Shape: point => BoardViewport.Contains(point) && label.Contains(point)));
             if (available > 0) hits.Add(new("zone-actions:" + player.Id + ":Command", Scope, label,

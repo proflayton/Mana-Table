@@ -8,16 +8,31 @@ namespace Mana.Renderer;
 /// <summary>Existing board envelopes and fixed controls used to admit a view shift.</summary>
 public static class TableViewGeometry
 {
+    private static IEnumerable<Rectangle> ZoneFootprints(SeatGeometry geometry)
+    {
+        foreach (var pile in geometry.Piles.Where(pile => pile.TableAnchored))
+            yield return PileGeometry.Create(pile, 100).Reservation;
+        foreach (var card in geometry.Commanders.Where(card => card.TableAnchored)) {
+            yield return (card.Pose with { Size = card.Pose.Size + new Vector2(13) }).Bounds;
+            var body = new CardPaintGeometry(card.Pose);
+            yield return body.Backing.Bounds;
+            yield return body.Shadow.Bounds;
+        }
+        if (geometry.ZoneStation is { } station) yield return station.CommandLabel;
+    }
+
+    public static Rectangle PlayerSetupBounds(SeatGeometry geometry)
+    {
+        var bounds = geometry.PlaymatBounds ?? Rectangle.Empty;
+        foreach (var zone in ZoneFootprints(geometry)) bounds = bounds.IsEmpty ? zone : Rectangle.Union(bounds, zone);
+        return bounds;
+    }
+
     public static IReadOnlyList<Rectangle> BoardFootprints(TableScene scene)
     {
         var bounds = new List<Rectangle>();
         foreach (var seat in scene.Seats) {
-            bounds.AddRange(seat.Geometry.Piles.Where(pile => pile.TableAnchored)
-                .Select(pile => PileGeometry.Create(pile, 100).Reservation));
-            bounds.AddRange(seat.Geometry.Commanders.Where(card => card.TableAnchored).Select(card => card.Pose.Bounds));
-            if (seat.Geometry.ZoneStation is { } station) {
-                bounds.Add(station.CommandLabel); bounds.Add(station.CommandActions);
-            }
+            bounds.AddRange(ZoneFootprints(seat.Geometry));
             foreach (var cluster in seat.Battlefield) {
                 var copies = new List<SceneCard>();
                 foreach (var card in cluster.Cards) {

@@ -10,7 +10,9 @@ public sealed class SeatZoneLayout
 {
     public int PlayerId { get; }
     public Rectangle Placement { get; }
-    public Rectangle CommandLabel { get; }
+    public Rectangle CommandName { get; }
+    public Rectangle CommandQuantity { get; }
+    public Rectangle CommandLabel => Rectangle.Union(CommandName, CommandQuantity);
     public Rectangle CommandActions => CommandLabel;
     public IReadOnlyList<SceneCard> Commanders { get; }
     public IReadOnlyList<PilePlan> Piles { get; }
@@ -18,7 +20,11 @@ public sealed class SeatZoneLayout
     internal SeatZoneLayout(Player player, int seat, bool duel, Vector2 hero)
     {
         PlayerId = player.Id;
-        Placement = PlayerPlaymat.Project(seat, PlayerPlaymat.PersonalArea, duel);
+        bool near = seat == 3;
+        // The near seat keeps its life counter centered above the held hand.
+        // Its personal row sits alongside the mat, facing the same player.
+        Placement = PlayerPlaymat.Project(seat,
+            near ? new(-324, 210, 318, 68) : PlayerPlaymat.PersonalArea, duel);
         var origin = PlayerPlaymat.CanonicalBounds.Center.ToVector2();
         Vector2 Point(Vector2 local)
         {
@@ -41,11 +47,20 @@ public sealed class SeatZoneLayout
 
         var leaders = player.Zone("Command").Cards.Take(2).ToArray();
         Commanders = Array.AsReadOnly(leaders.Select((card, index) => SceneCard.Create(card,
-            Face(new(leaders.Length == 1 ? 289 : 264 + index * 50, 178), new(48, 67)),
+            Face(near ? new(leaders.Length == 1 ? -56 : -82 + index * 52, 244)
+                : new(leaders.Length == 1 ? 289 : 264 + index * 50, 178), new(48, 67)),
             "Command", player.Id, index, hero) with { TableAnchored = true }).ToArray());
-        CommandLabel = Caption(new(194, 177), 68, 40);
+        if (near) {
+            var center = Face(new(-56, 244), new(48, 67));
+            CommandName = new((int)MathF.Round(center.Center.X) - 62, center.Bounds.Bottom + 3, 68, 19);
+            CommandQuantity = new(CommandName.Right, CommandName.Y, 56, 19);
+        } else {
+            var label = Caption(new(194, 177), 68, 40);
+            CommandName = new(label.X, label.Y, label.Width, label.Height / 2);
+            CommandQuantity = new(label.X, CommandName.Bottom, label.Width, label.Height / 2);
+        }
         Piles = Array.AsReadOnly(new[] { "Library", "Graveyard", "Exile" }.Select((zone, index) => {
-            var pose = Face(new(184 + index * 72, 246), new(39, 55));
+            var pose = Face(new((near ? -304 : 184) + index * 72, near ? 244 : 246), new(39, 55));
             var bounds = pose.Bounds;
             // Captions stay upright on the outward side of the actual card.
             // Far piles also reserve their maximum visible layer thickness.

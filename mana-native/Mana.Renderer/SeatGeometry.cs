@@ -47,11 +47,9 @@ public sealed class SeatGeometry
             Piles = Array.AsReadOnly(new[] { "Library", "Graveyard", "Exile" }
                 .Select((zone, index) => new PilePlan(zone, TableWorld.Pile(seat, index), side)).ToArray());
         } else {
-            // Personal cards stay on the same mat frame at every seat. The
-            // local life counter and phase controls sit in the near-left apron,
-            // clear of both that area and the held hand.
+            // Personal cards use their seat's physical frame. The local life
+            // counter stays centered; its zone row sits beside the near mat.
             if (own) {
-                Hero = new(180, 775);
                 LandReadoutArea = new(8, 840, 300, 60);
             }
             if (side) {

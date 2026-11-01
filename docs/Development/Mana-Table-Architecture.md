@@ -1594,8 +1594,10 @@ space remains reserved while empty.
 
 The source prototype after 0.2.326 gives command cards and the library,
 graveyard and exile piles one `SeatZoneLayout` in the existing personal area of
-each mat. It binds the current player ID, distinct piles, both actual commander
-occurrences and upright captions to that mat's physical frame. `PileGeometry`
+each opponent mat. The local seat uses one near-left row alongside its mat,
+leaving the portrait centered above the hand. It binds the current player ID,
+distinct piles, both actual commander occurrences and upright captions to that
+seat's physical frame. `PileGeometry`
 prepares the exposed top, layers, caption, quantity, exact hit and reservation.
 The native application maps that complete geometry through the current camera
 once. Zone ownership is the snapshot's containing player; neither a card's former
@@ -1611,14 +1613,22 @@ same current pile top; a departure interpolates all projected-pose fields.
 Moving station objects join canonical camera footprints and are excluded from
 fixed obstacles. Fixed readout preparation does not chase the current camera.
 
-The local portrait and phase controls occupy the near-left apron rather than
-covering the personal cards. `SeatGeometry` owns their position and the separate
-land readout reservation. The mat dimensions, role packing and counter band stay
-the same. This is an experience prototype with human review pending; automated
-ownership and input checks do not approve its spatial clarity.
+The local portrait and phase controls retain their centered seat anchor.
+`SeatGeometry` owns that position and the separate land readout reservation.
+The mat dimensions, role packing, card dimensions, hand and counter band stay
+the same. Command name/quantity rectangles are explicit: stacked at opponent
+stations and inline beneath the local commander pair. This is an experience
+prototype with human review pending; automated ownership and input checks do
+not approve its spatial clarity.
 
-Automatic focus first translates the complete projected mat clear of prepared
-controls and measured HUD pieces at normal focus zoom. If it cannot fit there,
+`TableViewGeometry.PlayerSetupBounds` includes the mat and its physical zone
+footprints. Those same zone footprints feed ordinary camera admission. The
+shared `CardPaintGeometry` now belongs to `Mana.Renderer`; painting, readers and
+framing use its same backing/shadow/frame rather than copying those dimensions
+into a second layer. Automatic focus first translates the complete setup clear
+of prepared controls and measured HUD pieces at normal focus zoom. The near
+seat uses the width between both side portraits to include its adjacent row.
+If it cannot fit there,
 it uses an aspect-preserving clear region rather than a strip that assumes all
 obstacles are below the camera. Manual camera control retains precedence;
 neither path repacks cards or changes the accepted match snapshot.

@@ -8,8 +8,8 @@ does not establish that a person can understand or use the screen.
 
 ## Keep public piles with their player's mat: 1 November 2026
 
-**Source prototype; human review pending.** The player found the rectangular
-seated table much better, then asked for library, graveyard, exile and command
+**Source prototype; centered revision human review pending.** The player found
+the rectangular seated table much better, then asked for library, graveyard, exile and command
 ownership to be clearer. In the preceding candidate, battlefield cards followed
 the seated mat plane but the public piles and commanders remained upright fixed
 screen objects. The left player's pile row sat immediately above the viewer's
@@ -27,14 +27,24 @@ zone access within each player's section. Neither game's two-player or split
 screen layout establishes a four-seat seated-table solution. MTGO's automatic
 shrinking and duplicated zone displays are not part of this adaptation.
 
-This candidate puts the three distinct piles and up to two current commanders
-in the reserved personal area of their own mat. The mat-relative arrangement,
-physical seat facing and seated projection supply the ownership relationship;
-upright measured captions preserve reading direction. The arrangement retains
-the existing battlefield lanes and counter band. The local life and phase
-controls move into the near-left table apron so they do not cover the personal
-cards. Quantities stay on the actual pile, and a commander's compact tax stamp
-stays with its own face. Missing artwork shows a complete name when it fits;
+The player liked the ownership arrangement in `133b8bdd`, but found the local
+portrait and phase wheel off to the side awkward. Record that candidate's human
+review as **issues** for the portrait placement; this feedback does not approve
+every pile interaction. The same supplied Arena references keep the player's
+life portrait centered above the hand. Restoring that seat anchor is the next
+revision, with human review still pending.
+
+The revision keeps opponents' three distinct piles and up to two current
+commanders in their mats' reserved personal areas. The local piles and commanders
+form one upright row on the near-left wooden apron, immediately beside the local
+mat. Their mat-relative placement, seat facing and shared projection supply the
+ownership relationship while the centered portrait, phase wheel and hand retain
+their space. Upright measured captions preserve reading direction. The physical
+mat dimensions, battlefield lanes, counter band and card sizes are preserved;
+the local command caption uses an inline name and quantity below the row.
+This four-seat apron arrangement is our adaptation, not a demonstrated Arena
+Commander layout. Quantities stay on the actual pile, and a commander's compact
+tax stamp stays with its own face. Missing artwork shows a complete name when it fits;
 otherwise the same source-attached hover and full reader supply the identity.
 Tiny mana-cost or type fragments are suppressed, including at minimum zoom.
 A library remains a face-down
@@ -56,7 +66,8 @@ relationship and an owner's general exile collection must remain separate facts.
 Review two, three and four seats from every viewer, with both commanders, empty
 zones, a disclosed library top, concealed exile and a crowded field. Check the
 whole hover/open/read/return gesture at 1000x740 and a larger window, including
-130% text. Pan, zoom and focus must carry the piles with the same mat while
+130% text. Pan, zoom and focus must carry the piles with the same player's setup,
+including the local apron row, while
 preserving the current owner/zone hit and card identity. A card leaving the
 battlefield must travel to its actual current zone anchor. Automated geometry
 and command checks establish those scoped invariants, not readability or human

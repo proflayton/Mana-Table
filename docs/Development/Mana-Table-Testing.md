@@ -945,7 +945,15 @@ players and every viewer, both actual partner commanders, hundred-card exposed
 stack clearance, current concealed faces, measured full zone captions, and real
 caption/commander inspection at both window sizes with 130% text. The current
 player and zone must survive opening, reading, closing and camera movement with
-no gameplay command. Explicit table-placement checks also keep a public spread,
+no gameplay command. The centered-portrait revision also combines a full seven-card
+hand, both partners, six floating mana colors and two public counter types. Actual
+pile, caption, commander backing/shadow and count paint must clear the prepared
+portrait/phase/mana/hand targets; public state and zone hits retain their owner.
+The near row is checked on the table beside its mat, closer to that mat than any
+foreign mat; opponent rows stay inside their cloth. Automatic focus includes
+the complete physical setup, and the wood support check consumes the prepared
+pile plan rather than rebuilding an obsolete label. Explicit table-placement
+checks also keep a public spread,
 play-access fan and full reader separate from its physical origin. These checks
 do not establish human acceptance of the prototype or cached artwork quality.
 The old assertion that every card must avoid an always-empty action rectangle

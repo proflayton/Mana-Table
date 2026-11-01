@@ -19,8 +19,10 @@ internal static class SeatZoneChecks
     internal static void Run(string profile, Action<bool, string> check)
     {
         PhysicalOwnership(check);
-        foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) })
+        foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) }) {
+            LocalSeatClearance(profile, size, check);
             PointerJourney(profile, size, check);
+        }
     }
 
     private static void PhysicalOwnership(Action<bool, string> check)
@@ -33,12 +35,23 @@ internal static class SeatZoneChecks
                 var geometry = seat.Geometry;
                 var station = geometry.ZoneStation;
                 string context = $"{count} players, viewer {viewer}, owner {seat.PlayerId}";
-                check(station != null && station.PlayerId == seat.PlayerId
-                        && geometry.PlaymatPlacement!.Value.Contains(station.Placement)
+                var mat = geometry.PlaymatPlacement!.Value;
+                bool belongs = station != null && (seat.Index == 3
+                    ? PlayerPlaymat.TabletopPlacement.Contains(station.Placement)
+                        && station.Placement.Right <= mat.Left && mat.Left - station.Placement.Right <= PlayerPlaymat.MinimumGap
+                        && scene.Seats.Where(other => other.PlayerId != seat.PlayerId).All(other => {
+                            var foreign = other.Geometry.PlaymatPlacement!.Value;
+                            return station.Placement.Top > foreign.Bottom
+                                && GapSquared(station.Placement, mat) < GapSquared(station.Placement, foreign);
+                        })
+                    : mat.Contains(station.Placement));
+                check(station != null && station.PlayerId == seat.PlayerId && belongs
                         && station.Piles.SequenceEqual(geometry.Piles)
                         && station.Commanders.SequenceEqual(geometry.Commanders),
-                    context + ": one current seat owns the complete personal station and the scene uses its exact pile/commander placements");
+                    context + ": one current seat owns the exact personal station; the near row sits on wood alongside and closest to its own mat, beyond every foreign mat's near edge");
                 if (station == null) continue;
+                if (seat.Index == 3) check(geometry.Hero.X == mat.Center.X,
+                    context + ": the local portrait stays centered on its own mat and held-hand viewpoint");
                 var owner = state.Players.Single(player => player.Id == seat.PlayerId);
                 var faces = station.Commanders.Select(card => card.Pose).Concat(station.Piles.Select(pile => pile.Pose)).ToArray();
                 check(station.Piles.Select(pile => pile.Zone).SequenceEqual(new[] { "Library", "Graveyard", "Exile" })
@@ -75,6 +88,108 @@ internal static class SeatZoneChecks
                         .SequenceEqual(scene.BattlefieldDrawOrder.Select(card => (card.Id, card.Pose))),
                 $"{count} players, viewer {viewer}: empty public zones do not move anyone's personal area, pile anchors or existing battlefield occurrences");
         }
+    }
+
+    private static int GapSquared(Rectangle first, Rectangle second)
+    {
+        int x = Math.Max(0, Math.Max(first.Left - second.Right, second.Left - first.Right));
+        int y = Math.Max(0, Math.Max(first.Top - second.Bottom, second.Top - first.Bottom));
+        return x * x + y * y;
+    }
+
+    private static void LocalSeatClearance(string profile, Point size, Action<bool, string> check)
+    {
+        string path = Path.Combine(profile, "centered-seat-clearance-" + size.X);
+        Directory.CreateDirectory(path);
+        new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f }.Save(path);
+        var hand = FourPlayerTableScenario.Create()[0].Snapshot.Viewer!.Zone("Hand").Cards;
+        var state = State(4, 0);
+        state = state with { Players = state.Players.Select(player => player.Id != state.ViewerId ? player : player with {
+            Mana = new[] { "W", "U", "B", "R", "G", "C" }.ToImmutableDictionary(symbol => symbol, _ => 1),
+            States = [new("counter:energy", "Energy", "counter", 2, null, "Two public energy counters."),
+                new("counter:experience", "Experience", "counter", 3, null, "Three public experience counters.")],
+            Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Cards = hand, Count = hand.Length } : zone).ToImmutableArray()
+        }).ToImmutableArray() };
+        var engine = new InteractionScenarioEngine(); engine.Present(state);
+        using var run = new PresentationRun(TestTableServices.For(engine), path, engine.State, size);
+        run.EnableLiveTableStudy();
+        PresentationFrame frame = null!;
+        void Tick(Point? point = null, ButtonState left = ButtonState.Released, Keys? key = null)
+        {
+            var physical = RenderViewport.Fit(size, run.View.DesignHeight).ToPhysical(
+                (point ?? new Point(-100, -100)).ToVector2() + new Vector2(.5f));
+            frame = run.Tick(TimeSpan.FromSeconds(.05), new((int)physical.X, (int)physical.Y, 0, left, default, default, default, default),
+                key is { } pressed ? new(pressed) : new());
+        }
+        Tick(); Tick();
+        var accepted = engine.State;
+        var seat = frame.Scene!.Seat(state.ViewerId);
+        var geometry = seat.Geometry;
+        var station = geometry.ZoneStation!;
+        var handCards = frame.Cards.Where(card => card.Zone == "Hand" && card.Request.Owner == state.ViewerId).ToArray();
+        var mana = run.View.ManaPoolBadge(state.ViewerId)!;
+        var counters = run.View.CounterBadge(state.ViewerId)!;
+        check(handCards.Length == 7 && station.Commanders.Count == 2 && mana.Parts.Length == 6 && counters.Chips.Length == 2
+                && geometry.Hero.X == geometry.PlaymatPlacement!.Value.Center.X,
+            $"{size.X}px/130%: centered-seat clearance uses the real seven-card hand, both partners, six floating colors and two public counter types");
+        var fixedAreas = geometry.TurnControls.Reservations.Select((bounds, index) => (Id: "turn-control-" + index, Bounds: bounds)).ToList();
+        fixedAreas.Add(("portrait", frame.Hits.Single(hit => hit.Id == "player:" + state.ViewerId).Bounds));
+        fixedAreas.AddRange(mana.Parts.Select(part => ("mana-" + part.Key, part.Bounds)));
+        fixedAreas.AddRange(counters.Chips.Select((chip, index) => ("counter-" + index, chip.Bounds)));
+        var fixedFaces = handCards.SelectMany(card => {
+            var body = new CardPaintGeometry(card.Display);
+            return new[] { (Id: "hand-backing-" + card.Id, Pose: body.Backing), (Id: "hand-shadow-" + card.Id, Pose: body.Shadow) };
+        }).ToArray();
+        var stationFaces = new List<(string Id, Pose Pose)>();
+        var stationAreas = new List<(string Id, Rectangle Bounds)> {
+            ("command-name", frame.BoardView.Apply(station.CommandName)),
+            ("command-quantity", frame.BoardView.Apply(station.CommandQuantity))
+        };
+        foreach (var pile in station.Piles) {
+            var body = PileGeometry.Create(pile, state.Viewer!.Zone(pile.Zone).Count);
+            stationFaces.Add((pile.Zone + "-shadow", frame.BoardView.Apply(body.Shadow)));
+            stationFaces.Add((pile.Zone + "-top", frame.BoardView.Apply(body.Top)));
+            stationFaces.AddRange(body.Layers.Select((pose, index) => (pile.Zone + "-layer-" + index, frame.BoardView.Apply(pose))));
+            stationAreas.Add((pile.Zone + "-caption", frame.BoardView.Apply(body.Label)));
+            stationAreas.Add((pile.Zone + "-count", frame.BoardView.Apply(body.Count)));
+        }
+        foreach (var card in frame.Cards.Where(card => card.Request.TableAnchored && card.Request.Owner == state.ViewerId)) {
+            var body = new CardPaintGeometry(card.Display);
+            stationFaces.Add((card.Id + "-backing", body.Backing));
+            stationFaces.Add((card.Id + "-shadow", body.Shadow));
+            if (card.Zone == "Command") stationFaces.Add((card.Id + "-command-frame", card.Display with { Size = card.Display.Size + new Vector2(13) }));
+        }
+        bool HitArea(Pose face, Rectangle bounds) => TableSurfaceProjectionChecks.Overlap(face,
+            new Pose(bounds.Center.ToVector2(), bounds.Size.ToVector2()));
+        var faceCollisions = stationFaces.SelectMany(face => fixedAreas.Where(area => HitArea(face.Pose, area.Bounds))
+                .Select(area => new { face.Id, face.Pose, fixedId = area.Id, area.Bounds }))
+            .Concat(stationFaces.SelectMany(face => fixedFaces.Where(other => TableSurfaceProjectionChecks.Overlap(face.Pose, other.Pose))
+                .Select(other => new { face.Id, face.Pose, fixedId = other.Id, Bounds = other.Pose.Bounds }))).ToArray();
+        var areaCollisions = stationAreas.SelectMany(area => fixedAreas.Where(other => area.Bounds.Intersects(other.Bounds))
+                .Select(other => new { area.Id, area.Bounds, fixedId = other.Id, fixedBounds = other.Bounds }))
+            .Concat(stationAreas.SelectMany(area => fixedFaces.Where(other => HitArea(other.Pose, area.Bounds))
+                .Select(other => new { area.Id, area.Bounds, fixedId = other.Id, fixedBounds = other.Pose.Bounds }))).ToArray();
+        if (faceCollisions.Length > 0 || areaCollisions.Length > 0) using (var stream = new FileStream(
+                Path.Combine(path, "station-seat-clearance-first-failure.json"), FileMode.CreateNew, FileAccess.Write))
+            JsonSerializer.Serialize(stream, new { size, textScale = run.View.TextScale, frame.BoardView, geometry.Hero,
+                station.Placement, fixedAreas, fixedFaces, stationFaces, stationAreas, faceCollisions, areaCollisions },
+                new JsonSerializerOptions { WriteIndented = true, IncludeFields = true });
+        check(faceCollisions.Length == 0 && areaCollisions.Length == 0,
+            $"{size.X}px/130%: complete current pile/commander paint, captions and quantities clear the actual centered portrait, prepared controls, hand, mana and public counters");
+        foreach (var pile in station.Piles) {
+            var at = frame.BoardView.Apply(pile.Caption!.Value).Center;
+            check(run.View.HitAt(at)?.Intent is MatchIntent.OpenZone open && open.PlayerId == state.ViewerId && open.Zone == pile.Zone,
+                $"{size.X}px/130%: the populated centered setup leaves its current {pile.Zone} caption reachable for the correct owner");
+        }
+        foreach (var commander in station.Commanders) {
+            var at = frame.BoardView.Apply(commander.Pose).Center.ToPoint();
+            check(run.View.HitAt(at)?.Card is { } face && CardViews.Same(face, commander.Card),
+                $"{commander.Card.Name}: the populated centered setup retains each actual partner's own reading target");
+        }
+        foreach (var chip in counters.Chips) check(run.View.HitAt(chip.Bounds.Center)?.Intent is MatchIntent.OpenPlayerState open && open.PlayerId == state.ViewerId,
+            $"{size.X}px/130%: the local public-state target remains readable beside its personal cards");
+        check(ReferenceEquals(engine.State, accepted) && engine.Replies.Count == 0,
+            "Centered-seat placement and inspection availability preserve the same authorized snapshot and issue no gameplay commands");
     }
 
     private static void PointerJourney(string profile, Point size, Action<bool, string> check)

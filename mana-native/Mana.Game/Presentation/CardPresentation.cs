@@ -131,23 +131,3 @@ internal readonly record struct CardHitGeometry(Pose Display, Pose? Anchor, Rect
     public bool Contains(Point point) => Display.Contains(point)
         || Anchor?.Contains(point) == true || Activation?.Contains(point) == true;
 }
-
-/// <summary>The physical card body shared by painting and reader placement.</summary>
-internal readonly record struct CardPaintGeometry(Pose Face)
-{
-    internal const int FocusFrameWidth = 2;
-    public Pose Shadow => Face with {
-        Center = Face.Center + new Vector2(4 + Face.Elevation * .18f, (Face.IsProjected ? 5 : 10) + Face.Elevation),
-        Size = Face.Size + new Vector2(7)
-    };
-    public Pose Backing => Face with { Size = Face.Size + new Vector2(4) };
-    public Pose FocusFrame => Backing;
-    public Rectangle FrameBounds {
-        get {
-            var frame = FocusFrame.Bounds;
-            frame.Inflate(FocusFrameWidth / 2, FocusFrameWidth / 2);
-            return frame;
-        }
-    }
-    public Rectangle Bounds => Rectangle.Union(FrameBounds, Shadow.Bounds);
-}
