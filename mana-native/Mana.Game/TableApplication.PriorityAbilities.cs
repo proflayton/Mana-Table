@@ -1,6 +1,7 @@
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Renderer;
+using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
@@ -49,14 +50,20 @@ internal sealed partial class TableApplication
     {
         var abilities = PriorityAbilityOptions();
         if (match == null || abilities.Length == 0) return Rectangle.Empty;
-        var priority = TurnControlLayout.For(SeatHero(match.ViewerId)).PriorityArea;
+        var priority = LocalTurnControls.PriorityArea;
         int left = Math.Max(priority.X, PendingStackLeft + PendingStackWidth + 14);
         int width = priority.Right - left;
         int headingHeight = canvas.TextSize("ACTIVATION STOPS", .48f, width - 46, 1, true).Y;
         int sourceHeight = canvas.TextSize(abilities[0].SourceName, .66f, width - 28, 80, true).Y;
         int statusHeight = canvas.TextSize("Skipping until your next turn", .48f, width - 28, 1).Y;
         int height = Math.Max(72, 8 + headingHeight + 4 + sourceHeight + 6 + statusHeight + 8);
-        return new(left, priority.Top - height - 14, width, height);
+        var area = new Rectangle(left, priority.Top - height - 14, width, height);
+        if (TableStudyEnabled && StudyHudObstacles.Any(bounds => bounds.Intersects(area))) {
+            var occupied = StudyHudObstacles.Append(PlacePortraitPriorityArea(PortraitPriorityArea())).ToArray();
+            area = DecisionWorkspaceLayout.Place(priority, width, height, occupied,
+                bounded: true, minimumWidth: width, minimumHeight: height);
+        }
+        return area;
     }
 
     private void DrawPriorityAbilityControl(PriorityAbility[] abilities)

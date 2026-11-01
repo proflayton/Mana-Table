@@ -893,16 +893,56 @@ availability; the presentation checks separately include animated lands,
 nonland mana sources and concealed identities. Inspect the actual counted piles
 and seat summaries in both window sizes; assertions do not approve their clarity.
 
-The playmat candidate extends `SharedTableStudyChecks` across two, three and four
-players and every viewer: role lanes and complete families fit inside the hem,
-neighbouring mats retain a bare-table gap, and empty fields keep their seat and
-mat bounds. Existing sparse/dense/tapped checks and `AttachmentStackChecks`
-protect complete assemblies and foreign-controlled attachments without changing
-their controller or individual permissions. Side-hand checks retain all seven
+The uniform-mat source candidate extends `SharedTableStudyChecks` across two,
+three and four players and every viewer: independently undoing each physical
+quarter turn yields the same mat dimensions, area, 16:9 proportions and role-row
+frames, including actual duels. Role lanes and complete families fit inside the
+hem; prepared personal/counter spaces stay clear of card families. Neighbouring
+mats retain a bare-table gap, and empty fields keep their seat and mat bounds.
+Existing sparse/dense/tapped checks and `AttachmentStackChecks` protect complete
+assemblies in two-, three- and four-player games and foreign-controlled
+attachments without changing their controller or individual permissions. Actual
+phase controls and prepared priority reservations remain separate from faces;
+pile and dual-commander checks still protect every neighbouring mat.
+The old assertion that every card must avoid an always-empty action rectangle
+is replaced by the actual pending-attention/source/target journeys: temporary
+attention must retain current legal card targets and their real displayed hit
+geometry without reflowing the physical scene. `PendingEffectPresentationChecks`
+also covers a crowded placement where even one pixel of required-recipient
+overlap must lose to a larger unrelated background overlap; a numeric weight
+alone cannot guarantee that ordering. Scute Swarm's four state cohorts retain
+nine exact occurrences, disjoint front faces and positive contained family/input
+geometry without requiring a horizontal strip. Side-hand checks retain all seven
 anonymous cards and their shadows while protecting actual support-card faces
 from the held-hand input region. The existing `match-header` headless group
 also checks measured readouts with six mana colors, two commanders, two public
 counter types and incoming combat at both text and window sizes.
+Existing `FullBattlefieldSmoke` assertions retain actual 3/3 and counter-label
+visibility in the mixed field. `CardPlayChecks` keeps one moving stack occurrence,
+its canonical inspectable source hit and response-target continuity;
+`ManaPaymentSmoke` keeps source colour choices aligned with the producer and the
+exact bill separate. The shared family packer and continuous-face inscription
+corrections do not weaken those assertions or certify extreme dense-board clarity.
+The native camera journey retains its actual W pan, then uses Home before the
+deliberate obstruction zoom. Capturing a larger window cannot change that zoom's
+starting position through time spent holding W. The check requires an actual
+projected readout/portrait intersection, complete paint/input retirement and
+restoration on Home.
+The attachment group also exercises actual automatic focus at both window sizes
+with two local typed states and six mana colors: a crowded foreign-host field,
+an ordinary three-player top field and the local four-player field. Displayed
+card and attachment backing/shadow footprints must clear actual local controls;
+the foreign edge must open its exact current upright reader. Physical host
+placement is checked independently of the attachment's controller. Focus and
+Whole table return retain the exact snapshot and canonical poses with no game
+commands. `EquipmentSmoke` retains the original exposed-edge checks and writes
+the actual intercepting hit and frame when one fails.
+The pending-effect journey keeps the full printed preview's aspect and readable
+minimum size while protecting the exact source, target, counter recipient,
+pending amount and current answer. Actual D input then moves the target into
+the old preview bounds; the held preview must revalidate against the changed
+geometry without changing the snapshot or submitting a command. Failure-only
+observations retain the previous/current rectangles and complete frame.
 `DrawingFrameChecks` covers balanced/copied nested world transforms, known
 sprite/triangle coordinates, transformed clip rounding, canonical measurement,
 pixel-snapped text density and rejected invalid scopes. Drawing groups cover
@@ -1609,6 +1649,7 @@ dotnet $driver --smoke-mana-payment --headless --profile '<fresh-profile>'
 dotnet $driver --smoke-headless-presentation --presentation-group mana-pool --profile '<fresh-profile>'
 dotnet $driver --smoke-headless-presentation --presentation-group match-header --profile '<fresh-profile>'
 dotnet $driver --smoke-headless-presentation --presentation-group attachment-stack --profile '<fresh-profile>'
+dotnet $driver --smoke-headless-presentation --presentation-group pending-effects --profile '<fresh-profile>'
 dotnet $driver --smoke-headless-presentation --profile '<fresh-profile>'
 ```
 
@@ -1704,10 +1745,13 @@ phantom dock. Physical cards, bills, resources, portraits, turn controls, piles
 and command areas retain their reservations. This remains a finite heuristic;
 a fully packed table may have no clear nearby region.
 For a focused iteration, append `--presentation-group mana-pool`,
-`--presentation-group match-header` or `--presentation-group attachment-stack`
-to the existing `--smoke-headless-presentation` invocation. These call the same
-pool/payment clarity and lifecycle group, connected header/Social group or
-attachment pointer group, respectively, with that exact receipt label.
+`--presentation-group match-header`, `--presentation-group attachment-stack` or
+`--presentation-group pending-effects` to the existing
+`--smoke-headless-presentation` invocation. These call the same pool/payment
+clarity and lifecycle group, connected header/Social group, attachment pointer
+group or `PendingEffectPresentationChecks`, respectively, with that exact receipt
+label. The pending-effects selector includes the required-recipient placement
+counterexample and actual pending-source/target journeys.
 An omitted selector runs the unchanged full sequence labeled `all`. Unknown
 selectors fail. CI retains its literal full invocation, protected by the existing
 exact argument-array check in `ci/test-native-verification.ps1`; focused receipts

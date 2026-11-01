@@ -35,6 +35,7 @@ internal static partial class HeadlessPresentationSmoke
                 if (group == "mana-pool") CheckManaPoolPaymentClarity(profile, Check, trace, performance);
                 else if (group == "match-header") MatchHeaderInteractionChecks.Run(profile, Check);
                 else if (group == "attachment-stack") AttachmentStackChecks.Run(profile, Check);
+                else if (group == "pending-effects") PendingEffectPresentationChecks.Run(profile, Check);
                 else throw new ArgumentException("Unknown headless presentation group: " + group);
                 return;
             }

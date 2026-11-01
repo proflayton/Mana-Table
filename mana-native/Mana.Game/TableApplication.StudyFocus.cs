@@ -14,7 +14,7 @@ internal sealed partial class TableApplication
     private bool MultiplayerFocusAvailable => TableStudyEnabled && match?.Players.Length > 2;
     private bool StudyFocusActive => MultiplayerFocusAvailable && studyFocusOwner != null;
     private bool TwoFieldTable => TableStudyEnabled && match?.Players.Length == 2;
-    private Rectangle StudyActionArea => TwoFieldTable || StudyFocusActive || !boardView.IsIdentity ? DuelTableStudy.ActionArea : SharedTableStudy.ActionArea;
+    private Rectangle StudyActionArea => studyAttentionArea;
 
     private Vector2 SeatHero(int player) => tableScene?.Seats.FirstOrDefault(seat => seat.PlayerId == player)?.Geometry.Hero
         ?? TableLayout.Hero(player == match?.ViewerId ? 3 : match == null ? 1 : TableLayout.SeatIndex(match, player));

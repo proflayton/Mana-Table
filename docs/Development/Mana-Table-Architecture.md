@@ -1493,13 +1493,25 @@ Two-player framing keeps its upright faces. Tap rotation is relative to that
 baseline; state labels and full readers stay viewer-readable. The same turned
 pose drives texture, footprint and pointer geometry.
 
-`PlayerPlaymat` owns the study's canonical cloth bounds, role lanes and seat
-facing for two, three and four players. `SharedTableStudy` and `DuelTableStudy`
-delegate to it rather than keeping separate lane coordinates. Each mat reserves
-a 12-design-unit hem and at least 16 units of bare table between neighbours;
-empty fields, density and priority do not resize or reseat the material.
-`SeatGeometry.PlaymatBounds` prepares that material with each scene seat;
-painting and player focus consume those prepared bounds.
+`PlayerPlaymat` owns one 512-by-288 player-local cloth template, its role rows,
+personal readout area and counter band. `Project` places that 16:9 template with
+an exact integer quarter turn and translation. Every seat has the same physical
+width, depth and area in two-, three- and four-player games; neither density nor
+priority stretches a mat or its rows. `SharedTableStudy` and `DuelTableStudy`
+consume those projected rows. Duels retain viewer-upright card art while using
+the same physical mat frame. A 12-design-unit hem and at least 16 units of bare
+table keep neighbouring materials distinct, including an empty battlefield.
+`SeatGeometry` prepares `PlaymatBounds`, `PublicReadoutArea`, `PublicCounterArea`
+and `TurnControls` with each scene seat. Painting, public readouts, camera focus
+and fixed-control avoidance consume that geometry. The local priority area is
+beside its mat's right edge; its phase arc retains its actual portrait-relative
+targets. The local command rail clears the side player's cloth.
+Automatic focus first translates the complete projected mat clear of the
+prepared local phase, portrait, counter and mana spaces at the normal focus
+zoom. If the wide mat cannot fit there, it frames within the clear strip above
+those controls. The counter space remains reserved while empty so receiving a
+first counter does not move the focused field. Manual camera control retains
+precedence; neither path repacks cards or changes match state.
 `TableApplication.Playmats` paints wood, cloth, backing, stitches and seat crests
 using the same `BoardView` exactly once. It adds no hits or game state and does
 not apply `TableWorld` a second time. `DrawList` records balanced
@@ -1516,21 +1528,45 @@ would cover registered fixed physical HUD geometry. A balanced `DrawList` group 
 that paint together; the application also retires its matching hits and probes.
 This affects the readout's presentation, not card rendering, rules or public state.
 The upper command/pile rail and side held hands clear neighbouring material
-and card input. Counter/state painters return their measured footprint, so the
-upper seat's land counts and combat status follow the actual text height rather
-than overlapping it. Cross-controller attachments still follow their
+and card input. Counter/state painters return their measured footprint, so land
+counts and combat status follow the actual text height within the prepared
+owner-relative readout space. Cross-controller attachments still follow their
 host spatially without changing their actual controller index or permissions.
-These mats establish stable separation; the existing dense packing can still
-shrink faces, and this change adds no density threshold or alternate renderer.
+All study roles and player counts use the same constrained family-block packer,
+trying row and balanced cohort shapes before reducing face scale. The separate
+guillotine path is removed. Dense fields retain the existing shrinking fallback;
+this change adds no density threshold or alternate renderer.
 
 Resource faces reserve their complete turning footprint before packing. Their
 portrait dimensions stay constant through a tap; only their angle changes.
 Compact noncreature paint reserves its tap cue before fitting a complete name.
+State inscriptions fit within the continuous physical face before integer
+rounding, avoiding a second rounded-bound reduction without changing font or padding.
 `SceneCard.ScanFace` selects battlefield painting; full readers retain a canonical battlefield anchor
 and share its exact scoped hit geometry. Their current P/T and typed state come
-from the same authorized occurrence. The study's pending-effect area is reserved
-before packing and can use the remaining space beside a reader. This comparison
+from the same authorized occurrence. Pending-effect attention is a temporary
+presentation over the prepared scene, rather than a permanently empty rectangle
+that changes physical mat proportions. `PrepareStudyAttentionArea` runs after
+`UpdateBoardView` and stores one frame's placement; `StudyActionArea` reads that
+prepared field. `StudyHudObstacles` supplies the current projected physical
+scene and fixed HUD. Its `StudyAttentionObstacles` copy excludes unpinned stack
+flights owned by that destination, preventing a moving spell from repelling its
+own resting position; focused and pinned readers remain reserved.
+`DecisionWorkspaceLayout` ranks overlap with current legal
+recipients, source and counter recipient before ordinary background costs;
+active readers and newly placed bill/action footers reserve the prepared area.
+Its placement preserves current legal card targets and their displayed input
+geometry without using source-inspector painting to recalculate itself. This comparison
 uses no automatic camera movement and alters no engine permissions.
+Pending reference previews reserve current sources, targets, counter recipients
+and response controls. The shared free-space geometry can fit the complete
+printed portrait proportionally, with a 300-unit minimum width; measured rules
+faces retain their original text layout. A held portrait first retains its
+physical reading region when camera movement invalidates the previous fit.
+Current geometry is revalidated independently of the requested preview size.
+In the study, source mana choices use the existing rigid `Translate` planner
+with measured title/orb pieces in the producer's column; the generic workspace
+remains the fallback when that complete source-aligned placement cannot fit.
 The native launcher enables this layout for live games through `TableWindow`;
 it does not enable automation or inject
 authored state. `StudyBattlefieldFamily` associates same-name

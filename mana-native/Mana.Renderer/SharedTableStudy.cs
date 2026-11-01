@@ -17,7 +17,7 @@ public static class SharedTableStudy
 
     internal static BattlefieldCluster[] Arrange(int seat, int owner, IReadOnlyList<Card> cards,
         Func<Card, bool> isResource, IReadOnlySet<string>? separate,
-        Func<string, Rectangle>? lanes = null, float faceScale = 1, bool horizontalRows = false, bool centerRows = false,
+        Func<string, Rectangle>? lanes = null, float faceScale = 1, bool centerRows = false,
         BattlefieldAttachments? attachments = null, bool seatFacing = true, IReadOnlyDictionary<string, string>? combatCohorts = null)
     {
         faceScale = float.IsFinite(faceScale) && faceScale > 0 ? faceScale : 1;
@@ -69,7 +69,7 @@ public static class SharedTableStudy
             // Every role reserves the card's complete quarter-turn footprint,
             // independent of its current tap state or the current viewpoint.
             var desired = new Vector2(kind == "Creatures" ? 128 : 112) * faceScale;
-            var slots = Pack(selected, lane, desired, faceScale, seat, horizontalRows, centerRows);
+            var slots = Pack(selected, lane, desired, faceScale, seat, centerRows);
             var nodes = new List<SceneCard>();
             foreach (var slot in slots) {
                 var familyNodes = new List<SceneCard>();
@@ -166,7 +166,7 @@ public static class SharedTableStudy
                 + (family.Header > 0 ? HeaderHeight(family, detail, headerFloor) + 4 * detail : 0) + family.AttachmentDepth * AttachmentDrop * detail);
     }
 
-    private static Slot[] Pack(Family[] families, Rectangle lane, Vector2 desired, float faceScale, int seat, bool horizontalRows, bool centerRows)
+    private static Slot[] Pack(Family[] families, Rectangle lane, Vector2 desired, float faceScale, int seat, bool centerRows)
     {
         // A single-column plan is always available before trying roomier shapes.
         // This fallback preserves every cohort even beyond the readable budget.
@@ -201,45 +201,10 @@ public static class SharedTableStudy
 
         bool TryPack(float scale, out Slot[] slots)
         {
-            if (horizontalRows) return TryRows(scale, out slots);
-            var free = new List<Space> { new(lane.X, lane.Y, lane.Width, lane.Height) };
-            var placed = new List<Slot>();
-            foreach (var family in families) {
-                int chosenArea = -1, chosenColumns = 1;
-                Vector2 chosenSize = default;
-                (float ShortSide, float Waste, float Y, float X, int Columns) best = (float.MaxValue, float.MaxValue, 0, 0, 0);
-                for (int areaIndex = 0; areaIndex < free.Count; areaIndex++) {
-                    var area = free[areaIndex];
-                    for (int columns = 1; columns <= family.Cohorts.Length; columns++) {
-                        var extent = Shape(family, columns, desired, faceScale, scale, headerFloor);
-                        if (extent.X > area.Width || extent.Y > area.Height) continue;
-                        var score = (Math.Min(area.Width - extent.X, area.Height - extent.Y),
-                            area.Width * area.Height - extent.X * extent.Y, area.Y, area.X, columns);
-                        if (score.CompareTo(best) >= 0) continue;
-                        best = score; chosenArea = areaIndex; chosenColumns = columns; chosenSize = extent;
-                    }
-                }
-                if (chosenArea < 0) { slots = []; return false; }
-                var available = free[chosenArea]; free.RemoveAt(chosenArea);
-                bool right = seat == 0, bottom = seat == 1;
-                float x = right ? available.X + available.Width - chosenSize.X : available.X;
-                float y = bottom ? available.Y + available.Height - chosenSize.Y : available.Y;
-                placed.Add(new(family, new(x, y), chosenColumns, scale, chosenSize, HeaderHeight(family, faceScale * scale, headerFloor)));
-                float space = gap * scale;
-                float across = available.Width - chosenSize.X - space;
-                float down = available.Height - chosenSize.Y - space;
-                if (across > 0) free.Add(new(right ? available.X : x + chosenSize.X + space, available.Y, across, available.Height));
-                if (down > 0) free.Add(new(x, bottom ? available.Y : y + chosenSize.Y + space, chosenSize.X, down));
-            }
-            slots = placed.ToArray(); return true;
-        }
-
-        bool TryRows(float scale, out Slot[] slots)
-        {
-            // An explicit focused field has room for horizontal rows. Place
-            // multi-state families first, then fill both beside and below their
-            // blocks. A guillotine's fixed side strip otherwise strands space
-            // and lets the first tall family shrink every unrelated creature.
+            // A family is one block of current-state cohorts. Place the more
+            // constrained blocks first, then fill beside and below them. Try
+            // both a row and a balanced shape before reducing any card's scale;
+            // an early single must not strand space or force a long thin family.
             foreach (bool flat in new[] { true, false }) {
                 var free = new List<Space> { new(0, 0, lane.Width, lane.Height) };
                 var placed = new Dictionary<string, Slot>(StringComparer.Ordinal);

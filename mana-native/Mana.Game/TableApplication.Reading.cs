@@ -27,7 +27,7 @@ internal sealed partial class TableApplication
         or DecisionRequiredSurface.Targets or DecisionRequiredSurface.Combat;
     private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused && !ZoneReadingOpen && !CardCollectionOpen,
         ReadingGalleryOpen, dragging, CompactCardDecision, TableStudyEnabled,
-        TableStudyEnabled ? StudyActionArea : null, decisions.Presentation,
+        TableStudyEnabled && StudyAttentionActive ? StudyActionArea : null, decisions.Presentation,
         spreadCollection as CardCollectionTarget.PublicZone, RulesReaderSize(), CurrentManaReading, ReaderControlReservations);
     private string? readingId => matchPresentation.Cards.PinnedId;
     private Rectangle? hoverPreview => matchPresentation.Cards.ReaderBounds;

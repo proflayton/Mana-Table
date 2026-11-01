@@ -19,6 +19,7 @@ internal sealed partial class TableApplication
         internal bool Activate(Hit hit) => game.ActivateHit(hit);
         internal bool SubmitCurrent(DecisionCommand command) => game.Send(command);
         internal Mana.Renderer.BoardView BoardView => game.boardView;
+        internal Rectangle StudyAttentionBounds => game.StudyActionArea;
         internal bool FollowTurnEnabled => game.followTurnEnabled;
         internal bool BoardViewLimitedByLayout => game.boardViewMotion.LimitedByLayout;
         internal void SetTurnFollow(bool enabled) => game.SetTurnFollow(enabled);

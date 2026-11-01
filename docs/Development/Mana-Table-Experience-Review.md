@@ -1107,12 +1107,26 @@ placement; printed ownership remains a separate rules fact. A view change should
 frame that same space rather than repack its cards or leave its piles behind.
 Hand interaction and current-decision controls can remain in screen space.
 
-**Playmat source candidate, 31 October 2026; human review pending.**
-The current study candidate places battlefield assemblies on quiet cloth mats
-over a wood table. Backing, shallow shadows, stitched hems, bare-table gaps and
-seat-facing woven crests adapt the physical separation above. Stable material
-bounds come from the same layout owner as the card lanes and face the same seat;
-they do not follow turn ownership, priority or permanent count. Opponents'
+**Released 0.2.308; human review has issues.** The first cloth implementation
+wrapped the pre-existing card lanes. Its local mat was 939 by 179 design units,
+the top mat 608 by 228, and the side mats 320 by 473. The player's new screenshot
+and feedback reject that variation. Equal area alone would leave the different
+proportions; the material needs one physical width and depth before placement.
+
+**Uniform-mat source candidate, 31 October 2026; human review pending.**
+The candidate uses one 512-by-288 owner-local mat and card-row template, placed
+with quarter turns and translation for each seat. Actual two-player games keep
+the same material dimensions; their card art retains its established upright
+reading direction. Empty fields and different permanent counts do not change
+those dimensions. Ultra PRO's [official Mana 7 Plains playmat](https://ultrapro.com/products/mana-7-plains-standard-gaming-playmat-for-magic-the-gathering)
+measures approximately 24 by 13.5 inches, supplying the 16:9 default being
+adapted. That manufactured size is a reference for a consistent default, not a
+claim that every human's playmat has identical dimensions.
+
+Quiet cloth, backing, shallow shadows, stitched hems, bare-table gaps and
+seat-facing woven crests retain the physical separation above. Material,
+card rows and personal readout space share the same player-local frame rather
+than being resized independently to fill old screen regions. Opponents'
 public counters, land counts and combat status travel with their material, so
 inspecting another seat does not leave those labels over that player's cards.
 Their interaction regions and recorded text follow the same view and clip.
@@ -1120,7 +1134,9 @@ If a measured readout would overlap registered fixed physical HUD geometry, its 
 group and input regions are omitted together. Public state remains available
 through existing inspection. Command cards, public piles, portraits, unspent
 mana and the local resource HUD remain anchored. Moving those zones with a
-complete player-local space remains a separate layout change.
+complete player-local space remains a separate layout change. Fixed local
+priority controls consume prepared seat geometry beside the mat; the command
+rail clears the neighbouring player's material.
 
 The player intent is to identify who controls a battlefield, then inspect that
 player's cards. Existing player focus, pan, zoom and Home navigate the same
@@ -1131,8 +1147,25 @@ attachment rests with its host but keeps its actual controller and current
 individual permissions. Crests and edges supplement restrained colour;
 transient turn/priority cues remain separate from this persistent seating cue.
 
-The current candidate retains existing packing, including shrinking in dense
-fields. Agent inspection of the larger mixed-combat capture also found the
+The player's supplied Arena references place a temporary stack or effect
+announcement above the persistent battlefield. This is the adaptation for
+pending attention: inspect or announce an effect without stretching the mats
+to preserve the old paragraph-sized empty centre. Current legal source/target
+gestures must remain reachable while that attention is present. Arena's
+two-player composition does not itself establish a safe four-player placement;
+the actual multiplayer scene, camera and current targets need their own checks.
+Temporary attention therefore protects the current required source/recipients
+before unrelated background material when no completely clear placement fits.
+Readers and action footers share that prepared placement instead of taking
+independent guesses about the space left between mats.
+
+The source candidate uses one family-block packing path across study roles and
+player counts, trying alternate cohort shapes before shrinking. It retains
+shrinking in dense fields. Source mana choices retain their producer's column
+when the complete measured title and orbs fit, while stack travel no longer
+pushes its own pending destination away. These corrections preserve existing
+font sizes, padding and interaction checks; they do not establish readability.
+Agent inspection of the larger mixed-combat capture also found the
 existing fixed combat summary crossing the right pile rail; that separate HUD
 layout remains unresolved. Mat geometry and automated occurrence checks do not
 establish that a large board is readable. Small/large window captures and the three-player
@@ -1142,6 +1175,17 @@ cuts, inserted card closeups and separate player cameras are presentation edits;
 they do not establish a continuous physical table or validate our four-seat
 camera. A small still also cannot establish tapping/dragging gestures or readable
 presentation at the extreme 480-permanent case.
+
+Focusing a seat keeps its complete mat clear of the local portrait, phase
+controls, counter space and mana, so an exposed attached card remains reachable.
+This adjusts camera framing while preserving the same cards, material and
+current decision; it does not create another battlefield layout.
+Hover reading keeps the complete printed portrait, fitted proportionally around
+the current source, targets, counter recipient and response. A held preview
+retains its reading region while the camera moves when a readable portrait
+still fits there. Measured effect text keeps its full layout. This placement is
+a Mana Table adaptation of the supplied Arena full-card hover references, not
+evidence that Arena establishes a four-player arrangement.
 
 ## Rules faces and the counter-lab entry: 25 October 2026
 

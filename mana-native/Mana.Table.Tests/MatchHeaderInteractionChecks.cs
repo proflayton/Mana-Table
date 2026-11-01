@@ -121,7 +121,8 @@ internal static class MatchHeaderInteractionChecks
             var fixedReadouts = view.SeatReadouts.Where(bounds => !groups.Values.Any(group =>
                 group.World.Canonical.Any(piece => bounds.Contains(piece)))).ToArray();
             check(groups.Count == count - 1 && groups.All(pair => pair.Value.World.Visible
-                    && pair.Value.Badge.Chips.Length == 2 && pair.Value.Hits.Length == 3 && pair.Value.Text.Length >= 4),
+                    && pair.Value.Badge.Chips.Length == 2 && pair.Value.Hits.Length == 3 && pair.Value.Text.Length >= 4
+                    && pair.Value.World.Canonical.All(frame.Scene!.Seat(pair.Key).Geometry.PublicReadoutArea!.Value.Contains)),
                 $"{count} seats, {size.X}px {textScale:P0}: every opponent starts with complete visible world counters and land readouts, distinct from fixed identity and mana");
 
             void CheckView(string journey)
@@ -198,12 +199,10 @@ internal static class MatchHeaderInteractionChecks
                 // three bounded W steps, then four wheel notches at the table.
                 Tick(.05, Keys.W); Tick(.05, Keys.W); Tick(.05, Keys.W); Tick();
                 Tick(logical: new(800, 420), wheel: 480); Tick(logical: new(800, 420), wheel: 480);
-                var commander = frame.Cards.First(card => card.Zone == "Command" && card.Request.Owner == state.ViewerId);
-                var body = new CardPaintGeometry(commander.Display);
                 bool actualCollision = groups[topId].World.Canonical.Select(bounds => Rectangle.Intersect(view.BoardView.Apply(bounds), viewport))
-                    .Any(bounds => !bounds.IsEmpty && PoseOverlaps(body.Backing, bounds));
+                    .Any(bounds => !bounds.IsEmpty && FixedReadoutObstruction(frame, view, state, fixedReadouts, bounds));
                 check(view.BoardView.Scale > 1.9f && actualCollision && !view.WorldReadouts[topId].Visible,
-                    $"{size.X}px: zooming the three-player table reproduces a real fixed-commander obstruction and suppresses the whole top group");
+                    $"{size.X}px: zooming the three-player table reaches actual fixed seat paint and suppresses the whole obstructed top group");
                 CheckView("Three-player zoom keeps fixed objects clear and retires the complete obstructed resource group");
                 Home(); CheckView("Home restores the previously obstructed three-player resource group");
                 check(view.WorldReadouts[topId].Visible && view.CounterBadge(topId) is { Chips.Length: 2 },
@@ -239,6 +238,11 @@ internal static class MatchHeaderInteractionChecks
                 if (Vector2.DistanceSquared(nearest, circle.Item1) < circle.Item2 * circle.Item2) return true;
             }
             if (player.Id == state.ViewerId) continue;
+            var phase = seat.Geometry.Hero + new Vector2(seat.Index == 2 ? 59 : -59, 0);
+            if (frame.Drawing.Commands.OfType<DrawCommand.Circle>().Any(circle => circle.Center == phase && circle.Radius == 15)) {
+                var nearest = Vector2.Clamp(phase, new(bounds.Left, bounds.Top), new(bounds.Right, bounds.Bottom));
+                if (Vector2.DistanceSquared(nearest, phase) < 15 * 15) return true;
+            }
             int count = Math.Min(7, player.Zone("Hand").Count);
             for (int index = 0; index < count; index++) {
                 var back = TableLayout.HiddenHand(seat.Index, index, count);
@@ -295,9 +299,9 @@ internal static class MatchHeaderInteractionChecks
                 var badge = view.CounterBadge(side.PlayerId)!;
                 var pool = view.ManaPoolBadge(side.PlayerId)!;
                 var name = frame.Hits.Single(hit => hit.Id == "focus:" + side.PlayerId);
-                int landX = side.Index == 0 ? 8 : 1448;
-                var readouts = view.SeatReadouts.Where(bounds => bounds == name.Bounds || bounds == badge.Bounds
-                    || bounds.X == landX && bounds.Y >= 425).ToArray();
+                var world = view.WorldReadouts[side.PlayerId];
+                var personal = side.Geometry.PublicReadoutArea!.Value;
+                var readouts = world.Displayed.Append(name.Bounds).Append(badge.Bounds).Distinct().ToArray();
                 var obstacles = frame.Cards.Select(card => (Kind: "card:" + card.Id, Bounds: card.Display.Bounds)).ToList();
                 obstacles.Add(("painted life ring", new((int)side.Geometry.Hero.X - 39, (int)side.Geometry.Hero.Y - 39, 78, 78)));
                 for (int index = 0; index < 7; index++) {
@@ -314,7 +318,9 @@ internal static class MatchHeaderInteractionChecks
                     $"Side {side.Index}, {size.X}px {scale:P0}: six full-size mana pips clear actual permanents, held cards, life and readouts while retaining their own inspection targets; " + manaCollision);
                 var collisions = readouts.SelectMany(readout => obstacles.Where(obstacle => obstacle.Bounds.Intersects(readout))
                     .Select(obstacle => $"readout {readout} intersects {obstacle.Kind} {obstacle.Bounds}")).Take(4).ToArray();
-                check(badge.Chips.Length == 2 && badge.Chips.All(chip => chip.MeasuredWidth <= chip.AvailableWidth)
+                check(world.Visible && world.Canonical.All(personal.Contains)
+                        && world.Displayed.All(piece => view.SeatReadouts.Any(bounds => bounds.Contains(piece)))
+                        && badge.Chips.Length == 2 && badge.Chips.All(chip => chip.MeasuredWidth <= chip.AvailableWidth)
                         && badge.Chips.All(chip => frame.Drawing.Commands.OfType<DrawCommand.Text>()
                             .Any(text => text.Value == chip.Text && text.Size == .6f
                                 && badge.Bounds.Contains(new Point(text.X, text.Y))))
@@ -362,9 +368,9 @@ internal static class MatchHeaderInteractionChecks
                     && frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value == "1 INCOMING")
                     && badge.Chips.All(chip => chip.MeasuredWidth <= chip.AvailableWidth),
                 $"{count}-seat {size.X}px {scale:P0}: the actual top HUD includes both commanders, six mana colors, two complete counter types and incoming combat");
-            var readouts = view.SeatReadouts.Where(bounds => bounds == name.Bounds
-                || bounds.X == badge.Bounds.X && bounds.Y >= badge.Bounds.Y
-                || count == 2 && bounds.X == name.Bounds.X).ToArray();
+            var world = view.WorldReadouts[topId];
+            var personal = top.Geometry.PublicReadoutArea!.Value;
+            var readouts = world.Displayed.Append(name.Bounds).Append(badge.Bounds).Distinct().ToArray();
             var obstacles = new List<(string Kind, Rectangle Bounds)>();
             obstacles.AddRange(frame.Cards.Select(card => ("card:" + card.Id, card.Display.Bounds)));
             foreach (var seat in frame.Scene.Seats) {
@@ -376,7 +382,7 @@ internal static class MatchHeaderInteractionChecks
             }
             obstacles.AddRange(frame.Hits.Where(hit => hit.Bounds.Top >= 0 && hit.Bounds.Bottom <= 54)
                 .Select(hit => ("header:" + hit.Id, hit.Bounds)));
-            obstacles.Add(("central response area", count == 2 ? DuelTableStudy.ActionArea : SharedTableStudy.ActionArea));
+            obstacles.Add(("current response area", view.StudyAttentionBounds));
             obstacles.AddRange(pool.Parts.Select(part => ("mana:" + part.Key, part.Bounds)));
             foreach (var other in frame.Scene.Seats.Where(seat => seat.PlayerId != topId))
                 obstacles.Add(("other mat:" + other.PlayerId, other.Geometry.PlaymatBounds!.Value));
@@ -387,7 +393,9 @@ internal static class MatchHeaderInteractionChecks
             }
             var overlap = readouts.SelectMany(readout => obstacles.Where(obstacle => obstacle.Bounds.Intersects(readout))
                 .Select(obstacle => new { Readout = readout, Obstacle = obstacle })).FirstOrDefault();
-            check(readouts.Length >= 5 && overlap == null,
+            check(world.Visible && world.Canonical.All(personal.Contains)
+                    && world.Displayed.All(piece => view.SeatReadouts.Any(bounds => bounds.Contains(piece)))
+                    && readouts.Length >= 5 && overlap == null,
                 $"{count}-seat {size.X}px {scale:P0}: measured top identity, land counts, public states and incoming status clear actual cards, piles, hands, mana, headers, response space and other mats"
                 + (overlap == null ? "" : $"; readout {overlap.Readout} intersects {overlap.Obstacle.Kind} {overlap.Obstacle.Bounds}"));
             check(engine.Replies.Count == 0 && view.HitAt(top.Geometry.Hero.ToPoint())?.Id == "player:" + topId

@@ -42,7 +42,7 @@ internal sealed class BattlefieldLayoutContext
             yield return new((int)hero.X - 55, (int)hero.Y - 55, 110, 110);
             if (seat == 3) {
                 yield return new((int)hero.X - 130, (int)hero.Y - 55, 190, 110);
-                foreach (var reservation in TurnControlLayout.For(hero).Reservations) yield return reservation;
+                foreach (var reservation in geometry.TurnControls.Reservations) yield return reservation;
             }
             else yield return new((int)geometry.Hand.X - 83, (int)geometry.Hand.Y - 30, 166, 90);
 

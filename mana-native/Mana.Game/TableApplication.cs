@@ -351,6 +351,7 @@ internal sealed partial class TableApplication : IDisposable
             groupCombatCandidates: GroupedCombatReview);
         PrepareCardCollection();
         UpdateBoardView();
+        PrepareStudyAttentionArea();
         PrepareMatchPresentation();
         BeginCardReading(frameElapsed);
         hits.Begin();

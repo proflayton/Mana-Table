@@ -1,6 +1,7 @@
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Renderer;
+using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
@@ -10,6 +11,91 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private TurnProgressView? turnProgress;
+    private TurnControlLayout LocalTurnControls => match is { } state
+        ? tableScene?.Seats.FirstOrDefault(seat => seat.PlayerId == state.ViewerId)?.Geometry.TurnControls
+            ?? TurnControlLayout.For(SeatHero(state.ViewerId))
+        : TurnControlLayout.For(TableLayout.Hero(3));
+    private TableScene? studyHudScene;
+    private double studyHudTime = double.NaN;
+    private IReadOnlyList<Rectangle> studyHudObstacles = [];
+    private IReadOnlyList<Rectangle> studyAttentionObstacles = [];
+
+    private IReadOnlyList<Rectangle> StudyAttentionObstacles {
+        get { _ = StudyHudObstacles; return studyAttentionObstacles; }
+    }
+
+    // One copied plan is shared by context placement, card readers and timing
+    // controls for the completed scene. Drawing order cannot change its inputs.
+    private IReadOnlyList<Rectangle> StudyHudObstacles {
+        get {
+            if (ReferenceEquals(studyHudScene, tableScene) && studyHudTime == now) return studyHudObstacles;
+            studyHudScene = tableScene; studyHudTime = now;
+            if (match is not { } state || tableScene == null) return studyAttentionObstacles = studyHudObstacles = [];
+            var occupied = new List<Rectangle>();
+            void AddCard(Pose pose) {
+                var body = new CardPaintGeometry(pose);
+                occupied.Add(body.Backing.Bounds); occupied.Add(body.Shadow.Bounds);
+            }
+            foreach (var card in tableScene.BattlefieldDrawOrder) AddCard(boardView.Apply(card.Pose));
+            foreach (var card in tableScene.Hand.Cards) AddCard(card.Pose);
+            foreach (var card in tableScene.PlayAccess.Groups.SelectMany(group => group.Cards)) AddCard(card.Scene.Pose);
+            foreach (var seat in tableScene.Seats) {
+                var player = state.Players.Single(player => player.Id == seat.PlayerId);
+                bool own = seat.PlayerId == state.ViewerId;
+                var hero = seat.Geometry.Hero;
+                int radius = own ? 47 : 41;
+                occupied.Add(new((int)hero.X - radius, (int)hero.Y - radius, radius * 2, radius * 2 + 6));
+                var mana = PlanManaHalo(player, seat.Index);
+                occupied.AddRange(mana.Parts.Select(part => part.Bounds));
+                if (!own) {
+                    occupied.Add(SeatNameplateArea(hero, false, seat.Index, mana));
+                    foreach (var hand in OpponentHandPoses(player, seat.Index)) {
+                        occupied.Add(hand.Bounds);
+                        occupied.Add((hand with { Center = hand.Center + new Vector2(3, 6) }).Bounds);
+                    }
+                    if (seat.Index != 1 && StateClarity.PlayerStates(player).Length == 0)
+                        occupied.Add(new((int)seat.Geometry.Hand.X - 65, (int)seat.Geometry.Hand.Y + 35, 130, 22));
+                    if (player.Id == state.ActivePlayerId && state.Turn > 0 && turnProgress != null && seat.Index != 1) {
+                        var phase = hero + new Vector2(seat.Index == 2 ? 59 : -59, 0);
+                        occupied.Add(new((int)phase.X - 15, (int)phase.Y - 15, 30, 30));
+                    }
+                    if (seat.Geometry.PublicReadoutArea is { } well) occupied.Add(boardView.Apply(well));
+                } else {
+                    occupied.AddRange(seat.Geometry.TurnControls.PhaseBounds);
+                    occupied.Add(seat.Geometry.TurnControls.AutoBounds);
+                    occupied.Add(seat.Geometry.TurnControls.HoldBounds);
+                    occupied.Add(seat.Geometry.TurnControls.AlertBounds);
+                    if (StateClarity.PlayerStates(player).Length > 0 && seat.Geometry.PublicCounterArea is { } counters) occupied.Add(counters);
+                    occupied.Add(new(8, 800, 220, 100));
+                }
+                foreach (var commander in seat.Geometry.Commanders) AddCard(commander.Pose with { Size = commander.Pose.Size + new Vector2(13) });
+                var command = seat.Geometry.CommandLink;
+                occupied.Add(new((int)command.X - 52, (int)command.Y, 104, 24));
+                if (AvailableZoneCount(player, "Command") > 0)
+                    occupied.Add(new((int)command.X - 51, (int)command.Y + 25, 102, 22));
+                foreach (var pile in seat.Geometry.Piles) {
+                    var paint = PileGeometry.Create(pile.Pose, player.Zone(pile.Zone).Count, pile.Compact);
+                    occupied.Add(paint.Shadow.Bounds); occupied.Add(paint.Top.Bounds); occupied.AddRange(paint.Layers.Select(layer => layer.Bounds));
+                    occupied.Add(paint.Label);
+                    if (!paint.Count.IsEmpty) occupied.Add(paint.Count);
+                }
+            }
+            foreach (var card in matchPresentation.Cards.Cards.Where(card => card.Focused
+                || card.Zone != "Stack" && (card.Layer is CardPresentationLayer.Returning or CardPresentationLayer.Playing))) AddCard(card.Display);
+            if (matchPresentation.Cards.Pinned?.ReaderTarget is { } reader) AddCard(reader);
+            if (!sourceReaderActionsBounds.IsEmpty) occupied.Add(sourceReaderActionsBounds);
+            if (!battlefieldReaderStateBounds.IsEmpty) occupied.Add(battlefieldReaderStateBounds);
+            if (manaJourneyPaint is { } bill) { occupied.Add(bill.Bounds); occupied.Add(bill.SourceBounds); }
+            occupied.AddRange(manaSourcePaint.SelectMany(source => new[] { source.Bounds, source.OutputBounds }));
+            // The attention area owns these unpinned stack destinations. Its
+            // moving spell cannot also repel that destination every frame.
+            // Other HUD consumers still avoid the complete physical journey.
+            studyAttentionObstacles = Array.AsReadOnly(occupied.Where(bounds => !bounds.IsEmpty).ToArray());
+            foreach (var card in matchPresentation.Cards.Cards.Where(card => !card.Focused && card.Zone == "Stack"
+                && (card.Layer is CardPresentationLayer.Returning or CardPresentationLayer.Playing))) AddCard(card.Display);
+            return studyHudObstacles = Array.AsReadOnly(occupied.Where(bounds => !bounds.IsEmpty).ToArray());
+        }
+    }
 
     private bool PortraitTurnControlsCanPaint => DecisionDockCanPaint && !session.NeedsRecovery
         && match is { Status: not ("finished" or "error"), Viewer: { Eliminated: false }, Turn: > 0 }
@@ -18,7 +104,7 @@ internal sealed partial class TableApplication
     private IReadOnlyList<Rectangle> ReaderControlReservations {
         get {
             if (!PortraitTurnControlsCanPaint) return [];
-            var layout = TurnControlLayout.For(SeatHero(match!.ViewerId));
+            var layout = LocalTurnControls;
             var phases = layout.PhaseBounds.Take(turnProgress!.Markers.Length).ToArray();
             return SelectingActionTarget ? phases
                 : [.. phases, layout.AutoBounds, layout.HoldBounds, layout.AlertBounds, AbilityPassingControlBounds()];
@@ -45,7 +131,7 @@ internal sealed partial class TableApplication
     {
         if (!PortraitTurnControlsCanPaint) return;
         var state = match!;
-        var layout = TurnControlLayout.For(SeatHero(state.ViewerId));
+        var layout = LocalTurnControls;
         var markers = turnProgress!.Markers;
         for (int i = 1; i < markers.Length; i++)
             canvas.Line(layout.Markers[i - 1], layout.Markers[i], Gold * .22f, 2);
@@ -90,7 +176,7 @@ internal sealed partial class TableApplication
 
     private Rectangle PortraitPriorityArea()
     {
-        var layout = TurnControlLayout.For(SeatHero(match!.ViewerId));
+        var layout = LocalTurnControls;
         var area = layout.PriorityArea;
         int passWidth = new[] { "Continue damage", "Go to end step", "Go to combat", "Pass once" }
             .Max(label => canvas.TextWidth(label, .76f, true)) + 24;
@@ -106,8 +192,13 @@ internal sealed partial class TableApplication
     {
         // Both automatic waiting and its explicit continuation use the same
         // portrait action position, including enlarged type and resource pips.
-        int resourceRight = manaPoolBadges.GetValueOrDefault(match!.ViewerId)?.Bounds.Right ?? 0;
-        area.X = Math.Clamp(Math.Max(area.X, resourceRight + 14), area.X, 1550 - area.Width);
+        var mana = match is { Viewer: { } viewer } ? PlanManaHalo(viewer, 3).Bounds : Rectangle.Empty;
+        int resourceRight = mana.IsEmpty ? 0 : mana.Right;
+        area.X = Math.Clamp(Math.Max(area.X, resourceRight + 14), Math.Min(area.X, 1550 - area.Width), 1550 - area.Width);
+        if (TableStudyEnabled && StudyHudObstacles.Any(bounds => bounds.Intersects(area)))
+            area = DecisionWorkspaceLayout.Place(mana.IsEmpty ? new((int)SeatHero(match!.ViewerId).X - 47,
+                    (int)SeatHero(match.ViewerId).Y - 47, 94, 94) : mana,
+                area.Width, area.Height, StudyHudObstacles, bounded: true, minimumWidth: area.Width, minimumHeight: area.Height);
         var readers = matchPresentation.Cards.Cards.Where(card => card.Focused
                 || card.Layer is Presentation.CardPresentationLayer.Returning or Presentation.CardPresentationLayer.Playing)
             .Select(card => card.Display.Bounds).Append(sourceReaderActionsBounds);
