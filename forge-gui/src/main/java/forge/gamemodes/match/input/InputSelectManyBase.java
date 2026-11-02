@@ -31,6 +31,10 @@ public abstract class InputSelectManyBase<T extends GameEntity> extends InputSyn
     /** The engine operation owning this selection, independent of its display message. */
     public SpellAbility getSpellAbility() { return sa; }
 
+    /** The concrete input owns these bounds; their unit depends on its subtype. */
+    public final int getMinimumSelection() { return min; }
+    public final int getMaximumSelection() { return max; }
+
     public final boolean isSelectionActive() { return !isFinished(); }
 
     /** A publication may copy the concrete input's current candidates once.

@@ -111,6 +111,7 @@ contains the earlier team/outcome foundation and does not expose this mode.
    ready. Changing enrollment or table rules requires Ready again. Everyone
    needs an updated build that supports cooperative setup.
 4. Each player has their own turns, life, cards and mana. Your side wins together.
+   If asked who takes the first turn, choose a player before Keep/Mulligan.
    This is not shared-life/shared-turn Two-Headed Giant. An eliminated human can
    keep watching while AI allies play. Conceding your seat leaves hosting alive;
    closing the hosted table is a separate action.

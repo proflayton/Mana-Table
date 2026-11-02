@@ -202,8 +202,12 @@ private cost context. Their current cost-stack entry is checked across funding
 queries. A changed entry withdraws the old decision; a fresh input publication
 must establish its replacement. Copied facts never retain a live cost entry.
 Each concrete input still decides whether another click toggles an entity or
-allocates another counter. Shared capture adds no selection-limit fields or
-parent payment commands, and nested color choices keep their own scope.
+allocates another counter. List inputs additionally copy their actual `min` and
+`max` entity counts, including the pregame starting-player choice; these bounds
+do not replace current Complete-button eligibility or other cost constraints.
+Counter allocation and Convoke retain their specialized progress units rather
+than publishing entity-count bounds. No parent payment command is introduced,
+and nested color choices keep their own scope.
 Indexed choice/reveal dialogs use that same capture for their option semantics
 and actual provider cost order. These facts are staged during publication and
 deeply frozen, rather than written to the pending dialog before the publication

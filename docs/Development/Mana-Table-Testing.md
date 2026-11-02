@@ -60,6 +60,12 @@ The `play-access` group also covers five/six seats with a long player name,
 external playable cards and full hands. Its assertions use accepted and painted
 name/resource bounds, source furniture and actual controls. A counted seat-number
 fallback does not establish that the player's full name remains readable.
+The `cooperative-opening` group tests the narrow pregame starting-player driver
+with nonsequential player IDs and negative card/source/range/scope cases. Real
+`ManyPublicationTest` coverage requires the starting-player choice before
+explicit Keep and separately pins generic entity-count bounds. The native
+journey retains actual accepted choice/Keep witnesses and bounded public-stage
+evidence on failure; an unobserved random chooser branch is not called exercised.
 The full presentation suite still includes these groups. Wait for both async
 work and the existing presentation activity to settle before asserting that a
 new lobby control can be pressed. Keep exact missing-hit/bounds evidence when

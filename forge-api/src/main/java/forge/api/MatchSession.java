@@ -1900,6 +1900,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var paying = game.costPaymentStack.peek();
         var ability = many.getSpellAbility();
         if (many instanceof InputSelectEntitiesFromList<?> list) {
+            // List inputs count entities. Other Many inputs can count counters
+            // or mana instead, and retain their specialized progress facts.
+            promptFacts.put("min", list.getMinimumSelection());
+            promptFacts.put("max", list.getMaximumSelection());
             var selectable = many.getSelectableEntitiesSnapshot();
             // Preserve provider order and exact occurrences; a subclass may
             // narrow click membership without changing its supplied list.

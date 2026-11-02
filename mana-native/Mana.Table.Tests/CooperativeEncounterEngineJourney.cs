@@ -49,6 +49,10 @@ internal static class CooperativeEncounterEngineJourney
         Directory.CreateDirectory(directory);
         var elapsed = Stopwatch.StartNew();
         var evidence = new List<object>();
+        var observedStages = new Queue<object>();
+        object? lastPublicObservation = null;
+        string? lastObservationStamp = null;
+        string stage = "configuring lobby";
         var cleanupErrors = new List<string>();
         Exception? failure = null;
         bool connected = false, completed = false;
@@ -141,6 +145,7 @@ internal static class CooperativeEncounterEngineJourney
                 await host.StepAsync();
                 if (host.LastFault != null) throw new InvalidOperationException("Native co-op AI host fault: " + JsonSerializer.Serialize(host.LastFault));
                 state = await engine.ObserveAsync() ?? throw new IOException("The six-seat encounter disappeared after host concession.");
+                Witness("native-ai-after-concession", state);
                 EnsureHealthy(state);
                 if (state.Status == "finished") throw new InvalidOperationException("The six-seat encounter ended before its allied native AI continuation was witnessed.");
             } while (AcceptedSourceActions(continuedGame, alliedSeats) <= previousActions || state.BoardRevision <= eliminatedBoard);
@@ -155,6 +160,9 @@ internal static class CooperativeEncounterEngineJourney
             completed = true;
         } catch (Exception error) { failure = error; throw; }
         finally {
+            var nativeAiWitness = host.Histories.SelectMany(history => history.Decisions).TakeLast(12)
+                .Select(record => new { record.Stamp.GameId, record.Stamp.SeatId, record.Stamp.DecisionId,
+                    record.Command, record.Outcome }).ToArray();
             try { await host.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10)); }
             catch (Exception error) { cleanupErrors.Add("AI host: " + error); if (failure == null) failure = error; }
             if (connected) {
@@ -163,6 +171,7 @@ internal static class CooperativeEncounterEngineJourney
             }
             File.WriteAllText(Path.Combine(directory, "cooperative-encounter-results.json"), JsonSerializer.Serialize(new {
                 passed = completed && failure == null, error = failure?.ToString(), cleanupErrors, elapsedSeconds = elapsed.Elapsed.TotalSeconds, evidence,
+                stage, lastPublicObservation, observedStages, host.LastFault, nativeAiWitness,
                 scope = "Reused current native provider and initialized JVM; real setup/consent/rules concessions/durable receipts/native AI continuation. The last six-seat game is explicitly left unfinished, never awarded a synthetic win."
             }, new JsonSerializerOptions { WriteIndented = true }));
             if (completed && failure != null) throw new InvalidOperationException("Cooperative native journey cleanup failed.", failure);
@@ -171,8 +180,27 @@ internal static class CooperativeEncounterEngineJourney
         int AcceptedSourceActions(string game, ImmutableHashSet<int> seats) => host.Histories.SelectMany(history => history.Decisions)
             .Count(record => record.Stamp.GameId == game && seats.Contains(record.Stamp.SeatId)
                 && record.Outcome == AiDecisionOutcome.Accepted && record.Command == nameof(UseOfferedAction));
-        void Guard(string stage) {
-            if (elapsed.Elapsed > TimeSpan.FromSeconds(75)) throw new TimeoutException("The cooperative native journey exceeded its bounded deadline during " + stage + ".");
+        void Guard(string currentStage) {
+            stage = currentStage;
+            if (elapsed.Elapsed > TimeSpan.FromSeconds(75)) throw new TimeoutException("The cooperative native journey exceeded its bounded deadline during " + currentStage + ".");
+        }
+        void Witness(string currentStage, GameSnapshot current, bool? openingHandKept = null) {
+            state = current;
+            var entities = current.Decision?.Payload as EntitySelectionPayload;
+            lastPublicObservation = new { stage = currentStage, openingHandKept, current.Id, current.Revision, current.BoardRevision,
+                current.Status, current.Error, current.Outcome, current.Turn, current.PhaseKey, current.ViewerId, current.ActivePlayerId, current.DecisionOwnerId,
+                current.PriorityPlayerId, current.Encounter, stackCount = current.Stack.Length,
+                decision = current.Decision == null ? null : new { current.Decision.Id,
+                    task = current.Decision.Payload.GetType().Name,
+                    sourceCardId = current.Decision.Context.Source?.CardId,
+                    players = entities?.Players, range = entities?.Range },
+                players = current.Players.Select(player => new { player.Id, player.ParticipantId, player.TeamId,
+                    player.Eliminated, handCount = player.Zone("Hand").Count }) };
+            string stamp = currentStage + ":" + current.Id + ":" + current.Revision + ":" + current.Decision?.Id + ":" + openingHandKept;
+            if (stamp == lastObservationStamp) return;
+            lastObservationStamp = stamp;
+            if (observedStages.Count == 32) observedStages.Dequeue();
+            observedStages.Enqueue(lastPublicObservation);
         }
         void EnsureHealthy(GameSnapshot current) {
             if (current.Status == "error") throw new InvalidOperationException(current.Error ?? "The cooperative rules provider stopped.");
@@ -191,13 +219,27 @@ internal static class CooperativeEncounterEngineJourney
         }
         async Task<GameSnapshot> Opening(int players) {
             bool kept = false;
+            SelectPlayer? startingPlayerChoice = null;
             while (true) {
                 Guard("opening a real " + players + "-seat encounter");
                 var current = await engine.ObserveAsync() ?? throw new IOException("The cooperative match did not start.");
+                Witness("opening-" + players, current, kept);
                 EnsureHealthy(current);
                 if (current.Status == "finished") throw new InvalidOperationException("The encounter ended before its opening hand was kept.");
                 if (!kept && current.Decision is { Payload: OpeningHandPayload { Keep.Enabled: true } } opening) {
                     await engine.ExecuteAsync(new KeepOpeningHand(current.Id, opening.Id)); kept = true;
+                    evidence.Add(new { stage = "accepted-opening-hand-keep", gameId = current.Id,
+                        decisionId = opening.Id, handCount = current.Viewer!.Zone("Hand").Count });
+                } else if (!kept && StartingPlayerAnswer(current, startingPlayerChoice) is { } answer) {
+                    await engine.ExecuteAsync(answer);
+                    if (answer is SelectPlayer selected) startingPlayerChoice = selected;
+                    evidence.Add(new { stage = "accepted-pregame-player-answer", gameId = answer.GameId,
+                        decisionId = answer.DecisionId, kind = answer.GetType().Name,
+                        selectedPlayerId = startingPlayerChoice?.Player, publishedChoice = lastPublicObservation });
+                } else if (!kept && current.Decision != null && current.Decision.Payload is not OpeningHandPayload
+                    && !IsStartingPlayerChoice(current)) {
+                    throw new InvalidDataException("Unsupported cooperative pregame task: " + current.Decision.Payload.GetType().Name
+                        + " at turn " + current.Turn + " / " + current.PhaseKey + ". See retained public stage evidence.");
                 }
                 await host.StepAsync();
                 if (host.LastFault != null) throw new InvalidOperationException("Co-op opening AI host fault: " + JsonSerializer.Serialize(host.LastFault));
@@ -210,6 +252,7 @@ internal static class CooperativeEncounterEngineJourney
             while (true) {
                 Guard(stage);
                 var current = await engine.ObserveAsync() ?? throw new IOException("The cooperative match disappeared during " + stage + ".");
+                Witness(stage, current);
                 EnsureHealthy(current);
                 if (predicate(current)) return current;
                 await host.StepAsync(); await Task.Delay(5);
@@ -219,6 +262,7 @@ internal static class CooperativeEncounterEngineJourney
             while (true) {
                 Guard("committing the actual party defeat");
                 var current = await engine.ObserveAsync() ?? throw new IOException("The completed cooperative match disappeared.");
+                Witness("saving-party-defeat", current);
                 EnsureHealthy(current);
                 var table = await engine.LobbyAsync();
                 if (table.PartyProgress?.SaveState == EncounterSaveState.Failed) throw new IOException(table.PartyProgress.SaveError ?? "The encounter receipt was not saved.");
@@ -237,6 +281,28 @@ internal static class CooperativeEncounterEngineJourney
                 "The real native match binds lobby enrollments to actual rules player/team IDs while hiding every other hand");
         }
     }
+
+    internal static DecisionCommand? StartingPlayerAnswer(GameSnapshot state, SelectPlayer? submitted = null)
+    {
+        if (!IsStartingPlayerChoice(state)) return null;
+        var decision = state.Decision!;
+        var selection = (EntitySelectionPayload)decision.Payload;
+        bool selectedHere = submitted is { } previous && previous.GameId == state.Id
+            && previous.DecisionId == decision.Id && previous.Player == state.ViewerId;
+        if (selection.Complete.Enabled) return selectedHere ? new CompleteSelection(state.Id, decision.Id) : null;
+        return selectedHere ? null : new SelectPlayer(state.Id, decision.Id, state.ViewerId);
+    }
+
+    private static bool IsStartingPlayerChoice(GameSnapshot state) => state.Status == "playing" && state.Turn == 0
+        && state.PhaseKey == "PREGAME" && state.DecisionOwnerId == state.ViewerId && state.Stack.IsEmpty && state.Combat == null
+        && state.Decision is { Context.Source: null, Payload: EntitySelectionPayload {
+            Range: { Min: 1, Max: 1 }, CounterPayment: null, ManaReduction: null, Cancel.Enabled: false
+        } selection }
+        && state.Players.Length > 2 && state.Players.All(player => !player.Eliminated && player.Zone("Hand").Count == 0)
+        && state.Players.Select(player => player.Id).Distinct().Count() == state.Players.Length
+        && selection.Players.Length == state.Players.Length && selection.Players.Distinct().Count() == selection.Players.Length
+        && selection.Players.Contains(state.ViewerId) && selection.Players.All(id => state.Players.Any(player => player.Id == id))
+        && CardViews.Located(state).All(card => !card.Card.Selectable);
 
     private static MatchSetupSpecification Specification(int party, int opposition) => new(MatchRulesets.CooperativeCommander,
         Enumerable.Range(0, party + opposition).Select(index => new MatchSeatAssignment(index, index < party ? 0 : 1,
