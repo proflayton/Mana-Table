@@ -1283,6 +1283,13 @@ new fields without gaining outcome authority from their display text. The
 release campaign now requires a validated typed outcome for natural-completion
 evidence, and same-publication comparisons include teams and outcome identity.
 
+When Forge stops a solo table after its only human loses, the eliminated viewer
+retains its actual Defeat label and playtest result. That `AllHumansLost` cleanup
+leaves the unfinished AI contest without a typed global outcome. Both the
+published board and playtest observation use this same result mapping; an engine
+error cannot acquire a defeat/win from it. Individual loss, concession admission
+and completed rules competition remain different facts.
+
 `SeatConnection` carries observe/reply/concede operations through `SyncTransport`.
 Solo uses a local connection. A lobby can mix local and TCP connections; all receive
 complete seat-filtered snapshots from the authority. Networking contains no card,

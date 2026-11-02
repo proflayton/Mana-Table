@@ -117,7 +117,18 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private String gameResult() {
-        return MatchOutcomeProjection.forViewer(MatchOutcomeProjection.of(table, error), viewer.getId());
+        return gameResult(MatchOutcomeProjection.of(table, error));
+    }
+
+    private String gameResult(MatchOutcomeProjection.Outcome outcome) {
+        if (error != null) return null;
+        if (outcome != null) return MatchOutcomeProjection.forViewer(outcome, viewer.getId());
+        // Stopping a solo table after its human lost does not complete the AI
+        // contest. Preserve that real individual loss for display/playtests,
+        // without granting a win or publishing a global completion receipt.
+        return game.isGameOver() && game.getOutcome() != null
+                && game.getOutcome().getWinCondition() == GameEndReason.AllHumansLost
+                && viewer.getHasLost() ? "Defeat" : null;
     }
 
     private void notifyPlaytest() {
@@ -2162,7 +2173,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     "controllerId", item.getActivatingPlayer() == null ? null : item.getActivatingPlayer().getId()));
         }
         var outcome = MatchOutcomeProjection.of(table, error);
-        String result = MatchOutcomeProjection.forViewer(outcome, viewer.getId());
+        String result = gameResult(outcome);
         var pinnedExecutions = new HashSet<>(stackExecutions.values()); pinnedExecutions.addAll(finiteStackYield.pinned());
         executions.pinStack(pinnedExecutions);
         var publication = MatchActivity.capture(activity::frame, executions::frame);

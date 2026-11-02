@@ -16,6 +16,10 @@ rules checks. Run it with `TerminalProjectionTest`, `MatchFailureTest` and
 `PregameConcessionTest` in the existing `forge-api` reactor test suite. These
 exercise actual team winners, an earlier eliminated ally, rules draws, ordinary
 free-for-all completion and failures; they do not establish a cooperative lobby.
+Include `EliminationRegressionTest` for natural elimination and concession of a
+lone human: both retain Defeat while cleanup keeps the global outcome absent.
+The packaged `AiFrameworkEngineCheck` exercises that same concession through the
+native adapter before allowing its next match to start.
 
 The existing graphics-free `Mana.Client.Tests` runner includes
 `MatchOutcomeRegression`, `MatchResultPresentationRegression` and

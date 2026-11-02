@@ -734,6 +734,9 @@ an individual winner: an eliminated ally can have lost while its team is listed.
 A rules draw lists no winners. Host cleanup (`AllHumansLost`) is not a completed
 rules outcome. The viewer-specific `result` remains display text and reports
 Victory for every actual winner; the spectator text names all actual winners.
+When a solo table stops after its human is actually eliminated, that seat retains
+Defeat for display and playtest history while the unresolved AI contest has no
+typed global outcome. Engine failures never synthesize that individual result.
 Neither display string authorizes progression or implies a saved receipt.
 These additive fields do not enable cooperative lobby setup or shared-turn 2HG.
 

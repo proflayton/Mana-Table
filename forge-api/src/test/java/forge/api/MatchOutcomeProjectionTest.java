@@ -84,6 +84,9 @@ public class MatchOutcomeProjectionTest {
             assertEquals(fixture.table.game.getRegisteredPlayers().stream().map(Player::getTeam).distinct().count(), 4L);
             assertTrue(fixture.table.game.getRegisteredPlayers().stream().allMatch(player -> player.getTeam() >= 0));
             fixture.assertPublic(null);
+            fixture.concede(1);
+            assertTrue(fixture.state(1).get("result").isJsonNull(), "One actual loss does not finish the remaining contest");
+            fixture.assertPublic(null);
             fixture.table.fail(new IllegalStateException("Controlled outcome fixture failure"));
             fixture.table.publish();
             fixture.assertPublic(null);
