@@ -1256,7 +1256,7 @@ the rules authority; the native AI host chooses through the same offered-action
 boundary for automated seats. The old `NetworkMatchSession` and its separate
 network GUI projection have been removed.
 
-The first source candidate for the approved
+The source implementation for the approved
 [encounter roadmap](Mana-Table-Encounters-Roadmap.md) projects actual game-scoped
 `Player.TeamId` and a viewer-independent `GameSnapshot.Outcome`. The outcome
 names the exact game, global win/draw, actual winning player/team IDs and an
@@ -1276,10 +1276,9 @@ labels may show that team's victory while retaining individual elimination.
 A global draw also does not classify an earlier eliminated participant for
 tournament scoring. Per-participant scoring facts/policy remain M3 work.
 
-These facts are the first M1 boundary slice, not an implemented cooperative mode
-or a durable run checkpoint. Existing viewer-local `Status`/`Result` labels and
-concession admission retain their separate roles. Old providers may omit the
-new fields without gaining outcome authority from their display text. The
+Existing viewer-local `Status`/`Result` labels and concession admission retain
+their separate roles. Old providers may omit the new fields without gaining
+outcome authority from their display text. The
 release campaign now requires a validated typed outcome for natural-completion
 evidence, and same-publication comparisons include teams and outcome identity.
 
@@ -1289,6 +1288,68 @@ leaves the unfinished AI contest without a typed global outcome. Both the
 published board and playtest observation use this same result mapping; an engine
 error cannot acquire a defeat/win from it. Individual loss, concession admission
 and completed rules competition remain different facts.
+
+### Cooperative setup and encounter completion
+
+`ITableMatchSetup` is an optional application port. The process capability and
+the authoritative lobby's `MatchSetupCapabilities` must both support the requested
+rules. The UI submits an immutable `MatchSetupSpecification` against an exact
+lobby revision; the provider validates it before changing enrollment. The first
+cooperative ruleset supports up to four party seats and two AI opposition seats,
+with individual turns and separately owned life, mana and cards. It assigns real
+Forge teams. It does not implement Two-Headed Giant's shared turns or life.
+
+An opaque `ParticipantId` identifies an enrollment, independently of its slot,
+rules player ID, team, display name or controller. Replacing an open place with
+a human/AI, or releasing an AI place, changes that identity. Reconnect, deck/name
+edits and a rematch preserve the same enrollment. The frozen encounter captures
+each participant's actual player/team mapping and public `DeckSelectionId`.
+Neither private deck documents nor a deck name stand in for this assignment.
+
+Cooperative Ready acknowledges the displayed setup consent and tempo revision
+in one command. Actual enrollment or rules changes revoke readiness and rotate
+setup consent. A stale acknowledgment cannot accept a new side or new timing
+rules, and an older client without this capability cannot ready for co-op.
+Unready remains a revocation. The native composition root supplies the optional
+port; game presentation does not discover Forge implementation types.
+
+`EncounterContext` supplies party/encounter identity to the rules snapshot.
+`PartyProgress` belongs to the lobby, outside `GameSnapshot`. After an actual
+rules conclusion, the provider copies immutable outcome and enrollment facts
+into an `EncounterReceipt`. `EncounterProgressStore` performs journal I/O on its
+own serialized worker, outside rules and transport monitors. It writes and
+flushes the receipt before atomically replacing the party checkpoint. Replay is
+idempotent by game identity; conflicting receipts fail instead of awarding twice.
+The host profile's `encounters-v1` directory owns this local journal.
+The initial starting publication and a failure before the first full board may
+carry encounter linkage with an empty roster. They carry no outcome or
+participant authority; the client retains the actual startup error rather than
+inventing players. Playing and finished publications require the full identities.
+
+The client derives `EncounterCheckpoint` from exact party, encounter, game,
+participant/team and outcome facts. A terminal rules state alone cannot enable
+return while a receipt is pending, failed or mismatched. The host can explicitly
+retry a failed save; guests observe the authoritative progress. The existing
+client polling loop continues to accept lobby updates while the result overlay
+is open, even when the terminal match revision is unchanged. Return retires the
+completed encounter only after persistence and keeps the same lobby roster.
+If finished progress cannot be verified, the existing Leave table confirmation
+remains reachable without granting normal return or retry authority. Its provider
+operation still enforces the save guard, and rejection retains the current table.
+
+An eliminated human can keep observing while AI allies continue playing. Host
+concession does not close the hosting lifetime. Interruption and unfinished
+cleanup do not increment played or victory counts. Journal replay recovers
+committed completion work; selecting a previous party across application launches,
+restoring invites, and restoring live rules state are separate, unimplemented
+capabilities. Expeditions, rewards and circuit scoring remain later milestones.
+The current journal begins at terminal receipt persistence. There is no durable
+started-attempt record yet: a forced process exit before that first receipt loses
+the unresolved attempt's identity, although it awards no result. Recording that
+attempt before gameplay is remaining M1 acceptance work, distinct from M4's UI
+for selecting a saved party or run.
+
+### Seat connections and lifetime
 
 `SeatConnection` carries observe/reply/concede operations through `SyncTransport`.
 Solo uses a local connection. A lobby can mix local and TCP connections; all receive

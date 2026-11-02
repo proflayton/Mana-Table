@@ -34,6 +34,7 @@ internal sealed partial class TableApplication
     }
     private void ReturnFromMatch()
     {
+        if (!EncounterReturnEnabled) return;
         if (IsWorkshopMatch) { ReturnToWorkshop(); return; }
         if (localMatch) Work(() => {
             updates.Enqueue(FinishLocalMatchReturn);

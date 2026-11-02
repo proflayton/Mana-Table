@@ -34,6 +34,7 @@ internal static partial class HeadlessPresentationSmoke
             if (group != null) {
                 if (group == "mana-pool") CheckManaPoolPaymentClarity(profile, Check, trace, performance);
                 else if (group == "match-header") MatchHeaderInteractionChecks.Run(profile, Check);
+                else if (group == "cooperative-lobby") CooperativeLobbyInteractionChecks.Run(profile, Check);
                 else if (group == "attachment-stack") AttachmentStackChecks.Run(profile, Check);
                 else if (group == "pending-effects") PendingEffectPresentationChecks.Run(profile, Check);
                 else if (group == "seated-plane") {
@@ -56,6 +57,7 @@ internal static partial class HeadlessPresentationSmoke
             CostOrderingWireChecks.Run(Check);
             ExecutionWireChecks.Run(Check);
             MatchOutcomeWireChecks.Run(Check);
+            MatchSetupWireChecks.Run(Check);
             HistoryWireChecks.Run(Check);
             GameplayUndoWireChecks.Run(Check);
             FiniteResolutionWireChecks.Run(Check);
@@ -71,6 +73,7 @@ internal static partial class HeadlessPresentationSmoke
             AiEngineCampaign.CheckDisclosureBounds(Check);
             ForgePublicProjectionChecks.Run(profile, Check);
             PregameFlowChecks.Run(profile, Check);
+            CooperativeLobbyInteractionChecks.Run(profile, Check);
             DeckLibraryPresentationChecks.Run(profile, Check);
             DecisionDockInteractionChecks.Run(profile, Check);
             SemanticCommandPresentationChecks.Run(profile, Check);

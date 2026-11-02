@@ -172,6 +172,8 @@ internal sealed partial class TableApplication
         ModalFrame(result.Title, new MatchIntent.CloseView(), "Inspect table");
         canvas.CenterText(result.Banner, new(300, 177, 1000, 89), result.Victory ? Gold : Ink, 2.6f, true, true);
         canvas.CenterText($"{selectedDeckDetails?.Format ?? "Commander"} · {state.Players.Length} players · Turn {state.Turn}", new(300, 276, 1000, 37), Muted, .85f);
+        if (state.Encounter != null) canvas.CenterText(EncounterCompletionText, new(275, 314, 1050, 36),
+            CurrentEncounterCheckpoint == EncounterCheckpointStatus.Failed ? Gold : Muted, .7f);
         int rowHeight = Math.Min(70, 330 / Math.Max(1, state.Players.Length));
         for (int i = 0; i < state.Players.Length; i++) {
             var player = state.Players[i]; int y = 353 + i * rowHeight;
@@ -181,9 +183,13 @@ internal sealed partial class TableApplication
             canvas.Line(new(260, y + 47), new(1341, y + 47), Muted * .17f);
         }
         Button("result-history", "Match history", 260, 713, 253, new MatchIntent.OpenView(MatchView.History), height: 52);
+        if (CanRetryEncounterSave) Button("encounter-save-retry", "Retry saving", 540, 711, 420,
+            new MatchIntent.RetryEncounterSave(), true, true, 56);
+        else if (CanLeaveUnverifiedEncounter) Button("encounter-recovery-leave", "Leave table", 540, 711, 420,
+            new MatchIntent.OpenView(MatchView.LeaveTable), true, true, 56);
         if (IsWorkshopMatch) {
             Button("workshop-result-again", "Test again", 708, 711, 264, new MatchIntent.ReturnToWorkshop(true), !busy, height: 56);
             Button("return", "Return to tune", 991, 711, 349, new MatchIntent.ReturnToWorkshop(), !busy, true, 56);
-        } else Button("return", localMatch ? "Return to setup" : "Return to lobby", 991, 711, 349, new MatchIntent.ReturnFromMatch(), !busy, true, 56);
+        } else Button("return", localMatch ? "Return to setup" : "Return to lobby", 991, 711, 349, new MatchIntent.ReturnFromMatch(), !busy && EncounterReturnEnabled, true, 56);
     }
 }

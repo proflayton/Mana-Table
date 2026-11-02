@@ -1,5 +1,4 @@
 using Microsoft.Xna.Framework;
-using Point = Microsoft.Xna.Framework.Point;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Renderer;
@@ -18,12 +17,11 @@ public static class PlayerPlaymat
     public static Rectangle CanonicalCounterBand => new(12, 216, 150, 60);
 
     public static Rectangle Bounds(int seat, bool duel = false) => Project(seat, CanonicalBounds, duel);
+    public static Rectangle Bounds(TableSeatFrame seat) => seat.Project(CanonicalBounds);
 
     // A duel retains the established viewer-upright card faces. The mat and its
     // owner-relative role positions still use the same physical seat frame.
-    public static float Facing(int seat, bool duel = false) => duel ? 0 : seat switch {
-        0 => MathF.PI / 2, 1 => MathF.PI, 2 => -MathF.PI / 2, _ => 0
-    };
+    public static float Facing(int seat, bool duel = false) => duel ? 0 : TableSeatFrame.For(seat, study: false).Facing;
 
     public static Rectangle CanonicalLane(string role) => role switch {
         "Support" => new(12, 12, 150, 192),
@@ -33,27 +31,8 @@ public static class PlayerPlaymat
 
     public static Rectangle Lane(int seat, string role, bool duel = false) =>
         duel && seat is not (1 or 3) ? Rectangle.Empty : Project(seat, CanonicalLane(role), duel);
+    public static Rectangle Lane(TableSeatFrame seat, string role) => seat.Project(CanonicalLane(role));
 
-    public static Rectangle Project(int seat, Rectangle local, bool duel = false)
-    {
-        if (duel && seat is not (1 or 3)) throw new ArgumentOutOfRangeException(nameof(seat));
-        var center = seat switch {
-            0 => new Point(368, 448),
-            1 => new Point(800, 304),
-            2 => new Point(1232, 448),
-            3 => new Point(800, 660),
-            _ => throw new ArgumentOutOfRangeException(nameof(seat))
-        };
-        var origin = CanonicalBounds.Center;
-        int left = local.Left - origin.X, right = local.Right - origin.X;
-        int top = local.Top - origin.Y, bottom = local.Bottom - origin.Y;
-        // Exact integer quarter turns retain the same physical area and hem;
-        // independently rounded corners cannot stretch one player's material.
-        return seat switch {
-            0 => new(center.X - bottom, center.Y + left, local.Height, local.Width),
-            1 => new(center.X - right, center.Y - bottom, local.Width, local.Height),
-            2 => new(center.X + top, center.Y - right, local.Height, local.Width),
-            _ => new(center.X + left, center.Y + top, local.Width, local.Height)
-        };
-    }
+    public static Rectangle Project(int seat, Rectangle local, bool duel = false) =>
+        TableSeatFrame.For(seat, study: false, duel: duel).Project(local);
 }

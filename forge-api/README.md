@@ -433,6 +433,82 @@ unchanged. Negotiated matches use the host's external policies through normal
 rules inputs; non-negotiating callers retain Forge AI controllers.
 Returning after a game preserves AI decks/readiness while humans ready again.
 
+Source candidate: `match-setup` advertises the optional host-owned encounter
+port. Commander lobby snapshots include `matchSetupCapabilities` (`rulesetIds`,
+`maximumSeats`, `maximumPartySeats`, `maximumOppositionSeats`) and the current
+immutable `matchSetup` (`rulesetId`, ordered `seats`). Each assignment contains
+its zero-based `index`, nonnegative `teamId`, and `role` (`participant`, `party`
+or `opposition`). `commander.free-for-all.v1` uses distinct teams and participant
+roles. `commander.cooperative.v1` uses one party team of 1–4 seats against one
+AI-only opposition team of 1–2 seats, up to six total. This is Commander with
+individual turns and separate life, mana and cards; it is not Two-Headed Giant.
+The cooperative ruleset requires the host's negotiated `automated-seats` path.
+
+`configureMatch {tableId, expectedLobbyRevision, specification}` is host-only,
+before a game. It rejects stale table/revision pairs and any setup that removes
+a connected human or places one on the opposition side. Opposition seats receive
+validated existing-catalog AI assignments; party seats retain their current
+human, open or AI assignments. Accepted changes clear human Ready consent.
+An opposition seat cannot subsequently be opened for a human. Ordinary roster
+resizing through `multiplayerConfigure` restores free-for-all setup.
+
+The public opaque `matchSetupConsent` token changes when rules, teams or a
+participant enrollment changes. Cooperative Ready must use
+`multiplayerReady {tableId, matchSetupConsent, ready: true, tempoRevision?}`,
+echoing the exact displayed setup token and, when timing is enabled, its existing
+tempo revision in the same transition. Missing/old setup consent is rejected
+with a review/update message; start rechecks every human's retained consent.
+Unready revokes consent without requiring current tokens. Ordinary free-for-all
+Ready remains compatible with older callers. Reconnect and ordinary deck/name
+edits do not rotate setup consent; changing a deck still clears that seat's Ready.
+
+Every lobby slot has an opaque public `participantId` for its current enrollment,
+plus its configured `teamId` and `role`. Reconnect, deck/name/Ready changes and
+rematches retain that identity; replacing an open/AI enrollment creates a new
+one. A cooperative game freezes the spec, selected decks and participant links.
+Its public snapshots add `partyId`, `encounterId` and each player's
+`participantId`; these identify public participants and never authorize an
+action or combine allies' private observations. Eliminated humans do not stop
+the game while their team has a surviving AI ally.
+An initial `starting` publication, or an `error` copied from it before the first
+full board, can retain encounter IDs with `players: []` and no outcome. These
+frames grant no participant or completion authority. Full playing/finished
+publications require the enrolled participant identities.
+
+Cooperative lobbies publish `partyProgress`: `partyId`, current/latest
+`encounterId`, `completedEncounters`, `victories`, `lastReceipt`, `saveState`
+(`ready`, `pending`, `failed`), `saveError`, and audience-specific `retryAllowed`.
+`lastReceipt` is only the last successfully committed receipt, never an unsaved
+terminal result. A terminal receipt freezes `receiptId`, party/encounter/game
+IDs, ruleset, party team, typed global `outcome`, public participant links
+(`participantId`, `index`, `playerId`, `teamId`, `role`, opaque `deckSelectionId`)
+and UTC `completedUtc`. The selection ID references the frozen public assignment,
+not a private saved-deck ID, contents hash or inferred deck name.
+Natural losses/draws count a completed encounter; only an actual party-team win
+adds a victory. Displayed Defeat, interruption, error and `AllHumansLost` never
+create receipts or advance either count.
+
+The host stores an immutable per-game receipt, then an idempotent per-party
+checkpoint under `<profile>/encounters-v1/receipts` and `parties`. Writes run on
+a separate I/O worker, force temporary-file bytes to storage and require an
+atomic rename. Return/retirement is blocked until both stages succeed. Failed
+writes retain the finished game and expose an explicit host retry:
+`retryEncounterSave {tableId, encounterId}`. It cannot retry another encounter or
+award the same game twice. Every asynchronous save-state transition advances
+the public lobby revision. Store startup replays durable unapplied receipts;
+a crash between receipt and checkpoint can recover without another completion.
+The M1 checkpoint exposes saved counts in the current party and retained files;
+selecting an old party after restarting, restoring live games and cross-process
+invitation rejoin are outside this slice. No map, rewards or circuit is implied.
+The journal currently starts with the terminal receipt. A forced exit before its
+first durable write loses the unresolved attempt's identity; a durable started
+attempt remains M1 acceptance work. Such an exit never invents a completion.
+These are additive IPC capability and snapshot fields. Existing deck/profile
+files need no migration; the new journal uses its own `encounters-v1` directory.
+An older client may still use ordinary free-for-all, but cannot acknowledge the
+cooperative setup. Providers implementing the optional native port must rebuild
+against its immutable contracts; consumers must not infer support from seat names.
+
 Source candidate: lobby snapshots include a table-local monotonic `revision` and
 each selected slot's immutable `deckPreview` (`selectionId`, `name`, public
 `commanders`, and a generic `problem` for an incomplete draft). Human and AI slots
@@ -738,7 +814,8 @@ When a solo table stops after its human is actually eliminated, that seat retain
 Defeat for display and playtest history while the unresolved AI contest has no
 typed global outcome. Engine failures never synthesize that individual result.
 Neither display string authorizes progression or implies a saved receipt.
-These additive fields do not enable cooperative lobby setup or shared-turn 2HG.
+These outcome facts alone do not authorize setup or progression; use the optional
+`match-setup` port and durable receipt status above. Shared-turn 2HG is unsupported.
 
 Close `GameObservation` when the host session closes. It retains the game until
 closed. Its revision is local to that observation and is not a game replay cursor,
@@ -940,6 +1017,8 @@ and avoid source-creature printing metadata in artwork requests.
 | `multiplayerReconnect` | Resumes an interrupted TCP connection to its existing seat while the host remains alive |
 | `multiplayerSetSeat` | `{tableId, seat, type: "AI" / "OPEN", opponentId?}`; host-only setup operation on an open/AI slot |
 | `multiplayerConfigure` | `{tableId, format, playerCount}`; host-only setup changes, preserving occupied human seats and rejecting stale table IDs |
+| `configureMatch` | `{tableId, expectedLobbyRevision, specification}`; optional `match-setup`, host-only immutable team/role setup before a match |
+| `retryEncounterSave` | `{tableId, encounterId}`; host retries the current terminal encounter's failed durable checkpoint |
 
 Explicit setup requires the `explicit-deck-setup` capability in the matching
 native build. Repeated setup for the selected ID preserves its editor revision,
@@ -954,7 +1033,8 @@ A concession receipt does not wait for surviving players to acknowledge loss
 revelations. The departing seat's action scope is revoked at admission; normal
 rules work performs the loss, and subsequent observations report its result.
 Conceding the host's seat keeps the server and automated seats running while
-another human remains. Closing the hosted table is a separate operation.
+another human remains, or while a cooperative party has a surviving AI ally.
+Closing the hosted table is a separate operation.
 
 Input answers use `action: ok/cancel/attackAll/card/player`, with `key` for a
 visible card or `playerId` for a player. Dialog answers use `choices` (indices in

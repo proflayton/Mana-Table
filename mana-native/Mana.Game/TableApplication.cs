@@ -67,7 +67,10 @@ internal sealed partial class TableApplication : IDisposable
     private GameSnapshot? match => session.State;
     private SoloSetup? soloSetup;
     private readonly int[] soloChoices = [0, 1, 2];
-    private bool soloTab = true, localMatch, loaded, closing, automatic, forward = true;
+    private HomePlayMode homePlayMode = HomePlayMode.Solo;
+    private bool soloTab => homePlayMode == HomePlayMode.Solo;
+    private bool cooperativeTab => homePlayMode == HomePlayMode.Cooperative;
+    private bool localMatch, loaded, closing, automatic, forward = true;
     private bool held, dragging, textFocus, inspectBack;
     private string message = "Loading the card library…", error = "";
     private string overlay = "", previousTurn = "";

@@ -56,9 +56,13 @@ internal sealed partial class TableApplication
         if (state.Status is "finished" or "error") {
             var result = MatchResultPresentation.For(state);
             canvas.Text(result.Title, 1267, DecisionY(730), Gold, 1.17f, 295, 2, true);
-            canvas.Text(result.Interrupted ? "The rules engine stopped. This game could not finish."
+            canvas.Text(state.Encounter != null ? EncounterCompletionText : result.Interrupted ? "The rules engine stopped. This game could not finish."
                 : "You can still inspect the final battlefield.", 1267, DecisionY(767), Muted, .63f, 294, 3);
-            if (localMatch || state.Status == "finished") Button("return", IsWorkshopMatch ? "Return to tune" : localMatch ? "Return to setup" : "Return to lobby", 1266, DecisionY(828), 296, new MatchIntent.ReturnFromMatch(), !busy, true, 47);
+            if (CanRetryEncounterSave) Button("encounter-save-retry", "Retry saving", 1266, DecisionY(828), 296,
+                new MatchIntent.RetryEncounterSave(), true, true, 47);
+            else if (CanLeaveUnverifiedEncounter) Button("encounter-recovery-leave", "Leave table", 1266, DecisionY(828), 296,
+                new MatchIntent.OpenView(MatchView.LeaveTable), true, true, 47);
+            else if (localMatch || state.Status == "finished") Button("return", IsWorkshopMatch ? "Return to tune" : localMatch ? "Return to setup" : "Return to lobby", 1266, DecisionY(828), 296, new MatchIntent.ReturnFromMatch(), !busy && EncounterReturnEnabled, true, 47);
             else Button("error-leave", "Leave table", 1266, DecisionY(828), 296, new MatchIntent.OpenView(MatchView.LeaveTable), !busy, true, 47);
             return;
         }

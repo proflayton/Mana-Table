@@ -24,6 +24,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-printings");
         testRun |= args.Contains("--smoke-headless-presentation");
         testRun |= args.Contains("--smoke-headless-engine");
+        testRun |= args.Contains("--smoke-cooperative-encounter");
         testRun |= args.Contains("--smoke-whole-seat-ai");
         testRun |= args.Contains("--replay-ai-decision");
         testRun |= args.Contains("--replay-projection");
@@ -37,6 +38,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-priority-flow") || args.Contains("--smoke-headless-priority-flow");
         testRun |= args.Contains("--smoke-audio-settings");
         testRun |= args.Contains("--capture-deck-workspace");
+        testRun |= args.Contains("--capture-large-table");
         var profile = Arg("--profile") ?? (testRun
             ? Path.Combine(Path.GetTempPath(), "ManaTableNative-tests", Guid.NewGuid().ToString())
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManaTableNative"));
@@ -51,6 +53,7 @@ internal static class Program
             if (args.Contains("--smoke-headless-priority-flow")) { PriorityFlowSmoke.RunHeadless(profile); return 0; }
             Microsoft.Xna.Framework.Point? size = null;
             if (Arg("--size")?.Split('x') is { Length: 2 } dimensions && int.TryParse(dimensions[0], out int width) && int.TryParse(dimensions[1], out int height)) size = new(Math.Clamp(width, 800, 3840), Math.Clamp(height, 450, 2160));
+            if (args.Contains("--capture-large-table")) { LargeTableCapture.Run(profile, size, Arg("--art-cache"), Arg("--capture-view") ?? "table"); return 0; }
             if (args.Contains("--smoke-updates")) { UpdateSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-cluttered-changes")) { ClutteredChangesSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-priority-flow")) { PriorityFlowSmoke.Run(profile, size); return 0; }
@@ -134,6 +137,9 @@ internal static class Program
             var backend = Arg("--engine") ?? "forge";
             if (backend != "forge") throw new NotSupportedException($"Engine '{backend}' is not installed. Available: forge.");
             var paths = new ForgePaths(Path.Combine(bundle, "runtime", "bin", "java.exe"), Arg("--engine-jar") ?? Path.Combine(bundle, "forge-engine.jar"), Path.Combine(bundle, "forge-res"), profile);
+            if (args.Contains("--smoke-cooperative-encounter")) {
+                CooperativeEncounterEngineJourney.RunStandaloneAsync(paths).GetAwaiter().GetResult(); return 0;
+            }
             if (args.Contains("--smoke-execution-journey")) {
                 ExecutionEngineJourney.RunStandaloneAsync(paths, Arg("--production-engine-jar")
                     ?? throw new ArgumentException("The execution journey requires its real production engine dependency.")).GetAwaiter().GetResult();

@@ -54,10 +54,10 @@ internal sealed partial class TableApplication
                         occupied.Add(hand.Bounds);
                         occupied.Add((hand with { Center = hand.Center + new Vector2(3, 6) }).Bounds);
                     }
-                    if (seat.Index != 1 && StateClarity.PlayerStates(player).Length == 0)
+                    bool far = state.Players.Length > 4 ? seat.Geometry.Frame.IsFar : seat.Index == 1;
+                    if (!far && StateClarity.PlayerStates(player).Length == 0)
                         occupied.Add(new((int)seat.Geometry.Hand.X - 65, (int)seat.Geometry.Hand.Y + 35, 130, 22));
-                    if (player.Id == state.ActivePlayerId && state.Turn > 0 && turnProgress != null && seat.Index != 1) {
-                        var phase = hero + new Vector2(seat.Index == 2 ? 59 : -59, 0);
+                    if (OpponentPhaseCenter(player, hero, seat.Index) is { } phase) {
                         occupied.Add(new((int)phase.X - 15, (int)phase.Y - 15, 30, 30));
                     }
                     if (seatReadoutPlans.TryGetValue(player.Id, out var readout)) occupied.AddRange(readout.Pieces);
@@ -114,19 +114,27 @@ internal sealed partial class TableApplication
         }
     }
 
+    private Vector2? OpponentPhaseCenter(Player player, Vector2 hero, int seat)
+    {
+        if (player.Id != match!.ActivePlayerId || match.Turn == 0 || turnProgress == null) return null;
+        bool extended = match.Players.Length > 4;
+        if (extended ? SeatFrameFor(player.Id).IsFar : seat == 1) return null;
+        return hero + (extended ? new Vector2(0, -50) : new Vector2(seat == 2 ? 59 : -59, 0));
+    }
+
     private void DrawOpponentPhase(Player player, Vector2 hero, int seat)
     {
-        if (player.Id != match!.ActivePlayerId || match.Turn == 0 || turnProgress == null || seat == 1) return;
-        // Outward from the side portrait: this pocket contains neither its
-        // inward-facing mana nor the command-zone card below its name.
-        var center = hero + new Vector2(seat == 2 ? 59 : -59, 0);
+        if (OpponentPhaseCenter(player, hero, seat) is not { } center) return;
+        // The marker occupies the pocket between mat and portrait in a larger
+        // table, or the approved outward side pocket in the legacy layout.
+        var progress = turnProgress!;
         var fill = new Color(17, 26, 30);
         canvas.Circle(center, 15, Gold * .8f);
         canvas.Circle(center, 13, fill);
-        if (turnProgress.PhaseKey.Length > 0) PaintPhaseGlyph(turnProgress.PhaseKey, center, Gold, fill);
+        if (progress.PhaseKey.Length > 0) PaintPhaseGlyph(progress.PhaseKey, center, Gold, fill);
         else canvas.Ring(center, 5, Gold, 1.5f);
         if (Vector2.DistanceSquared(pointer.ToVector2(), center) <= 16 * 16)
-            DrawTurnHint(player.Name + " · " + turnProgress.PhaseLabel, center);
+            DrawTurnHint(player.Name + " · " + progress.PhaseLabel, center);
     }
 
     private void DrawPortraitTurnControls()
@@ -180,6 +188,8 @@ internal sealed partial class TableApplication
     {
         var layout = LocalTurnControls;
         var area = layout.PriorityArea;
+        bool extended = match!.Players.Length > 4;
+        if (extended) area.Width = 340;
         int passWidth = new[] { "Continue damage", "Go to end step", "Go to combat", "Pass once" }
             .Max(label => canvas.TextWidth(label, .76f, true)) + 24;
         area.Width = Math.Max(area.Width, passWidth + PriorityWaitWidth + 8);
@@ -187,6 +197,7 @@ internal sealed partial class TableApplication
             int labelWidth = Math.Max(canvas.TextWidth("Keep playing", .76f, true), canvas.TextWidth("Pass anyway", .76f));
             area.Width = Math.Max(area.Width, (labelWidth + 24) * 2 + 8);
         }
+        if (extended) { area.X = 1592 - area.Width; area.Y = 810; }
         return area;
     }
 
@@ -196,9 +207,12 @@ internal sealed partial class TableApplication
         // portrait action position, including enlarged type and resource pips.
         var mana = match is { Viewer: { } viewer } ? PlanManaHalo(viewer, 3).Bounds : Rectangle.Empty;
         int resourceRight = mana.IsEmpty ? 0 : mana.Right;
-        area.X = Math.Clamp(Math.Max(area.X, resourceRight + 14), Math.Min(area.X, 1550 - area.Width), 1550 - area.Width);
+        bool extended = match!.Players.Length > 4;
+        int right = extended ? 1592 : 1550;
+        area.X = Math.Clamp(Math.Max(area.X, resourceRight + 14), Math.Min(area.X, right - area.Width), right - area.Width);
         if (TableStudyEnabled && StudyHudObstacles.Any(bounds => bounds.Intersects(area)))
-            area = DecisionWorkspaceLayout.Place(mana.IsEmpty ? new((int)SeatHero(match!.ViewerId).X - 47,
+            area = extended ? DecisionWorkspaceLayout.TranslateComplete([area], new(8, 54, 1584, 838), StudyHudObstacles) ?? Rectangle.Empty
+                : DecisionWorkspaceLayout.Place(mana.IsEmpty ? new((int)SeatHero(match!.ViewerId).X - 47,
                     (int)SeatHero(match.ViewerId).Y - 47, 94, 94) : mana,
                 area.Width, area.Height, StudyHudObstacles, bounded: true, minimumWidth: area.Width, minimumHeight: area.Height);
         var readers = matchPresentation.Cards.Cards.Where(card => card.Focused

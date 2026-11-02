@@ -31,8 +31,10 @@ internal static class ForgeSnapshotDecoder
                 || wire.Players.Any(player => player.TeamId is < 0)
                 || wire.StackInterruptionVersion is < 0) throw Invalid();
             var players = wire.Players.Select(player => player.Id).ToImmutableHashSet();
+            bool earlyFailure = wire.Status == "error" && wire.ViewerId >= 0 && wire.Players.IsEmpty && wire.Outcome == null
+                && wire.Prompt.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined;
             if (spectator ? wire.ViewerId != -1 || wire.Prompt.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)
-                    : wire.Status != "starting" && !players.Contains(wire.ViewerId)) throw Invalid();
+                    : wire.Status != "starting" && !earlyFailure && !players.Contains(wire.ViewerId)) throw Invalid();
             var decision = wire.Prompt.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? null
                 : ForgeDecisionDecoder.Decode(wire.Prompt, players);
             if (wire.Status == "resolving" && decision != null
@@ -58,8 +60,11 @@ internal static class ForgeSnapshotDecoder
                 ActionClass = wire.ActionClass, States = wire.States, Activity = wire.Activity,
                 Notices = wire.Notices, IgnoredPriorityAbilities = wire.IgnoredPriorityAbilities,
                 PlayAccesses = wire.PlayAccesses, Tempo = wire.Tempo, ActionSources = wire.ActionSources,
-                Executions = wire.Executions, Undo = wire.Undo, Outcome = wire.Outcome
+                Executions = wire.Executions, Undo = wire.Undo, Outcome = wire.Outcome,
+                Encounter = wire.PartyId == null && wire.EncounterId == null ? null
+                    : new EncounterIdentity(wire.PartyId ?? "", wire.EncounterId ?? "")
             };
+            EncounterFacts.Validate(snapshot);
             MatchOutcomeFacts.Validate(snapshot);
             UndoFacts.Validate(snapshot);
             ExecutionFrames.Validate(snapshot);
@@ -160,6 +165,8 @@ internal static class ForgeSnapshotDecoder
         public string? Error { get; init; }
         public string? Result { get; init; }
         public MatchOutcome? Outcome { get; init; }
+        public string? PartyId { get; init; }
+        public string? EncounterId { get; init; }
         public int ViewerId { get; init; }
         public int Turn { get; init; }
         public string? Phase { get; init; }

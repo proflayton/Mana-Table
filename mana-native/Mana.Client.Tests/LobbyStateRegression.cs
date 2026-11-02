@@ -6,6 +6,7 @@ internal static class LobbyStateRegression
 {
     internal static async Task RunAsync(Action<bool, string> check)
     {
+        await CheckEncounterCompletionPolling(check);
         var deck = new DeckDetails("saved", "First name", 8, [], [], "", "") { LibraryToken = "saved-bytes-1" };
         var document = LobbyDeckDocument.Saved("table", deck);
         var selection = new LobbyDeckSession();
@@ -101,6 +102,35 @@ internal static class LobbyStateRegression
         check(client.Lobby == null, "Closing the client prevents a new lobby binding");
     }
 
+    private static async Task CheckEncounterCompletionPolling(Action<bool, string> check)
+    {
+        var finished = EncounterSetupRegression.State("checkpoint-game", "encounter-2");
+        var pending = new PartyProgress("party", "encounter-2", 1, 1, EncounterSaveState.Pending, null, false,
+            EncounterSetupRegression.Receipt("older-game", "encounter-1"));
+        var provider = new ControlledLobby { Match = finished };
+        var client = new ClientSession(provider, provider);
+        client.BindLobby(Table("table", 10) with { MatchActive = true, PartyProgress = pending });
+        client.Accept(finished);
+        var failed = pending with { SaveState = EncounterSaveState.Failed, SaveError = "Disk unavailable", RetryAllowed = true };
+        var saved = pending with { CompletedEncounters = 2, Victories = 2, SaveState = EncounterSaveState.Ready,
+            LastReceipt = EncounterSetupRegression.Receipt(finished.Id, "encounter-2") };
+        int notifications = 0;
+        foreach (var (revision, progress, expected) in new[] {
+            (11L, failed, EncounterCheckpointStatus.Failed),
+            (12L, saved, EncounterCheckpointStatus.Committed),
+            (10L, pending, EncounterCheckpointStatus.Committed)
+        }) {
+            provider.Arm(); client.Poll(true, _ => notifications++);
+            await provider.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            provider.Pending.SetResult(Table("table", revision) with { MatchActive = true, PartyProgress = progress });
+            await Drain(client);
+            check(client.State == finished && EncounterCheckpoint.For(client.State!, client.Lobby?.PartyProgress) == expected,
+                "Lobby completion polling updates durable checkpoint evidence while retaining the same finished rules snapshot and rejecting stale progress");
+        }
+        check(notifications == 2 && provider.Observations == 3 && client.Lobby?.Revision == 12,
+            "The existing poll lane observes save failure/recovery without commands, a new game or an overlay-specific polling session");
+    }
+
     private static Lobby Table(string id, long revision, string? selection = null) =>
         new("hosting", "", null, false, null, false, "", null, [],
             [new Seat(0, "You", "HUMAN", selection == null ? null : "Chosen deck", false, true) {
@@ -117,11 +147,13 @@ internal static class LobbyStateRegression
 
     private sealed class ControlledLobby : IMatchConnection, ITableSetup
     {
+        internal GameSnapshot? Match;
+        internal int Observations;
         internal TaskCompletionSource Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource<Lobby> Pending = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal void Arm() { Started = new(TaskCreationOptions.RunContinuationsAsynchronously); Pending = new(TaskCreationOptions.RunContinuationsAsynchronously); }
         public Task<Lobby> LobbyAsync() { Started.TrySetResult(); return Pending.Task; }
-        public Task<GameSnapshot?> ObserveAsync() => Task.FromResult<GameSnapshot?>(null);
+        public Task<GameSnapshot?> ObserveAsync() { Observations++; return Task.FromResult(Match); }
         public Task ExecuteAsync(GameCommand command) => throw new NotSupportedException();
         public Task ConcedeAsync(string gameId) => throw new NotSupportedException();
         public Task<SoloSetup> PrepareSoloAsync(string deckId) => throw new NotSupportedException();

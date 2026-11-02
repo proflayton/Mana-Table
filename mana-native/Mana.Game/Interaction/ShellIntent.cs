@@ -4,6 +4,7 @@ namespace Mana.Table.Interaction;
 
 internal enum ShellPage { HomeDecks, DeckPicker, Review, Connection, LobbyAi, LabGallery }
 internal enum DeckCollection { Saved, Presets, Deleted }
+internal enum HomePlayMode { Solo, Friends, Cooperative }
 
 // Shell interactions describe the player's requested transition. The published
 // frame carries no closure over application navigation or asynchronous work.
@@ -12,7 +13,12 @@ internal abstract record ShellIntent : UiIntent
     internal sealed record DismissError : ShellIntent;
     internal sealed record ReturnToSetup : ShellIntent;
     internal abstract record Lobby : ShellIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Home; }
-    internal sealed record ChoosePlayMode(bool Solo) : Lobby;
+    internal sealed record ChoosePlayMode(HomePlayMode Mode) : Lobby;
+    internal sealed record OpenMatchSetup : Lobby;
+    internal sealed record ChooseMatchRuleset(string RulesetId) : Lobby;
+    internal sealed record SetMatchPartySeats(int Count) : Lobby;
+    internal sealed record SetMatchOppositionSeats(int Count) : Lobby;
+    internal sealed record ApplyMatchSetup : Lobby;
     internal sealed record OpenPlayHome : Lobby;
     internal sealed record OpenDeckLibrary : Lobby;
     internal sealed record EditDeck(bool ClearInput = false, bool AtReviewCard = false) : Lobby;

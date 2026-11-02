@@ -1,9 +1,11 @@
 # Cooperative encounters and pod circuits: initial v1
 
 Planning date: 1 November 2026. The player approved this milestone roadmap.
-M1 is in progress, beginning with authoritative team relationships and match
-outcomes. Content quantities remain targets to validate through playtesting.
-This document describes planned work, not features in the published build.
+M1 is in progress: cooperative enrollment, team rules, durable completion and
+six-seat presentation are implemented in the source candidate and undergoing
+journey checks. Content quantities remain targets to validate through playtesting.
+The published 0.2.334 build contains the earlier team/outcome foundation; it does
+not expose this cooperative lobby. This roadmap is not a release announcement.
 
 ## What feature complete means
 
@@ -75,11 +77,18 @@ recovery between receipt persistence and checkpoint commit, and return-to-lobby
 behavior. Human review covers the exact candidate and whole
 journey. Existing four-seat free-for-all checks alone cannot pass this gate.
 
-The first source slice supplies actual team relationships, typed global outcomes,
-relation-aware AI, matching audience projections and result labels. Party setup,
-match capabilities, durable completion receipts/checkpoints and a complete
-cooperative journey remain subsequent M1 work. Neither plan approval nor passing
-these boundary checks marks M1 complete.
+The current source candidate adds capability-checked party setup, joint setup and
+tempo consent, actual teams, frozen enrollment/deck assignments, durable receipt
+and checkpoint replay, same-lobby return, and a continuous six-seat table to the
+earlier team/outcome foundation. The automated gates include actual one-, two-
+and four-human provider journeys, native UI/wire checks and a real native adapter
+journey. An authoritative durable started/unresolved-attempt record is still
+missing: a process crash before the first terminal receipt cannot distinguish
+that attempt from not played. This is remaining M1 work, independently of M4's
+saved-party selector. Exact-candidate CI, visual review and a complete human
+cooperative journey also remain required before M1 acceptance. Neither roadmap
+approval nor a passing boundary test marks M1 complete. Persistent journal replay does not yet
+provide a cross-application party/run selector or saved live matches.
 
 ### M2: Opponents worth playing
 

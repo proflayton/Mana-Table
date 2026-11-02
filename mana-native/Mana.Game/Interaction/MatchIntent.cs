@@ -75,6 +75,7 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record ApplyGroupBlocks(System.Collections.Immutable.ImmutableArray<BlockAssignment> Assignments) : MatchIntent;
     internal sealed record StopGroupBlocks : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record ReturnFromMatch : MatchIntent;
+    internal sealed record RetryEncounterSave : MatchIntent;
     internal sealed record ReturnToWorkshop(bool Again = false) : MatchIntent;
     internal sealed record Concede : MatchIntent;
     internal sealed record RetryConnection : MatchIntent;

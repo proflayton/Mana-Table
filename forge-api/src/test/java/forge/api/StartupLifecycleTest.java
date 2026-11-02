@@ -21,6 +21,7 @@ import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -132,6 +133,53 @@ public class StartupLifecycleTest {
                 return null;
             });
             Files.writeString(evidence.resolve("private-after-worker.json"), JSON.toJson(table.testViews()));
+        }
+    }
+
+    @Test(timeOut = 30000)
+    public void anEarlyEncounterFaultRetainsItsIdentityWithoutInventingRosterOrCompletion() throws Exception {
+        Path evidence = evidence("encounter-setup-fault-");
+        var registered = registrations(true);
+        var assignments = new ArrayList<MatchSetupSpecification.Seat>();
+        var participants = new ArrayList<EncounterContext.Participant>();
+        for (int index = 0; index < registered.size(); index++) {
+            if (index >= 2) registered.set(index, MatchTable.automated(registered.get(index).getDeck(), "Commander", "AI opposition " + index));
+            int team = index < 2 ? 7 : 9;
+            String role = index < 2 ? "party" : "opposition";
+            registered.get(index).setTeamNumber(team);
+            assignments.add(new MatchSetupSpecification.Seat(index, team, role));
+            participants.add(new EncounterContext.Participant(UUID.randomUUID().toString(), index, team, role, UUID.randomUUID().toString()));
+        }
+        var context = new EncounterContext(UUID.randomUUID().toString(), UUID.randomUUID().toString(),
+                new MatchSetupSpecification(MatchSetupSpecification.COOPERATIVE, assignments), participants);
+        var fault = new IllegalStateException("Controlled encounter preparation failure");
+        registered.get(1).addExtraCardsOnBattlefield(() -> { throw fault; });
+        try (var table = new MatchTable("Commander", registered, RESOURCES, evidence,
+                DecisionTempo.Settings.off(), () -> System.nanoTime() / 1_000_000, false, context)) {
+            var initial = new ArrayList<>(table.testViews());
+            for (var seat : table.automatedSeats()) initial.add(seat.state());
+            assertEquals(initial.size(), 4);
+            for (var state : initial) {
+                assertEquals(state.get("status"), "starting");
+                assertEquals(state.get("players"), List.of());
+                assertEquals(state.get("partyId"), context.partyId());
+                assertEquals(state.get("encounterId"), context.encounterId());
+            }
+            var failure = expectThrows(ExecutionException.class, () -> table.start().get(5, TimeUnit.SECONDS));
+            assertSame(failure.getCause(), fault);
+            var failed = new ArrayList<>(table.testViews());
+            for (var seat : table.automatedSeats()) failed.add(seat.state());
+            for (var state : failed) {
+                assertEquals(state.get("status"), "error");
+                assertEquals(state.get("players"), List.of(), "An error retains the last published board instead of inventing a prepared roster");
+                assertEquals(state.get("partyId"), context.partyId());
+                assertEquals(state.get("encounterId"), context.encounterId());
+                assertNotNull(state.get("error"));
+                assertNull(state.get("prompt")); assertNull(state.get("result")); assertNull(state.get("outcome"));
+            }
+            assertNull(MatchOutcomeProjection.of(table, null), "The interrupted rules setup has no natural completion");
+            assertNull(table.terminalReceipt(), "An early startup error cannot supply a durable encounter receipt");
+            Files.writeString(evidence.resolve("private-after-worker.json"), JSON.toJson(failed));
         }
     }
 

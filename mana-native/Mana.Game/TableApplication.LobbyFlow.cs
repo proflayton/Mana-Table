@@ -15,7 +15,12 @@ internal sealed partial class TableApplication
     private void HandleLobbyIntent(ShellIntent.Lobby intent)
     {
         switch (intent) {
-            case ShellIntent.ChoosePlayMode choice: ChoosePlayMode(choice.Solo); break;
+            case ShellIntent.ChoosePlayMode choice: ChoosePlayMode(choice.Mode); break;
+            case ShellIntent.OpenMatchSetup: OpenMatchSetup(); break;
+            case ShellIntent.ChooseMatchRuleset choice: ChooseMatchRuleset(choice.RulesetId); break;
+            case ShellIntent.SetMatchPartySeats size: SetMatchPartySeats(size.Count); break;
+            case ShellIntent.SetMatchOppositionSeats size: SetMatchOppositionSeats(size.Count); break;
+            case ShellIntent.ApplyMatchSetup: ApplyMatchSetup(); break;
             case ShellIntent.OpenPlayHome: OpenPlayHome(); break;
             case ShellIntent.OpenDeckLibrary: OpenDeckLibrary(); break;
             case ShellIntent.EditDeck edit:
@@ -98,9 +103,10 @@ internal sealed partial class TableApplication
     private bool DeckConfirmed => DeckReady && !deckEditor && (Connected
         ? lobbyDeck.View.Document == DesiredLobbyDeck() && lobbyDeck.Matches(lobby!)
         : preparedSoloDeckId == selectedDeckDetails?.Id);
-    private string LobbyScope => $"{DeckScope}:{DeckLibraryScope}:{setupModal}:{soloTab}:{pickerPresets}:{deckPage}:{pickerSearch}:{pickerSeat}:{reviewList}:{reviewSearch}:{reviewSection}:{reviewPage}:{reviewCard?.Section}:{reviewCard?.Id}:{connectionPage}:{preparedSoloDeckId}:{lobbyDeck.View.Generation}:{lobbyDeck.View.Status}:{friendPlayerCount}:{lobby?.TableId}:{lobby?.Revision}:{lobby?.Mode}:{LocalSeat?.Ready}:{lobby?.CanStart}:{string.Join(',', soloChoices)}:{lobbyAiSeat}:{lobbyAiPage}:{string.Join(';', lobby?.Seats.Select(s => $"{s.Index}:{s.Type}:{s.OpponentId}:{s.Ready}") ?? [])}";
+    private string LobbyScope => $"{DeckScope}:{DeckLibraryScope}:{setupModal}:{homePlayMode}:{setupRuleset}:{cooperativePartySeats}:{cooperativeOppositionSeats}:{pickerPresets}:{deckPage}:{pickerSearch}:{pickerSeat}:{reviewList}:{reviewSearch}:{reviewSection}:{reviewPage}:{reviewCard?.Section}:{reviewCard?.Id}:{connectionPage}:{preparedSoloDeckId}:{lobbyDeck.View.Generation}:{lobbyDeck.View.Status}:{friendPlayerCount}:{lobby?.TableId}:{lobby?.Revision}:{lobby?.Mode}:{LocalSeat?.Ready}:{lobby?.CanStart}:{string.Join(',', soloChoices)}:{lobbyAiSeat}:{lobbyAiPage}:{string.Join(';', lobby?.Seats.Select(s => $"{s.Index}:{s.Type}:{s.OpponentId}:{s.Ready}") ?? [])}";
     private void InvalidateDeckConfirmation() { preparedSoloDeckId = null; }
-    private void SetupMode(bool solo) { if (soloTab != solo) InvalidateDeckConfirmation(); soloTab = solo; setupModal = ""; }
+    private void SetupMode(bool solo) => SetupMode(solo ? HomePlayMode.Solo : HomePlayMode.Friends);
+    private void SetupMode(HomePlayMode mode) { if (homePlayMode != mode) InvalidateDeckConfirmation(); homePlayMode = mode; setupModal = ""; }
     private void OpenDeckPicker() { pickerPresets = decks.Length == 0; pickerDeleted = false; pickerSeat = -1; pickerSearch = ""; deckPage = 0; setupModal = "decks"; textFocus = false; RefreshDeletedDecks(); }
     private void ReviewDeck() {
         if (selectedDeckDetails == null) return;
@@ -147,13 +153,19 @@ internal sealed partial class TableApplication
         var selection = ready && !lobbyDeck.Matches(lobby!) ? lobbyDeck.TryBegin() : null;
         if (ready && !lobbyDeck.Matches(lobby!) && selection == null) return;
         var timing = lobby?.Tempo;
+        bool cooperative = IsCooperative(lobby!);
+        string? setupConsent = lobby?.MatchSetupConsent;
         string tableId = lobby?.TableId ?? "";
         int generation = deckSelectionGeneration;
         Work(async () => {
             if (selection != null) await PublishLobbyDeck(selection);
             if (ready && generation != Volatile.Read(ref deckSelectionGeneration))
                 throw new InvalidOperationException("Your selected deck changed. Ready again with the current list.");
-            if (services.Tempo is { SupportsTempo: true } tempo && timing != null)
+            if (cooperative && ready) {
+                if (services.MatchSetup is not { SupportsMatchSetup: true } matchSetup || string.IsNullOrWhiteSpace(setupConsent))
+                    throw new NotSupportedException("Update Mana Table before readying for these cooperative rules.");
+                await matchSetup.SetMatchReadyAsync(tableId, setupConsent, true, timing?.Revision);
+            } else if (services.Tempo is { SupportsTempo: true } tempo && timing != null)
                 await tempo.SetReadyAsync(tableId, ready, timing.Revision);
             else await tables.SetReadyAsync(ready);
             var state = await tables.LobbyAsync();
@@ -190,16 +202,36 @@ internal sealed partial class TableApplication
         if (Connected || match != null) return;
         string address = joinAddress.Trim();
         if (!hosting && address.Length == 0) return;
+        bool cooperative = hosting && cooperativeTab;
+        if (cooperative && (!CommanderDeck || !DeckReady || services.MatchSetup is not { SupportsMatchSetup: true })) return;
+        int seats = cooperative ? cooperativePartySeats + cooperativeOppositionSeats : friendPlayerCount;
         Work(async () => {
-            var state = hosting ? await tables.HostAsync(friendPlayerCount, forward) : await tables.JoinAsync(address);
+            var state = hosting ? await tables.HostAsync(seats, forward) : await tables.JoinAsync(address);
+            if (cooperative) {
+                try {
+                    var specification = CooperativeSpecification(cooperativePartySeats, cooperativeOppositionSeats);
+                    MatchSetupFacts.Validate(specification, state.MatchSetupCapabilities
+                        ?? throw new NotSupportedException("This table does not support cooperative encounters."));
+                    state = await services.MatchSetup!.ConfigureMatchAsync(state.TableId, state.Revision, specification);
+                } catch {
+                    var connected = state;
+                    updates.Enqueue(() => { session.BindLobby(connected); localMatch = false; homePlayMode = HomePlayMode.Friends; });
+                    throw;
+                }
+            }
             // Publish a successful connection even if submitting its deck later fails.
-            updates.Enqueue(() => { session.BindLobby(state); soloTab = false; setupModal = ""; textFocus = false; InvalidateDeckConfirmation(); });
+            updates.Enqueue(() => { session.BindLobby(state); localMatch = false;
+                homePlayMode = IsCooperative(state) ? HomePlayMode.Cooperative : HomePlayMode.Friends;
+                setupModal = ""; textFocus = false; InvalidateDeckConfirmation(); });
             if (!string.IsNullOrWhiteSpace(preferences.PlayerName) && services.Social is { } social) {
                 await social.SetPlayerNameAsync(state.TableId, preferences.PlayerName);
                 var named = await tables.LobbyAsync(); updates.Enqueue(() => session.AcceptLobby(named));
             }
-            updates.Enqueue(() => message = hosting ? "Table open. Invite your friends." : "You joined the table. Ready when you are.");
-        }, hosting ? "Opening your table" : "Joining your friends", hosting ? $"Preparing {friendPlayerCount} seats and your table connection." : "Connecting to the table from your invite.", scene: true, changesMatch: true);
+            bool openAllies = state.Seats.Any(seat => seat.Role == MatchSeatRole.Party && seat.Type == "OPEN");
+            updates.Enqueue(() => message = hosting ? cooperative
+                ? openAllies ? "Co-op table open. Invite friends or add AI allies, then Ready." : "Co-op table open. Ready when you are."
+                : "Table open. Invite your friends." : "You joined the table. Ready when you are.");
+        }, hosting ? "Opening your table" : "Joining your friends", hosting ? $"Preparing {seats} seats and your table connection." : "Connecting to the table from your invite.", scene: true, changesMatch: true);
     }
     private void LeaveLobby() => Work(async () => {
         await tables.LeaveAsync(); updates.Enqueue(() => { session.BindLobby(null); InvalidateDeckConfirmation(); setupModal = ""; message = "You left the table."; });

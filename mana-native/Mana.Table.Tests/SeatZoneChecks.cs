@@ -19,6 +19,7 @@ internal static class SeatZoneChecks
     internal static void Run(string profile, Action<bool, string> check)
     {
         PhysicalOwnership(check);
+        LargeTableChecks.Run(profile, check);
         foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) }) {
             LocalSeatClearance(profile, size, check);
             PointerJourney(profile, size, check);

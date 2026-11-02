@@ -25,9 +25,17 @@ internal sealed record SeatReadoutPlan(int PlayerId, int Seat, int SeatOrdinal, 
     internal Rectangle Bounds => Pieces.Aggregate(Rectangle.Union);
     internal SeatReadoutText Header => Text.Single(item => item.Role == SeatReadoutTextRole.LandTotal);
 
+    internal static string RelationshipLabel(GameSnapshot state, int playerId)
+    {
+        if (state.Encounter == null && !state.Players.Any(player => PlayerRelations.ForViewer(state, player.Id) == PlayerRelation.Ally)) return "";
+        return PlayerRelations.ForViewer(state, playerId) switch {
+            PlayerRelation.Ally => "ALLY", PlayerRelation.Opponent => "OPPONENT", _ => ""
+        };
+    }
+
     internal static SeatReadoutPlan Build(Player player, int seat, int seatOrdinal, string caption, bool incoming,
         Func<string, float, bool, int> width, Func<string, float, int, bool, Point> measure,
-        int column = 224, bool? horizontal = null, bool countedOnly = false)
+        int column = 224, bool? horizontal = null, bool countedOnly = false, string relationship = "")
     {
         const int gap = 4;
         bool across = horizontal ?? seat == 1;
@@ -42,7 +50,8 @@ internal sealed record SeatReadoutPlan(int PlayerId, int Seat, int SeatOrdinal, 
         }
         var lands = PublicResources.Lands(player);
         string owner = countedOnly ? "Seat " + seatOrdinal : player.Name;
-        Line(owner + " \u00b7 " + lands.Total + (lands.Total == 1 ? " land" : " lands"), .75f, true, SeatReadoutTextRole.LandTotal);
+        Line(owner + (relationship.Length == 0 ? "" : " \u00b7 " + relationship) + " \u00b7 " + lands.Total
+            + (lands.Total == 1 ? " land" : " lands"), .75f, true, SeatReadoutTextRole.LandTotal);
         Line(lands.Untapped + " untapped \u00b7 " + lands.Tapped + " tapped", .55f, false, SeatReadoutTextRole.LandState);
         var source = StateClarity.ProminentPlayerStates(player);
         int stateX = across ? x + column + 12 : x, cursor = 0, row = 0;
@@ -84,10 +93,10 @@ internal sealed record SeatReadoutPlan(int PlayerId, int Seat, int SeatOrdinal, 
         return new(player.Id, seat, seatOrdinal, texts.AsReadOnly(), states.AsReadOnly(), hidden, counters);
     }
 
-    internal SeatReadoutPlan AtPortrait(Vector2 portrait)
+    internal SeatReadoutPlan AtPortrait(Vector2 portrait, int? alignment = null)
     {
         var bounds = Bounds;
-        int x = Seat switch {
+        int x = (alignment ?? Seat) switch {
             0 => 12,
             2 => 1588 - bounds.Width,
             _ => Math.Clamp((int)portrait.X - bounds.Width / 2, 12, Math.Max(12, 1588 - bounds.Width))

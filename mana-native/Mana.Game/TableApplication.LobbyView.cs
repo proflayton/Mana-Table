@@ -22,9 +22,11 @@ internal sealed partial class TableApplication
         if (Connected) DrawFriendsLobby();
         else {
             int actionTop = DrawHomeDeck();
-            MenuAction("solo-tab", "Play with AI", new(84, actionTop, 210, 48), new ShellIntent.ChoosePlayMode(true), loaded && !busy, soloTab);
-            MenuAction("friends-tab", "With friends", new(315, actionTop, 210, 48), new ShellIntent.ChoosePlayMode(false), loaded && !busy, !soloTab);
-            if (soloTab) DrawSoloLobby(actionTop); else DrawFriendsWelcome(actionTop);
+            MenuAction("solo-tab", "Play with AI", new(84, actionTop, 210, 48), new ShellIntent.ChoosePlayMode(HomePlayMode.Solo), loaded && !busy, soloTab);
+            MenuAction("friends-tab", "With friends", new(315, actionTop, 210, 48), new ShellIntent.ChoosePlayMode(HomePlayMode.Friends), loaded && !busy, homePlayMode == HomePlayMode.Friends);
+            if (services.MatchSetup is { SupportsMatchSetup: true })
+                MenuAction("cooperative-tab", "Co-op", new(546, actionTop, 130, 48), new ShellIntent.ChoosePlayMode(HomePlayMode.Cooperative), loaded && !busy, cooperativeTab);
+            if (soloTab) DrawSoloLobby(actionTop); else if (cooperativeTab) DrawCooperativeWelcome(actionTop); else DrawFriendsWelcome(actionTop);
             DrawHomeDecks();
         }
         DrawUpdateFooter(true);
@@ -159,9 +161,12 @@ internal sealed partial class TableApplication
     private void DrawFriendsLobby()
     {
         var state = lobby!;
+        if (IsCooperative(state) || state.Seats.Length > 4) { DrawEncounterLobby(state); return; }
         canvas.Text(state.Mode == "hosting" ? "Your table" : "At the table", 90, 149, Ink, 1.8f, 800, 1, true, true);
         MenuAction("invite", "Invite friends", new(1050, 143, 230, 45), new ShellIntent.OpenConnection(), !busy);
         MenuAction("leave", "Leave table", new(1310, 143, 220, 45), new ShellIntent.LeaveLobby(), !busy);
+        if (CanConfigureMatch) MenuAction("match-setup", IsCooperative(state) ? "Co-op rules" : "Table rules", new(800, 143, 220, 45),
+            new ShellIntent.OpenMatchSetup(), !busy);
         DrawLobbyTempo(state);
         for (int i = 0; i < Math.Min(4, state.Seats.Length); i++) {
             var seat = state.Seats[i]; int x = 280 + i * 347, y = 390;
@@ -193,27 +198,28 @@ internal sealed partial class TableApplication
             : lobbyDeck.View.Status == Mana.Client.LobbyDeckStatus.Failed ? "Could not share your deck. Choose Ready to try again." : state.StartProblem;
         if (!string.IsNullOrWhiteSpace(problem)) canvas.Text(problem, 464, 808, Gold, .78f, 650, 3);
     }
-    private void DrawLobbySeatPortrait(Seat seat, int x, int y, Color color)
+    private void DrawLobbySeatPortrait(Seat seat, int x, int y, Color color, int radius = 66)
     {
         bool open = seat.Type == "OPEN";
         var commanders = seat.DeckPreview?.Commanders ?? [];
         string fallback = open ? "+" : seat.Type == "AI" ? "AI" : seat.Name.Length > 0 ? seat.Name[..1] : "?";
-        canvas.CenterText(fallback, new(x - 63, y - 62, 126, 124), color, open ? 2.7f : 1.7f, true);
+        canvas.CenterText(fallback, new(x - radius, y - radius, radius * 2, radius * 2), color,
+            (open ? 2.7f : 1.7f) * radius / 66f, true);
         if (open || commanders.Length == 0) return;
         if (commanders.Length == 1) {
             if (!commanders[0].FaceDown && resources.Card(commanders[0]) is { } portrait)
-                canvas.Portrait(portrait, new(x, y), 66, Color.White);
+                canvas.Portrait(portrait, new(x, y), radius, Color.White);
             return;
         }
         // Partners share one seat medallion; each public face occupies a half
         // of the existing circular crop, without changing seat geometry.
         for (int i = 0; i < 2; i++) {
             if (commanders[i].FaceDown || resources.Card(commanders[i]) is not { } portrait) continue;
-            canvas.BeginClip(new(x - 66 + i * 66, y - 66, 66, 132));
-            canvas.Portrait(portrait, new(x, y), 66, Color.White);
+            canvas.BeginClip(new(x - radius + i * radius, y - radius, radius, radius * 2));
+            canvas.Portrait(portrait, new(x, y), radius, Color.White);
             canvas.EndClip();
         }
-        canvas.Line(new(x, y - 65), new(x, y + 65), color * .65f, 2);
+        canvas.Line(new(x, y - radius + 1), new(x, y + radius - 1), color * .65f, 2);
     }
     private void DrawSetupModal()
     {
@@ -228,6 +234,7 @@ internal sealed partial class TableApplication
             case "connection": DrawLobbyConnection(); break;
             case "profile": DrawPlayerName(); break;
             case "lobby-ai": DrawLobbyAiPicker(); break;
+            case "match-setup": DrawMatchSetup(); break;
         }
     }
     private void DrawDeckConfirmation()

@@ -9,6 +9,7 @@ public sealed class SeatGeometry
 {
     public int PlayerId { get; }
     public int Index { get; }
+    public TableSeatFrame Frame { get; }
     public Rectangle? PlaymatBounds { get; }
     public Rectangle? PlaymatPlacement { get; }
     public Pose? PlaymatSurface { get; }
@@ -22,17 +23,19 @@ public sealed class SeatGeometry
     public SeatZoneLayout? ZoneStation { get; }
     public Rectangle? LandReadoutArea { get; }
 
-    private SeatGeometry(Player player, int seat, bool study, bool duel = false)
+    private SeatGeometry(Player player, TableSeatFrame frame, bool study)
     {
+        Frame = frame;
+        int seat = frame.Index;
         PlayerId = player.Id;
         Index = seat;
-        PlaymatPlacement = study ? PlayerPlaymat.Bounds(seat, duel) : null;
+        PlaymatPlacement = study ? PlayerPlaymat.Bounds(frame) : null;
         PlaymatSurface = PlaymatPlacement is { } placement ? TableSurfaceProjection.Surface(placement) : null;
         PlaymatBounds = PlaymatSurface?.Bounds;
-        PublicCounterArea = study ? TableSurfaceProjection.Surface(PlayerPlaymat.Project(seat, PlayerPlaymat.CanonicalCounterBand, duel)).InteriorBounds() : null;
-        Hero = TableLayout.Hero(seat);
-        Hand = TableLayout.SeatHand(seat);
-        bool own = seat == 3, side = seat is 0 or 2;
+        PublicCounterArea = study ? TableSurfaceProjection.Surface(frame.Project(PlayerPlaymat.CanonicalCounterBand)).InteriorBounds() : null;
+        Hero = frame.Hero;
+        Hand = frame.Hand;
+        bool own = frame.IsLocal, side = frame.IsSide;
         if (!study) {
             CommandLink = own ? new(191, 647) : seat == 2 ? new(1380, 520)
                 : side ? TableWorld.Project(TableWorld.SeatPoint(seat, -270, 645)) : new(1100, 156);
@@ -50,13 +53,10 @@ public sealed class SeatGeometry
             // Personal cards use their seat's physical frame. The local life
             // counter stays centered; its zone row sits beside the near mat.
             if (own) {
-                LandReadoutArea = new(8, 840, 300, 60);
+                LandReadoutArea = frame.LocalApron ? new(8, 840, 300, 60)
+                    : new((int)Hero.X - 280, (int)Hero.Y - 25, 176, 52);
             }
-            if (side) {
-                Hero -= new Vector2(0, 40);
-                Hand = new(seat == 0 ? 84 : 1516, Hand.Y - 80);
-            }
-            ZoneStation = new(player, seat, duel, Hero);
+            ZoneStation = new(player, frame, Hero);
             Commanders = ZoneStation.Commanders;
             Piles = ZoneStation.Piles;
             CommandLink = ZoneStation.CommandLabel.Center.ToVector2();
@@ -67,7 +67,12 @@ public sealed class SeatGeometry
     internal static SeatGeometry[] Build(GameSnapshot state, bool study = false)
     {
         bool duel = study && state.Players.Length == 2;
-        return state.Players.Select(player => new SeatGeometry(player,
-            player.Id == state.ViewerId ? 3 : duel ? 1 : TableLayout.SeatIndex(state, player.Id), study, duel)).ToArray();
+        return state.Players.Select(player => {
+            int index = study || state.Viewer == null || state.Players.Length > 4 ? TableSeatFrame.DisplayIndex(state, player.Id)
+                : player.Id == state.ViewerId ? 3 : TableLayout.SeatIndex(state, player.Id);
+            var frame = TableSeatFrame.For(index, state.Players.Length, study, duel);
+            bool local = player.Id == state.ViewerId;
+            return new SeatGeometry(player, frame with { IsLocal = local, LocalApron = local && frame.LocalApron }, study);
+        }).ToArray();
     }
 }

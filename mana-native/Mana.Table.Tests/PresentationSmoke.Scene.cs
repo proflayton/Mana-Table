@@ -122,8 +122,9 @@ internal static class PresentationSceneChecks
         state = Field(state with { Players = [.. state.Players, .. extra] }, player => Enumerable.Range(0, player.Id == 5 ? 9 : 1)
             .Select(index => new Card { VisualId = $"extra-{player.Id}-{index}", Name = "Creature " + index, Type = "Creature", Power = 2, Toughness = 2 }).ToArray());
         var scene = Build(state);
-        check(scene.Seats.Count == 5 && scene.Seats.All(seat => seat.PlayerId != 5)
-                && scene.BattlefieldCard(5, "extra-5-0") == null,
-            "A seat outside the four-seat viewport does not add visible nodes or change another seat's rendering");
+        check(scene.Seats.Count == 6 && scene.Seats.Select(seat => seat.Index).Distinct().Count() == 6
+                && scene.BattlefieldCard(5, "extra-5-0") != null
+                && scene.Battlefield(5).Sum(cluster => cluster.Cards.Count()) == 9,
+            "The supported sixth player has a distinct physical seat and its complete public battlefield, rather than losing cards outside a four-seat viewport");
     }
 }

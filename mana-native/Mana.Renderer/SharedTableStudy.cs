@@ -18,8 +18,10 @@ public static class SharedTableStudy
     internal static BattlefieldCluster[] Arrange(int seat, int owner, IReadOnlyList<Card> cards,
         Func<Card, bool> isResource, IReadOnlySet<string>? separate,
         Func<string, Rectangle>? lanes = null, float faceScale = 1, bool centerRows = false,
-        BattlefieldAttachments? attachments = null, bool seatFacing = true, IReadOnlyDictionary<string, string>? combatCohorts = null)
+        BattlefieldAttachments? attachments = null, bool seatFacing = true, IReadOnlyDictionary<string, string>? combatCohorts = null,
+        TableSeatFrame? seatFrame = null)
     {
+        var frame = seatFrame ?? TableSeatFrame.For(seat);
         faceScale = float.IsFinite(faceScale) && faceScale > 0 ? faceScale : 1;
         string Identity(Card card) => CardViews.Identity(card) is { Length: > 0 } id ? id
             : "anonymous:" + Enumerable.Range(0, cards.Count).First(index => ReferenceEquals(cards[index], card));
@@ -50,12 +52,12 @@ public static class SharedTableStudy
         return Roles.Select(kind => {
             var selected = families.Where(family => family.Role == kind).ToArray();
             if (selected.Length == 0) return new BattlefieldCluster(kind, []);
-            var lane = lanes?.Invoke(kind) ?? Lane(seat, kind);
+            var lane = lanes?.Invoke(kind) ?? PlayerPlaymat.Lane(frame, kind);
             // Pose.Bounds rounds out to integer pixels, including tap rotation.
             lane.Inflate(-2, -2);
-            float facing = seatFacing ? Facing(seat) : 0;
+            float facing = seatFacing ? frame.Facing : 0;
             var worldCenter = lane.Center.ToVector2();
-            bool sideways = seatFacing && seat is 0 or 2;
+            bool sideways = seatFacing && frame.IsSide;
             if (sideways) lane = new(0, 0, lane.Height, lane.Width);
             Vector2 Turn(Vector2 point) {
                 var local = point - lane.Center.ToVector2();
@@ -69,7 +71,8 @@ public static class SharedTableStudy
             // Every role reserves the card's complete quarter-turn footprint,
             // independent of its current tap state or the current viewpoint.
             var desired = new Vector2(kind == "Creatures" ? 128 : 112) * faceScale;
-            var slots = Pack(selected, lane, desired, faceScale, seat, centerRows);
+            int packingSeat = frame.QuarterTurns switch { 1 => 0, 2 => 1, 3 => 2, _ => 3 };
+            var slots = Pack(selected, lane, desired, faceScale, packingSeat, centerRows);
             var nodes = new List<SceneCard>();
             foreach (var slot in slots) {
                 var familyNodes = new List<SceneCard>();
@@ -98,7 +101,7 @@ public static class SharedTableStudy
                             card.Tapped ? MathF.PI / 2 : 0);
                         int ordinal = CardViews.Identity(card).Length == 0
                             ? Enumerable.Range(0, cards.Count).First(index => ReferenceEquals(cards[index], card)) : 0;
-                        var node = SceneCard.Create(card, pose, "Battlefield", owner, ordinal, TableLayout.Hero(seat)) with {
+                        var node = SceneCard.Create(card, pose, "Battlefield", owner, ordinal, frame.BattlefieldEntrance) with {
                             ScanFace = true, Compact = true, GroupFront = copy == copies.Length - 1, GroupCount = copies.Length
                         };
                         var under = attachments?.Under(node.Id) ?? [];
@@ -113,7 +116,7 @@ public static class SharedTableStudy
                             var memberCenter = center + new Vector2((memberWidth - hostWidth) / 2
                                 - AttachmentEdge * (layer + 1) * detail, AttachmentDrop * member.Depth * detail);
                             var memberPose = new Pose(memberCenter, face, member.Card.Tapped ? MathF.PI / 2 : 0);
-                            familyNodes.Add(SceneCard.Create(member.Card, memberPose, "Battlefield", member.Owner, 0, TableLayout.Hero(seat)) with {
+                            familyNodes.Add(SceneCard.Create(member.Card, memberPose, "Battlefield", member.Owner, 0, frame.BattlefieldEntrance) with {
                                 ScanFace = true, Compact = true,
                                 Attachment = new(node.Id, owner, member.HostId, layer + 1, member.Depth, AttachmentEdge * detail / memberWidth, facing)
                             });

@@ -12,7 +12,8 @@ internal sealed partial class TableApplication
     private bool tableStudy;
     private bool allowLiveTableStudy;
     private bool TableStudyAvailable => allowLiveTableStudy || ExperienceLabOpen || Automated;
-    private bool TableStudyEnabled => tableStudy && TableStudyAvailable && match?.Players.Length is 2 or 3 or 4;
+    private bool TableStudyEnabled => TableStudyAvailable && match?.Players.Length is >= 2 and <= 6
+        && (tableStudy || match.Players.Length > 4);
     internal void EnableLiveTableStudy()
     {
         allowLiveTableStudy = true;

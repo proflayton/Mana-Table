@@ -106,6 +106,9 @@ internal sealed partial class TableApplication
         }
         seat = SeatDisplayIndex(player.Id);
         var hero = SeatHero(player.Id);
+        bool extendedTable = match!.Players.Length > 4;
+        bool own = SeatFrameFor(player.Id).IsLocal;
+        bool side = extendedTable ? tableScene!.Seat(player.Id).Geometry.Frame.IsSide : seat is 0 or 2;
         string[] symbols = ["W", "U", "B", "R", "G", "C"];
         var ordered = parts.Select(part => (Part: part, Slot: Array.IndexOf(symbols, part.Key)))
             .Select((entry, index) => (entry.Part, Slot: entry.Slot >= 0 ? entry.Slot : 6 + parts.Take(index).Count(p => !symbols.Contains(p.Key))))
@@ -115,19 +118,22 @@ internal sealed partial class TableApplication
             return Math.Max(34, label + canvas.TextWidth(entry.Part.Amount.ToString(), .6f, true) + 10);
         });
         var plan = new List<ManaHaloPart>();
-        int inner = seat == 3 ? 102 : 50;
-        bool sideMatRail = TableStudyEnabled && seat is 0 or 2;
-        var localMat = TableStudyEnabled && seat == 3 ? tableScene?.Seat(player.Id).Geometry.PlaymatBounds : null;
+        int inner = own ? 102 : 50;
+        bool sideMatRail = TableStudyEnabled && side;
+        var localMat = TableStudyEnabled && own ? tableScene?.Seat(player.Id).Geometry.PlaymatBounds : null;
         foreach (var entry in ordered) {
-            int column = seat is 0 or 2 ? entry.Slot % 2 + entry.Slot / 6 * 2 : entry.Slot / 3;
-            int row = seat is 0 or 2 ? entry.Slot % 6 / 2 : entry.Slot % 3;
+            int column = side ? entry.Slot % 2 + entry.Slot / 6 * 2 : entry.Slot / 3;
+            int row = side ? entry.Slot % 6 / 2 : entry.Slot % 3;
             int width = widths[entry.Part.Key], x;
-            int ColumnWidth(int col) => ordered.Where(e => (seat is 0 or 2 ? e.Slot % 2 + e.Slot / 6 * 2 : e.Slot / 3) == col)
+            int ColumnWidth(int col) => ordered.Where(e => (side ? e.Slot % 2 + e.Slot / 6 * 2 : e.Slot / 3) == col)
                 .Select(e => widths[e.Part.Key]).DefaultIfEmpty(0).Max();
-            if (localMat is { } mat) {
+            if (extendedTable && own) {
+                int offset = Enumerable.Range(0, column).Sum(col => ColumnWidth(col) + 8);
+                x = (int)hero.X + TurnControlLayout.ManaOffset + offset;
+            } else if (localMat is { } mat) {
                 int offset = Enumerable.Range(0, column).Sum(col => ColumnWidth(col) + 6);
                 x = mat.Right + 12 + offset;
-            } else if (seat is 0 or 2) {
+            } else if (side) {
                 int offset = Enumerable.Range(0, column).Sum(col => ColumnWidth(col) + 6);
                 x = sideMatRail ? seat == 0 ? 8 + offset : 1592 - offset - width
                     : seat == 0 ? (int)hero.X + inner + offset : (int)hero.X - inner - offset - width;

@@ -8,6 +8,13 @@ namespace Mana.Renderer;
 /// <summary>Existing board envelopes and fixed controls used to admit a view shift.</summary>
 public static class TableViewGeometry
 {
+    // Overview depends only on configured furniture. Card counts and live
+    // characteristics cannot reframe the table while somebody is playing.
+    public static BoardView Overview(TableScene scene) => Overview(scene.Seats.Count);
+    public static BoardView Overview(int players) => players <= 4 ? BoardView.Identity
+        : BoardView.Frame(TableSurfaceProjection.Surface(TableSeatFrame.Tabletop(players)).Bounds,
+            new Rectangle(36, 226, 1528, 456), 1);
+
     private static IEnumerable<Rectangle> ZoneFootprints(SeatGeometry geometry)
     {
         foreach (var pile in geometry.Piles.Where(pile => pile.TableAnchored))
@@ -49,9 +56,8 @@ public static class TableViewGeometry
 
     public static IReadOnlyList<Rectangle> FixedReservations(GameSnapshot state, TableScene scene, bool includeDecisionDock = true)
     {
-        // A supported viewport can show fewer seats than the rules match owns.
-        // Reserve only rendered objects; choices for other seats stay explicit
-        // in their decision workspace rather than inventing pile geometry.
+        // A scene contains every registered seat. Keep the join explicit so
+        // fixed reservations use the exact geometry that painting consumes.
         var visible = state with { Players = state.Players.Where(player => scene.Seats.Any(seat => seat.PlayerId == player.Id)).ToImmutableArray() };
         var geometry = visible.Players.Select(player => scene.Seat(player.Id).Geometry).ToArray();
         return Array.AsReadOnly(BattlefieldLayoutContext.ReserveObjects(visible, geometry, includeDecisionDock, includeTableAnchored: false)

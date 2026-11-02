@@ -108,6 +108,7 @@ internal sealed partial class TableApplication
             case MatchIntent.ApplyGroupBlocks apply: ApplyGroupBlocks(apply.Assignments); break;
             case MatchIntent.StopGroupBlocks: StopGroupBlocks(); break;
             case MatchIntent.ReturnFromMatch: ReturnFromMatch(); break;
+            case MatchIntent.RetryEncounterSave: RetryEncounterSave(); break;
             case MatchIntent.ReturnToWorkshop back: ReturnToWorkshop(back.Again); break;
             case MatchIntent.RetryConnection: nextPoll = 0; break;
             case MatchIntent.LeaveTable: LeaveMatchTable(); break;
