@@ -185,19 +185,25 @@ internal sealed partial class TableApplication
         bool target = IsPlayerTarget(player.Id), active = match!.ActivePlayerId == player.Id;
         bool timedOut = player.Eliminated && TimedOut(player.Id);
         bool hasCounters = StateClarity.PlayerStates(player).Length > 0;
+        bool far = match.Players.Length > 4 ? SeatFrameFor(player.Id).IsFar : index == 1;
         float radius = own ? 40 : 34;
         if (!own) {
             var handCenter = SeatHand(player.Id);
-            foreach (var back in OpponentHandPoses(player, index)) {
+            var backs = OpponentHandPoses(player, index).ToArray();
+            foreach (var back in backs) {
                 canvas.Surface(null, back with { Center = back.Center + new Vector2(3, 6) }, Color.Black * .45f);
                 PaintBack(back);
             }
             var handBounds = new Rectangle((int)handCenter.X - 83, (int)handCenter.Y - 30, 166, 75);
-            hits.Add(new("hand-zone:" + player.Id, Scope, handBounds, new MatchIntent.OpenZone(player.Id, "Hand")));
-            if (index != 1 && !hasCounters) {
-                var caption = new Rectangle((int)handCenter.X - 65, (int)handCenter.Y + 35, 130, 22);
-                canvas.CenterText(player.Zone("Hand").Count + " in hand", caption, Muted, .48f);
-            }
+            Rectangle? caption = !far && !hasCounters
+                ? new((int)handCenter.X - 65, (int)handCenter.Y + 35, 130, 22) : null;
+            bool extended = match.Players.Length > 4;
+            if (extended) handBounds = backs.Select(back => back.Bounds).Concat(caption is { } label ? new[] { label } : [])
+                .DefaultIfEmpty(Rectangle.Empty).Aggregate(Rectangle.Union);
+            if (!handBounds.IsEmpty) hits.Add(new("hand-zone:" + player.Id, Scope, handBounds,
+                new MatchIntent.OpenZone(player.Id, "Hand"), Shape: extended
+                    ? point => backs.Any(back => back.Contains(point)) || caption?.Contains(point) == true : null));
+            if (caption is { } shown) canvas.CenterText(player.Zone("Hand").Count + " in hand", shown, Muted, .48f);
         }
         canvas.Glow(center + new Vector2(0, 10), new(radius * 3.8f, radius * 2.5f), Color.Black * .9f);
         if (target || active) canvas.Glow(center, new(radius * 4.7f), (target ? Blue : Gold) * .4f);
@@ -233,7 +239,7 @@ internal sealed partial class TableApplication
         var nameplate = SeatNameplateArea(center, own, index, manaHalo);
         var measuredIdentity = TableStudyEnabled ? seatReadoutPlans.GetValueOrDefault(player.Id) : null;
         int x = nameplate.X, y = nameplate.Y;
-        bool topMatSeat = TableStudyEnabled && !own && index == 1;
+        bool topMatSeat = TableStudyEnabled && !own && far;
         if (!own && measuredIdentity == null) {
             seatReadoutBounds.Add(nameplate);
             string seatMarker = PublicSeatOrdinal(player.Id).ToString();
@@ -261,7 +267,7 @@ internal sealed partial class TableApplication
         var auxiliary = new SeatAuxiliary(player, center, own, index, hasCounters, manaHalo, auxiliaryCaption, incoming, new(x + 4, y + 24, 180, 80));
         if (!TableStudyEnabled || own) DrawSeatAuxiliary(auxiliary);
         if (!own) DrawOpponentPhase(player, center, index);
-        var identityBounds = measuredIdentity?.Header.Bounds ?? nameplate;
+        var identityBounds = measuredIdentity?.IdentityBounds ?? nameplate;
         if (!own) hits.Add(new("focus:" + player.Id, Scope, identityBounds, seatReadoutWorkspaces.Contains(player.Id)
             ? new MatchIntent.OpenPlayerState(player.Id, "") : new MatchIntent.OpenZone(player.Id, "Battlefield"),
             Shape: topMatSeat ? point => identityBounds.Contains(point)
@@ -282,6 +288,8 @@ internal sealed partial class TableApplication
     private Rectangle SeatNameplateArea(Vector2 center, bool own, int index, ManaHaloPlan mana)
     {
         if (own) return new(Math.Max((int)center.X + 58, mana.Bounds.Right) + 8, (int)center.Y - 22, 100, 24);
+        if (TableStudyEnabled && match!.Players.Length > 4)
+            return new(Math.Clamp((int)center.X - 112, 12, 1364), (int)center.Y + 58, 224, 24);
         if (TableStudyEnabled && index == 1)
             return TwoFieldTable ? new(904, 54, 188, 24) : new(496, 148, 208, 24);
         return index == 1 ? new(Math.Max((int)center.X + 50, mana.Bounds.Right) + 8, 64, 188, 24)

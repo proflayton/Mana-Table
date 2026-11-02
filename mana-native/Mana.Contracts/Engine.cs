@@ -131,12 +131,19 @@ public sealed record LobbyDeckSelection(string TableId, string DeckId, string Li
 public sealed record LobbyDeckPreview(string SelectionId, string Name, ImmutableArray<Card> Commanders, string? Problem);
 public sealed record Seat(int Index, string Name, string Type, string? Deck, bool Ready, bool Local)
 {
+    public string ParticipantId { get; init; } = "";
+    public int? TeamId { get; init; }
+    public MatchSeatRole? Role { get; init; }
     public string? OpponentId { get; init; }
     public LobbyDeckPreview? DeckPreview { get; init; }
 }
 public sealed record Lobby(string Mode, string Status, string? Error, bool CanStart, string? StartProblem,
     bool MatchActive, string PortMapping, string? InternetInvite, ImmutableArray<Address> Addresses, ImmutableArray<Seat> Seats, string TableId = "")
 {
+    public MatchSetupCapabilities? MatchSetupCapabilities { get; init; }
+    public MatchSetupSpecification? MatchSetup { get; init; }
+    public string? MatchSetupConsent { get; init; }
+    public PartyProgress? PartyProgress { get; init; }
     public ImmutableArray<AiOpponent> AiOpponents { get; init; } = [];
     public TempoSettings? Tempo { get; init; }
     public long Revision { get; init; }
@@ -200,6 +207,7 @@ public sealed record PlayerState(string Id, string Label, string Kind, int? Valu
 public sealed record PublicState(string Id, string Label, string Kind, int? Value, int? Maximum, string Detail, string Key = "");
 public sealed record Player(int Id, string Name, int Life, bool Priority, bool Eliminated, ImmutableDictionary<string, int> Mana, ImmutableArray<Zone> Zones)
 {
+    public string ParticipantId { get; init; } = "";
     // Actual rules-engine team, independent of seat order. Absent on older providers.
     public int? TeamId { get; init; }
     public ImmutableArray<PlayerState> States { get; init; } = [];
@@ -316,6 +324,7 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
 {
     // Viewer-independent rules completion. A viewer leaving or conceding does not supply this fact.
     public MatchOutcome? Outcome { get; init; }
+    public EncounterIdentity? Encounter { get; init; }
     public ImmutableArray<ActionSourceOccurrence> ActionSources { get; init; } = [];
     public ImmutableArray<PublicState> States { get; init; } = [];
     public long Revision { get; init; }

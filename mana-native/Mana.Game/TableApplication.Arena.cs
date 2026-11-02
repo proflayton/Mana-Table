@@ -26,14 +26,16 @@ internal sealed partial class TableApplication
         foreach (var card in state.Viewer?.Zone("Command").Cards ?? []) resources.Card(card);
         foreach (var card in tableScene!.PlayAccess.Groups.SelectMany(group => group.Cards).Select(item => item.Scene.Card)) resources.Card(card);
         var opponents = TableLayout.Opponents(state);
-        foreach (int i in new[] { 1, 0, 2 }) if (i < opponents.Length) DrawOpponent(opponents[i], i);
+        var opponentOrder = opponents.Length <= 3 ? new[] { 1, 0, 2 }.Where(i => i < opponents.Length)
+            : Enumerable.Range(0, opponents.Length).OrderBy(i => tableScene!.Seat(opponents[i].Id).Geometry.PlaymatPlacement?.Center.Y ?? 0);
+        foreach (int i in opponentOrder) DrawOpponent(opponents[i], SeatDisplayIndex(opponents[i].Id));
         if (state.Viewer is { } viewer) DrawLocal(viewer);
         if (TableStudyEnabled) {
             canvas.BeginClip(BoardViewport);
             foreach (var node in tableScene!.BattlefieldDrawOrder) DrawSceneCard(node);
             canvas.EndClip();
         }
-        for (int i = 0; i < opponents.Length && i < 3; i++) DrawHero(opponents[i], SeatHero(opponents[i].Id), false, SeatDisplayIndex(opponents[i].Id));
+        for (int i = 0; i < opponents.Length; i++) DrawHero(opponents[i], SeatHero(opponents[i].Id), false, SeatDisplayIndex(opponents[i].Id));
         DrawCombatConnections(); DrawAttachmentConnections(); DrawStack(); DrawSeatTransfers();
         DrawChangeHighlights();
         if (!BattlefieldFocused) DrawEffectTransitions();

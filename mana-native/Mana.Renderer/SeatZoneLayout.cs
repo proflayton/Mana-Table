@@ -17,28 +17,16 @@ public sealed class SeatZoneLayout
     public IReadOnlyList<SceneCard> Commanders { get; }
     public IReadOnlyList<PilePlan> Piles { get; }
 
-    internal SeatZoneLayout(Player player, int seat, bool duel, Vector2 hero)
+    internal SeatZoneLayout(Player player, TableSeatFrame frame, Vector2 hero)
     {
         PlayerId = player.Id;
-        bool near = seat == 3;
+        bool near = frame.LocalApron;
         // The near seat keeps its life counter centered above the held hand.
         // Its personal row sits alongside the mat, facing the same player.
-        Placement = PlayerPlaymat.Project(seat,
-            near ? new(-324, 210, 318, 68) : PlayerPlaymat.PersonalArea, duel);
-        var origin = PlayerPlaymat.CanonicalBounds.Center.ToVector2();
-        Vector2 Point(Vector2 local)
-        {
-            var delta = local - origin;
-            var center = PlayerPlaymat.Bounds(seat, duel).Center.ToVector2();
-            return center + (seat switch {
-                0 => new Vector2(-delta.Y, delta.X),
-                1 => -delta,
-                2 => new Vector2(delta.Y, -delta.X),
-                _ => delta
-            });
-        }
+        Placement = frame.Project(near ? new(-324, 210, 318, 68) : PlayerPlaymat.PersonalArea);
+        Vector2 Point(Vector2 local) => frame.Project(local);
         Pose Face(Vector2 local, Vector2 size) => TableSurfaceProjection.Project(
-            new Pose(Point(local), size, PlayerPlaymat.Facing(seat, duel)));
+            new Pose(Point(local), size, frame.Facing));
         Rectangle Caption(Vector2 local, int width, int height)
         {
             var center = TableSurfaceProjection.Project(Point(local));
@@ -56,7 +44,7 @@ public sealed class SeatZoneLayout
             CommandQuantity = new(CommandName.Right, CommandName.Y, 56, 19);
         } else {
             var label = Caption(new(194, 177), 68, 40);
-            if (seat == 2) {
+            if (frame.QuarterTurns == 3) {
                 // A mat-local side offset turns into a vertical gap at this
                 // seat. Keep upright text just below the painted assembly.
                 var poses = Commanders.Select(card => card.Pose)
@@ -68,15 +56,22 @@ public sealed class SeatZoneLayout
             CommandName = new(label.X, label.Y, label.Width, label.Height / 2);
             CommandQuantity = new(label.X, CommandName.Bottom, label.Width, label.Height / 2);
         }
-        Piles = Array.AsReadOnly(new[] { "Library", "Graveyard", "Exile" }.Select((zone, index) => {
-            var pose = Face(new((near ? -304 : 184) + index * 72, near ? 244 : 246), new(39, 55));
+        Piles = PreparePiles(frame);
+    }
+
+    internal static IReadOnlyList<PilePlan> PreparePiles(TableSeatFrame frame)
+    {
+        bool near = frame.LocalApron;
+        return Array.AsReadOnly(new[] { "Library", "Graveyard", "Exile" }.Select((zone, index) => {
+            var pose = TableSurfaceProjection.Project(new Pose(frame.Project(
+                new Vector2((near ? -304 : 184) + index * 72, near ? 244 : 246)), new(39, 55), frame.Facing));
             var bounds = pose.Bounds;
             // Captions stay upright on the outward side of the actual card.
             // Far piles also reserve their maximum visible layer thickness.
-            var label = seat switch {
-                0 => new Rectangle(bounds.Left - 72, (int)pose.Center.Y - 9, 68, 19),
-                1 => new Rectangle((int)pose.Center.X - 34, bounds.Top - 32, 68, 19),
-                2 => new Rectangle(bounds.Right + 4, (int)pose.Center.Y - 9, 68, 19),
+            var label = frame.QuarterTurns switch {
+                1 => new Rectangle(bounds.Left - 72, (int)pose.Center.Y - 9, 68, 19),
+                2 => new Rectangle((int)pose.Center.X - 34, bounds.Top - 32, 68, 19),
+                3 => new Rectangle(bounds.Right + 4, (int)pose.Center.Y - 9, 68, 19),
                 _ => new Rectangle((int)pose.Center.X - 34, bounds.Bottom + 3, 68, 19)
             };
             return new PilePlan(zone, pose, true) {

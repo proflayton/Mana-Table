@@ -51,6 +51,7 @@ final class SpectatorObservation {
                         "ownerId", owner.getId(), "owner", owner.getName(), "damage", publicPlayer.getCommanderDamage(commander)));
             }
             players.add(map("id", player.getId(), "name", player.getName(), "human", false, "seat", players.size() + 1,
+                    "participantId", table.participantId(player.getId()),
                     "teamId", player.getTeam(), "eliminated", publicPlayer.getHasLost(), "life", publicPlayer.getLife(), "priority", publicPlayer.getHasPriority(),
                     "maxHandSize", publicPlayer.hasUnlimitedHandSize() ? null : publicPlayer.getMaxHandSize(),
                     "landPlaysUsed", publicPlayer.getNumLandThisTurn(), "landPlayLimit", publicPlayer.hasUnlimitedLandPlay() ? null : publicPlayer.getMaxLandPlay(),
@@ -83,6 +84,7 @@ final class SpectatorObservation {
         var outcome = MatchOutcomeProjection.of(table, error);
         String result = MatchOutcomeProjection.forSpectator(outcome, table);
         return Collections.unmodifiableMap(map("id", table.id, "revision", revision, "boardRevision", revision,
+                "partyId", table.partyId(), "encounterId", table.encounterId(),
                 "stackInterruptionVersion", table.stackInterruption.version(),
                 "format", table.format, "status", error != null ? "error" : revision == 0 ? "starting" : game.isGameOver() ? "finished" : "playing",
                 "error", error, "result", result, "outcome", outcome, "viewerId", -1, "spectator", true, "playerCount", players.size(),

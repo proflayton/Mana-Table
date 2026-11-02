@@ -14,7 +14,7 @@ internal sealed partial class TableApplication
         // The actual rectangular perimeter follows the same seated plane as
         // the cloth. Its fixed apron supports the unchanged side/near card
         // rails; no content count or camera focus can resize the furniture.
-        var tabletop = PlayerPlaymat.TabletopPlacement;
+        var tabletop = tableScene!.TabletopPlacement;
         PlaneRounded(tabletop, Color.Black * .6f, 18, 22);
         PlaneRounded(tabletop, new(23, 25, 28), 18, 12);
         PlaneRounded(tabletop, new(89, 80, 65), 18);
@@ -31,19 +31,21 @@ internal sealed partial class TableApplication
         canvas.EndTransform();
         canvas.BeginClip(BoardViewport);
         canvas.BeginTransform(boardView);
-        bool duel = match!.Players.Length == 2;
         foreach (var seat in tableScene!.Seats)
-            if (seat.Geometry.PlaymatPlacement is { } bounds) DrawPlayerPlaymat(seat.Index, duel, bounds);
+            if (seat.Geometry.PlaymatPlacement is { } bounds) DrawPlayerPlaymat(seat.Geometry.Frame, bounds);
         canvas.EndTransform();
         canvas.EndClip();
     }
 
-    private void DrawPlayerPlaymat(int seat, bool duel, Rectangle bounds)
+    private void DrawPlayerPlaymat(TableSeatFrame frame, Rectangle bounds)
     {
+        int seat = frame.Index;
         Color cloth = seat switch {
             0 => new(44, 57, 68),
             1 => new(61, 48, 61),
             2 => new(65, 56, 41),
+            4 => new(62, 47, 42),
+            5 => new(44, 55, 65),
             _ => new(36, 62, 57)
         };
         Color thread = Color.Lerp(cloth, new Color(196, 181, 145), .42f);
@@ -74,7 +76,7 @@ internal sealed partial class TableApplication
         // A woven crest is a second, non-color ownership cue. It faces the seat;
         // turn and priority retain their existing temporary hero indicators.
         var center = bounds.Center.ToVector2();
-        var outward = duel || seat is 1 or 3 ? new Vector2(0, seat == 1 ? -1 : 1) : new Vector2(seat == 0 ? -1 : 1, 0);
+        var outward = frame.Outward;
         float reach = outward.X == 0 ? bounds.Height / 2f : bounds.Width / 2f;
         var crest = center + outward * (reach - 20);
         var across = new Vector2(-outward.Y, outward.X);

@@ -41,7 +41,7 @@ internal sealed class BattlefieldLayoutContext
             int seat = geometry.Index;
             var hero = geometry.Hero;
             yield return new((int)hero.X - 55, (int)hero.Y - 55, 110, 110);
-            if (seat == 3) {
+            if (geometry.Frame.IsLocal) {
                 yield return new((int)hero.X - 130, (int)hero.Y - 55, 190, 110);
                 foreach (var reservation in geometry.TurnControls.Reservations) yield return reservation;
             }
@@ -66,16 +66,16 @@ internal sealed class BattlefieldLayoutContext
             var positive = player.Mana.Where(part => part.Value > 0).ToArray();
             if (positive.Length > 0) {
                 int width = Math.Max(34, positive.Max(part => 30 + part.Value.ToString().Length * 11));
-                if (seat is 0 or 2) yield return new(seat == 0 ? (int)hero.X + 50 : (int)hero.X - 50 - width * 2 - 6, (int)hero.Y - 42, width * 2 + 6, 84);
+                if (geometry.Frame.IsSide) yield return new(geometry.Frame.QuarterTurns == 1 ? (int)hero.X + 50 : (int)hero.X - 50 - width * 2 - 6, (int)hero.Y - 42, width * 2 + 6, 84);
                 else {
-                    int inner = seat == 3 ? TurnControlLayout.ManaOffset : 58;
+                    int inner = geometry.Frame.IsLocal ? TurnControlLayout.ManaOffset : 58;
                     yield return new((int)hero.X - inner - width, (int)hero.Y - 42, width, 84);
                     yield return new((int)hero.X + inner, (int)hero.Y - 42, width, 84);
                 }
             }
             if (player.States.Length > 0 || player.Counters.Any(counter => counter.Value > 0))
-                yield return seat == 3 ? new((int)hero.X - 390, (int)hero.Y - 24, 190, 76)
-                    : seat == 1 ? new((int)hero.X - 98, (int)hero.Y + 35, 150, 66)
+                yield return geometry.Frame.IsLocal ? new((int)hero.X - 390, (int)hero.Y - 24, 190, 76)
+                    : geometry.Frame.IsFar ? new((int)hero.X - 98, (int)hero.Y + 35, 150, 66)
                     : new((int)hero.X - 98, (int)hero.Y - 90, 196, 55);
         }
         if (state.Stack.Length > 0 || state.Decision?.Context.Source?.Card != null && !DecisionLayout.UsesSourceWorkspace(state.Decision))

@@ -66,7 +66,7 @@ public final class DesktopEngine implements AutoCloseable {
         var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]), simulationTables);
         engine.resources = Path.of(args[0]);
         engine.documents.loadAnalysisFormats(engine.resources);
-        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo", "automated-seats", "certified-one-step-undo", "match-history"))));
+        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo", "automated-seats", "certified-one-step-undo", "match-history", "match-setup"))));
         try (engine; var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = input.readLine()) != null) {
@@ -125,6 +125,8 @@ public final class DesktopEngine implements AutoCloseable {
             return switch (method) {
                 case "multiplayerState" -> seat.state();
                 case "multiplayerConfigure" -> seat.configure(string(p, "tableId", ""), string(p, "format", "Constructed"), number(p, "playerCount", 2));
+                case "configureMatch" -> seat.configureMatch(p);
+                case "retryEncounterSave" -> seat.retryEncounterSave(p);
                 case "multiplayerSetSeat" -> seat.setSeat(p);
                 case "tableSocial" -> seat.social(p);
                 case "tableChat" -> seat.chat(p);
@@ -253,6 +255,8 @@ public final class DesktopEngine implements AutoCloseable {
                     p.has("autoPortForward") && p.get("autoPortForward").getAsBoolean(), string(p, "transport", "mixed"));
             case "multiplayerJoin" -> multiplayer().join(string(p, "address", ""));
             case "multiplayerConfigure" -> multiplayer().configure(string(p, "tableId", ""), string(p, "format", "Constructed"), number(p, "playerCount", 2));
+            case "configureMatch" -> multiplayer().configureMatch(p);
+            case "retryEncounterSave" -> multiplayer().retryEncounterSave(p);
             case "multiplayerSetSeat" -> multiplayer().setSeat(p);
             case "multiplayerSelectDeck" -> {
                 String deckId = string(p, "deckId", "");

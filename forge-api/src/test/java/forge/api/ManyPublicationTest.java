@@ -53,7 +53,8 @@ public class ManyPublicationTest {
                 var raw = fixture.session().automatedObservation();
                 var before = JSON.toJsonTree(raw).getAsJsonObject();
                 var prompt = before.getAsJsonObject("state").getAsJsonObject("prompt");
-                assertFalse(prompt.has("min")); assertFalse(prompt.has("max"), "List selection adds no target-count wire fields");
+                assertEquals(prompt.get("min").getAsInt(), 0);
+                assertEquals(prompt.get("max").getAsInt(), 3, "The list input publishes its own entity-count bounds");
                 assertEquals(prompt.get("playerChoices"), JSON.toJsonTree(List.of(2, 0, 3, 1).stream()
                         .map(seat -> fixture.player(seat).getId()).toList()), "The provider's actual choice order survives publication");
                 assertEquals(before.getAsJsonObject("semantics").get("selectedPlayers"), JSON.toJsonTree(List.of()));
@@ -110,6 +111,71 @@ public class ManyPublicationTest {
             });
             fixture.record("selected", selected); fixture.record("deselected", deselected);
         }
+    }
+
+    @Test(timeOut = 30000)
+    public void genericListBoundsTrackTheActualInputAndItsConfirmationGate() throws Exception {
+        try (var fixture = new Fixture("bounds", false, 2, 3)) {
+            var before = fixture.current();
+            fixture.record("before", before);
+            assertRange(before, 2, 3);
+            assertFalse(before.getAsJsonObject("state").getAsJsonObject("prompt").get("okEnabled").getAsBoolean());
+            var one = fixture.answer(before, Map.of("action", "player", "playerId", fixture.player(1).getId()));
+            fixture.record("one", one); assertRange(one, 2, 3);
+            assertFalse(one.getAsJsonObject("state").getAsJsonObject("prompt").get("okEnabled").getAsBoolean());
+            var two = fixture.answer(one, Map.of("action", "player", "playerId", fixture.player(2).getId()));
+            fixture.record("two", two); assertRange(two, 2, 3);
+            assertTrue(two.getAsJsonObject("state").getAsJsonObject("prompt").get("okEnabled").getAsBoolean());
+            assertEquals(episode(two), episode(before));
+            assertFalse(before.getAsJsonObject("state").getAsJsonObject("prompt").get("okEnabled").getAsBoolean(),
+                    "A refreshed choice cannot rewrite the retained input frame");
+            fixture.session().action(request(input(two), Map.of("action", "ok")));
+            HeadlessPlatform.query(fixture.table, () -> {
+                assertFalse(fixture.input.isSelectionActive());
+                assertEquals(List.copyOf(fixture.input.getSelected()), List.of(fixture.player(1), fixture.player(2)));
+                return null;
+            });
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void theRealStartingPlayerChoiceHasExactBoundsAndStillRequiresKeepingAHand() throws Exception {
+        // Every seat is human, so whichever player wins the real coin toss must
+        // exercise the multi-player controller path without changing global RNG.
+        try (var game = new RulesScenario("starting-player-bounds", 4)) {
+            var choosing = game.until(next -> text(next.prompt(), "inputType").equals("InputSelectEntitiesFromList"));
+            Files.writeString(game.evidence.resolve("starting-player.json"), JSON.toJson(choosing));
+            assertEquals(choosing.state().get("turn").getAsInt(), 0);
+            assertEquals(text(choosing.state(), "phaseKey"), "PREGAME");
+            assertEquals(choosing.prompt().get("min").getAsInt(), 1);
+            assertEquals(choosing.prompt().get("max").getAsInt(), 1);
+            assertEquals(text(choosing.prompt(), "sourceZone"), "");
+            assertFalse(choosing.prompt().has("sourceCard"));
+            assertTrue(choosing.state().getAsJsonArray("stack").isEmpty());
+            var playerIds = choosing.state().getAsJsonArray("players").asList().stream()
+                    .map(value -> value.getAsJsonObject().get("id").getAsInt()).toList();
+            assertEquals(choosing.prompt().get("playerChoices"), JSON.toJsonTree(playerIds));
+            for (var value : choosing.state().getAsJsonArray("players"))
+                assertEquals(count(value.getAsJsonObject(), "Hand"), 0, "Starting-player selection precedes opening hands");
+            int chosenId = choosing.state().get("viewerId").getAsInt();
+            assertTrue(game.answer(choosing, Map.of("action", "player", "playerId", chosenId)));
+            var keep = game.until(next -> next.seat() == choosing.seat()
+                    && text(next.prompt(), "inputType").equals("InputConfirmMulligan"));
+            Files.writeString(game.evidence.resolve("keep-hand.json"), JSON.toJson(keep));
+            assertNotEquals(text(keep.prompt(), "id"), text(choosing.prompt(), "id"));
+            assertEquals(count(viewer(keep.state()), "Hand"), 7);
+            assertTrue(keep.prompt().get("okEnabled").getAsBoolean());
+            assertNotNull(keep.prompt().getAsJsonObject("openingHand"));
+            assertTrue(game.answer(keep, Map.of("action", "ok")), "Choosing who starts cannot silently keep a hand");
+            var main = game.until(next -> text(next.state(), "phaseKey").equals("MAIN1"));
+            assertEquals(main.state().get("activePlayerId").getAsInt(), chosenId);
+        }
+    }
+
+    private static void assertRange(JsonObject observation, int minimum, int maximum) {
+        var prompt = observation.getAsJsonObject("state").getAsJsonObject("prompt");
+        assertEquals(prompt.get("min").getAsInt(), minimum);
+        assertEquals(prompt.get("max").getAsInt(), maximum);
     }
 
     @Test(timeOut = 30000)
@@ -371,6 +437,9 @@ public class ManyPublicationTest {
         final FCollection<Player> choices = new FCollection<>();
         final InputSelectEntitiesFromList<Player> input; final Path evidence; final List<Object> trace = new ArrayList<>();
         Fixture(String name, boolean payment) throws Exception {
+            this(name, payment, 0, 3);
+        }
+        Fixture(String name, boolean payment, int minimum, int maximum) throws Exception {
             var resources = Path.of("../forge-gui/res");
             if (StaticData.instance() == null) EngineResources.load(resources);
             evidence = ApiTestWorkspace.evidence("many-publication-" + name);
@@ -381,7 +450,7 @@ public class ManyPublicationTest {
             cost = new ProbeCost(payment ? "tapXType<1/Creature>" : "0");
             ability = new GuardedAbility(source, cost); ability.setActivatingPlayer(actor());
             for (int seat : List.of(2, 0, 3, 1)) choices.add(player(seat));
-            input = new InputSelectEntitiesFromList<>(controller(), 0, 3, choices, ability);
+            input = new InputSelectEntitiesFromList<>(controller(), minimum, maximum, choices, ability);
             if (payment) {
                 var mana = forest.getManaAbilities().get(0);
                 actor().getManaPool().addManaNoEvent(new Mana(MagicColor.GREEN, forest, mana.getManaPart(), actor()));

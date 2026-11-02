@@ -18,7 +18,7 @@ internal static class ImmutableStateChecks
             && visited.Contains(typeof(PlayAccess)) && visited.Contains(typeof(PlayAccessRoute)),
             "Published match state has no mutable collection or writable property anywhere in its object graph");
 
-        Type[] services = [typeof(IEngineCatalog), typeof(ICardPrintings), typeof(ITableSetup), typeof(ITableSeatSetup),
+        Type[] services = [typeof(IEngineCatalog), typeof(ICardPrintings), typeof(ITableSetup), typeof(ITableSeatSetup), typeof(ITableMatchSetup),
             typeof(ITableSocial), typeof(IDeckLibrary), typeof(IDeckWorkshop), typeof(IDeckAnalysis), typeof(IDeckVersionHistory), typeof(IMatchHistory)];
         foreach (var service in services)
             foreach (var method in service.GetMethods()) {
@@ -253,7 +253,7 @@ internal static class ImmutableStateChecks
     private static void AssertImmutable(Type type, HashSet<Type> visited)
     {
         type = Nullable.GetUnderlyingType(type) ?? type;
-        if (type.IsPrimitive || type.IsEnum || type == typeof(string) || !visited.Add(type)) return;
+        if (type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(DateTimeOffset) || !visited.Add(type)) return;
         if (type.IsGenericType && (type.GetGenericTypeDefinition() == typeof(ImmutableArray<>)
             || type.GetGenericTypeDefinition() == typeof(ImmutableDictionary<,>))) {
             foreach (var element in type.GetGenericArguments()) AssertImmutable(element, visited);

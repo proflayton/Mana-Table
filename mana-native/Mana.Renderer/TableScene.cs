@@ -79,6 +79,7 @@ public sealed class TableScene
     public CardSpreadPlan? Spread { get; }
     public IReadOnlyList<SceneSeat> Seats { get; }
     public IReadOnlyList<SceneCard> BattlefieldDrawOrder { get; }
+    public Rectangle TabletopPlacement => TableSeatFrame.Tabletop(Seats.Count);
 
     private TableScene(HandPlan hand, PlayAccessPlan playAccess, SceneSeat[] seats, CardSpreadPlan? spread)
     {
@@ -94,6 +95,12 @@ public sealed class TableScene
     public SceneSeat Seat(int player) => seats[player];
     public SceneCard? BattlefieldCard(int player, string occurrenceId) => seats.GetValueOrDefault(player)?.BattlefieldCard(occurrenceId);
     public BattlefieldCohort? Cohort(string occurrenceId) => Seats.Select(seat => seat.Cohort(occurrenceId)).FirstOrDefault(cohort => cohort != null);
+    public TableScene PlaceAccessBesideHand(IReadOnlyList<Rectangle> ownerReadouts, Func<string, int, Point> measureCaption)
+    {
+        var access = PlayAccess.PlaceBesideHand(ownerReadouts, measureCaption);
+        return ReferenceEquals(access, PlayAccess) ? this
+            : new(Hand, access, Seats.ToArray(), Spread?.ReanchorAccess(access));
+    }
     // These views expose the same prepared seat collections.
     public IReadOnlyList<SceneCard> Commanders(int player) => Seat(player).Geometry.Commanders;
     public IReadOnlyList<PilePlan> Piles(int player) => Seat(player).Geometry.Piles;
@@ -105,6 +112,9 @@ public sealed class TableScene
         bool sharedTableStudy = false, CardSpreadRequest? spread = null, Func<CardSpreadPacket, int, int>? spreadMeasure = null,
         bool groupCombatCandidates = false)
     {
+        // Larger registered tables always use the complete physical seat model.
+        // This changes only with match configuration, never permanent density.
+        sharedTableStudy |= state.Players.Length > 4;
         var geometry = SeatGeometry.Build(state, sharedTableStudy);
         var hand = HandLayout.Build(state, pointer, previouslyRaised, dragged, allowHover);
         var playAccess = PlayAccessPlan.Build(state);
@@ -141,17 +151,16 @@ public sealed class TableScene
         }
         var layout = sharedTableStudy ? null : BattlefieldLayoutContext.Build(state, orderedChoices, geometry, isResource);
         var attachments = sharedTableStudy ? BattlefieldAttachments.Build(state,
-            geometry.Where(seat => seat.Index is >= 0 and <= 3).Select(seat => seat.PlayerId).ToHashSet()) : null;
+            geometry.Select(seat => seat.PlayerId).ToHashSet()) : null;
         var combatCohorts = sharedTableStudy && groupCombatCandidates && state.Combat != null ? CombatCohortProjection.Build(state) : null;
         var seats = new List<SceneSeat>();
         for (int index = 0; index < state.Players.Length; index++) {
             var player = state.Players[index];
             var seat = geometry[index];
-            if (seat.Index is < 0 or > 3) continue;
             var clusters = sharedTableStudy
                 ? SharedTableStudy.Arrange(seat.Index, player.Id, player.Zone("Battlefield").Cards.Where(card => !attachments!.IsTucked(card)).ToArray(), isResource, studySeparate,
                         duel ? role => DuelTableStudy.MatchLane(seat.Index, role) : null, duel ? 1.35f : 1,
-                        centerRows: duel, attachments: attachments, seatFacing: !duel, combatCohorts: combatCohorts)
+                        centerRows: duel, attachments: attachments, seatFacing: !duel, combatCohorts: combatCohorts, seatFrame: seat.Frame)
                 : BattlefieldLayout.Arrange(layout!, seat.Index, player.Id,
                     player.Zone("Battlefield").Cards, isResource, orderedChoices);
             seats.Add(new(seat, clusters));

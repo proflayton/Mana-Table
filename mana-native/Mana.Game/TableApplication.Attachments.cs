@@ -96,6 +96,10 @@ internal sealed partial class TableApplication
             return;
         }
         int seat = SeatDisplayIndex(owner);
+        bool extended = match!.Players.Length > 4;
+        var physical = SeatFrameFor(owner);
+        bool far = extended ? physical.IsFar : seat == 1;
+        bool rightSide = extended ? physical.IsSide && physical.QuarterTurns == 3 : seat == 2;
         int available = Math.Max(8, Math.Min(105, pose.Bounds.Width - 4));
         int measured = canvas.TextWidth(label, .48f, true);
         compact |= measured + 8 > available;
@@ -112,11 +116,11 @@ internal sealed partial class TableApplication
         height = Math.Min(height, Math.Max(1, bottom - top));
         // Compact creature stats face inward: the far seat uses the bottom edge,
         // your seat the top edge, and side seats the middle. Use the other edge.
-        int desiredY = compact ? seat == 1 ? pose.Bounds.Top + 3 : top : pose.Bounds.Bottom - 42;
+        int desiredY = compact ? far ? pose.Bounds.Top + 3 : top : pose.Bounds.Bottom - 42;
         int y = Math.Clamp(desiredY, pose.Bounds.Top + 1, top);
         int x = Math.Clamp((int)pose.Center.X - width / 2, pose.Bounds.Left + 1, Math.Max(pose.Bounds.Left + 1, pose.Bounds.Right - width - 1));
         if (indicator) {
-            x = seat == 2 ? pose.Bounds.Left + 1 : pose.Bounds.Right - width - 1;
+            x = rightSide ? pose.Bounds.Left + 1 : pose.Bounds.Right - width - 1;
             y = pose.Bounds.Top + 1;
         }
         var bounds = new Rectangle(x, y, width, height);

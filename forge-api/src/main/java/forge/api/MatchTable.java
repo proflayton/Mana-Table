@@ -30,6 +30,9 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     private final Map<Integer, MatchSession> automated = new LinkedHashMap<>();
     private final Set<Integer> humanSeats = new LinkedHashSet<>();
     private final boolean automatedOnly;
+    private final EncounterContext encounter;
+    private final Map<Integer, EncounterContext.Participant> encounterParticipants = new LinkedHashMap<>();
+    private volatile boolean encounterRetirementAllowed;
     private final ThreadLocal<MatchSession> dialogOwner = new ThreadLocal<>();
     private long boardRevision;
     private Map<String, Object> spectatorState;
@@ -57,9 +60,15 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
 
     MatchTable(String format, List<RegisteredPlayer> players, Path resources, Path profile,
                DecisionTempo.Settings timing, LongSupplier monotonicMillis, boolean automatedOnly) {
+        this(format, players, resources, profile, timing, monotonicMillis, automatedOnly, null);
+    }
+
+    MatchTable(String format, List<RegisteredPlayer> players, Path resources, Path profile,
+               DecisionTempo.Settings timing, LongSupplier monotonicMillis, boolean automatedOnly, EncounterContext encounter) {
         if (automatedOnly && (players.size() < 2 || players.stream().anyMatch(player -> !(player.getPlayer() instanceof AutomatedLobbyPlayer))))
             throw new IllegalArgumentException("A simulation requires at least two externally automated seats");
         this.automatedOnly = automatedOnly;
+        this.encounter = encounter;
         HeadlessPlatform.initialize(resources, profile);
         tempo = new DecisionTempo(timing, monotonicMillis);
         this.format = format;
@@ -69,6 +78,12 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         rules.setWarnAboutAICards(false);
         match = new Match(rules, players, "Mana Table");
         game = match.createGame();
+        if (encounter != null) for (var participant : encounter.participants()) {
+            var registered = players.get(participant.index());
+            var actual = game.getRegisteredPlayers().stream().filter(player -> player.getRegisteredPlayer() == registered).findFirst().orElseThrow();
+            if (actual.getTeam() != participant.teamId()) throw new IllegalStateException("The engine did not preserve the configured team");
+            encounterParticipants.put(actual.getId(), participant);
+        }
         game.getAction().enableStateBoundary();
         game.getReversibleManaAction().enable();
         game.subscribeToEvents(identities);
@@ -111,6 +126,29 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     static boolean isAutomated(forge.game.player.Player player) {
         return player.getOriginalLobbyPlayer() instanceof AutomatedLobbyPlayer;
     }
+
+    String partyId() { return encounter == null ? null : encounter.partyId(); }
+    String encounterId() { return encounter == null ? null : encounter.encounterId(); }
+    String participantId(int playerId) {
+        var participant = encounterParticipants.get(playerId);
+        return participant == null ? "" : participant.participantId();
+    }
+    EncounterProgressStore.Receipt terminalReceipt() {
+        var captured = new java.util.concurrent.atomic.AtomicReference<EncounterProgressStore.Receipt>();
+        game.getAction().withState(() -> { synchronized (gate) {
+            if (encounter == null || faulted) return;
+            var outcome = MatchOutcomeProjection.of(this, null);
+            if (outcome == null) return;
+            var participants = encounterParticipants.entrySet().stream().map(entry -> {
+                var participant = entry.getValue();
+                return new EncounterProgressStore.Participant(participant.participantId(), participant.index(), entry.getKey(), participant.teamId(), participant.role(), participant.deckSelectionId());
+            }).sorted(Comparator.comparingInt(EncounterProgressStore.Participant::index)).toList();
+            captured.set(new EncounterProgressStore.Receipt(encounter.encounterId(), encounter.partyId(), encounter.encounterId(), id,
+                    encounter.specification().rulesetId(), encounter.specification().partyTeam(), outcome, participants, java.time.Instant.now().toString()));
+        } });
+        return captured.get();
+    }
+    void allowEncounterRetirement() { encounterRetirementAllowed = true; }
 
     /** Private child-process host access. These are never network seat capabilities. */
     List<MatchSession> automatedSeats() { return List.copyOf(automated.values()); }
@@ -310,7 +348,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     }
     // A controller boundary publishes the terminal board before waking the game.
     boolean finishIfNoHumans() {
-        if (!automatedOnly && !game.isGameOver() && humanSeats.stream().map(seats::get).allMatch(MatchSession::eliminated)) {
+        if (!automatedOnly && encounter == null && !game.isGameOver() && humanSeats.stream().map(seats::get).allMatch(MatchSession::eliminated)) {
             game.setGameOver(GameEndReason.AllHumansLost);
             return true;
         }
@@ -375,6 +413,10 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     @Override public void close() {
         game.getAction().withState(() -> { synchronized (gate) {
             if (closed) return;
+            // A natural outcome can race a request to leave an active table.
+            // Decide retirement at the rules boundary before transport teardown.
+            if (encounter != null && !encounterRetirementAllowed && MatchOutcomeProjection.of(this, faulted ? "fault" : null) != null)
+                throw new IllegalStateException("Save encounter progress before retiring this match.");
             closed = true;
             invalidateUndo("table-closed");
             stopTempo();

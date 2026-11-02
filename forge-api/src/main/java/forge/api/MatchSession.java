@@ -275,6 +275,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         human.setGui(gui);
         for (var player : game.getPlayers()) player.updateOpponentsForView();
         latest = Collections.unmodifiableMap(map("id", id, "revision", 0L, "boardRevision", 0L,
+                "partyId", table.partyId(), "encounterId", table.encounterId(),
                 "status", "starting", "message", message, "format", format, "viewerId", viewer.getId(),
                 "playerCount", game.getPlayers().size(), "players", List.of(), "stack", List.of(),
                 "turn", 0, "phase", "Pregame", "phaseKey", "PREGAME", "activePlayerId", null,
@@ -1899,6 +1900,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var paying = game.costPaymentStack.peek();
         var ability = many.getSpellAbility();
         if (many instanceof InputSelectEntitiesFromList<?> list) {
+            // List inputs count entities. Other Many inputs can count counters
+            // or mana instead, and retain their specialized progress facts.
+            promptFacts.put("min", list.getMinimumSelection());
+            promptFacts.put("max", list.getMaximumSelection());
             var selectable = many.getSelectableEntitiesSnapshot();
             // Preserve provider order and exact occurrences; a subclass may
             // narrow click membership without changing its supplied list.
@@ -2131,6 +2136,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         "ownerId", owner.getId(), "owner", owner.getName(), "damage", player.getCommanderDamage(commander)));
             }
             players.add(map("id", player.getId(), "name", player.equals(viewer) ? "You" : player.getName(), "human", player.equals(viewer),
+                    "participantId", table.participantId(player.getId()),
                     "seat", allPlayers.indexOf(player) + 1, "teamId", teamsByPlayer.get(player.getId()), "eliminated", player.getHasLost(),
                     "life", player.getLife(), "maxHandSize", player.hasUnlimitedHandSize() ? null : player.getMaxHandSize(),
                     "landPlaysUsed", player.getNumLandThisTurn(), "landPlayLimit", player.hasUnlimitedLandPlay() ? null : player.getMaxLandPlay(),
@@ -2212,6 +2218,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         refreshFiniteStackYield(projectedPrompt);
         var snapshot = map("id", id, "revision", ++revision, "boardRevision", boardRevision, "format", format, "status", error != null ? "error" : game.isGameOver() ? "finished" : "playing",
+                "partyId", table.partyId(), "encounterId", table.encounterId(),
                 "stackInterruptionVersion", table.stackInterruption.version(),
                 "stackActionVersion", table.stackInterruption.actionVersion(), "resolutionChoiceVersion", resolutionChoiceVersion,
                 "finiteStackYield", finiteStackYield.frame(table.stackInterruption.actionVersion(), resolutionChoiceVersion),

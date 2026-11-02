@@ -44,11 +44,13 @@ internal sealed partial class TableApplication
         hovered = null; matchPresentation.Cards.Collapse();
     }
 
-    private void ChoosePlayMode(bool solo)
+    private void ChoosePlayMode(HomePlayMode mode)
     {
         if (!loaded || busy || Connected || match != null) return;
-        ClearExperienceInput(); SetupMode(solo);
-        message = solo ? "Choose your deck and play." : "Host a table or join your friends.";
+        if (mode == HomePlayMode.Cooperative && services.MatchSetup is not { SupportsMatchSetup: true }) return;
+        ClearExperienceInput(); SetupMode(mode);
+        message = mode switch { HomePlayMode.Solo => "Choose your deck and play.",
+            HomePlayMode.Cooperative => "Gather your party for a cooperative encounter.", _ => "Host a table or join your friends." };
     }
     private void OpenDeckLibrary()
     {

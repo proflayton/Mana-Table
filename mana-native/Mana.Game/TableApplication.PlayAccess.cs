@@ -11,6 +11,25 @@ internal sealed partial class TableApplication
 {
     private int DecisionY(int ordinaryY) => ordinaryY + (tableScene?.PlayAccess.DockOffsetY ?? 0);
 
+    private void CompletePlayAccessPlacement()
+    {
+        if (tableScene == null || match == null || tableScene.PlayAccess.SourcePocket.IsEmpty) return;
+        var furniture = seatReadoutPlans.Values.SelectMany(plan => plan.Pieces).ToList();
+        foreach (var player in match.Players.Where(player => player.Id != match.ViewerId)) {
+            int seat = SeatDisplayIndex(player.Id);
+            foreach (var pose in OpponentHandPoses(player, seat)) {
+                furniture.Add(pose.Bounds);
+                furniture.Add((pose with { Center = pose.Center + new Vector2(3, 6) }).Bounds);
+            }
+            if (!SeatFrameFor(player.Id).IsFar && StateClarity.PlayerStates(player).Length == 0) {
+                var hand = SeatHand(player.Id);
+                furniture.Add(new((int)hand.X - 65, (int)hand.Y + 35, 130, 22));
+            }
+        }
+        tableScene = tableScene.PlaceAccessBesideHand(furniture,
+            (caption, width) => canvas.TextSize(caption, .59f, width, 80, true));
+    }
+
     private PlayAccess? CurrentPlayAccess(Card card) => tableScene?.PlayAccess.Groups
         .SelectMany(group => group.Cards).FirstOrDefault(item => CardViews.Same(item.Scene.Card, card))?.Access;
 
@@ -38,7 +57,8 @@ internal sealed partial class TableApplication
             var group = marked[index];
             var source = group.SourceIds.Select(id => CardViews.FindZoneOccurrence(match!, id)?.Card)
                 .FirstOrDefault(card => card is { FaceDown: false });
-            var center = new Vector2(plan.Bounds.Left + 18 + index * Math.Min(67, 262f / Math.Max(1, marked.Length - 1)), plan.Bounds.Top + 16);
+            var center = new Vector2(plan.SourceRail.Left + 18 + index * Math.Min(67,
+                Math.Min(262, plan.SourceRail.Width - 40) / (float)Math.Max(1, marked.Length - 1)), plan.SourceRail.Top + 16);
             string id = "play-access-source:" + group.Id;
             bool hover = AccessCollectionAllowed && IsControlHovered(id);
             canvas.Circle(center, 16, hover ? Color.White : AccessCollectionAllowed ? Gold * .85f : Muted * .35f);
@@ -57,7 +77,7 @@ internal sealed partial class TableApplication
         string caption = string.Join(" · ", plan.Groups.Select(group => group.Zone).Distinct());
         var captionBounds = plan.UnfoldBounds;
         canvas.Text(caption, captionBounds.X + 4, captionBounds.Y + 4,
-            IsControlHovered("play-access-unfold") ? Color.White : Gold, .59f, captionBounds.Width - 8, 2, true);
+            IsControlHovered("play-access-unfold") ? Color.White : Gold, .59f, captionBounds.Width - 8, 80, true);
         var expand = new MatchIntent.ExpandCardCollection(CardCollectionTarget.Access);
         if (AccessCollectionAllowed) hits.Add(new("play-access-unfold", ScopeFor(expand), captionBounds, expand));
     }

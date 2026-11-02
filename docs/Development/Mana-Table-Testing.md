@@ -38,6 +38,58 @@ score. Policy fixtures do not prove private-hand filtering; retain the real
 adapter audience/visibility checks and separately review complete multiplayer
 journeys as later M1 work.
 
+## Cooperative encounter journey gates
+
+Run `CooperativeEncounterTest` and `EncounterProgressStoreTest` in the existing
+`forge-api` reactor suite, together with `EliminationRegressionTest`,
+`LobbyTempoTest` and `MatchOutcomeProjectionTest`. These checks use real rules
+players for one-, two- and four-human parties, including four humans versus two
+AI opponents. They cover actual teams, private observations, setup/tempo Ready
+consent, reconnect, host loss with surviving AI allies, real win/loss, rematch,
+and receipt/checkpoint failure, retry, replay and conflict handling. Preserve
+first-failure logs; correcting a test fixture is not evidence of an engine fix.
+
+The graphics-free client runner adds `EncounterSetupRegression`, including
+immutable specification/receipt validation and pending -> failed -> saved lobby
+updates while the terminal match revision stays unchanged. Native headless
+checks include `MatchSetupWireChecks`, `CooperativeLobbyInteractionChecks` and
+`LargeTableChecks`. For an efficient diagnosis, use
+`--smoke-headless-presentation --presentation-group cooperative-lobby` or
+`--presentation-group seated-plane`, each with its own disposable `--profile`.
+The `play-access` group also covers five/six seats with a long player name,
+external playable cards and full hands. Its assertions use accepted and painted
+name/resource bounds, source furniture and actual controls. A counted seat-number
+fallback does not establish that the player's full name remains readable.
+The `cooperative-opening` group tests the narrow pregame starting-player driver
+with nonsequential player IDs and negative card/source/range/scope cases. Real
+`ManyPublicationTest` coverage requires the starting-player choice before
+explicit Keep and separately pins generic entity-count bounds. The native
+journey retains actual accepted choice/Keep witnesses and bounded public-stage
+evidence on failure; an unobserved random chooser branch is not called exercised.
+The full presentation suite still includes these groups. Wait for both async
+work and the existing presentation activity to settle before asserting that a
+new lobby control can be pressed. Keep exact missing-hit/bounds evidence when
+the assertion fails; do not relax reachability to accommodate an overlay.
+
+The compiled native test app's `--smoke-cooperative-encounter` runs
+`CooperativeEncounterEngineJourney` against the real Forge adapter. Supply
+`--engine-jar <bundle>/forge-engine-fixtures.jar --engine-resources <bundle>
+--profile <isolated-profile>`. The bundle needs the current production and
+fixture JARs, `runtime/bin/java.exe`, and `forge-res`. It exercises real setup,
+both consent races, loss and saved completion, same-party return/rematch, six
+decoded/private audiences, and native AI progress after the human host loses.
+It leaves the last unfinished game without inventing a saved result. Inspect
+both the standalone summary and inner journey JSON for success and no error;
+WinExe exit code alone does not pass this gate.
+
+This standalone route proves local functionality, not packaged source
+provenance. The normal source-bound production engine smoke calls the same
+journey in its production-JAR gate. Required CI and published-package verification
+retain that distinction. Render actual large-table PNGs with the production
+capture path and inspect them separately; geometry checks cannot approve visual
+legibility. Record human review as pending until the exact candidate's whole
+cooperative journey has been tried.
+
 ## Package timing checks
 
 The existing native CI fixture runner includes `ci/test-phase-timing.ps1`.

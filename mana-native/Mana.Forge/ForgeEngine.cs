@@ -8,7 +8,7 @@ namespace Mana.Forge;
 
 public sealed record ForgePaths(string Java, string Jar, string Resources, string Profile);
 
-public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial, IDeckWorkshop, ITableSeatSetup, ICardPrintings, ISourceActions, ITableTempo, IAutomatedSeatProvider
+public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial, IDeckWorkshop, ITableSeatSetup, ITableMatchSetup, ICardPrintings, ISourceActions, ITableTempo, IAutomatedSeatProvider
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
     private sealed record PendingRequest(string Method, TaskCompletionSource<JsonElement> Completion);
@@ -29,6 +29,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         public bool AutomationAvailable { get; set; }
         public bool CertifiedUndoAvailable { get; set; }
         public bool HistoryAvailable { get; set; }
+        public bool MatchSetupAvailable { get; set; }
         public ForgeCommandScope Commands { get; } = new();
         public volatile Exception? Failure;
     }
@@ -71,6 +72,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                             owner.AutomationAvailable = capabilities.Contains("automated-seats");
                             owner.CertifiedUndoAvailable = capabilities.Contains("certified-one-step-undo");
                             owner.HistoryAvailable = capabilities.Contains("match-history");
+                            owner.MatchSetupAvailable = capabilities.Contains("match-setup");
                             owner.Ready.TrySetResult();
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
@@ -235,21 +237,45 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         if (opponentIds.Length >= setup.GetProperty("maxPlayers").GetInt32()) throw new ArgumentException("This format supports fewer players.", nameof(opponentIds));
         await Request("matchStart", new { deckId = Text(setup, "deckId"), revision = setup.GetProperty("revision").GetInt64(), opponents = opponentIds });
     }
-    internal static Lobby MapLobby(JsonElement data) => new(Text(data, "mode"), Text(data, "status"), Text(data, "error"),
-        data.GetProperty("canStart").GetBoolean(), Text(data, "startProblem"), data.GetProperty("matchActive").GetBoolean(),
-        Text(data, "portMapping"), Text(data, "internetInvite"), Read<ImmutableArray<Address>>(data.GetProperty("addresses")),
-        data.GetProperty("slots").EnumerateArray().Select(MapLobbySeat).ToImmutableArray(), Text(data, "tableId")) {
-            AiOpponents = data.TryGetProperty("aiOpponents", out var opponents) ? Read<ImmutableArray<AiOpponent>>(opponents) : [],
-            Tempo = data.TryGetProperty("tempo", out var tempo) ? Read<TempoSettings>(tempo) : null,
-            Revision = data.TryGetProperty("revision", out var revision) && revision.ValueKind == JsonValueKind.Number
-                && revision.TryGetInt64(out var value) ? Math.Max(0, value) : 0
-        };
+    internal static Lobby MapLobby(JsonElement data)
+    {
+        try {
+            var lobby = new Lobby(Text(data, "mode"), Text(data, "status"), Text(data, "error"),
+                data.GetProperty("canStart").GetBoolean(), Text(data, "startProblem"), data.GetProperty("matchActive").GetBoolean(),
+                Text(data, "portMapping"), Text(data, "internetInvite"), Read<ImmutableArray<Address>>(data.GetProperty("addresses")),
+                data.GetProperty("slots").EnumerateArray().Select(MapLobbySeat).ToImmutableArray(), Text(data, "tableId")) {
+                AiOpponents = data.TryGetProperty("aiOpponents", out var opponents) ? Read<ImmutableArray<AiOpponent>>(opponents) : [],
+                Tempo = data.TryGetProperty("tempo", out var tempo) ? Read<TempoSettings>(tempo) : null,
+                Revision = data.TryGetProperty("revision", out var revision) && revision.ValueKind == JsonValueKind.Number
+                    && revision.TryGetInt64(out var value) ? Math.Max(0, value) : 0,
+                MatchSetupCapabilities = OptionalLobbyFact<MatchSetupCapabilities>(data, "matchSetupCapabilities"),
+                MatchSetup = OptionalLobbyFact<MatchSetupSpecification>(data, "matchSetup"),
+                MatchSetupConsent = data.TryGetProperty("matchSetupConsent", out var consent) && consent.ValueKind != JsonValueKind.Null ? consent.GetString() : null,
+                PartyProgress = OptionalLobbyFact<PartyProgress>(data, "partyProgress")
+            };
+            if ((lobby.MatchSetupCapabilities != null || lobby.MatchSetup != null || lobby.PartyProgress != null)
+                && (!data.TryGetProperty("revision", out var exactRevision) || exactRevision.ValueKind != JsonValueKind.Number
+                    || !exactRevision.TryGetInt64(out long exactValue) || exactValue < 0))
+                throw new InvalidOperationException("Match setup requires an exact lobby revision.");
+            MatchSetupFacts.Validate(lobby);
+            if (lobby.PartyProgress is { } progress) EncounterFacts.Validate(progress);
+            return lobby;
+        } catch (Exception error) when (error is JsonException or InvalidOperationException or ArgumentException or FormatException or OverflowException or KeyNotFoundException) {
+            throw new IOException("The rules provider published an invalid lobby snapshot.", error);
+        }
+    }
+    private static T? OptionalLobbyFact<T>(JsonElement data, string name) where T : class
+        => !data.TryGetProperty(name, out var value) || value.ValueKind == JsonValueKind.Null ? null
+            : Read<T>(value);
     private static Seat MapLobbySeat(JsonElement data)
     {
         var seat = new Seat(data.GetProperty("index").GetInt32(), Text(data, "name"), Text(data, "type"),
             data.TryGetProperty("deck", out var deck) && deck.ValueKind == JsonValueKind.String ? deck.GetString() : null,
             data.GetProperty("ready").GetBoolean(), data.GetProperty("local").GetBoolean()) {
-                OpponentId = data.TryGetProperty("opponentId", out var opponent) && opponent.ValueKind == JsonValueKind.String ? opponent.GetString() : null
+                OpponentId = data.TryGetProperty("opponentId", out var opponent) && opponent.ValueKind == JsonValueKind.String ? opponent.GetString() : null,
+                ParticipantId = data.TryGetProperty("participantId", out var participant) && participant.ValueKind == JsonValueKind.String ? participant.GetString() ?? "" : "",
+                TeamId = data.TryGetProperty("teamId", out var team) && team.ValueKind != JsonValueKind.Null ? team.GetInt32() : null,
+                Role = data.TryGetProperty("role", out var role) && role.ValueKind != JsonValueKind.Null ? Read<MatchSeatRole>(role) : null
             };
         if (!data.TryGetProperty("deckPreview", out var preview) || preview.ValueKind != JsonValueKind.Object) return seat;
         var commanders = preview.TryGetProperty("commanders", out var faces) && faces.ValueKind == JsonValueKind.Array

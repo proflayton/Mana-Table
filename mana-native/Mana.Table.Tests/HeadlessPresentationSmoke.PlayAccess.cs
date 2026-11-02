@@ -17,6 +17,7 @@ internal static partial class HeadlessPresentationSmoke
 {
     private static void CheckPlayAccess(string profile, Action<bool, string> check, List<object> trace, List<object> performance)
     {
+        LargeTablePlayAccessChecks.Run(profile, check);
         foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) }) {
             foreach (string cardId in new[] { PlayAccessScenario.ExileSpellId, PlayAccessScenario.FlashbackId,
                 PlayAccessScenario.BorrowedId, PlayAccessScenario.ExileLandId }) {

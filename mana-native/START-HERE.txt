@@ -99,6 +99,32 @@ PLAY SOLO AGAINST AI
 4. After the game, select Return to setup to play again or switch to friends.
 No network setup, account, API key or paid AI service is needed for solo play.
 
+COOPERATIVE ENCOUNTER - SOURCE PREVIEW
+This section applies to packages that show Co-op on Home. Release 0.2.334 only
+contains the earlier team/outcome foundation and does not expose this mode.
+1. Choose a valid Commander deck, select Co-op and choose Your side's size.
+   One means solo. Up to four allied places can hold friends or AI allies.
+2. Host co-op encounter. Invite friends into open party places, or add AI allies.
+   Choose the bots' decks through their portraits. Table rules configures the
+   party and one or two AI opponents, with at most six total players.
+3. Everyone reviews their side and chooses Ready; the host starts when all are
+   ready. Changing enrollment or table rules requires Ready again. Everyone
+   needs an updated build that supports cooperative setup.
+4. Each player has their own turns, life, cards and mana. Your side wins together.
+   If asked who takes the first turn, choose a player before Keep/Mulligan.
+   This is not shared-life/shared-turn Two-Headed Giant. An eliminated human can
+   keep watching while AI allies play. Conceding your seat leaves hosting alive;
+   closing the hosted table is a separate action.
+5. After an actual conclusion, wait for the encounter to save. If saving fails,
+   the host can choose Retry save. Return to the same lobby when the saved result
+   permits it, then choose decks and Ready for another encounter. Played and
+   victory counts reflect saved completions; an interrupted match awards neither.
+The preview contains one-match cooperative play and saved completion receipts.
+Branching expeditions, rewards, pod circuits and selecting a saved party after
+restarting the app are later work. It does not restore a live match after a crash.
+A forced exit before the first saved completion also loses that unfinished
+attempt's identity; it does not count as played or won.
+
 IMPORT YOUR DECK
 Decks > Import deck file or Paste deck list accepts text exports.
 Use quantity/name rows such as "4 Forest" or "4x Forest". Set codes, collector

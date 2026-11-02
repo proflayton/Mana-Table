@@ -74,7 +74,7 @@ internal sealed partial class TableApplication
             var targetView = manualBoardView ?? (StudyFocusActive
                 ? FrameStudyMat(tableScene.Seat(studyFocusOwner!.Value).Geometry,
                     tableScene.Seat(state.ViewerId).Geometry, state.Viewer)
-                : BoardView.Identity);
+                : TableViewGeometry.Overview(tableScene));
             boardView = boardViewMotion.Navigate(state.Id, state.ViewerId, targetView, now, preferences.ReducedMotion,
                 dragging || pressed?.Card != null || readingId != null || OverlayOpen,
                 direct: boardPanning || boardKeyboardPanning);
@@ -108,7 +108,7 @@ internal sealed partial class TableApplication
         // Frame the complete physical setup, including zones beside the cloth.
         // A near-seat row needs the clear width between both side portraits.
         var mat = TableViewGeometry.PlayerSetupBounds(subject);
-        var area = subject.Index == 3 ? new Rectangle(160, 170, 1280, 530) : new Rectangle(195, 170, 995, 530);
+        var area = subject.Frame.IsLocal ? new Rectangle(160, 170, 1280, 530) : new Rectangle(195, 170, 995, 530);
         var preferred = BoardView.Frame(mat, area);
         var shown = preferred.Apply(mat);
         // Reachable cards and captions must clear fixed local controls. Keep

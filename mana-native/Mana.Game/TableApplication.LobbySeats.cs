@@ -8,7 +8,7 @@ internal sealed partial class TableApplication
     private bool CanManageLobbySeats => services.Seats != null && lobby is { Mode: "hosting", MatchActive: false };
     private Seat? ManagedLobbySeat(int index) => CanManageLobbySeats && index > 0
         ? lobby!.Seats.FirstOrDefault(s => s.Index == index && s.Type is "OPEN" or "AI") : null;
-    private bool CanResizeLobby(int players) => CanManageLobbySeats && players is >= 2 and <= 4
+    private bool CanResizeLobby(int players) => CanManageLobbySeats && !IsCooperative(lobby!) && players is >= 2 and <= 4
         && lobby!.Seats.Where(s => s.Index >= players).All(s => s.Type == "OPEN");
 
     private void DrawLobbySizeControls()
@@ -39,7 +39,7 @@ internal sealed partial class TableApplication
         int x = 280 + position * 347;
         MenuAction("lobby-ai:" + seat.Index, seat.Type == "AI" ? "Change deck" : "Add AI", new(x - 145, 637, 290, 36),
             new ShellIntent.OpenLobbyAi(seat.Index), !busy && lobby!.AiOpponents.Length > 0, size: .75f);
-        if (seat.Type == "AI") MenuAction("lobby-ai-remove:" + seat.Index, "Remove AI", new(x - 145, 680, 290, 36),
+        if (seat.Type == "AI" && seat.Role != MatchSeatRole.Opposition) MenuAction("lobby-ai-remove:" + seat.Index, "Remove AI", new(x - 145, 680, 290, 36),
             new ShellIntent.RemoveLobbyAi(seat.Index), !busy, size: .65f);
     }
     private void OpenLobbyAiPicker(int seat)

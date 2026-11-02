@@ -8,7 +8,8 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private static readonly Rectangle StudyFocusNavigationBounds = new(276, 72, 152, 34);
+    private Rectangle StudyFocusNavigationBounds => match?.Players.Length > 4
+        ? new(12, 304, 174, 34) : new(276, 72, 152, 34);
     private int? studyFocusOwner;
     private string studyFocusGame = "";
     private int studyFocusViewer;
@@ -17,12 +18,13 @@ internal sealed partial class TableApplication
     private bool TwoFieldTable => TableStudyEnabled && match?.Players.Length == 2;
     private Rectangle StudyActionArea => studyAttentionArea;
 
-    private Vector2 SeatHero(int player) => tableScene?.Seats.FirstOrDefault(seat => seat.PlayerId == player)?.Geometry.Hero
-        ?? TableLayout.Hero(player == match?.ViewerId ? 3 : match == null ? 1 : TableLayout.SeatIndex(match, player));
-    private Vector2 SeatHand(int player) => tableScene?.Seats.FirstOrDefault(seat => seat.PlayerId == player)?.Geometry.Hand
-        ?? TableLayout.SeatHand(player == match?.ViewerId ? 3 : match == null ? 1 : TableLayout.SeatIndex(match, player));
+    private TableSeatFrame SeatFrameFor(int player) => tableScene?.Seats.FirstOrDefault(seat => seat.PlayerId == player)?.Geometry.Frame
+        ?? TableSeatFrame.For(match == null ? 1 : TableSeatFrame.DisplayIndex(match, player), match?.Players.Length ?? 4,
+            TableStudyEnabled, TwoFieldTable);
+    private Vector2 SeatHero(int player) => SeatFrameFor(player).Hero;
+    private Vector2 SeatHand(int player) => SeatFrameFor(player).Hand;
     private int SeatDisplayIndex(int player) => tableScene?.Seats.FirstOrDefault(seat => seat.PlayerId == player)?.Index
-            ?? (player == match?.ViewerId ? 3 : match == null ? 1 : TableLayout.SeatIndex(match, player));
+            ?? (match == null ? 1 : TableSeatFrame.DisplayIndex(match, player));
 
     private void ValidateStudyFocus()
     {

@@ -26,19 +26,33 @@ internal sealed partial class TableApplication
             var player = match.Players.Single(player => player.Id == seat.PlayerId);
             int incoming = match.Combat?.Attackers.Count(attack => attack.HasDefender && attack.DefendingPlayerId == player.Id) ?? 0;
             string caption = player.Eliminated ? TimedOut(player.Id) ? "TIMED OUT" : "ELIMINATED" : incoming > 0 ? incoming + " INCOMING" : "";
-            if (seat.Index != 1 && StateClarity.PlayerStates(player).Length > 0)
+            bool extended = match.Players.Length > 4;
+            bool far = extended ? seat.Geometry.Frame.IsFar : seat.Index == 1;
+            if (!far && StateClarity.PlayerStates(player).Length > 0)
                 caption += (caption.Length > 0 ? " · " : "") + player.Zone("Hand").Count + " in hand";
+            int? alignment = !extended ? null : 1;
             SeatReadoutPlan Build(int width = 224, bool? horizontal = null, bool countedOnly = false) => SeatReadoutPlan.Build(player, seat.Index, PublicSeatOrdinal(player.Id), caption, incoming > 0,
                 (text, size, bold) => canvas.TextWidth(text, size, bold),
-                (text, size, measureWidth, bold) => canvas.TextSize(text, size, measureWidth, 80, bold), width, horizontal, countedOnly).AtPortrait(seat.Geometry.Hero);
+                (text, size, measureWidth, bold) => canvas.TextSize(text, size, measureWidth, 80, bold), width,
+                horizontal ?? (extended ? (bool?)far : null), countedOnly,
+                SeatReadoutPlan.RelationshipLabel(match, player.Id), separateIdentity: extended).AtPortrait(seat.Geometry.Hero, alignment);
             var identitySlot = SeatNameplateArea(seat.Geometry.Hero, false, seat.Index, PlanManaHalo(player, seat.Index));
-            return (Player: player.Id, IdentitySlot: identitySlot, Reserved: Build(countedOnly: true), Arrangements: new[] { Build(), Build(264), Build(horizontal: false) });
+            return (Player: player.Id, IdentitySlot: identitySlot, Reserved: Build(countedOnly: true),
+                Arrangements: extended ? new[] { Build(320), Build(264), Build(), Build(320, horizontal: false) }
+                    : new[] { Build(), Build(264), Build(horizontal: false) });
         }).ToArray();
         foreach (var candidate in candidates) {
             occupied.Remove(candidate.IdentitySlot);
             var protectedAreas = occupied.Concat(candidates.Where(other => other.Player != candidate.Player
                 && !seatReadoutPlans.ContainsKey(other.Player) && !seatReadoutWorkspaces.Contains(other.Player)).SelectMany(other => other.Reserved.Pieces)).ToArray();
-            switch (seatReadoutPlacer(candidate.Arrangements, candidate.Reserved, BoardViewport, protectedAreas)) {
+            var owner = tableScene.Seat(candidate.Player).Geometry.Hero;
+            var readoutViewport = match.Players.Length > 4
+                ? Rectangle.Intersect(new(0, 54, 1600, 846), new((int)owner.X - 180, (int)owner.Y + 52, 360, 150))
+                : BoardViewport;
+            if (match.Players.Length > 4 && tableScene.PlayAccess.SourcePocket is { IsEmpty: false } pocket
+                && !tableScene.Seat(candidate.Player).Geometry.Frame.IsFar && owner.X > 800)
+                readoutViewport.Width = Math.Max(0, Math.Min(readoutViewport.Right, pocket.Left) - readoutViewport.X);
+            switch (seatReadoutPlacer(candidate.Arrangements, candidate.Reserved, readoutViewport, protectedAreas)) {
                 case SeatReadoutPlacement.Placed placed:
                     seatReadoutPlans[candidate.Player] = placed.Plan;
                     occupied.AddRange(placed.Plan.Pieces);
@@ -54,31 +68,47 @@ internal sealed partial class TableApplication
     private List<Rectangle> FixedSeatReadoutObstacles()
     {
         var occupied = new List<Rectangle> { StudyFocusNavigationBounds };
+        var overview = TableViewGeometry.Overview(tableScene!);
+        bool extended = match!.Players.Length > 4;
+        if (extended) occupied.AddRange(tableScene!.Hand.Cards.Select(card => card.Pose.Bounds));
+        if (extended && tableScene!.PlayAccess.SourcePocket is { IsEmpty: false } pocket) occupied.Add(pocket);
         foreach (var seat in tableScene!.Seats) {
             var player = match!.Players.Single(player => player.Id == seat.PlayerId);
             var geometry = seat.Geometry;
-            if (geometry.PlaymatBounds is { } mat) occupied.Add(mat);
+            if (geometry.PlaymatBounds is { } mat) occupied.Add(overview.Apply(mat));
             occupied.Add(new((int)geometry.Hero.X - 47, (int)geometry.Hero.Y - 47, 94, 100));
             var mana = PlanManaHalo(player, seat.Index);
             occupied.AddRange(mana.Parts.Select(part => part.Bounds));
-            occupied.Add(SeatNameplateArea(geometry.Hero, seat.Index == 3, seat.Index, mana));
-            if (seat.Index != 3) {
-                occupied.Add(new((int)geometry.Hand.X - 83, (int)geometry.Hand.Y - 30, 166, 75));
+            occupied.Add(SeatNameplateArea(geometry.Hero, geometry.Frame.IsLocal, seat.Index, mana));
+            if (!geometry.Frame.IsLocal) {
+                if (!extended) occupied.Add(new((int)geometry.Hand.X - 83, (int)geometry.Hand.Y - 30, 166, 75));
                 foreach (var hand in OpponentHandPoses(player, seat.Index)) {
                     occupied.Add(hand.Bounds); occupied.Add((hand with { Center = hand.Center + new Vector2(3, 6) }).Bounds);
                 }
+                if (extended && !geometry.Frame.IsFar && StateClarity.PlayerStates(player).Length == 0)
+                    occupied.Add(new((int)geometry.Hand.X - 65, (int)geometry.Hand.Y + 35, 130, 22));
+            } else if (extended) {
+                // Owner identities are fixed seat furniture. The priority dock
+                // chooses its actual free position after these readouts exist;
+                // its preferred rectangle must not displace their identities.
+                occupied.AddRange(geometry.TurnControls.PhaseBounds);
+                occupied.Add(geometry.TurnControls.AutoBounds);
+                occupied.Add(geometry.TurnControls.HoldBounds);
+                occupied.Add(geometry.TurnControls.AlertBounds);
+                if (geometry.LandReadoutArea is { } lands) occupied.Add(lands);
             } else occupied.AddRange(geometry.TurnControls.Reservations);
-            foreach (var card in geometry.Commanders) occupied.Add((card.Pose with { Size = card.Pose.Size + new Vector2(13) }).Bounds);
+            foreach (var card in geometry.Commanders) occupied.Add(overview.Apply(card.Pose with { Size = card.Pose.Size + new Vector2(13) }).Bounds);
             // Reserve the complete label/action rail even before a cast becomes
             // available, so priority and camera changes cannot move the HUD.
             if (geometry.ZoneStation is { } station) {
-                occupied.Add(station.CommandLabel); occupied.Add(station.CommandActions);
+                occupied.Add(overview.Apply(station.CommandLabel)); occupied.Add(overview.Apply(station.CommandActions));
             } else {
                 var command = geometry.CommandLink;
                 occupied.Add(new((int)command.X - 56, (int)command.Y - 3, 112, 52));
             }
             foreach (var pile in geometry.Piles)
-                occupied.Add(PileGeometry.Create(pile, player.Zone(pile.Zone).Count).Reservation);
+                occupied.Add(pile.TableAnchored ? overview.Apply(PileGeometry.Create(pile, player.Zone(pile.Zone).Count).Reservation)
+                    : PileGeometry.Create(pile, player.Zone(pile.Zone).Count).Reservation);
         }
         return occupied;
     }
@@ -87,7 +117,8 @@ internal sealed partial class TableApplication
     {
         foreach (var item in plan.Text) {
             var color = item.Role == SeatReadoutTextRole.Incoming ? Red : item.Role == SeatReadoutTextRole.Status ? Gold : Ink;
-            if (item.Role == SeatReadoutTextRole.LandTotal && item.Bounds.Contains(pointer)) color = Blue;
+            if (item.Role is SeatReadoutTextRole.LandTotal or SeatReadoutTextRole.Identity or SeatReadoutTextRole.ResourceSummary
+                && item.Bounds.Contains(pointer)) color = Blue;
             canvas.Text(item.Text, item.Bounds.X, item.Bounds.Y, color, item.Size, item.Bounds.Width, 80, item.Bold);
             seatReadoutBounds.Add(item.Bounds);
         }

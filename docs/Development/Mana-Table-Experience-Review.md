@@ -6,6 +6,84 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Play a cooperative encounter and return together: 1 November 2026
+
+**M1 source candidate; exact-candidate human journey review pending.** Start on
+Home's Co-op mode, choose one to four allied places, then Host co-op encounter.
+One place means solo; additional places can hold friends or AI allies. The lobby
+groups commander portraits into Your party and Opposition. Invite is available
+when a friend can occupy an actual open party place. Each bot retains its own
+deck choice. Table rules shows separate turns, life, cards and mana before Ready.
+Changing the rules or enrollment requires everyone to acknowledge that setup
+again. Resizing preserves enrolled sides instead of silently recruiting an enemy.
+
+Wizards' [Arena Challenge Lobbies announcement](https://magic.wizards.com/en/news/mtg-arena/announcements-february-16-2026)
+provides the observed interaction precedent: a host controls the rules, players
+enter vacant places, choose valid decks and Ready, and return to the same lobby
+after a game. Our cooperative teams and six-seat arrangement are an adaptation;
+that source does not establish Arena support for this format. The supplied Arena
+screenshots and the player's seated-table feedback remain the spatial reference.
+
+Starting reveals the existing physical table. Five- and six-player games extend
+the rectangular surface and place three seats along each long edge. The same
+mat-local card, attachment, pile and motion geometry serves every viewer; an
+observer does not acquire ownership by looking at the near seat. Cards retain
+their shape as the camera moves. The arrangement depends on enrolled seats, with
+no switch to tiny text tiles when permanent counts grow. The local portrait and
+phase wheel remain centered above the hand. Ally/opponent text uses actual
+relationships beside the existing seat identity, without adding another panel.
+
+Agent inspection of the first actual six-seat GPU captures found an undersized
+surface, remote identities separated from their mats, and the local land summary
+stranded at the left edge. The revised default framing gives the physical table
+nearly the full usable width at the same seated pitch. Remote portraits and full
+land summaries follow their own home-projected mat edges; local mana and land
+facts stay beside the centered phase wheel. Each full player name has its own
+primary row; relationship and land facts share the existing quieter resource
+row. This preserves the name without wrapping numbers into it or substituting a
+seat number. Final readouts remain inside their owner's region. Prepared
+pile/shadow bounds supply clearance, and the action
+area avoids completed owner readouts rather than displacing them. Two-to-four-seat
+arrangements retain their existing geometry.
+
+[Tabletop Simulator's movement controls](https://kb.tabletopsimulator.com/player-guides/basic-controls/)
+use pan, zoom and a camera reset to navigate actual objects. Its
+[camera-state guide](https://kb.tabletopsimulator.com/player-guides/camera-states/)
+also distinguishes a default seat view from other saved views. That is the spatial
+precedent for extending this table while keeping its existing continuous camera
+and focus gestures. It does not prove full-text readability of six battlefields
+in one overview. Agent inspection covered 1000 x 740 and 1540 x 980 captures with
+full hands and active priority buttons; complete card text still uses inspection
+or battlefield focus. Human review of this candidate remains pending.
+
+The crowded access-fan capture also checks a complete 32-character player name,
+seven hidden backs, multi-digit mana and four permission-source packets. Exact
+painted hand geometry replaces padded rectangles when reserving five/six-seat
+HUD space. Owner identities are prepared first, external playable cards and
+their source controls follow those measured bounds, and priority is placed last.
+Expansion returns cards to those same completed anchors without rebuilding the
+world or camera. In this preview, priority stays right during ordinary play and
+uses the clear left footer when the external fan fills the right footer. Review
+that movement with people during the complete journey; collision-free placement
+does not establish that the change of side is comfortable.
+
+Finishing keeps the table inspectable. The result distinguishes a real rules
+conclusion from persistence: Saving encounter waits, a failed save offers the
+host Retry save, and the saved result offers return to the same lobby. The
+played/victory counts come from the committed receipt. Earlier eliminated humans
+can watch their AI allies continue; an unfinished or interrupted table awards no
+completion. Unverifiable progress offers the existing Leave table confirmation;
+a rejected leave retains the table, and this route never claims the result was
+saved. Cross-application party selection and live-match recovery are not
+part of this slice.
+
+Automation separately checks actual teams and privacy, consent races, saved
+outcomes and duplicate recovery, native lobby gestures, all six players' spatial
+coverage and a real native-adapter encounter. Human review must still follow the
+complete candidate journey, including four friends, an eliminated teammate,
+reading foreign cards/piles, a failed save and return/rematch. Roadmap approval,
+render counts and passing tests do not substitute for that review.
+
 ## Distinguish team and individual results: 1 November 2026
 
 **First M1 source candidate; human result-screen review pending.** The player
@@ -26,8 +104,8 @@ rules below. They do not establish multiplayer team-result semantics. Those
 labels are our adaptation of explicit rules facts; review their comprehension
 with an eliminated teammate and surviving winners on the exact candidate.
 Automation checks labels, ownership and action safety separately from that
-human review. Team setup, run checkpoints and complete cooperative play remain
-unfinished M1 work.
+human review. The subsequent source slice adds cooperative setup and checkpoints
+as described above; complete human cooperative review remains pending.
 
 ## Keep public piles with their player's mat: 1 November 2026
 
@@ -1523,6 +1601,46 @@ retains its reading region while the camera moves when a readable portrait
 still fits there. Measured effect text keeps its full layout. This placement is
 a Mana Table adaptation of the supplied Arena full-card hover references, not
 evidence that Arena establishes a four-player arrangement.
+
+### Five- and six-seat extension: 1 November 2026
+
+**Source candidate; human review pending.** The larger encounter table retains
+the preceding paper-study observations: controller-facing cards, resources near
+their sitter, and piles sharing the same mat. It reuses those recorded gameplay
+samples; this change does not claim a new review of a complete six-player video.
+Ultra PRO's [24-by-13.5-inch mat](https://ultrapro.com/products/mana-7-plains-standard-gaming-playmat-for-magic-the-gathering)
+continues to support the fixed 512-by-288 physical template.
+
+The adaptation puts up to three places along each long edge of a larger
+rectangular table. Five players use two far places; six use three. This is our
+extension of the recorded physical arrangement, not a six-player Arena layout.
+All registered seats remain represented after elimination. Every personal pile
+stays on its own mat at these sizes; the smaller table's local zone apron would
+otherwise cross the new near-left neighbor. The local life portrait and hand
+retain their central screen position. Actual viewer identity determines what is
+local; a public observer does not acquire a private hand by occupying a camera
+anchor.
+
+The player reads each sitter's full name, land total and tap breakdown, then
+clicks that sitter's header to frame the same physical cards and piles. WASD,
+drag-panning, zoom and Home move or return the camera without issuing rules
+commands. Home framing depends on the configured furniture, never permanent
+counts, active turns or elimination. Existing two-, three- and four-seat
+placements retain their previous transforms and identity camera.
+Cooperative headers add measured ALLY or OPPONENT wording from the actual
+viewer/team relationship. Physical sides and cloth colors never determine that
+role. Self and unknown relationships add no label; ordinary free-for-all
+headers remain unchanged.
+
+This follows the continuity lesson in [Arena's Battles design account](https://magic.wizards.com/en/news/mtg-arena/we-put-battles-on-mtg-arena-what-was-that-like):
+the team rejected shifting a permanent's location during combat and changed
+surrounding space to accommodate the new objects. That article describes a duel,
+not six human players. Our all-seat overview necessarily shows smaller faces;
+individual focus and original-card reading remain essential. Geometry checks
+at 1000-by-740 and 1540-by-980 establish reachability, not comfortable reading or
+approval of a crowded six-player encounter. Exact-candidate human review of
+normal and crowded play, tapping, attachment reading and camera transitions
+remains pending.
 
 ## Rules faces and the counter-lab entry: 25 October 2026
 

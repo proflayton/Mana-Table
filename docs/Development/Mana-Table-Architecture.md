@@ -1256,7 +1256,7 @@ the rules authority; the native AI host chooses through the same offered-action
 boundary for automated seats. The old `NetworkMatchSession` and its separate
 network GUI projection have been removed.
 
-The first source candidate for the approved
+The source implementation for the approved
 [encounter roadmap](Mana-Table-Encounters-Roadmap.md) projects actual game-scoped
 `Player.TeamId` and a viewer-independent `GameSnapshot.Outcome`. The outcome
 names the exact game, global win/draw, actual winning player/team IDs and an
@@ -1276,10 +1276,9 @@ labels may show that team's victory while retaining individual elimination.
 A global draw also does not classify an earlier eliminated participant for
 tournament scoring. Per-participant scoring facts/policy remain M3 work.
 
-These facts are the first M1 boundary slice, not an implemented cooperative mode
-or a durable run checkpoint. Existing viewer-local `Status`/`Result` labels and
-concession admission retain their separate roles. Old providers may omit the
-new fields without gaining outcome authority from their display text. The
+Existing viewer-local `Status`/`Result` labels and concession admission retain
+their separate roles. Old providers may omit the new fields without gaining
+outcome authority from their display text. The
 release campaign now requires a validated typed outcome for natural-completion
 evidence, and same-publication comparisons include teams and outcome identity.
 
@@ -1289,6 +1288,68 @@ leaves the unfinished AI contest without a typed global outcome. Both the
 published board and playtest observation use this same result mapping; an engine
 error cannot acquire a defeat/win from it. Individual loss, concession admission
 and completed rules competition remain different facts.
+
+### Cooperative setup and encounter completion
+
+`ITableMatchSetup` is an optional application port. The process capability and
+the authoritative lobby's `MatchSetupCapabilities` must both support the requested
+rules. The UI submits an immutable `MatchSetupSpecification` against an exact
+lobby revision; the provider validates it before changing enrollment. The first
+cooperative ruleset supports up to four party seats and two AI opposition seats,
+with individual turns and separately owned life, mana and cards. It assigns real
+Forge teams. It does not implement Two-Headed Giant's shared turns or life.
+
+An opaque `ParticipantId` identifies an enrollment, independently of its slot,
+rules player ID, team, display name or controller. Replacing an open place with
+a human/AI, or releasing an AI place, changes that identity. Reconnect, deck/name
+edits and a rematch preserve the same enrollment. The frozen encounter captures
+each participant's actual player/team mapping and public `DeckSelectionId`.
+Neither private deck documents nor a deck name stand in for this assignment.
+
+Cooperative Ready acknowledges the displayed setup consent and tempo revision
+in one command. Actual enrollment or rules changes revoke readiness and rotate
+setup consent. A stale acknowledgment cannot accept a new side or new timing
+rules, and an older client without this capability cannot ready for co-op.
+Unready remains a revocation. The native composition root supplies the optional
+port; game presentation does not discover Forge implementation types.
+
+`EncounterContext` supplies party/encounter identity to the rules snapshot.
+`PartyProgress` belongs to the lobby, outside `GameSnapshot`. After an actual
+rules conclusion, the provider copies immutable outcome and enrollment facts
+into an `EncounterReceipt`. `EncounterProgressStore` performs journal I/O on its
+own serialized worker, outside rules and transport monitors. It writes and
+flushes the receipt before atomically replacing the party checkpoint. Replay is
+idempotent by game identity; conflicting receipts fail instead of awarding twice.
+The host profile's `encounters-v1` directory owns this local journal.
+The initial starting publication and a failure before the first full board may
+carry encounter linkage with an empty roster. They carry no outcome or
+participant authority; the client retains the actual startup error rather than
+inventing players. Playing and finished publications require the full identities.
+
+The client derives `EncounterCheckpoint` from exact party, encounter, game,
+participant/team and outcome facts. A terminal rules state alone cannot enable
+return while a receipt is pending, failed or mismatched. The host can explicitly
+retry a failed save; guests observe the authoritative progress. The existing
+client polling loop continues to accept lobby updates while the result overlay
+is open, even when the terminal match revision is unchanged. Return retires the
+completed encounter only after persistence and keeps the same lobby roster.
+If finished progress cannot be verified, the existing Leave table confirmation
+remains reachable without granting normal return or retry authority. Its provider
+operation still enforces the save guard, and rejection retains the current table.
+
+An eliminated human can keep observing while AI allies continue playing. Host
+concession does not close the hosting lifetime. Interruption and unfinished
+cleanup do not increment played or victory counts. Journal replay recovers
+committed completion work; selecting a previous party across application launches,
+restoring invites, and restoring live rules state are separate, unimplemented
+capabilities. Expeditions, rewards and circuit scoring remain later milestones.
+The current journal begins at terminal receipt persistence. There is no durable
+started-attempt record yet: a forced process exit before that first receipt loses
+the unresolved attempt's identity, although it awards no result. Recording that
+attempt before gameplay is remaining M1 acceptance work, distinct from M4's UI
+for selecting a saved party or run.
+
+### Seat connections and lifetime
 
 `SeatConnection` carries observe/reply/concede operations through `SyncTransport`.
 Solo uses a local connection. A lobby can mix local and TCP connections; all receive
@@ -1575,7 +1636,7 @@ Frame publication does not answer the engine's pending
 decision. Every command still passes current game/decision scope checks.
 
 The native launcher selects `SharedTableStudy` by default when building
-`TableScene` for two, three and four seats. `--classic-table` retains the previous layout,
+`TableScene` for two through six seats. `--classic-table` retains the previous layout,
 and the Experience Lab offers the study through `--table-study`. It uses fixed controller role lanes
 and complete source-card faces without global density/stack repacking. Multiplayer packing
 uses seat-local coordinates and turns complete assemblies into their stable
@@ -1584,10 +1645,12 @@ Two-player framing keeps its upright faces. Tap rotation is relative to that
 baseline; state labels and full readers stay viewer-readable. The same turned
 pose drives texture, footprint and pointer geometry.
 
-`PlayerPlaymat` owns one 512-by-288 player-local cloth template, its role rows,
-personal readout area and counter band. `Project` places that 16:9 template with
+`TableSeatFrame` owns the physical seat descriptor, including the shared
+512-by-288 mat template, facing, hero/hand anchors and personal zones.
+`PlayerPlaymat` uses its role rows, personal readout area and counter band.
+`Project` places that 16:9 template with
 an exact integer quarter turn and translation. Every seat has the same physical
-width, depth and area in two-, three- and four-player games; neither density nor
+width, depth and area in two- through six-player games; neither density nor
 priority stretches a mat or its rows. `SharedTableStudy` and `DuelTableStudy`
 pack those owner-relative rows before any viewing transform. Duels retain their
 established card facing. A 12-design-unit hem and constant bare-table gaps keep
@@ -1631,6 +1694,13 @@ workspace retains the full owner, land/combat facts and all public states.
 Detail inspection resolves the current player and does not answer a game
 decision. Portraits and unspent mana retain fixed seat geometry. Local counter
 space remains reserved while empty.
+
+Five/six-seat HUD identities use the full player name at the existing primary
+size, with relationship and land/tap facts in the existing smaller resource row.
+Optional state-chip fallback cannot replace that name with a seat number. Their
+final measured pieces stay inside their own portrait region. Owner readouts
+reserve a stable source pocket before external playable-card placement, avoiding
+a cycle between those layouts.
 
 The source prototype after 0.2.326 gives command cards and the library,
 graveyard and exile piles one `SeatZoneLayout` in the existing personal area of
@@ -2324,6 +2394,14 @@ Reading and dragging reuse the ordinary card/source-action pipeline, including
 current-scope revalidation. A drag retains its original expanded anchor and must
 leave it before commitment. A played occurrence then travels from its actual
 displayed position into the stack. There is no access scrollbar or hand paging.
+
+For five/six seats, prepare owner identities against the fixed source pocket
+first. Complete the access fan against accepted text, actual hidden backs and
+hand-count captions, then prepare collection/camera/priority from that final
+scene. `TableScene.PlaceAccessBesideHand` and `CardSpreadPlan.ReanchorAccess`
+copy the physical access anchors while preserving world-card identity and
+camera state. The final priority placement includes those actual access pieces;
+the old access-preferred position cannot overwrite its collision result.
 
 The same collection owner also handles deliberate Graveyard/Exile pile
 inspection. `CardCollectionTarget` is a closed local family for hand, access,

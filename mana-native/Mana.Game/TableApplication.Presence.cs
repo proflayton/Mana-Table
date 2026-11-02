@@ -14,14 +14,12 @@ internal sealed partial class TableApplication
             var player = match!.Players.FirstOrDefault(p => p.Id == cue.PlayerId);
             if (player == null || player.Id == match.ViewerId) continue;
             int seat = SeatDisplayIndex(player.Id);
-            if (seat is < 0 or > 2) continue;
             var library = tableScene?.Seats.FirstOrDefault(candidate => candidate.PlayerId == player.Id)
                 ?.Geometry.Piles.FirstOrDefault(pile => pile.Zone == "Library");
-            // Condensed seats without a library representation have no transfer
-            // origin. Never animate from their former overview location.
-            if (tableScene != null && library == null) continue;
-            var origin = library == null ? TableWorld.Pile(seat, 0)
-                : DisplayPileGeometry(library, player.Zone("Library").Count).Top;
+            // Every supported seat animates from its prepared physical pile;
+            // an absent origin never borrows a different player's old slot.
+            if (library == null) continue;
+            var origin = DisplayPileGeometry(library, player.Zone("Library").Count).Top;
             int count = Math.Min(7, player.Zone("Hand").Count);
             // Large real draw batches retain their full count in event feedback;
             // only a bounded handful of anonymous backs travel at once.
