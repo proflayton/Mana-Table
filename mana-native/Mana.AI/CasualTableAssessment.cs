@@ -20,7 +20,7 @@ public static class CasualTableAssessment
     {
         var result = ImmutableArray.CreateBuilder<CasualThreat>();
         int round = Math.Max(1, state.Players.Count(player => !player.Eliminated));
-        foreach (var player in state.Players.Where(player => player.Id != state.ViewerId && !player.Eliminated)) {
+        foreach (var player in state.Players.Where(player => AiPlayerRelations.Opponent(state, player.Id) && !player.Eliminated)) {
             double board = player.Zone("Battlefield").Cards.Where(card => !card.PhasedOut).Sum(CardValue);
             double resources = player.Zone("Hand").Count * .25 + player.Zone("Battlefield").Cards.Count(IsLand) * .4
                 + player.Mana.Values.Sum(value => Math.Max(0d, value)) * .25;
@@ -54,13 +54,15 @@ public static class CasualTableAssessment
                 }
                 else continue;
                 double recent = harm / (1d + age / (double)round);
-                if (actor == player.Id && recipient == state.ViewerId) pressure += recent;
+                if (actor == player.Id && recipient is { } affected && AiPlayerRelations.Friendly(state, affected))
+                    pressure += recent * AiPlayerRelations.Benefit(state, affected);
                 if (actor == state.ViewerId && recipient == player.Id) focus += recent;
             }
             if (state.Combat != null)
-                foreach (var attack in state.Combat.Attackers.Where(attack => attack.HasDefender && attack.DefendingPlayerId == state.ViewerId)) {
+                foreach (var attack in state.Combat.Attackers.Where(attack => attack.HasDefender && AiPlayerRelations.Friendly(state, attack.DefendingPlayerId))) {
                     var occurrence = CardViews.FindZoneOccurrence(state, attack.CardId);
-                    if (occurrence?.PlayerId == player.Id) pressure += Math.Max(0, occurrence.Value.Card.Power ?? 0) * 1.5;
+                    if (occurrence?.PlayerId == player.Id) pressure += Math.Max(0, occurrence.Value.Card.Power ?? 0) * 1.5
+                        * AiPlayerRelations.Benefit(state, attack.DefendingPlayerId);
                 }
             result.Add(new(player.Id, board, resources, Math.Min(16, pressure), Math.Min(6, focus)));
         }

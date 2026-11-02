@@ -50,6 +50,26 @@ internal static class ForgePublicProjectionChecks
         var other = Audience(1);
         check(ValidateBatch([first, other], directory) == 1,
             "Forge same-revision public occurrence comparison permits each audience's different private hand and decision revision");
+        bool Diverges(AutomatedSeatObservation left, AutomatedSeatObservation right) {
+            try { ValidateBatch([left, right], directory); return false; }
+            catch (InvalidDataException) { return true; }
+        }
+        var firstTeams = first with { State = first.State with {
+            Players = first.State.Players.Select(player => player with { TeamId = player.Id + 10 }).ToImmutableArray() } };
+        var otherTeams = other with { State = other.State with {
+            Players = other.State.Players.Select(player => player with { TeamId = player.Id + 10 }).ToImmutableArray() } };
+        check(ValidateBatch([firstTeams, otherTeams], directory) == 1
+                && Diverges(firstTeams, otherTeams with { State = otherTeams.State with {
+                    Players = otherTeams.State.Players.Select(player => player with { TeamId = 10 }).ToImmutableArray() } }),
+            "Same-publication comparisons reject divergent team relationships across audiences");
+        var terminalFirst = firstTeams with { State = firstTeams.State with { Status = "finished",
+            Outcome = new(firstTeams.State.Id, MatchOutcomeKind.Win, [0], [10], "AllOpposingTeamsLost") } };
+        var terminalOther = otherTeams with { State = otherTeams.State with { Status = "finished", Outcome = terminalFirst.State.Outcome } };
+        check(ValidateBatch([terminalFirst, terminalOther], directory) == 1
+                && Diverges(terminalFirst, terminalOther with { State = terminalOther.State with {
+                    Outcome = new(terminalOther.State.Id, MatchOutcomeKind.Win, [1], [11], "AllOpposingTeamsLost") } })
+                && Diverges(terminalFirst, terminalOther with { State = terminalOther.State with { Outcome = null } }),
+            "Every audience must agree on the same typed terminal outcome, including its presence");
         var changedCard = other.State.Players[0].Zone("Battlefield").Cards[0] with {
             VisualId = "rotated-public-id", CombatId = "rotated-public-id"
         };

@@ -38,11 +38,15 @@ internal sealed record AiCampaignContinuation(bool Conclusive, string Classifica
                 && !Assess("time-budget", 160, 159, false, AiCampaignGoal.NaturalOutcome).Conclusive
                 && Assess("natural-outcome", 160, 42, true, AiCampaignGoal.NaturalOutcome).Conclusive,
             "The release profile requires a verified natural outcome; neither its time nor turn ceiling can substitute for completion");
-        var completed = new Mana.Contracts.GameSnapshot("outcome", "finished", null, "Draw", -1, 42, "", "", null, [], [], null, null);
+        var completed = new Mana.Contracts.GameSnapshot("outcome", "finished", null, "Draw", -1, 42, "", "", null,
+            [new(0, "Player", 40, false, false, System.Collections.Immutable.ImmutableDictionary<string, int>.Empty, []) { TeamId = 10 }], [], null, null) {
+            Outcome = new("outcome", Mana.Contracts.MatchOutcomeKind.Draw, [], [], "Draw") };
         var proof = AiCampaignOutcomeProof.Capture(completed, "natural-outcome", null, [], []);
         check(proof.CapturedBeforeCleanup && proof.VerifiedNaturalOutcome
                 && !AiCampaignOutcomeProof.Capture(completed, "time-budget", null, [], []).VerifiedNaturalOutcome
                 && !AiCampaignOutcomeProof.Capture(completed with { Error = "aborted" }, "natural-outcome", null, [], []).VerifiedNaturalOutcome
+                && !AiCampaignOutcomeProof.Capture(completed with { Outcome = null }, "natural-outcome", null, [], []).VerifiedNaturalOutcome
+                && !AiCampaignOutcomeProof.Capture(completed with { Outcome = completed.Outcome! with { GameId = "different-game" } }, "natural-outcome", null, [], []).VerifiedNaturalOutcome
                 && !AiCampaignOutcomeProof.Capture(completed, "natural-outcome", new("outcome", 0, "unavailable"), [], []).VerifiedNaturalOutcome,
             "A pre-cleanup engine draw can complete release evidence while a forced cutoff, abort or automation fault cannot");
         check(AiCampaignLimits.Smoke is { Matches: 2, Turns: 32, Goal: AiCampaignGoal.RequestedTurns }

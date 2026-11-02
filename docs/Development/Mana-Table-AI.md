@@ -1,5 +1,27 @@
 # Multiplayer AI framework and investigation
 
+## M1 team relationships: 1 November 2026 source candidate
+
+The first slice of the approved [encounter roadmap](Mana-Table-Encounters-Roadmap.md)
+uses actual engine team IDs through the common `PlayerRelations` contract.
+`casual-commander.v4` values public ally benefits, avoids discretionary ally harm,
+assesses enemy threats, and considers offered blocks protecting allies. Its
+final-opponent incentive counts known enemies, not every other seat. The
+duel-only swarm shortcut stops when live allies or unknown relationships make
+that forecast inappropriate.
+
+Mana, costs, private hands and session memories remain owned by the acting seat.
+Helping a teammate does not authorize spending its resources or reading its
+hidden zones. Missing/invalid relationships receive no invented ally/enemy value;
+only an isolated policy compatibility path retains free-for-all preferences when
+every team field is absent. That fallback does not certify team-format support.
+
+Real-engine/public projection and tactical checks establish bounded correctness.
+They do not establish enjoyable cooperative play, shared turns, a completed M1,
+or human acceptance. The cooperative lobby, durable checkpoints and end-to-end
+party journey remain further M1 work. The older investigation entries below
+retain the source/release status that applied to their individual candidates.
+
 Investigated 26 October 2026 against source `c801eaf9b70b53f07f7234148def4f1811fa5db7`.
 The source implementation now includes a complete seat driver and an initial
 casual policy. This is not in the published installer yet. The reported live

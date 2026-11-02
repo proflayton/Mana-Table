@@ -6,6 +6,29 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Distinguish team and individual results: 1 November 2026
+
+**First M1 source candidate; human result-screen review pending.** The player
+approved the [cooperative encounter roadmap](Mana-Table-Encounters-Roadmap.md).
+That approval establishes direction and scope, not acceptance of a six-seat
+cooperative journey or this candidate's result presentation.
+
+Keep the existing finish -> inspect table -> read a card / return to lobby
+journey. The source of its result is now the rules engine's exact global outcome,
+not one winning player's name or a viewer-local display label. An actual winner
+sees Victory; an earlier eliminated teammate can see Team victory while its row
+still says it was eliminated. Draw and engine interruption remain distinct.
+All six participant rows fit above the existing history/return actions.
+
+The supplied Arena references establish retaining inspectable physical cards
+and source-owned state through a transition, as recorded in the shared design
+rules below. They do not establish multiplayer team-result semantics. Those
+labels are our adaptation of explicit rules facts; review their comprehension
+with an eliminated teammate and surviving winners on the exact candidate.
+Automation checks labels, ownership and action safety separately from that
+human review. Team setup, run checkpoints and complete cooperative play remain
+unfinished M1 work.
+
 ## Keep public piles with their player's mat: 1 November 2026
 
 **Source prototype; right-caption revision human review pending.** The player found

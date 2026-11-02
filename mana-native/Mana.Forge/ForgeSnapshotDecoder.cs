@@ -23,8 +23,12 @@ internal static class ForgeSnapshotDecoder
             if (wire.Undo != null && !certifiedUndo) throw Invalid();
             if (string.IsNullOrWhiteSpace(wire.Id) || wire.Status is not ("starting" or "playing" or "resolving" or "finished" or "error")
                 || !raw.TryGetProperty("viewerId", out var viewer) || !viewer.TryGetInt32(out _)
+                || !TryUniqueProperty(raw, "players", out var participants) || participants.ValueKind != JsonValueKind.Array
+                || participants.EnumerateArray().Any(player => !TryUniqueProperty(player, "id", out var id)
+                    || id.ValueKind != JsonValueKind.Number || !id.TryGetInt32(out int number) || number < 0)
                 || wire.Players.IsDefault || wire.Stack.IsDefault || wire.Players.Any(player => player == null) || wire.Stack.Any(item => item == null)
                 || wire.Players.Select(player => player.Id).Distinct().Count() != wire.Players.Length
+                || wire.Players.Any(player => player.TeamId is < 0)
                 || wire.StackInterruptionVersion is < 0) throw Invalid();
             var players = wire.Players.Select(player => player.Id).ToImmutableHashSet();
             if (spectator ? wire.ViewerId != -1 || wire.Prompt.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)
@@ -54,8 +58,9 @@ internal static class ForgeSnapshotDecoder
                 ActionClass = wire.ActionClass, States = wire.States, Activity = wire.Activity,
                 Notices = wire.Notices, IgnoredPriorityAbilities = wire.IgnoredPriorityAbilities,
                 PlayAccesses = wire.PlayAccesses, Tempo = wire.Tempo, ActionSources = wire.ActionSources,
-                Executions = wire.Executions, Undo = wire.Undo
+                Executions = wire.Executions, Undo = wire.Undo, Outcome = wire.Outcome
             };
+            MatchOutcomeFacts.Validate(snapshot);
             UndoFacts.Validate(snapshot);
             ExecutionFrames.Validate(snapshot);
             PublicActivityFacts.Validate(snapshot);
@@ -84,6 +89,21 @@ internal static class ForgeSnapshotDecoder
         _ => throw Invalid()
     };
     private static IOException Invalid() => new("The rules provider published an invalid match snapshot.");
+
+    // Match the decoder's case-insensitive property names without permitting two
+    // aliases to disagree about the participant identity that was deserialized.
+    private static bool TryUniqueProperty(JsonElement node, string name, out JsonElement value)
+    {
+        value = default;
+        if (node.ValueKind != JsonValueKind.Object) return false;
+        bool found = false;
+        foreach (var property in node.EnumerateObject()) {
+            if (!string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+            if (found) return false;
+            found = true; value = property.Value;
+        }
+        return found;
+    }
 
     private static void ValidateActionSources(Snapshot wire, Decision? decision, bool spectator)
     {
@@ -139,6 +159,7 @@ internal static class ForgeSnapshotDecoder
         public string Status { get; init; } = "";
         public string? Error { get; init; }
         public string? Result { get; init; }
+        public MatchOutcome? Outcome { get; init; }
         public int ViewerId { get; init; }
         public int Turn { get; init; }
         public string? Phase { get; init; }

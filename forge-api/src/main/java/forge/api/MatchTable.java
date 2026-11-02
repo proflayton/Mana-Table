@@ -367,6 +367,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
                 spectatorError = "The simulation stopped because an automated decision failed.";
                 var stopped = new LinkedHashMap<>(spectatorState);
                 stopped.put("status", "error"); stopped.put("error", spectatorError);
+                stopped.put("result", null); stopped.put("outcome", null);
                 spectatorState = Collections.unmodifiableMap(stopped);
             }
         } });

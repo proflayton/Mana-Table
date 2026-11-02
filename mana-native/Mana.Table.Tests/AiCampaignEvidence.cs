@@ -51,13 +51,13 @@ internal sealed record AiCampaignEvidence(ImmutableArray<string> OfferedEffects,
     [property: JsonPropertyName("missingBoardWitnesses")] ImmutableArray<string> MissingBoardWitnesses,
     [property: JsonPropertyName("interpretation")] string Interpretation);
 
-internal sealed record AiCampaignSeatOutcome(int SeatId, string Name, bool Eliminated, int Life,
+internal sealed record AiCampaignSeatOutcome(int SeatId, int? TeamId, string Name, bool Eliminated, int Life,
     int LibraryCount, bool Developed);
 internal sealed record AiCampaignSeatScope(int SeatId, int ViewerId, string? DecisionId,
     long Revision, long BoardRevision, long OfferVersion);
 
 internal sealed record AiCampaignOutcomeProof(string? GameId, bool CapturedBeforeCleanup, string Status,
-    string? Result, string? Error, AiHostFault? HostFault, bool VerifiedNaturalOutcome,
+    string? Result, MatchOutcome? Outcome, string? Error, AiHostFault? HostFault, bool VerifiedNaturalOutcome,
     ImmutableArray<AiCampaignSeatOutcome> Seats, ImmutableArray<AiCampaignSeatScope> SeatScopes,
     string PublicSnapshotFile, string Scope)
 {
@@ -65,15 +65,20 @@ internal sealed record AiCampaignOutcomeProof(string? GameId, bool CapturedBefor
         IEnumerable<int> developed, ImmutableArray<AutomatedSeatObservation> observations)
     {
         var developedSeats = developed.ToHashSet();
-        return new(state?.Id, state != null, state?.Status ?? "not-started", state?.Result, state?.Error, fault,
+        bool certified = false;
+        if (state?.Outcome != null) {
+            try { MatchOutcomeFacts.Validate(state); certified = true; }
+            catch (InvalidOperationException) { }
+        }
+        return new(state?.Id, state != null, state?.Status ?? "not-started", state?.Result, state?.Outcome, state?.Error, fault,
             stopReason == "natural-outcome" && state is { Status: "finished", Error: null }
-                && !string.IsNullOrWhiteSpace(state.Result) && fault == null,
-            state?.Players.Select(player => new AiCampaignSeatOutcome(player.Id, player.Name, player.Eliminated,
+                && certified && fault == null,
+            state?.Players.Select(player => new AiCampaignSeatOutcome(player.Id, player.TeamId, player.Name, player.Eliminated,
                 player.Life, player.Zone("Library").Count, developedSeats.Contains(player.Id))).ToImmutableArray() ?? [],
             observations.Select(item => new AiCampaignSeatScope(item.SeatId, item.State.ViewerId,
                 item.State.Decision?.Id, item.State.Revision, item.State.BoardRevision, item.Domain.Version)).ToImmutableArray(),
             "pre-cleanup-public-state.json",
             "Captured before the runner's only StopSimulation call. No concede or seat substitution is issued by this driver. "
-                + "The engine reports the outcome; structured individual loss reasons are not projected and are not inferred from prose.");
+                + "The typed engine outcome certifies global completion; structured individual loss reasons are not projected and are not inferred from prose.");
     }
 }

@@ -77,11 +77,17 @@ public class TerminalProjectionTest {
                     "The last two-player loss deliberately retains the registered player's actual board");
             var batch = table.automatedSeats().stream().map(MatchSession::automatedObservation).toList();
             var spectator = JSON.toJsonTree(table.spectatorState()).getAsJsonObject();
+            var completion = spectator.getAsJsonObject("outcome");
+            assertEquals(text(completion, "gameId"), table.id);
+            assertEquals(text(completion, "kind"), "win");
+            assertEquals(completion.getAsJsonArray("winningPlayerIds"), JSON.toJsonTree(List.of(0)));
+            assertEquals(completion.getAsJsonArray("winningTeamIds"), JSON.toJsonTree(List.of(table.game.getRegisteredPlayers().get(0).getTeam())));
             Files.writeString(evidence.resolve("private-final-observations.json"), JSON.toJson(batch));
             Files.writeString(evidence.resolve("public-final-observation.json"), JSON.toJson(spectator));
             for (var row : batch) {
                 var observation = JSON.toJsonTree(row).getAsJsonObject(); var state = observation.getAsJsonObject("state");
                 assertEquals(text(state, "status"), "finished"); assertTrue(!state.has("prompt") || state.get("prompt").isJsonNull());
+                assertEquals(state.get("outcome"), completion, "FFA seats and the independent public audience share one actual rules result");
                 assertEquals(text(state, "result"), state.get("viewerId").getAsInt() == 0 ? "Victory" : "Defeat");
                 for (var entry : state.getAsJsonArray("players")) {
                     var player = entry.getAsJsonObject();

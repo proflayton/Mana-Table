@@ -204,6 +204,8 @@ await ClientDiagnosticRegression.RunAsync(Check);
 await ClientDiagnosticJournalRegression.RunAsync(Check);
 await MatchHistoryArchiveRegression.RunAsync(Check);
 await MatchCompletionRegression.RunAsync(Check);
+MatchOutcomeRegression.Run(Check);
+MatchResultPresentationRegression.Run(Check);
 await GameplayUndoRegression.RunAsync(Check);
 await AiRestorationRegression.RunAsync(Check);
 GameplayClarityChecks.Run(Check);
