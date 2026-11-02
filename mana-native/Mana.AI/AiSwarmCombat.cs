@@ -17,7 +17,11 @@ internal static class AiSwarmCombat
     internal static DecisionCommand? TryFinish(AiDecisionRequest request, AttackPayload payload, int mechanicalReserve)
     {
         var state = request.Frame.State; var combat = state.Combat!;
-        var opponents = state.Players.Where(player => player.Id != state.ViewerId && !player.Eliminated).ToArray();
+        // This forecast assumes an ordinary duel. Team combat can permit
+        // additional defenders/blockers; current offers remain the authority.
+        if (state.Players.Any(player => player.Id != state.ViewerId && !player.Eliminated
+            && !AiPlayerRelations.Opponent(state, player.Id))) return null;
+        var opponents = state.Players.Where(player => AiPlayerRelations.Opponent(state, player.Id) && !player.Eliminated).ToArray();
         if (opponents.Length != 1 || !payload.Complete.Enabled || !state.States.IsEmpty || !opponents[0].States.IsEmpty
             || combat.AttackOptions.Length > MaxCandidates) return null;
         var enemy = opponents[0]; var own = state.Viewer!.Zone("Battlefield").Cards; var opposing = enemy.Zone("Battlefield").Cards;

@@ -721,6 +721,25 @@ entries, combat assignments, attachments, counters, mana pools, temporary reveal
 prompts, face-down controller previews, and spectator sessions. Never serialize
 `Game`, `CardView`, alternate states, raw events, or logs directly to a client.
 
+Source candidate: seat and spectator snapshots publish each registered player's
+actual rules `teamId` (an integer scoped to this game, not a lobby slot or party
+identity). Legacy providers may omit it; absence means unknown relationships.
+Snapshots also publish the same public `outcome` on every audience, or null
+while unresolved, interrupted, or failed. A completed rules outcome contains
+`gameId`, `kind` (`win` or `draw`), `winningPlayerIds`, `winningTeamIds`, and
+`ruleReason` (the engine's stable end-reason identifier). Winner IDs come from
+the final registered-player statistics. Winning team IDs are the distinct teams
+represented by those actual winners, not an instruction to mark every ally as
+an individual winner: an eliminated ally can have lost while its team is listed.
+A rules draw lists no winners. Host cleanup (`AllHumansLost`) is not a completed
+rules outcome. The viewer-specific `result` remains display text and reports
+Victory for every actual winner; the spectator text names all actual winners.
+When a solo table stops after its human is actually eliminated, that seat retains
+Defeat for display and playtest history while the unresolved AI contest has no
+typed global outcome. Engine failures never synthesize that individual result.
+Neither display string authorizes progression or implies a saved receipt.
+These additive fields do not enable cooperative lobby setup or shared-turn 2HG.
+
 Close `GameObservation` when the host session closes. It retains the game until
 closed. Its revision is local to that observation and is not a game replay cursor,
 action authorization token, or durable resume ID.

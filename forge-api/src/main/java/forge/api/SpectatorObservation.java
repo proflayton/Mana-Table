@@ -51,7 +51,7 @@ final class SpectatorObservation {
                         "ownerId", owner.getId(), "owner", owner.getName(), "damage", publicPlayer.getCommanderDamage(commander)));
             }
             players.add(map("id", player.getId(), "name", player.getName(), "human", false, "seat", players.size() + 1,
-                    "eliminated", publicPlayer.getHasLost(), "life", publicPlayer.getLife(), "priority", publicPlayer.getHasPriority(),
+                    "teamId", player.getTeam(), "eliminated", publicPlayer.getHasLost(), "life", publicPlayer.getLife(), "priority", publicPlayer.getHasPriority(),
                     "maxHandSize", publicPlayer.hasUnlimitedHandSize() ? null : publicPlayer.getMaxHandSize(),
                     "landPlaysUsed", publicPlayer.getNumLandThisTurn(), "landPlayLimit", publicPlayer.hasUnlimitedLandPlay() ? null : publicPlayer.getMaxLandPlay(),
                     "mana", Collections.unmodifiableMap(mana), "counters", Collections.unmodifiableMap(counters),
@@ -80,15 +80,12 @@ final class SpectatorObservation {
                     "controllerId", ability.getActivatingPlayer() == null ? null : ability.getActivatingPlayer().getId(),
                     "targets", List.copyOf(targets), "effect", null, "operationGraph", ActionOperationProjection.unknown()));
         }
-        String result = null;
-        if (error == null && game.isGameOver() && game.getOutcome() != null) {
-            var outcome = game.getOutcome();
-            result = outcome.isDraw() ? "Draw" : outcome.getWinningLobbyPlayer() == null ? "Game over" : outcome.getWinningLobbyPlayer().getName() + " wins";
-        }
+        var outcome = MatchOutcomeProjection.of(table, error);
+        String result = MatchOutcomeProjection.forSpectator(outcome, table);
         return Collections.unmodifiableMap(map("id", table.id, "revision", revision, "boardRevision", revision,
                 "stackInterruptionVersion", table.stackInterruption.version(),
                 "format", table.format, "status", error != null ? "error" : revision == 0 ? "starting" : game.isGameOver() ? "finished" : "playing",
-                "error", error, "result", result, "viewerId", -1, "spectator", true, "playerCount", players.size(),
+                "error", error, "result", result, "outcome", outcome, "viewerId", -1, "spectator", true, "playerCount", players.size(),
                 "turn", view.getTurn(), "phase", view.getPhase() == null ? "Pregame" : view.getPhase().nameForUi,
                 "phaseKey", view.getPhase() == null ? "PREGAME" : view.getPhase().name(),
                 "activePlayerId", view.getPlayerTurn() == null ? null : view.getPlayerTurn().getId(),

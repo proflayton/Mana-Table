@@ -274,7 +274,7 @@ public static class CasualActionAssessment
                 int? controller = entity.Kind == SemanticEntityKind.Player ? entity.PlayerId : entity.ControllerId;
                 if (controller == null || !state.Players.Any(player => player.Id == controller)) return Incomplete("recipient-controller");
                 bool own = controller == state.ViewerId;
-                double sign = own ? 1 : -.65;
+                double sign = AiPlayerRelations.Benefit(state, controller.Value);
                 var card = Card(state, entity, source);
                 switch (node.Effect) {
                     case ActionEffectKind.Draw when entity.Kind == SemanticEntityKind.Player:
@@ -316,16 +316,18 @@ public static class CasualActionAssessment
         }
         foreach (int playerId in lifeLoss.Keys.Union(lifeGain.Keys)) {
             var player = state.Players.First(player => player.Id == playerId);
-            bool own = playerId == state.ViewerId;
+            double sign = AiPlayerRelations.Benefit(state, playerId);
             long change = lifeGain.GetValueOrDefault(playerId) - lifeLoss.GetValueOrDefault(playerId);
-            if (change < 0) value += (long)player.Life + change <= 0 ? own ? -1000 : 40 : -change * (own ? -.4 : .26);
-            else value += change * (own ? 1 : -.65) * (player.Life < 15 ? .6 : .2);
+            if (change < 0) value += (long)player.Life + change <= 0
+                ? sign > 0 ? -1000 : sign < 0 ? 40 : 0 : change * sign * .4;
+            else value += change * sign * (player.Life < 15 ? .6 : .2);
         }
         foreach (var (playerId, amount) in draws) {
             var player = state.Players.First(player => player.Id == playerId);
-            bool own = playerId == state.ViewerId;
+            double sign = AiPlayerRelations.Benefit(state, playerId);
             var library = player.Zones.FirstOrDefault(zone => zone.Name == "Library");
-            value += library != null && amount > library.Count ? own ? -1000 : 40 : amount * (own ? 3 : -1.95);
+            value += library != null && amount > library.Count
+                ? sign > 0 ? -1000 : sign < 0 ? 40 : 0 : amount * sign * 3;
         }
         foreach (var (id, amount) in cardDamage) {
             var occurrence = CardViews.FindZoneOccurrence(state, id);
@@ -333,7 +335,7 @@ public static class CasualActionAssessment
             var card = occurrence.Value.Card;
             double harm = amount > 0 && !CasualTableAssessment.HasKeyword(card, "indestructible") && amount >= (long)(card.Toughness ?? int.MaxValue) - card.Damage
                 ? CasualTableAssessment.CardValue(card) : amount * .1;
-            value += harm * (occurrence.Value.PlayerId == state.ViewerId ? -1 : .65);
+            value -= harm * AiPlayerRelations.Benefit(state, occurrence.Value.PlayerId);
         }
         return new(CasualAssessmentStatus.Estimated, value, "public-effect-values");
     }

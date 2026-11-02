@@ -200,6 +200,8 @@ public sealed record PlayerState(string Id, string Label, string Kind, int? Valu
 public sealed record PublicState(string Id, string Label, string Kind, int? Value, int? Maximum, string Detail, string Key = "");
 public sealed record Player(int Id, string Name, int Life, bool Priority, bool Eliminated, ImmutableDictionary<string, int> Mana, ImmutableArray<Zone> Zones)
 {
+    // Actual rules-engine team, independent of seat order. Absent on older providers.
+    public int? TeamId { get; init; }
     public ImmutableArray<PlayerState> States { get; init; } = [];
     // Public engine-owned player resources; card counters live on Card separately.
     public ImmutableDictionary<string, int> Counters { get; init; } = ImmutableDictionary<string, int>.Empty;
@@ -312,6 +314,8 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
     int Turn, string Phase, string PhaseKey, int? ActivePlayerId, ImmutableArray<Player> Players,
     ImmutableArray<StackItem> Stack, Combat? Combat, Decision? Decision)
 {
+    // Viewer-independent rules completion. A viewer leaving or conceding does not supply this fact.
+    public MatchOutcome? Outcome { get; init; }
     public ImmutableArray<ActionSourceOccurrence> ActionSources { get; init; } = [];
     public ImmutableArray<PublicState> States { get; init; } = [];
     public long Revision { get; init; }

@@ -97,6 +97,8 @@ internal static class AiFrameworkEngineCheck
             var finished = await MatchCompletion.WaitAsync(engine, state, TimeSpan.FromSeconds(25) - elapsed.Elapsed);
             check(finished is { Status: "finished", Result: "Defeat", Viewer.Eliminated: true },
                 "Conformance concession finishes the same solo game before the adapter starts its next game");
+            check(finished.Outcome == null && MatchOutcomes.ForViewer(finished) == PlayerMatchOutcome.Unknown,
+                "The lone human's actual concession preserves its loss label without certifying a global outcome for the stopped AI contest");
         }
         void Guard()
         {

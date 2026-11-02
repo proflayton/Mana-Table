@@ -11,7 +11,7 @@ namespace Mana.AI;
 /// </summary>
 public sealed class CasualCommanderPolicy : IAiPolicy
 {
-    public AiPolicyDescriptor Descriptor { get; } = new("casual-commander.v3", AiTasks.All);
+    public AiPolicyDescriptor Descriptor { get; } = new("casual-commander.v4", AiTasks.All);
 
     public Task<AiProposal> EvaluateAsync(AiDecisionRequest request, CancellationToken cancellation)
     {
@@ -321,10 +321,12 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             string identity = CardViews.Identity(card);
             double value = cost ? CasualTableAssessment.OpportunityCost(state, card, occurrence.Zone) : CasualTableAssessment.CardValue(card);
             bool own = occurrence.PlayerId == state.ViewerId;
+            double benefit = AiPlayerRelations.Benefit(state, occurrence.PlayerId);
+            bool opponent = AiPlayerRelations.Opponent(state, occurrence.PlayerId);
             double score = cost ? (own ? 100 - value : -100)
-                : IsBenefit(intent) ? (own ? 100 + value : -100)
-                : damage ? (own ? -100 : DamageThreat(occurrence.PlayerId))
-                : IsHarm(intent) ? (own ? -100 : 20 + value + CasualTableAssessment.OpponentScore(request, occurrence.PlayerId))
+                : IsBenefit(intent) ? (benefit > 0 ? benefit * (100 + value) : benefit < 0 ? -100 : -1)
+                : damage ? (opponent ? DamageThreat(occurrence.PlayerId) : benefit > 0 ? -100 : -1)
+                : IsHarm(intent) ? (opponent ? 20 + value + CasualTableAssessment.OpponentScore(request, occurrence.PlayerId) : benefit > 0 ? -100 : -1)
                 : 1 + CasualTableAssessment.Tie(request.Seed, identity);
             if (stagedDamage) score = double.NegativeInfinity;
             if (!cost && request.Frame.Semantics.OperationId is { } operation) {
@@ -335,8 +337,9 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 if (assessment.Status == CasualAssessmentStatus.SearchLimited) { score = double.NegativeInfinity; limited = true; }
                 if (assessment.Status == CasualAssessmentStatus.Estimated
                     || !stagedDamage && assessment.Status == CasualAssessmentStatus.EstimatedPartial) score = assessment.Value
-                    + (assessment.Value > 0 && !own ? Math.Clamp(CasualTableAssessment.OpponentScore(request, occurrence.PlayerId) * .01, 0, .25) : 0);
+                    + (assessment.Value > 0 && opponent ? Math.Clamp(CasualTableAssessment.OpponentScore(request, occurrence.PlayerId) * .01, 0, .25) : 0);
             }
+            if (!cost && benefit == 0 && score == 0) score = -1;
             bool preservesFunding = cost && AiTurnPlanner.PreservesCurrentCostFunding(request with { Work = localWork }, identity);
             options.Add((new SelectCard(state.Id, state.Decision!.Id, card.Key), score,
                 CasualTableAssessment.Tie(request.Seed, identity), preservesFunding));
@@ -345,10 +348,12 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             if (request.Work.Remaining <= retained) { limited = true; break; }
             var localWork = request.Work.CreateSlice(128, retained);
             if (!localWork.TrySpend()) { limited = true; break; }
+            double benefit = AiPlayerRelations.Benefit(state, player);
+            bool opponent = AiPlayerRelations.Opponent(state, player);
             double score = intent == DecisionIntent.StartingPlayer ? (player == state.ViewerId ? 100 : 0)
-                : IsBenefit(intent) || intent == DecisionIntent.Search ? (player == state.ViewerId ? 100 : -100)
-                : damage ? (player == state.ViewerId ? -100 : DamageThreat(player))
-                : IsHarm(intent) ? CasualTableAssessment.OpponentScore(request, player)
+                : IsBenefit(intent) || intent == DecisionIntent.Search ? (benefit > 0 ? benefit * 100 : benefit < 0 ? -100 : -1)
+                : damage ? (opponent ? DamageThreat(player) : benefit > 0 ? -100 : -1)
+                : IsHarm(intent) ? (opponent ? CasualTableAssessment.OpponentScore(request, player) : benefit > 0 ? -100 : -1)
                 : CasualTableAssessment.Tie(request.Seed, player.ToString(CultureInfo.InvariantCulture));
             if (stagedDamage) score = double.NegativeInfinity;
             if (!cost && request.Frame.Semantics.OperationId is { } operation) {
@@ -359,8 +364,9 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 if (assessment.Status == CasualAssessmentStatus.SearchLimited) { score = double.NegativeInfinity; limited = true; }
                 if (assessment.Status == CasualAssessmentStatus.Estimated
                     || !stagedDamage && assessment.Status == CasualAssessmentStatus.EstimatedPartial) score = assessment.Value
-                    + (assessment.Value > 0 && player != state.ViewerId ? Math.Clamp(CasualTableAssessment.OpponentScore(request, player) * .01, 0, .25) : 0);
+                    + (assessment.Value > 0 && opponent ? Math.Clamp(CasualTableAssessment.OpponentScore(request, player) * .01, 0, .25) : 0);
             }
+            if (!cost && benefit == 0 && score == 0) score = -1;
             options.Add((new SelectPlayer(state.Id, state.Decision!.Id, player), score,
                 CasualTableAssessment.Tie(request.Seed, player.ToString(CultureInfo.InvariantCulture)), false));
         }
@@ -559,8 +565,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         if (remaining < 0) return Missing("satisfiable-allocation");
         var ordered = allocation.Recipients.Select((recipient, index) => (Recipient: recipient, Index: index))
             .OrderBy(item => allocation.Kind == AllocationKind.Combat && item.Recipient.IsDefender ? 1 : 0)
-            .ThenByDescending(item => item.Recipient.PlayerId is { } player ? CasualTableAssessment.OpponentScore(request, player)
-                : item.Recipient.Card is { } card ? CasualTableAssessment.CardValue(card) : 0).ToArray();
+            .ThenByDescending(item => Value(item.Recipient)).ToArray();
         if (allocation.Kind == AllocationKind.Combat) {
             foreach (var item in ordered.Where(item => !item.Recipient.IsDefender && item.Recipient.Lethal.HasValue)) {
                 int add = (int)Math.Min(remaining, Math.Max(0, Math.Min(item.Recipient.Maximum, item.Recipient.Lethal!.Value) - amounts[item.Index]));
@@ -576,6 +581,20 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         if (remaining != 0 || AllocationConstraints.Check(allocation, amounts) != null)
             return allocation.MaySkip ? Answer(request, new SkipAllocation(state.Id, state.Decision!.Id), "allocation-no-legal-distribution") : Missing("satisfiable-allocation");
         return Answer(request, new AllocateAmounts(state.Id, state.Decision!.Id, amounts.ToImmutableArray()), "allocate-with-authoritative-bounds");
+
+        double Value(AllocationRecipient recipient)
+        {
+            var intent = EffectiveIntent(request.Frame.Semantics);
+            int? controller = recipient.PlayerId ?? recipient.ControllerId
+                ?? CardViews.FindZoneOccurrence(state, recipient.CardId)?.PlayerId;
+            if (controller is { } player && (IsBenefit(intent) || IsHarm(intent) || allocation.Kind == AllocationKind.Combat)) {
+                double benefit = AiPlayerRelations.Benefit(state, player);
+                double worth = recipient.Card is { } card ? CasualTableAssessment.CardValue(card) : 1;
+                return worth * benefit * (IsBenefit(intent) ? 1 : -1);
+            }
+            return recipient.PlayerId is { } target ? CasualTableAssessment.OpponentScore(request, target)
+                : recipient.Card is { } face ? CasualTableAssessment.CardValue(face) : 0;
+        }
     }
 
     private static AiProposal Attackers(AiDecisionRequest request, AttackPayload payload)
@@ -620,6 +639,9 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 if (command == null || !request.Frame.Allows(command)) continue;
                 fallback ??= command;
                 if (!work.TrySpend()) { limited = true; break; }
+                // Allies and uncertain relations are not discretionary attack
+                // opportunities. Required declarations still use current offers.
+                if (!AiPlayerRelations.Opponent(state, defender.PlayerId)) continue;
                 var enemy = state.Players.FirstOrDefault(player => player.Id == defender.PlayerId);
                 if (enemy == null) continue;
                 var blockers = enemy.Zone("Battlefield").Cards.Where(card => !card.Tapped && !card.PhasedOut && CasualTableAssessment.IsCreature(card)
@@ -643,7 +665,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 if (limited) break;
                 bool lethal = defender.Kind == "player" && enemy.Life <= damage && damage > 0;
                 if (lethal) score += 10;
-                bool wins = lethal && state.Players.Count(player => player.Id != state.ViewerId && !player.Eliminated) == 1;
+                bool wins = lethal && AiPlayerRelations.FinalOpponent(state, defender.PlayerId);
                 if (!wins && Retain(attacker)) score = Math.Min(score, -100);
                 score += Math.Clamp(CasualTableAssessment.OpponentScore(request, defender.PlayerId) * .025, 0, .3);
                 double tie = CasualTableAssessment.Tie(request.Seed, attacker.VisualId + ":" + defender.Kind + ":" + defender.Id);
@@ -685,15 +707,18 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 ? Answer(request, new CompleteBlockers(state.Id, state.Decision!.Id), "combat-complete-repaired-blocks")
                 : Missing("combat-block-repair-completion");
         var assigned = combat.Attackers.SelectMany(attack => attack.BlockerIds).ToHashSet();
-        long? incoming = CasualTableAssessment.IncomingDamage(state, state.ViewerId);
+        var incomingByDefender = new Dictionary<int, long?>();
         var options = new List<(DecisionCommand Command, double Score, double Tie)>();
         int retained = (int)Math.Min(int.MaxValue, Math.Max(64L,
             2L * combat.Attackers.SelectMany(attack => attack.EligibleBlockerIds).Distinct(StringComparer.Ordinal).Count() + combat.Attackers.Length + 1));
         var work = request.Work.CreateSlice(256, retained);
         DecisionCommand? fallback = null;
         bool limited = false;
-        foreach (var attack in combat.Attackers.Where(attack => attack.DefendingPlayerId == state.ViewerId).OrderBy(attack => attack.CardId, StringComparer.Ordinal)) {
+        foreach (var attack in combat.Attackers.Where(attack => AiPlayerRelations.Friendly(state, attack.DefendingPlayerId)).OrderBy(attack => attack.CardId, StringComparer.Ordinal)) {
             if (attack.BlockerIds.Length > 0 && string.IsNullOrEmpty(combat.BlockProblem)) continue;
+            var defended = state.Players.First(player => player.Id == attack.DefendingPlayerId);
+            if (!incomingByDefender.TryGetValue(defended.Id, out long? incoming))
+                incomingByDefender[defended.Id] = incoming = CasualTableAssessment.IncomingDamage(state, defended.Id);
             var attacker = CardViews.FindZoneOccurrence(state, attack.CardId)?.Card;
             if (attacker == null || attacker.Key.Length == 0) continue;
             foreach (string id in attack.EligibleBlockerIds.Where(id => !assigned.Contains(id)).Order(StringComparer.Ordinal)) {
@@ -708,9 +733,9 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                     ? Math.Max(0, CasualTableAssessment.UnblockedDamage(attacker) - exchange.DamageToDefender) : 0;
                 double score = (exchange.BlockerDies ? -CasualTableAssessment.OpportunityCost(state, blocker, "Battlefield") : .5)
                     + (exchange.AttackerDies ? CasualTableAssessment.CardValue(attacker) : 0);
-                if (incoming is { } predicted && predicted >= state.Viewer!.Life && prevented > 0)
-                    score += predicted - prevented < state.Viewer.Life ? 100 : Math.Min(50, prevented * 3);
-                else if (state.Viewer!.Life < 10) score += prevented * .4;
+                if (incoming is { } predicted && predicted >= defended.Life && prevented > 0)
+                    score += predicted - prevented < defended.Life ? 100 : Math.Min(50, prevented * 3);
+                else if (defended.Life < 10) score += prevented * .4;
                 if (attack.BlockerIds.Length > 0) score -= 10;
                 if (!string.IsNullOrEmpty(combat.BlockProblem)) score += attack.BlockerIds.Length > 0 ? 20 : 1;
                 options.Add((command, score,

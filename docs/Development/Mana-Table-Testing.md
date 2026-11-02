@@ -9,6 +9,35 @@ SDK; engine work requires JDK 17+ and Maven 3.8.1+. Node is only for dependency-
 documentation and CI tools. See [native setup](../../mana-native/README.md) for
 a complete engine/runtime/resource bundle.
 
+## Team relationships and authoritative outcomes
+
+The first M1 source candidate adds `MatchOutcomeProjectionTest` to the Java
+rules checks. Run it with `TerminalProjectionTest`, `MatchFailureTest` and
+`PregameConcessionTest` in the existing `forge-api` reactor test suite. These
+exercise actual team winners, an earlier eliminated ally, rules draws, ordinary
+free-for-all completion and failures; they do not establish a cooperative lobby.
+Include `EliminationRegressionTest` for natural elimination and concession of a
+lone human: both retain Defeat while cleanup keeps the global outcome absent.
+The packaged `AiFrameworkEngineCheck` exercises that same concession through the
+native adapter before allowing its next match to start.
+
+The existing graphics-free `Mana.Client.Tests` runner includes
+`MatchOutcomeRegression`, `MatchResultPresentationRegression` and
+`AiTeamRelationsRegression`. They cover missing facts, strict outcome membership,
+ally/enemy valuation, exact ownership, required choices and audience labels.
+`MatchOutcomeWireChecks` runs in the existing native headless presentation suite,
+alongside six-seat result rendering and same-publication projection comparisons.
+Run the compiled native test app with `--smoke-headless-presentation --profile
+<isolated-profile>` and inspect `headless-presentation-results.json` for
+`passed: true` and no error; the Windows executable exit code alone is insufficient.
+
+The AI release campaign records typed outcomes and actual teams before cleanup.
+A nonempty legacy result label cannot pass its natural-completion gate. Global
+draws do not by themselves establish an earlier eliminated player's tournament
+score. Policy fixtures do not prove private-hand filtering; retain the real
+adapter audience/visibility checks and separately review complete multiplayer
+journeys as later M1 work.
+
 ## Package timing checks
 
 The existing native CI fixture runner includes `ci/test-phase-timing.ps1`.

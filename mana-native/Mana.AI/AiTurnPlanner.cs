@@ -157,7 +157,7 @@ internal static class AiTurnPlanner
         var blockers = state.Viewer.Zone("Battlefield").Cards.Where(card => !card.Tapped && !card.PhasedOut
             && CasualTableAssessment.IsCreature(card) && !unavailable.Contains(CardViews.Identity(card))).ToArray();
         var work = request.Work.CreateSlice(96, 8);
-        foreach (var enemy in state.Players.Where(player => player.Id != state.ViewerId && !player.Eliminated)) {
+        foreach (var enemy in state.Players.Where(player => AiPlayerRelations.Opponent(state, player.Id) && !player.Eliminated)) {
             // A tapped enemy normally untaps before its next combat. This is
             // exposure over the next turn, not a current blocking domain.
             var incoming = enemy.Zone("Battlefield").Cards.Where(card => !card.PhasedOut && CasualTableAssessment.IsCreature(card))

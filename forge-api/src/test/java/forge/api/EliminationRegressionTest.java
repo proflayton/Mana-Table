@@ -8,7 +8,9 @@ import forge.StaticData;
 import forge.ai.LobbyPlayerAi;
 import forge.deck.Deck;
 import forge.deck.DeckSection;
+import forge.game.GameEndReason;
 import forge.game.event.GameEventGameFinished;
+import forge.game.player.GameLossReason;
 import forge.game.player.RegisteredPlayer;
 import forge.item.IPaperCard;
 import org.testng.annotations.Test;
@@ -44,6 +46,10 @@ public class EliminationRegressionTest {
             assertTrue(game.castAccepted, "The test must cast Phage through a real priority decision");
             assertTrue(viewer(ended).get("eliminated").getAsBoolean());
             assertEquals(text(ended, "result"), "Defeat");
+            assertEquals(game.table.game.getOutcome().getWinCondition(), GameEndReason.AllHumansLost,
+                    "The real human loss ends this solo session before the surviving AI contest finishes");
+            assertTrue(ended.get("outcome").isJsonNull(), "Individual Defeat is not a certified global match outcome");
+            assertNull(MatchOutcomeProjection.of(game.table, null));
             var completed = observations.get("phage-deck", test.id());
             assertEquals(completed.status(), "completed", "Natural elimination is a completed observation, not a concession");
             assertEquals(completed.result(), "Defeat");
@@ -68,6 +74,24 @@ public class EliminationRegressionTest {
     }
 
     @Test(timeOut = 90000)
+    public void concedingTheOnlyHumanPreservesItsLossWithoutCompletingTheSurvivingContest() throws Exception {
+        try (var game = new EliminationGame("solo-concession-outcome", false)) {
+            var decision = game.until(states -> mainFor(states.get(0), 1)).get(0);
+            var command = new JsonObject(); command.addProperty("sessionId", text(decision, "id"));
+            game.table.seat(0).concede(command);
+            var ended = game.until(states -> text(states.get(0), "status").equals("finished")).get(0);
+            assertTrue(viewer(ended).get("eliminated").getAsBoolean());
+            assertEquals(text(ended, "result"), "Defeat");
+            assertEquals(game.table.game.getRegisteredPlayers().get(0).getOutcome().lossState, GameLossReason.Conceded);
+            assertEquals(game.table.game.getOutcome().getWinCondition(), GameEndReason.AllHumansLost);
+            assertTrue(ended.get("outcome").isJsonNull(), "Concession is a real seat loss, not a completed AI contest");
+            assertNull(MatchOutcomeProjection.of(game.table, null));
+            assertTrue(ended.get("prompt").isJsonNull());
+            assertTrue(game.finished.await(5, TimeUnit.SECONDS), "Concession releases the actual rules worker");
+        }
+    }
+
+    @Test(timeOut = 90000)
     public void aNaturalHumanLossReleasesItsInputWhileTheOtherHumansContinue() throws Exception {
         try (var game = new EliminationGame("multihuman-phage-elimination", true)) {
             game.castPhage = true;
@@ -78,6 +102,7 @@ public class EliminationRegressionTest {
             assertTrue(retained.get("prompt").isJsonNull(), "The eliminated seat receives no hidden or visible priority decision");
             assertNotEquals(text(retained, "status"), "finished", "One loss does not end a table with surviving humans");
             assertTrue(retained.get("result").isJsonNull());
+            assertTrue(retained.get("outcome").isJsonNull(), "An eliminated seat cannot complete the surviving humans' game");
             var continued = game.until(states -> IntStream.range(1, 4).anyMatch(seat -> mainFor(states.get(seat), 2)));
             int departedId = retained.get("viewerId").getAsInt();
             for (var state : continued) {

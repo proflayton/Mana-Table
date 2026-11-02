@@ -117,10 +117,18 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private String gameResult() {
-        if (error != null || !game.isGameOver() || game.getOutcome() == null) return null;
-        var outcome = game.getOutcome();
-        return viewer.getHasLost() ? "Defeat" : outcome.isDraw() ? "Draw"
-                : outcome.getWinningLobbyPlayer() == human.getLobbyPlayer() ? "Victory" : "Defeat";
+        return gameResult(MatchOutcomeProjection.of(table, error));
+    }
+
+    private String gameResult(MatchOutcomeProjection.Outcome outcome) {
+        if (error != null) return null;
+        if (outcome != null) return MatchOutcomeProjection.forViewer(outcome, viewer.getId());
+        // Stopping a solo table after its human lost does not complete the AI
+        // contest. Preserve that real individual loss for display/playtests,
+        // without granting a win or publishing a global completion receipt.
+        return game.isGameOver() && game.getOutcome() != null
+                && game.getOutcome().getWinCondition() == GameEndReason.AllHumansLost
+                && viewer.getHasLost() ? "Defeat" : null;
     }
 
     private void notifyPlaytest() {
@@ -271,7 +279,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "playerCount", game.getPlayers().size(), "players", List.of(), "stack", List.of(),
                 "turn", 0, "phase", "Pregame", "phaseKey", "PREGAME", "activePlayerId", null,
                 "priorityPlayerId", null, "decisionOwnerId", null, "actionClass", "starting",
-                "prompt", null, "combat", null, "result", null, "error", null, "activity", List.of(), "notices", List.of(),
+                "prompt", null, "combat", null, "result", null, "outcome", null, "error", null, "activity", List.of(), "notices", List.of(),
                 "stackInterruptionVersion", table.stackInterruption.version(), "undo", undoProjection(null)));
     }
 
@@ -2088,7 +2096,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var allPlayers = registeredPlayers.stream().map(Player::getView).toList();
         var publishedAccessCards = new HashMap<PlayAccessProjection.PublishedOccurrence, String>();
         var statesByPlayer = new LinkedHashMap<Integer, List<PublicPlayerStates.State>>();
-        for (Player player : registeredPlayers) statesByPlayer.put(player.getId(), PublicPlayerStates.of(player));
+        var teamsByPlayer = new HashMap<Integer, Integer>();
+        for (Player player : registeredPlayers) {
+            statesByPlayer.put(player.getId(), PublicPlayerStates.of(player));
+            teamsByPlayer.put(player.getId(), player.getTeam());
+        }
         for (PlayerView player : allPlayers) {
             var states = statesByPlayer.get(player.getId());
             activity.observePlayerStates(player, states);
@@ -2119,7 +2131,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         "ownerId", owner.getId(), "owner", owner.getName(), "damage", player.getCommanderDamage(commander)));
             }
             players.add(map("id", player.getId(), "name", player.equals(viewer) ? "You" : player.getName(), "human", player.equals(viewer),
-                    "seat", allPlayers.indexOf(player) + 1, "eliminated", player.getHasLost(),
+                    "seat", allPlayers.indexOf(player) + 1, "teamId", teamsByPlayer.get(player.getId()), "eliminated", player.getHasLost(),
                     "life", player.getLife(), "maxHandSize", player.hasUnlimitedHandSize() ? null : player.getMaxHandSize(),
                     "landPlaysUsed", player.getNumLandThisTurn(), "landPlayLimit", player.hasUnlimitedLandPlay() ? null : player.getMaxLandPlay(),
                     "priority", player.getHasPriority(), "mana", mana, "counters", publicCounters(player), "states", states, "zones", zones, "commanderDamage", commanderDamage));
@@ -2160,7 +2172,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     "controller", item.getActivatingPlayer() == null ? "" : item.getActivatingPlayer().getName(),
                     "controllerId", item.getActivatingPlayer() == null ? null : item.getActivatingPlayer().getId()));
         }
-        String result = gameResult();
+        var outcome = MatchOutcomeProjection.of(table, error);
+        String result = gameResult(outcome);
         var pinnedExecutions = new HashSet<>(stackExecutions.values()); pinnedExecutions.addAll(finiteStackYield.pinned());
         executions.pinStack(pinnedExecutions);
         var publication = MatchActivity.capture(activity::frame, executions::frame);
@@ -2214,7 +2227,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         prompt != null && prompt.input instanceof InputPassPriority && sourceInputCurrent(prompt) ? prompt.input : null,
                         human::getCard, activity::visualId, publishedAccessCards),
                 "ignoredPriorityAbilities", priorityAbilities(human.getIgnoredPriorityAbilities(), prompt),
-                "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries(), "executions", publication.executions());
+                "result", result, "outcome", outcome, "notices", List.copyOf(notices), "activity", activityFrame.entries(), "executions", publication.executions());
         if (!table.currentPublication(boardRevision) || pending != prompt || sourceActionVersion.get() != publicationSourceVersion
                 || captured != null && !decisionOwnerCurrent(prompt)) return false;
         String quietToken = quietYield.observe(snapshot, activity.quietSequence());
@@ -2522,6 +2535,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             next.put("revision", ++revision); next.put("status", "error"); next.put("error", failure); next.put("prompt", null);
             next.put("undo", MatchUndo.faultFrame(latest.get("undo"), game.getReversibleManaAction().barrierVersion()));
             next.put("result", null);
+            next.put("outcome", null);
             next.put("finiteStackYield", finiteStackYield.frame(table.stackInterruption.actionVersion(), resolutionChoiceVersion));
             next.put("priorityPlayerId", null); next.put("decisionOwnerId", null); next.put("actionClass", "error");
             latest = Collections.unmodifiableMap(next);

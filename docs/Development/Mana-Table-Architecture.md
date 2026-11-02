@@ -1249,11 +1249,46 @@ not introduce a second scene framework or give UI layouts rules authority.
 
 ## Shared match and synchronization
 
-`MatchTable` owns one Forge game and one `MatchSession` per human controller.
+`MatchTable` owns one Forge game and a `MatchSession` for each participating seat.
 Solo and network matches use that same session, including activity, commander
-damage, legal combat choices and private information filtering. Forge's AI remains
-inside the authoritative game. The old `NetworkMatchSession` and its separate
+damage, legal combat choices and private information filtering. Forge remains
+the rules authority; the native AI host chooses through the same offered-action
+boundary for automated seats. The old `NetworkMatchSession` and its separate
 network GUI projection have been removed.
+
+The first source candidate for the approved
+[encounter roadmap](Mana-Table-Encounters-Roadmap.md) projects actual game-scoped
+`Player.TeamId` and a viewer-independent `GameSnapshot.Outcome`. The outcome
+names the exact game, global win/draw, actual winning player/team IDs and an
+opaque rules reason. It is absent until a genuine rules conclusion; engine
+failure and host cleanup do not create a completion receipt. Every audience
+receives the same public team and outcome facts.
+
+The adapter validates the outcome against known participant/team identities.
+`PlayerRelations` keeps missing facts unknown; only the AI's legacy policy path
+retains its previous free-for-all preference when every team field is absent.
+Mixed unknown teams receive no invented enemy/ally value. Supporting a teammate
+does not transfer its mana, cards or private observations to the acting seat.
+
+Actual winning players and members of a winning team remain distinct: a teammate
+eliminated earlier is not inserted into the individual winner list. Client result
+labels may show that team's victory while retaining individual elimination.
+A global draw also does not classify an earlier eliminated participant for
+tournament scoring. Per-participant scoring facts/policy remain M3 work.
+
+These facts are the first M1 boundary slice, not an implemented cooperative mode
+or a durable run checkpoint. Existing viewer-local `Status`/`Result` labels and
+concession admission retain their separate roles. Old providers may omit the
+new fields without gaining outcome authority from their display text. The
+release campaign now requires a validated typed outcome for natural-completion
+evidence, and same-publication comparisons include teams and outcome identity.
+
+When Forge stops a solo table after its only human loses, the eliminated viewer
+retains its actual Defeat label and playtest result. That `AllHumansLost` cleanup
+leaves the unfinished AI contest without a typed global outcome. Both the
+published board and playtest observation use this same result mapping; an engine
+error cannot acquire a defeat/win from it. Individual loss, concession admission
+and completed rules competition remain different facts.
 
 `SeatConnection` carries observe/reply/concede operations through `SyncTransport`.
 Solo uses a local connection. A lobby can mix local and TCP connections; all receive
