@@ -95,6 +95,12 @@ public sealed class TableScene
     public SceneSeat Seat(int player) => seats[player];
     public SceneCard? BattlefieldCard(int player, string occurrenceId) => seats.GetValueOrDefault(player)?.BattlefieldCard(occurrenceId);
     public BattlefieldCohort? Cohort(string occurrenceId) => Seats.Select(seat => seat.Cohort(occurrenceId)).FirstOrDefault(cohort => cohort != null);
+    public TableScene PlaceAccessBesideHand(IReadOnlyList<Rectangle> ownerReadouts, Func<string, int, Point> measureCaption)
+    {
+        var access = PlayAccess.PlaceBesideHand(ownerReadouts, measureCaption);
+        return ReferenceEquals(access, PlayAccess) ? this
+            : new(Hand, access, Seats.ToArray(), Spread?.ReanchorAccess(access));
+    }
     // These views expose the same prepared seat collections.
     public IReadOnlyList<SceneCard> Commanders(int player) => Seat(player).Geometry.Commanders;
     public IReadOnlyList<PilePlan> Piles(int player) => Seat(player).Geometry.Piles;

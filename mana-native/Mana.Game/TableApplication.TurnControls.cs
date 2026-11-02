@@ -208,17 +208,25 @@ internal sealed partial class TableApplication
         var mana = match is { Viewer: { } viewer } ? PlanManaHalo(viewer, 3).Bounds : Rectangle.Empty;
         int resourceRight = mana.IsEmpty ? 0 : mana.Right;
         bool extended = match!.Players.Length > 4;
+        var access = tableScene?.PlayAccess;
+        var occupied = extended && access is { Groups.Count: > 0 }
+            ? StudyHudObstacles.Append(access.Bounds).Append(access.UnfoldBounds).ToArray()
+            : StudyHudObstacles;
         int right = extended ? 1592 : 1550;
         area.X = Math.Clamp(Math.Max(area.X, resourceRight + 14), Math.Min(area.X, right - area.Width), right - area.Width);
-        if (TableStudyEnabled && StudyHudObstacles.Any(bounds => bounds.Intersects(area)))
-            area = extended ? DecisionWorkspaceLayout.TranslateComplete([area], new(8, 54, 1584, 838), StudyHudObstacles) ?? Rectangle.Empty
+        if (TableStudyEnabled && occupied.Any(bounds => bounds.Intersects(area)))
+            area = extended ? DecisionWorkspaceLayout.TranslateComplete([area], new(8, 54, 1584, 838), occupied) ?? Rectangle.Empty
                 : DecisionWorkspaceLayout.Place(mana.IsEmpty ? new((int)SeatHero(match!.ViewerId).X - 47,
                     (int)SeatHero(match.ViewerId).Y - 47, 94, 94) : mana,
-                area.Width, area.Height, StudyHudObstacles, bounded: true, minimumWidth: area.Width, minimumHeight: area.Height);
+                area.Width, area.Height, occupied, bounded: true, minimumWidth: area.Width, minimumHeight: area.Height);
         var readers = matchPresentation.Cards.Cards.Where(card => card.Focused
                 || card.Layer is Presentation.CardPresentationLayer.Returning or Presentation.CardPresentationLayer.Playing)
             .Select(card => card.Display.Bounds).Append(sourceReaderActionsBounds);
-        return tableScene?.PlayAccess.ReservePriority(area, readers) ?? area;
+        // The legacy table keeps its accepted adjacent-fan position. Larger
+        // tables have already placed these controls against every owner's
+        // furniture and the access fan; only reader occlusion remains here.
+        if (!extended) area = access?.PreferredPriorityArea(area) ?? area;
+        return access?.ReservePriority(area, readers) ?? area;
     }
 
     private void DrawAutomaticPassingControl()

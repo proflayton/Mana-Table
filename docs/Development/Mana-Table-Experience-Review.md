@@ -38,8 +38,11 @@ surface, remote identities separated from their mats, and the local land summary
 stranded at the left edge. The revised default framing gives the physical table
 nearly the full usable width at the same seated pitch. Remote portraits and full
 land summaries follow their own home-projected mat edges; local mana and land
-facts stay beside the centered phase wheel. Final readouts remain inside their
-owner's region. Prepared pile/shadow bounds supply clearance, and the action
+facts stay beside the centered phase wheel. Each full player name has its own
+primary row; relationship and land facts share the existing quieter resource
+row. This preserves the name without wrapping numbers into it or substituting a
+seat number. Final readouts remain inside their owner's region. Prepared
+pile/shadow bounds supply clearance, and the action
 area avoids completed owner readouts rather than displacing them. Two-to-four-seat
 arrangements retain their existing geometry.
 
@@ -52,6 +55,17 @@ and focus gestures. It does not prove full-text readability of six battlefields
 in one overview. Agent inspection covered 1000 x 740 and 1540 x 980 captures with
 full hands and active priority buttons; complete card text still uses inspection
 or battlefield focus. Human review of this candidate remains pending.
+
+The crowded access-fan capture also checks a complete 32-character player name,
+seven hidden backs, multi-digit mana and four permission-source packets. Exact
+painted hand geometry replaces padded rectangles when reserving five/six-seat
+HUD space. Owner identities are prepared first, external playable cards and
+their source controls follow those measured bounds, and priority is placed last.
+Expansion returns cards to those same completed anchors without rebuilding the
+world or camera. In this preview, priority stays right during ordinary play and
+uses the clear left footer when the external fan fills the right footer. Review
+that movement with people during the complete journey; collision-free placement
+does not establish that the change of side is comfortable.
 
 Finishing keeps the table inspectable. The result distinguishes a real rules
 conclusion from persistence: Saving encounter waits, a failed save offers the

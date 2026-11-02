@@ -87,7 +87,8 @@ missing: a process crash before the first terminal receipt cannot distinguish
 that attempt from not played. This is remaining M1 work, independently of M4's
 saved-party selector. Exact-candidate CI, visual review and a complete human
 cooperative journey also remain required before M1 acceptance. Neither roadmap
-approval nor a passing boundary test marks M1 complete. Persistent journal replay does not yet
+approval nor a passing boundary test marks M1 complete. Persistent journal replay
+does not yet
 provide a cross-application party/run selector or saved live matches.
 
 ### M2: Opponents worth playing

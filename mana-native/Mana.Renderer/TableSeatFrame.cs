@@ -87,7 +87,9 @@ public readonly record struct TableSeatFrame(int Index, bool IsLocal, Point Cent
         var portrait = index == 3 ? TableLayout.Hero(3) : turns == 2
             ? new Vector2(edge.X, pileTop - 120) : edge + new Vector2(0, 66);
         var held = index == 3 ? TableLayout.LocalHand
-            : turns == 2 ? portrait + new Vector2(-146, -8)
+            // The complete far mana halo ends 40px below the portrait. Keep
+            // all seven held backs in the next band, clear of any mana width.
+            : turns == 2 ? portrait + new Vector2(-180, 74)
             : portrait + new Vector2(index == 0 ? -160 : 160, 0);
         return new(index, index == 3, place, turns, portrait, held);
     }

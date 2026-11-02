@@ -15,15 +15,16 @@ internal static class LargeTableCapture
 {
     internal static void Run(string profile, Point? size, string? artCache, string captureView)
     {
-        if (captureView is not ("table" or "lobby")) throw new ArgumentOutOfRangeException(nameof(captureView));
+        if (captureView is not ("table" or "lobby" or "access")) throw new ArgumentOutOfRangeException(nameof(captureView));
         Directory.CreateDirectory(profile);
         new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false }.Save(profile);
-        var state = LargeTableChecks.State(6, 0);
+        var state = captureView == "access" ? LargeTablePlayAccessChecks.CaptureState() : LargeTableChecks.State(6, 0);
+        state = LargeTableChecks.WithFarMana(LargeTableChecks.WithRemoteHandCount(state, 7));
         string fixture = Path.Combine(profile, "six-seat-authored-fixture.json");
         File.WriteAllText(fixture, JsonSerializer.Serialize(state));
         var engine = new InteractionScenarioEngine(); engine.Present(state);
         using var source = new MagicArtSource(artCache ?? profile);
-        bool table = captureView == "table";
+        bool table = captureView != "lobby";
         var services = table ? TestTableServices.For(engine) : CooperativeLobbyInteractionChecks.CreateCaptureServices();
         using var window = new TableWindow(services, profile, null, null, size,
             initialState: table ? state : null, artSource: source, enableLiveTableStudy: true);
@@ -62,6 +63,10 @@ internal static class LargeTableCapture
             File.WriteAllText(prefix + ".json", JsonSerializer.Serialize(new { completeArtwork = missing.Length == 0,
                 missingArtwork = missing, view.Frame!.BoardView, seats = view.Frame.Scene.Seats.Select(seat => new {
                     seat.PlayerId, seat.Geometry.Frame, seat.Geometry.PlaymatPlacement }), readouts = view.ReadoutPlans,
+                controls = view.Hits.Where(hit => hit.Id is "confirm" or "quiet-priority-arm" or "play-access-unfold"
+                    || hit.Id.StartsWith("play-access-source:", StringComparison.Ordinal)).Select(hit => new { hit.Id, hit.Bounds }),
+                externalAccess = view.Frame.Scene.PlayAccess.Groups.Select(group => new { group.Id, group.Bounds,
+                    cards = group.Cards.Select(card => new { card.Scene.Id, card.Scene.Pose }) }),
                 humanReview = "pending", backgroundWindow = true, syntheticInputOnly = true,
                 source = "authored public projection; production renderer; no rules simulation" },
                 new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));

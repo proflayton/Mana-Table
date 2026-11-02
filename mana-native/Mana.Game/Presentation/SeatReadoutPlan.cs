@@ -8,7 +8,7 @@ namespace Mana.Table.Presentation;
 
 // Upright player state belongs to the fixed seat HUD. Only physical cards and
 // cloth enter the table camera. These measured pieces own paint, hits and space.
-internal enum SeatReadoutTextRole { LandTotal, LandState, Status, Incoming }
+internal enum SeatReadoutTextRole { LandTotal, LandState, Status, Incoming, Identity, ResourceSummary }
 internal sealed record SeatReadoutText(string Text, Rectangle Bounds, float Size, bool Bold, SeatReadoutTextRole Role);
 internal sealed record SeatReadoutState(string Id, string Text, string Kind, Rectangle Bounds, int MeasuredWidth, bool More);
 internal abstract record SeatReadoutPlacement
@@ -23,7 +23,10 @@ internal sealed record SeatReadoutPlan(int PlayerId, int Seat, int SeatOrdinal, 
 {
     internal IReadOnlyList<Rectangle> Pieces => Text.Select(item => item.Bounds).Concat(States.Select(item => item.Bounds)).ToArray();
     internal Rectangle Bounds => Pieces.Aggregate(Rectangle.Union);
-    internal SeatReadoutText Header => Text.Single(item => item.Role == SeatReadoutTextRole.LandTotal);
+    internal SeatReadoutText Header => Text.FirstOrDefault(item => item.Role == SeatReadoutTextRole.Identity)
+        ?? Text.Single(item => item.Role == SeatReadoutTextRole.LandTotal);
+    internal Rectangle IdentityBounds => Text.Where(item => item.Role is SeatReadoutTextRole.Identity or SeatReadoutTextRole.ResourceSummary)
+        .Select(item => item.Bounds).DefaultIfEmpty(Header.Bounds).Aggregate(Rectangle.Union);
 
     internal static string RelationshipLabel(GameSnapshot state, int playerId)
     {
@@ -35,7 +38,7 @@ internal sealed record SeatReadoutPlan(int PlayerId, int Seat, int SeatOrdinal, 
 
     internal static SeatReadoutPlan Build(Player player, int seat, int seatOrdinal, string caption, bool incoming,
         Func<string, float, bool, int> width, Func<string, float, int, bool, Point> measure,
-        int column = 224, bool? horizontal = null, bool countedOnly = false, string relationship = "")
+        int column = 224, bool? horizontal = null, bool countedOnly = false, string relationship = "", bool separateIdentity = false)
     {
         const int gap = 4;
         bool across = horizontal ?? seat == 1;
@@ -49,10 +52,17 @@ internal sealed record SeatReadoutPlan(int PlayerId, int Seat, int SeatOrdinal, 
             landY += measured.Y + gap;
         }
         var lands = PublicResources.Lands(player);
-        string owner = countedOnly ? "Seat " + seatOrdinal : player.Name;
-        Line(owner + (relationship.Length == 0 ? "" : " \u00b7 " + relationship) + " \u00b7 " + lands.Total
-            + (lands.Total == 1 ? " land" : " lands"), .75f, true, SeatReadoutTextRole.LandTotal);
-        Line(lands.Untapped + " untapped \u00b7 " + lands.Tapped + " tapped", .55f, false, SeatReadoutTextRole.LandState);
+        string owner = countedOnly && !separateIdentity ? "Seat " + seatOrdinal : player.Name;
+        if (separateIdentity) {
+            Line(owner, .75f, true, SeatReadoutTextRole.Identity);
+            Line((relationship.Length == 0 ? "" : relationship + " \u00b7 ") + lands.Total
+                + (lands.Total == 1 ? " land" : " lands") + " \u00b7 " + lands.Untapped + " untapped \u00b7 " + lands.Tapped + " tapped",
+                .55f, false, SeatReadoutTextRole.ResourceSummary);
+        } else {
+            Line(owner + (relationship.Length == 0 ? "" : " \u00b7 " + relationship) + " \u00b7 " + lands.Total
+                + (lands.Total == 1 ? " land" : " lands"), .75f, true, SeatReadoutTextRole.LandTotal);
+            Line(lands.Untapped + " untapped \u00b7 " + lands.Tapped + " tapped", .55f, false, SeatReadoutTextRole.LandState);
+        }
         var source = StateClarity.ProminentPlayerStates(player);
         int stateX = across ? x + column + 12 : x, cursor = 0, row = 0;
         int stateY = across ? y : landY;
@@ -101,7 +111,12 @@ internal sealed record SeatReadoutPlan(int PlayerId, int Seat, int SeatOrdinal, 
             2 => 1588 - bounds.Width,
             _ => Math.Clamp((int)portrait.X - bounds.Width / 2, 12, Math.Max(12, 1588 - bounds.Width))
         };
-        return Translate(new(x - bounds.X, (int)portrait.Y + 58 - bounds.Y));
+        var placed = Translate(new(x - bounds.X, (int)portrait.Y + 58 - bounds.Y));
+        return Text.Any(item => item.Role == SeatReadoutTextRole.Identity) ? placed with {
+            Text = placed.Text.Select(item => item.Role is SeatReadoutTextRole.Identity or SeatReadoutTextRole.ResourceSummary
+                ? item with { Bounds = new((int)MathF.Round(portrait.X) - item.Bounds.Width / 2, item.Bounds.Y, item.Bounds.Width, item.Bounds.Height) }
+                : item).ToArray()
+        } : placed;
     }
 
     internal SeatReadoutPlan Translate(Point offset)

@@ -35,9 +35,11 @@ internal sealed partial class TableApplication
                 (text, size, bold) => canvas.TextWidth(text, size, bold),
                 (text, size, measureWidth, bold) => canvas.TextSize(text, size, measureWidth, 80, bold), width,
                 horizontal ?? (extended ? (bool?)far : null), countedOnly,
-                SeatReadoutPlan.RelationshipLabel(match, player.Id)).AtPortrait(seat.Geometry.Hero, alignment);
+                SeatReadoutPlan.RelationshipLabel(match, player.Id), separateIdentity: extended).AtPortrait(seat.Geometry.Hero, alignment);
             var identitySlot = SeatNameplateArea(seat.Geometry.Hero, false, seat.Index, PlanManaHalo(player, seat.Index));
-            return (Player: player.Id, IdentitySlot: identitySlot, Reserved: Build(countedOnly: true), Arrangements: new[] { Build(), Build(264), Build(horizontal: false) });
+            return (Player: player.Id, IdentitySlot: identitySlot, Reserved: Build(countedOnly: true),
+                Arrangements: extended ? new[] { Build(320), Build(264), Build(), Build(320, horizontal: false) }
+                    : new[] { Build(), Build(264), Build(horizontal: false) });
         }).ToArray();
         foreach (var candidate in candidates) {
             occupied.Remove(candidate.IdentitySlot);
@@ -47,6 +49,9 @@ internal sealed partial class TableApplication
             var readoutViewport = match.Players.Length > 4
                 ? Rectangle.Intersect(new(0, 54, 1600, 846), new((int)owner.X - 180, (int)owner.Y + 52, 360, 150))
                 : BoardViewport;
+            if (match.Players.Length > 4 && tableScene.PlayAccess.SourcePocket is { IsEmpty: false } pocket
+                && !tableScene.Seat(candidate.Player).Geometry.Frame.IsFar && owner.X > 800)
+                readoutViewport.Width = Math.Max(0, Math.Min(readoutViewport.Right, pocket.Left) - readoutViewport.X);
             switch (seatReadoutPlacer(candidate.Arrangements, candidate.Reserved, readoutViewport, protectedAreas)) {
                 case SeatReadoutPlacement.Placed placed:
                     seatReadoutPlans[candidate.Player] = placed.Plan;
@@ -66,6 +71,7 @@ internal sealed partial class TableApplication
         var overview = TableViewGeometry.Overview(tableScene!);
         bool extended = match!.Players.Length > 4;
         if (extended) occupied.AddRange(tableScene!.Hand.Cards.Select(card => card.Pose.Bounds));
+        if (extended && tableScene!.PlayAccess.SourcePocket is { IsEmpty: false } pocket) occupied.Add(pocket);
         foreach (var seat in tableScene!.Seats) {
             var player = match!.Players.Single(player => player.Id == seat.PlayerId);
             var geometry = seat.Geometry;
@@ -75,10 +81,12 @@ internal sealed partial class TableApplication
             occupied.AddRange(mana.Parts.Select(part => part.Bounds));
             occupied.Add(SeatNameplateArea(geometry.Hero, geometry.Frame.IsLocal, seat.Index, mana));
             if (!geometry.Frame.IsLocal) {
-                occupied.Add(new((int)geometry.Hand.X - 83, (int)geometry.Hand.Y - 30, 166, 75));
+                if (!extended) occupied.Add(new((int)geometry.Hand.X - 83, (int)geometry.Hand.Y - 30, 166, 75));
                 foreach (var hand in OpponentHandPoses(player, seat.Index)) {
                     occupied.Add(hand.Bounds); occupied.Add((hand with { Center = hand.Center + new Vector2(3, 6) }).Bounds);
                 }
+                if (extended && !geometry.Frame.IsFar && StateClarity.PlayerStates(player).Length == 0)
+                    occupied.Add(new((int)geometry.Hand.X - 65, (int)geometry.Hand.Y + 35, 130, 22));
             } else if (extended) {
                 // Owner identities are fixed seat furniture. The priority dock
                 // chooses its actual free position after these readouts exist;
@@ -109,7 +117,8 @@ internal sealed partial class TableApplication
     {
         foreach (var item in plan.Text) {
             var color = item.Role == SeatReadoutTextRole.Incoming ? Red : item.Role == SeatReadoutTextRole.Status ? Gold : Ink;
-            if (item.Role == SeatReadoutTextRole.LandTotal && item.Bounds.Contains(pointer)) color = Blue;
+            if (item.Role is SeatReadoutTextRole.LandTotal or SeatReadoutTextRole.Identity or SeatReadoutTextRole.ResourceSummary
+                && item.Bounds.Contains(pointer)) color = Blue;
             canvas.Text(item.Text, item.Bounds.X, item.Bounds.Y, color, item.Size, item.Bounds.Width, 80, item.Bold);
             seatReadoutBounds.Add(item.Bounds);
         }

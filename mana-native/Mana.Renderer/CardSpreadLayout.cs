@@ -67,6 +67,27 @@ public sealed class CardSpreadPlan
     }
 
     public bool Contains(string occurrenceId) => Anchors.Any(card => card.Id == occurrenceId);
+    public CardSpreadPlan ReanchorAccess(PlayAccessPlan access)
+    {
+        var occurrences = access.Groups.SelectMany(group => group.Cards).ToDictionary(card => card.Scene.Id, card => card.Scene);
+        return Anchors.Any(card => occurrences.TryGetValue(card.Id, out var current) && current.Pose != card.Pose)
+            ? new(this, occurrences) : this;
+    }
+    private CardSpreadPlan(CardSpreadPlan original, IReadOnlyDictionary<string, SceneCard> access)
+    {
+        SceneCard Anchor(SceneCard card) => access.TryGetValue(card.Id, out var current)
+            ? card with { Pose = current.Pose, Entrance = current.Pose.Center, TableAnchored = false } : card;
+        Target = original.Target;
+        Anchors = Array.AsReadOnly(original.Anchors.Select(Anchor).ToArray());
+        WorldCards = Array.AsReadOnly(original.WorldCards.Select(card => access.TryGetValue(card.Id, out var current)
+            ? card with { Entrance = current.Pose.Center } : card).ToArray());
+        Cards = original.Cards;
+        Sections = Array.AsReadOnly(original.Sections.Select(section => section with {
+            Packet = section.Packet with { Cards = Array.AsReadOnly(section.Packet.Cards.Select(Anchor).ToArray()) }
+        }).ToArray());
+        Area = original.Area; WorldBounds = original.WorldBounds;
+        Overview = original.Overview; InitialView = original.InitialView; View = original.View;
+    }
     public BoardView Focus(string occurrenceId)
     {
         var card = WorldCards.FirstOrDefault(card => card.Id == occurrenceId);

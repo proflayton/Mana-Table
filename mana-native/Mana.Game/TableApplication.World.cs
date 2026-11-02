@@ -189,16 +189,21 @@ internal sealed partial class TableApplication
         float radius = own ? 40 : 34;
         if (!own) {
             var handCenter = SeatHand(player.Id);
-            foreach (var back in OpponentHandPoses(player, index)) {
+            var backs = OpponentHandPoses(player, index).ToArray();
+            foreach (var back in backs) {
                 canvas.Surface(null, back with { Center = back.Center + new Vector2(3, 6) }, Color.Black * .45f);
                 PaintBack(back);
             }
             var handBounds = new Rectangle((int)handCenter.X - 83, (int)handCenter.Y - 30, 166, 75);
-            hits.Add(new("hand-zone:" + player.Id, Scope, handBounds, new MatchIntent.OpenZone(player.Id, "Hand")));
-            if (!far && !hasCounters) {
-                var caption = new Rectangle((int)handCenter.X - 65, (int)handCenter.Y + 35, 130, 22);
-                canvas.CenterText(player.Zone("Hand").Count + " in hand", caption, Muted, .48f);
-            }
+            Rectangle? caption = !far && !hasCounters
+                ? new((int)handCenter.X - 65, (int)handCenter.Y + 35, 130, 22) : null;
+            bool extended = match.Players.Length > 4;
+            if (extended) handBounds = backs.Select(back => back.Bounds).Concat(caption is { } label ? new[] { label } : [])
+                .DefaultIfEmpty(Rectangle.Empty).Aggregate(Rectangle.Union);
+            if (!handBounds.IsEmpty) hits.Add(new("hand-zone:" + player.Id, Scope, handBounds,
+                new MatchIntent.OpenZone(player.Id, "Hand"), Shape: extended
+                    ? point => backs.Any(back => back.Contains(point)) || caption?.Contains(point) == true : null));
+            if (caption is { } shown) canvas.CenterText(player.Zone("Hand").Count + " in hand", shown, Muted, .48f);
         }
         canvas.Glow(center + new Vector2(0, 10), new(radius * 3.8f, radius * 2.5f), Color.Black * .9f);
         if (target || active) canvas.Glow(center, new(radius * 4.7f), (target ? Blue : Gold) * .4f);
@@ -262,7 +267,7 @@ internal sealed partial class TableApplication
         var auxiliary = new SeatAuxiliary(player, center, own, index, hasCounters, manaHalo, auxiliaryCaption, incoming, new(x + 4, y + 24, 180, 80));
         if (!TableStudyEnabled || own) DrawSeatAuxiliary(auxiliary);
         if (!own) DrawOpponentPhase(player, center, index);
-        var identityBounds = measuredIdentity?.Header.Bounds ?? nameplate;
+        var identityBounds = measuredIdentity?.IdentityBounds ?? nameplate;
         if (!own) hits.Add(new("focus:" + player.Id, Scope, identityBounds, seatReadoutWorkspaces.Contains(player.Id)
             ? new MatchIntent.OpenPlayerState(player.Id, "") : new MatchIntent.OpenZone(player.Id, "Battlefield"),
             Shape: topMatSeat ? point => identityBounds.Contains(point)

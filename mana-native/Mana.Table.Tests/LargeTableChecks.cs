@@ -24,9 +24,46 @@ internal static class LargeTableChecks
         ObserverAndAttachments(check);
         Relationships(check);
         PresentationDetails(profile, check);
+        FarHands(profile, check);
         DrawTransfers(profile, check);
         foreach (int count in new[] { 5, 6 })
         foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) }) Journey(profile, count, size, check);
+    }
+
+    private static void FarHands(string profile, Action<bool, string> check)
+    {
+        foreach (int count in new[] { 6, 7 }) {
+            string path = Path.Combine(profile, "painted-far-hands-" + count);
+            Directory.CreateDirectory(path);
+            new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false }.Save(path);
+            var state = WithFarMana(WithRemoteHandCount(State(6, 0), count));
+            var engine = new InteractionScenarioEngine(); engine.Present(state);
+            using var run = new PresentationRun(TestTableServices.For(engine), path, engine.State, new(1000, 740));
+            run.EnableLiveTableStudy();
+            var mouse = new MouseState(-100, -100, 0, ButtonState.Released, ButtonState.Released,
+                ButtonState.Released, ButtonState.Released, ButtonState.Released);
+            run.Tick(TimeSpan.FromSeconds(.05), mouse, new());
+            var frame = run.Tick(TimeSpan.FromSeconds(.05), mouse, new());
+            var painted = frame.Scene!.Seats.Where(seat => seat.Geometry.Frame.IsFar).Select(seat => {
+                var hand = seat.Geometry.Hand;
+                var backs = frame.Drawing.Commands.OfType<DrawCommand.Surface>().Where(command => command.Texture == null
+                    && command.Tint == new Color(27, 41, 49) && !command.Pose.IsProjected && command.Pose.Size == new Vector2(34, 48)
+                    && Math.Abs(command.Pose.Center.X - hand.X) < 90 && Math.Abs(command.Pose.Center.Y - hand.Y) < 20)
+                    .Select(command => command.Pose).ToArray();
+                return new { seat.PlayerId, hand, backs, mana = run.View.ManaPoolBadge(seat.PlayerId)!.Parts };
+            }).ToArray();
+            File.WriteAllText(Path.Combine(path, "actual-backs-and-mana-first.json"), JsonSerializer.Serialize(painted,
+                new JsonSerializerOptions { IncludeFields = true, WriteIndented = true }));
+            check(painted.Length == 3 && painted.All(seat => seat.backs.Length == count
+                    && seat.backs.All(back => seat.mana.All(part => !back.Bounds.Intersects(part.Bounds)))),
+                $"Every far player keeps all {count} actually painted card backs clear of the actual 32/1000-mana symbol and number bounds");
+            check(painted.SelectMany(seat => seat.backs).All(back => run.View.ReadoutPlans.Values
+                    .SelectMany(plan => plan.Pieces).All(piece => !back.Bounds.Intersects(piece))),
+                "The retained far card backs also leave every accepted owner name and land summary readable");
+            check(run.View.ReadoutPlans.Values.All(plan => Math.Abs(plan.Header.Bounds.Center.X
+                    - frame.Scene.Seat(plan.PlayerId).Geometry.Hero.X) < 40),
+                "The full far hand and multi-digit mana cannot displace an owner's complete identity into another player's region");
+        }
     }
 
     private static void PresentationDetails(string profile, Action<bool, string> check)
@@ -283,12 +320,17 @@ internal static class LargeTableChecks
                 && paintedBounds.Bottom is >= 640 and < 720,
             "The actual painted larger table fills the usable arena width and reaches the near seat, rather than shrinking between detached HUD rails");
         check(run.View.ReadoutPlans.Count == count - 1 && accepted.Players.Where(player => player.Id != accepted.ViewerId)
-                .All(player => run.View.ReadoutPlans.TryGetValue(player.Id, out var plan)
-                    && plan.Header.Text.Contains(player.Name, StringComparison.Ordinal)
-                    && plan.Header.Text.Contains(SeatReadoutPlan.RelationshipLabel(accepted, player.Id), StringComparison.Ordinal)
-                    && frame.Drawing.Commands.OfType<DrawCommand.Text>().Count(text => text.Value == plan.Header.Text) == 1
-                    && plan.Text.Any(text => text.Role == SeatReadoutTextRole.LandState
-                        && text.Text == $"{PublicResources.Lands(player).Untapped} untapped · {PublicResources.Lands(player).Tapped} tapped")),
+                .All(player => {
+                    string relationship = SeatReadoutPlan.RelationshipLabel(accepted, player.Id);
+                    var lands = PublicResources.Lands(player);
+                    string facts = (relationship.Length == 0 ? "" : relationship + " \u00b7 ") + lands.Total
+                        + (lands.Total == 1 ? " land" : " lands") + $" \u00b7 {lands.Untapped} untapped \u00b7 {lands.Tapped} tapped";
+                    return run.View.ReadoutPlans.TryGetValue(player.Id, out var plan) && plan.Header.Text == player.Name
+                        && frame.Drawing.Commands.OfType<DrawCommand.Text>().Count(text => text.Value == plan.Header.Text) == 1
+                        && plan.Text.Any(text => text.Role == SeatReadoutTextRole.ResourceSummary && text.Text == facts
+                            && frame.Drawing.Commands.OfType<DrawCommand.Text>().Count(command => command.Value == facts
+                                && command.X == text.Bounds.X && command.Y == text.Bounds.Y) == 1);
+                }),
             "All opponents have a distinct complete name/land/tap readout; the fifth and sixth seats are not omitted");
         check(run.View.ReadoutPlans.Values.SelectMany(plan => plan.Pieces).All(piece =>
                 scene.Hand.Cards.All(card => !piece.Intersects(card.Pose.Bounds))
@@ -376,4 +418,16 @@ internal static class LargeTableChecks
             DecisionOwnerId = count > 4 ? viewer : null, PriorityPlayerId = viewer, ActivePlayerId = viewer,
             ActionClass = count > 4 ? "priority" : "waiting" };
     }
+
+    internal static GameSnapshot WithRemoteHandCount(GameSnapshot state, int count) => state with {
+        Players = state.Players.Select(player => player.Id == state.ViewerId ? player : player with {
+            Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Count = count } : zone).ToImmutableArray()
+        }).ToImmutableArray()
+    };
+
+    internal static GameSnapshot WithFarMana(GameSnapshot state) => state with {
+        Players = state.Players.Select(player => TableSeatFrame.For(TableSeatFrame.DisplayIndex(state, player.Id), state.Players.Length).IsFar
+            ? player with { Mana = player.Mana.ToImmutableDictionary(pair => pair.Key, pair => pair.Key is "W" or "G" ? 32 : 1000) }
+            : player).ToImmutableArray()
+    };
 }
