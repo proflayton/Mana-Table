@@ -19,6 +19,7 @@ public class EncounterProgressStoreTest {
             EncounterProgressStore.atomicWrite(path, bytes);
         })) {
             store.startup().get(5, TimeUnit.SECONDS);
+            store.openAttempt(opened(receipt)).get(5, TimeUnit.SECONDS);
             assertThrows(ExecutionException.class, () -> store.commit(receipt).get(5, TimeUnit.SECONDS));
             assertTrue(Files.isRegularFile(profile.resolve("encounters-v1/receipts").resolve(receipt.gameId() + ".json")));
             assertEquals(store.current(receipt.partyId()).completedEncounters(), 0);
@@ -43,8 +44,12 @@ public class EncounterProgressStoreTest {
     @Test(timeOut = 15000) public void failureBeforeReceiptAndAnInterruptedGameCannotAwardProgress() throws Exception {
         var profile = ApiTestWorkspace.profile("encounter-before-receipt");
         var receipt = receipt(UUID.randomUUID().toString(), "win", true);
-        try (var store = new EncounterProgressStore(profile, (path, bytes) -> { throw new IOException("Controlled first write failure"); })) {
+        try (var store = new EncounterProgressStore(profile, (path, bytes) -> {
+            if (path.getParent().getFileName().toString().equals("receipts")) throw new IOException("Controlled first receipt failure");
+            EncounterProgressStore.atomicWrite(path, bytes);
+        })) {
             store.startup().get(5, TimeUnit.SECONDS);
+            store.openAttempt(opened(receipt)).get(5, TimeUnit.SECONDS);
             assertThrows(ExecutionException.class, () -> store.commit(receipt).get(5, TimeUnit.SECONDS));
             assertEquals(store.current(receipt.partyId()).completedEncounters(), 0);
         }
@@ -68,6 +73,7 @@ public class EncounterProgressStoreTest {
         var loss = receipt(party, "win", false); var draw = receipt(party, "draw", false);
         try (var first = new EncounterProgressStore(profile); var second = new EncounterProgressStore(profile)) {
             first.startup().get(5, TimeUnit.SECONDS); second.startup().get(5, TimeUnit.SECONDS);
+            first.openAttempt(opened(loss)).get(5, TimeUnit.SECONDS); second.openAttempt(opened(draw)).get(5, TimeUnit.SECONDS);
             CompletableFuture.allOf(first.commit(loss), second.commit(draw), first.commit(loss), second.commit(draw)).get(5, TimeUnit.SECONDS);
         }
         try (var recovered = new EncounterProgressStore(profile)) {
@@ -78,7 +84,11 @@ public class EncounterProgressStoreTest {
         }
     }
 
-    private static EncounterProgressStore.Receipt receipt(String party, String kind, boolean partyWins) {
+    static EncounterProgressStore.AttemptOpened opened(EncounterProgressStore.Receipt receipt) {
+        return new EncounterProgressStore.AttemptOpened(1, receipt.partyId(), receipt.encounterId(), receipt.gameId(), receipt.rulesetId(),
+                receipt.partyTeamId(), UUID.randomUUID().toString(), UUID.randomUUID().toString(), receipt.participants(), Instant.now().toString());
+    }
+    static EncounterProgressStore.Receipt receipt(String party, String kind, boolean partyWins) {
         String game = UUID.randomUUID().toString(), encounter = UUID.randomUUID().toString();
         var players = List.of(new EncounterProgressStore.Participant(UUID.randomUUID().toString(), 0, 1, 10, "party", UUID.randomUUID().toString()),
                 new EncounterProgressStore.Participant(UUID.randomUUID().toString(), 1, 2, 20, "opposition", UUID.randomUUID().toString()));

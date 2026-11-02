@@ -54,6 +54,7 @@ internal static class Program
                     Library = engine as IDeckLibrary, Workshop = engine as IDeckWorkshop,
                     Analysis = engine as IDeckAnalysis, Seats = engine as ITableSeatSetup,
                     MatchSetup = engine as ITableMatchSetup,
+                    EncounterStart = engine as ITableEncounterStart,
                     Tempo = engine as ITableTempo,
                     Social = engine as ITableSocial, Versions = engine as IDeckVersionHistory
                 };

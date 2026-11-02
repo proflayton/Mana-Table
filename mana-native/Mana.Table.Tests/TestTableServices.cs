@@ -16,6 +16,7 @@ internal static class TestTableServices
         Analysis = engine as IDeckAnalysis,
         Seats = engine as ITableSeatSetup,
         MatchSetup = engine as ITableMatchSetup,
+        EncounterStart = engine as ITableEncounterStart,
         Tempo = engine as ITableTempo,
         Social = engine as ITableSocial,
         Versions = engine as IDeckVersionHistory,

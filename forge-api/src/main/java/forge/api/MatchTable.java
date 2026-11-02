@@ -186,7 +186,13 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         }
         // invoke can run inline on a rules thread; do not retain the table
         // monitor while entering a game that can wait for controller input.
-        game.getAction().invoke(this::startInState);
+        try { game.getAction().invoke(this::startInState); }
+        catch (Throwable failure) {
+            // Submission can fail before there is a rules worker to report or
+            // complete anything. Use the same typed fault and retirement path.
+            try { reportStartupFailure(failure); }
+            finally { completeStart(failure); }
+        }
         return startupCompletion;
     }
 
@@ -211,32 +217,34 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
                 unexpected = failure;
                 reportStartupFailure(failure);
             }
+        } finally { completeStart(unexpected); }
+    }
+
+    private void completeStart(Throwable unexpected) {
+        try {
+            stopTempo();
+            synchronized (gate) {
+                for (var seat : seats.values()) seat.clearDecision();
+                if (!faulted) publish();
+            }
+        } catch (Throwable failure) {
+            if (unexpected == null) {
+                unexpected = failure;
+                reportStartupFailure(failure);
+            } else unexpected.addSuppressed(failure);
         } finally {
             try {
-                stopTempo();
-                synchronized (gate) {
-                    for (var seat : seats.values()) seat.clearDecision();
-                    if (!faulted) publish();
-                }
+                game.unsubscribeFromEvents(identities);
+                game.unsubscribeFromEvents(stackInterruption);
+                for (var seat : seats.values()) seat.detach();
             } catch (Throwable failure) {
                 if (unexpected == null) {
                     unexpected = failure;
                     reportStartupFailure(failure);
                 } else unexpected.addSuppressed(failure);
             } finally {
-                try {
-                    game.unsubscribeFromEvents(identities);
-                    game.unsubscribeFromEvents(stackInterruption);
-                    for (var seat : seats.values()) seat.detach();
-                } catch (Throwable failure) {
-                    if (unexpected == null) {
-                        unexpected = failure;
-                        reportStartupFailure(failure);
-                    } else unexpected.addSuppressed(failure);
-                } finally {
-                    if (unexpected == null) startupCompletion.complete(null);
-                    else startupCompletion.completeExceptionally(unexpected);
-                }
+                if (unexpected == null) startupCompletion.complete(null);
+                else startupCompletion.completeExceptionally(unexpected);
             }
         }
     }

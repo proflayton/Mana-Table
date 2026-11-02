@@ -45,6 +45,8 @@ internal sealed partial class TableApplication
             case ShellIntent.SetReady ready: SetLobbyReady(ready.Ready); break;
             case ShellIntent.StartSolo: StartSolo(); break;
             case ShellIntent.StartFriends: StartFriends(); break;
+            case ShellIntent.RetryEncounterStart retry: RetryEncounterStart(retry.TableId, retry.AttemptId); break;
+            case ShellIntent.CancelEncounterStart cancel: CancelEncounterStart(cancel.TableId, cancel.AttemptId); break;
             case ShellIntent.CloseSetup: CloseSetupModal(); break;
             case ShellIntent.ShowReview reviewMode: reviewList = reviewMode.List; textFocus = false; break;
             case ShellIntent.FocusSetupInput focus:
@@ -195,6 +197,7 @@ internal sealed partial class TableApplication
     private void StartFriends()
     {
         if (!DeckConfirmed || LocalSeat?.Ready != true || lobby is not { Mode: "hosting", CanStart: true }) return;
+        if (IsCooperative(lobby)) { BeginEncounter(); return; }
         Work(async () => { await tables.StartAsync(); var state = await matchConnection.ObserveAsync(); updates.Enqueue(() => { setupModal = ""; Accept(state); }); }, "Starting Commander", $"Bringing all {lobby.Seats.Length} players to the table.", scene: true, changesMatch: true);
     }
     private void ConnectLobby(bool hosting)

@@ -61,10 +61,10 @@ internal static class CooperativeEncounterEngineJourney
         var host = new AiTableHost(engine, _ => new CasualCommanderPolicy(), 261102, new(TimeSpan.FromSeconds(3), 2048));
         try {
             await engine.EnableAutomatedSeatsAsync();
-            check(engine.SupportsMatchSetup && engine.SupportsTempo,
-                "The real native provider explicitly advertises match setup and timing consent capabilities");
+            check(engine.SupportsMatchSetup && engine.SupportsTempo && engine.SupportsEncounterStart,
+                "The real native provider explicitly advertises match setup, timing consent and durable admission capabilities");
             lobby = await engine.HostAsync(3, false); connected = true;
-            check(lobby.MatchSetupCapabilities?.RulesetIds.Contains(MatchRulesets.CooperativeCommander) == true,
+            check(lobby.MatchSetupCapabilities?.RulesetIds.Contains(MatchRulesets.CooperativeCommander) == true && lobby.EncounterStartSupported,
                 "The real hosted lobby advertises the versioned cooperative ruleset without inferring it from its AI seats");
             lobby = await engine.ConfigureMatchAsync(lobby.TableId, lobby.Revision, Specification(1, 2));
             lobby = await engine.ConfigureTempoAsync(lobby.TableId, TempoPreset.Relaxed, TempoExpiry.Warn);
@@ -85,8 +85,21 @@ internal static class CooperativeEncounterEngineJourney
                 lobby = await engine.LobbyAsync();
                 check(lobby.CanStart && lobby.Seats.Single(seat => seat.Local).Ready,
                     "One aggregate Ready acknowledges both displayed policies before the real encounter starts");
+                string? admittedAttempt = null;
+                if (encounter == 1) {
+                    var beginElapsed = Stopwatch.StartNew();
+                    var pending = await engine.BeginEncounterAsync(lobby.TableId, lobby.MatchSetupConsent!, lobby.Tempo!.Revision);
+                    admittedAttempt = pending.StartState?.AttemptId;
+                    check(pending.EncounterStartSupported && !pending.MatchActive && pending.StartState is { Phase: EncounterStartPhase.Preparing }
+                            && admittedAttempt != null && pending.PartyProgress is { CompletedEncounters: 0, LastReceipt: null },
+                        "The real native Begin returns pending durable admission without a fake game frame or completed encounter");
+                    evidence.Add(new { stage = "pending-durable-admission", pending.TableId, pending.StartState, pending.MatchActive,
+                        beginElapsedMs = beginElapsed.Elapsed.TotalMilliseconds, progress = pending.PartyProgress });
+                }
                 await engine.StartAsync();
                 state = await Opening(3);
+                if (admittedAttempt != null) check(state.Encounter?.EncounterId == admittedAttempt,
+                    "The compatibility StartAsync waits for the same immutable admitted attempt instead of allocating another game");
                 ValidateRoster(state, lobby);
                 evidence.Add(PublicFrame("opening-" + encounter, state, lobby));
                 string gameId = state.Id;

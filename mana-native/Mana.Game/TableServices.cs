@@ -19,6 +19,7 @@ public sealed record TableServices(IEngineCatalog Catalog, ITableSetup Tables, I
     public IDeckAnalysis? Analysis { get; init; }
     public ITableSeatSetup? Seats { get; init; }
     public ITableMatchSetup? MatchSetup { get; init; }
+    public ITableEncounterStart? EncounterStart { get; init; }
     public ITableTempo? Tempo { get; init; }
     public ITableSocial? Social { get; init; }
     public IDeckVersionHistory? Versions { get; init; }

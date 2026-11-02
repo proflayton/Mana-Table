@@ -283,9 +283,13 @@ public sealed partial class ClientSession
             try {
                 var lobby = withLobby ? await (setup ?? throw new InvalidOperationException("No lobby connection")).LobbyAsync() : null;
                 var state = !withLobby || lobby?.MatchActive == true ? await connection.ObserveAsync() : null;
+                Exception? admissionFailure = null;
+                if (lobby != null) try { EncounterStartFacts.ValidateMatch(lobby, state); }
+                    catch (InvalidOperationException error) { admissionFailure = new IOException("The table did not publish its admitted encounter's rules frame.", error); }
                 Post(() => {
                     if (epoch != replica.Epoch || withLobby && (!ReferenceEquals(lobbyOwner, lobbyReplica)
                         || lobby == null || !AcceptLobby(lobby))) return;
+                    if (admissionFailure != null) { ReportFailure(admissionFailure, false); return; }
                     if (Accept(state, epoch)) lobbyChanged(lobby);
                 });
             } catch (Exception error) { Post(() => {

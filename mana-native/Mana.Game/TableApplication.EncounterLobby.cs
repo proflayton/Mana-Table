@@ -29,14 +29,16 @@ internal sealed partial class TableApplication
         DrawEncounterSide(far, 688, true, cooperative);
 
         bool ready = LocalSeat?.Ready == true;
-        Button(ready ? "unready" : "ready", ready ? "Not ready" : "Ready", 90, 883, 320,
-            new ShellIntent.SetReady(!ready), !busy && (ready || DeckReady), !ready, 52, prominent: true);
-        if (state.Mode == "hosting") Button("start", cooperative ? "Start encounter" : "Play", 1170, 883, 340,
-            new ShellIntent.StartFriends(), !busy && ready && DeckConfirmed && state.CanStart, true, 52, prominent: true);
-        else canvas.Text("Waiting for the host", 1170, 898, Muted, .85f, 340, 2);
         string? problem = !DeckReady ? selectedDeckDetails?.Problem is { Length: > 0 } issue ? issue : "Choose a legal saved Commander deck."
             : lobbyDeck.View.Status == Mana.Client.LobbyDeckStatus.Failed ? "Could not share your deck. Choose Ready to try again." : state.StartProblem;
-        if (!string.IsNullOrWhiteSpace(problem)) canvas.Text(problem, 444, 889, Gold, .69f, 694, 2);
+        Button(ready ? "unready" : "ready", ready ? "Not ready" : "Ready", 90, 883, 320,
+            new ShellIntent.SetReady(!ready), !busy && !state.MatchActive && (ready || DeckReady), !ready, 52, prominent: true);
+        if (cooperative) DrawEncounterStart(state, ready, problem);
+        else if (state.Mode == "hosting") Button("start", "Play", 1170, 883, 340,
+            new ShellIntent.StartFriends(), !busy && ready && DeckConfirmed && state.CanStart, true, 52, prominent: true);
+        else canvas.Text("Waiting for the host", 1170, 898, Muted, .85f, 340, 2);
+        if (!cooperative && !string.IsNullOrWhiteSpace(problem))
+            canvas.Text(problem, 444, 889, Gold, .69f, 694, 2);
     }
 
     private void DrawEncounterSide(Seat[] side, int y, bool opposition, bool cooperative)

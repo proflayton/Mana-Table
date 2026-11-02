@@ -6,6 +6,31 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Start an encounter without losing the party: 2 November 2026
+
+**Source candidate; human review pending for recording, failure/retry and
+cancellation followed by actual match entry.** The intent is to start the ready
+party's reviewed encounter. Its source is the existing party/commander grouping;
+the target is one immutable attempt. The host chooses Start encounter at the
+existing start position. That gesture captures the displayed setup and tempo,
+then leaves everyone in the same lobby while the provider prepares and records
+the encounter. Ordinary polling reveals the real battlefield only after launch.
+
+The observed precedent remains [Arena Challenge Lobbies](https://magic.wizards.com/en/news/mtg-arena/announcements-february-16-2026):
+host rules, valid deck selection and each player's Ready precede game entry in
+one shared lobby. Retaining that arrangement while a durable admission is pending
+is our adaptation; the source does not document Arena's persistence or retries.
+This slice changes no card, mat or camera geometry.
+
+Pending admission replaces Start with Cancel start at the same location. Not
+ready also revokes a pending start. A failed write keeps the lobby and offers the
+host Retry start for the same attempt; guests observe that failure. A successful
+write alone is not a match, outcome or saved result. Before launch, a changed
+deck, party, rules or tempo invalidates the captured start. A late callback cannot
+reopen a cancelled encounter. After launch, normal match/concession rules apply.
+Automated pointer journeys cover both window sizes, cancellation, failed retry
+and entry through the ordinary lobby poll. They do not establish human acceptance.
+
 ## Play a cooperative encounter and return together: 1 November 2026
 
 **M1 source candidate; exact-candidate human journey review pending.** Start on
