@@ -110,6 +110,10 @@ contains the earlier team/outcome foundation and does not expose this mode.
 3. Everyone reviews their side and chooses Ready; the host starts when all are
    ready. Changing enrollment or table rules requires Ready again. Everyone
    needs an updated build that supports cooperative setup.
+   Source admission slice: the party stays in this lobby while the encounter is
+   prepared and recorded. Cancel start or Not ready stops it before launch.
+   If recording fails, the host can Retry start for that same attempt. Only the
+   real started match opens the battlefield; waiting does not start the game.
 4. Each player has their own turns, life, cards and mana. Your side wins together.
    If asked who takes the first turn, choose a player before Keep/Mulligan.
    This is not shared-life/shared-turn Two-Headed Giant. An eliminated human can
@@ -122,8 +126,9 @@ contains the earlier team/outcome foundation and does not expose this mode.
 The preview contains one-match cooperative play and saved completion receipts.
 Branching expeditions, rewards, pod circuits and selecting a saved party after
 restarting the app are later work. It does not restore a live match after a crash.
-A forced exit before the first saved completion also loses that unfinished
-attempt's identity; it does not count as played or won.
+The source admission slice records the attempt before gameplay. A forced exit
+without a saved result leaves its outcome unknown in the host journal. It does
+not count as played or won and does not restore the live game or reconnect a party.
 
 IMPORT YOUR DECK
 Decks > Import deck file or Paste deck list accepts text exports.

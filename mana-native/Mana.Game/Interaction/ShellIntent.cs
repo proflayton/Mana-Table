@@ -37,6 +37,8 @@ internal abstract record ShellIntent : UiIntent
     internal sealed record SetReady(bool Ready) : Lobby;
     internal sealed record StartSolo : Lobby;
     internal sealed record StartFriends : Lobby;
+    internal sealed record RetryEncounterStart(string TableId, string AttemptId) : Lobby;
+    internal sealed record CancelEncounterStart(string TableId, string AttemptId) : Lobby;
     internal sealed record CloseSetup : Lobby;
     internal sealed record ShowReview(bool List) : Lobby;
     internal sealed record FocusSetupInput(bool Clear = false, bool ResetSelection = true) : Lobby;

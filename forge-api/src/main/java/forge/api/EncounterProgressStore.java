@@ -11,9 +11,14 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
 
-/** Host-owned terminal journal. I/O is serialized away from transport and rules monitors. */
+/** Host-owned encounter journal. I/O is serialized away from transport and rules monitors. */
 final class EncounterProgressStore implements AutoCloseable {
     record Participant(String participantId, int index, int playerId, int teamId, String role, String deckSelectionId) { }
+    record AttemptOpened(int schemaVersion, String partyId, String encounterId, String gameId, String rulesetId,
+                         int partyTeamId, String matchSetupConsent, String tempoRevision,
+                         List<Participant> participants, String openedUtc) {
+        AttemptOpened { participants = List.copyOf(participants); }
+    }
     record Receipt(String receiptId, String partyId, String encounterId, String gameId, String rulesetId,
                    int partyTeamId, MatchOutcomeProjection.Outcome outcome, List<Participant> participants, String completedUtc) {
         Receipt { participants = List.copyOf(participants); }
@@ -21,6 +26,7 @@ final class EncounterProgressStore implements AutoCloseable {
     record Progress(String partyId, int completedEncounters, int victories, List<String> appliedGameIds, Receipt lastReceipt) {
         Progress { appliedGameIds = List.copyOf(appliedGameIds); }
     }
+    private record StoredReceipt(int schemaVersion, Receipt receipt) { }
     interface Writer { void write(Path target, byte[] bytes) throws IOException; }
     private static final Gson JSON = new Gson();
     private static final ConcurrentMap<Path, Object> LOCKS = new ConcurrentHashMap<>();
@@ -41,6 +47,39 @@ final class EncounterProgressStore implements AutoCloseable {
     }
     CompletableFuture<Void> startup() { return startup; }
     Progress current(String partyId) { return progress.getOrDefault(partyId, new Progress(partyId, 0, 0, List.of(), null)); }
+    /** Admission is not evidence that a turn was played or that another owner is dead. */
+    CompletableFuture<List<AttemptOpened>> unresolved(String partyId) {
+        return CompletableFuture.supplyAsync(() -> {
+            try { return locked(() -> {
+                var attempts = loadAttempts(); var resolved = new HashSet<String>();
+                for (var path : files(directory.resolve("receipts"))) resolved.add(readReceipt(path).gameId());
+                return attempts.values().stream().filter(value -> value.partyId().equals(partyId) && !resolved.contains(value.gameId()))
+                        .sorted(Comparator.comparing(AttemptOpened::openedUtc).thenComparing(AttemptOpened::encounterId)).toList();
+            }); } catch (IOException failure) { throw new CompletionException(failure); }
+        }, io);
+    }
+    CompletableFuture<AttemptOpened> openAttempt(AttemptOpened attempt) {
+        return CompletableFuture.supplyAsync(() -> {
+            try { return locked(() -> {
+                if (!recovered) recover();
+                validate(attempt);
+                var path = attemptPath(attempt.encounterId());
+                if (Files.exists(path)) {
+                    if (!attempt.equals(read(path, AttemptOpened.class))) throw new IOException("Conflicting encounter admission");
+                } else {
+                    if (Files.exists(receiptPath(attempt.gameId()))) throw new IOException("Game already has a terminal receipt");
+                    var inventory = files(directory.resolve("attempts"));
+                    if (inventory.size() >= 10000) throw new IOException("Encounter admission limit reached");
+                    for (var existing : inventory) {
+                        var prior = read(existing, AttemptOpened.class); validate(prior);
+                        if (prior.gameId().equals(attempt.gameId())) throw new IOException("Game already belongs to another admission");
+                    }
+                    writer.write(path, JSON.toJson(attempt).getBytes(StandardCharsets.UTF_8));
+                }
+                return attempt;
+            }); } catch (IOException error) { throw new CompletionException(error); }
+        }, io);
+    }
     CompletableFuture<Progress> commit(Receipt receipt) {
         return CompletableFuture.supplyAsync(() -> {
             try { return locked(() -> {
@@ -52,14 +91,20 @@ final class EncounterProgressStore implements AutoCloseable {
                 // tries another party/encounter ID after a crash or retry.
                 var path = receiptPath(receipt.gameId());
                 if (Files.exists(path)) {
-                    if (!receipt.equals(read(path, Receipt.class))) throw new IOException("Conflicting receipt for the same game");
-                } else writer.write(path, JSON.toJson(receipt).getBytes(StandardCharsets.UTF_8));
+                    if (!receipt.equals(readReceipt(path))) throw new IOException("Conflicting receipt for the same game");
+                } else {
+                    verifyAdmission(receipt, true);
+                    if (files(directory.resolve("receipts")).size() >= 10000) throw new IOException("Encounter receipt limit reached");
+                    writer.write(path, JSON.toJson(new StoredReceipt(2, receipt)).getBytes(StandardCharsets.UTF_8));
+                }
                 return apply(receipt);
             }); } catch (IOException error) { throw new CompletionException(error); }
         }, io);
     }
     private void recover() throws IOException {
         Files.createDirectories(directory.resolve("receipts")); Files.createDirectories(directory.resolve("parties"));
+        Files.createDirectories(directory.resolve("attempts"));
+        loadAttempts();
         var loaded = new HashMap<String, Progress>();
         for (var path : files(directory.resolve("parties"))) {
             var value = read(path, Progress.class);
@@ -73,7 +118,7 @@ final class EncounterProgressStore implements AutoCloseable {
         }
         var receipts = new ArrayList<Receipt>();
         for (var path : files(directory.resolve("receipts"))) {
-            var receipt = read(path, Receipt.class); validate(receipt);
+            var receipt = readReceipt(path); validate(receipt);
             if (!path.equals(receiptPath(receipt.gameId()))) throw new IOException("Receipt identity differs from its journal entry");
             receipts.add(receipt);
         }
@@ -95,6 +140,15 @@ final class EncounterProgressStore implements AutoCloseable {
         for (var receipt : receipts) apply(receipt);
         recovered = true;
     }
+    private Map<String, AttemptOpened> loadAttempts() throws IOException {
+        var attempts = new HashMap<String, AttemptOpened>(); var admittedGames = new HashSet<String>();
+        for (var path : files(directory.resolve("attempts"))) {
+            var value = read(path, AttemptOpened.class); validate(value);
+            if (!path.equals(attemptPath(value.encounterId())) || attempts.put(value.encounterId(), value) != null
+                    || !admittedGames.add(value.gameId())) throw new IOException("Conflicting admission identity");
+        }
+        return attempts;
+    }
     private Progress apply(Receipt receipt) throws IOException {
         var checkpoint = directory.resolve("parties").resolve(receipt.partyId() + ".json");
         var previous = Files.exists(checkpoint) ? read(checkpoint, Progress.class) : current(receipt.partyId());
@@ -108,6 +162,43 @@ final class EncounterProgressStore implements AutoCloseable {
         return next;
     }
     private Path receiptPath(String gameId) { return directory.resolve("receipts").resolve(gameId + ".json"); }
+    private Path attemptPath(String encounterId) { return directory.resolve("attempts").resolve(encounterId + ".json"); }
+    private Receipt readReceipt(Path path) throws IOException {
+        var value = read(path, com.google.gson.JsonObject.class);
+        if (value == null) throw new IOException("Invalid receipt record");
+        boolean versioned = value.has("schemaVersion");
+        Receipt receipt;
+        try {
+            if (versioned) {
+                var stored = JSON.fromJson(value, StoredReceipt.class);
+                if (stored.schemaVersion() != 2 || value.size() != 2) throw new IOException("Unknown receipt schema");
+                receipt = stored.receipt();
+            } else {
+                // Build 337 wrote the raw receipt. Only this explicit legacy
+                // reader may accept a terminal record without prior admission.
+                if (value.size() != 9) throw new IOException("Invalid legacy receipt schema");
+                receipt = JSON.fromJson(value, Receipt.class);
+            }
+        } catch (JsonParseException | IllegalArgumentException invalid) { throw new IOException("Invalid receipt record", invalid); }
+        validate(receipt);
+        if (!path.equals(receiptPath(receipt.gameId()))) throw new IOException("Receipt identity differs from its journal entry");
+        verifyAdmission(receipt, versioned); return receipt;
+    }
+    private void verifyAdmission(Receipt receipt, boolean required) throws IOException {
+        var path = attemptPath(receipt.encounterId());
+        if (!Files.exists(path)) { if (required) throw new IOException("Receipt has no encounter admission"); return; }
+        var attempt = read(path, AttemptOpened.class); validate(attempt);
+        if (!attempt.partyId().equals(receipt.partyId()) || !attempt.gameId().equals(receipt.gameId())
+                || !attempt.rulesetId().equals(receipt.rulesetId()) || attempt.partyTeamId() != receipt.partyTeamId()
+                || !attempt.participants().equals(receipt.participants())) throw new IOException("Receipt differs from its admitted encounter");
+    }
+    private static void validate(AttemptOpened attempt) throws IOException {
+        if (attempt == null || attempt.schemaVersion() != 1 || !validId(attempt.partyId()) || !validId(attempt.encounterId())
+                || !validId(attempt.gameId()) || !MatchSetupSpecification.COOPERATIVE.equals(attempt.rulesetId())
+                || !validId(attempt.matchSetupConsent()) || !validId(attempt.tempoRevision())) throw new IOException("Invalid encounter admission");
+        try { Instant.parse(attempt.openedUtc()); } catch (RuntimeException invalid) { throw new IOException("Invalid admission time", invalid); }
+        validateParticipants(attempt.participants(), attempt.rulesetId(), attempt.partyTeamId());
+    }
     private static boolean validId(String value) {
         try { return value != null && value.matches("[a-f0-9-]{36}") && UUID.fromString(value).toString().equals(value); }
         catch (IllegalArgumentException invalid) { return false; }
@@ -121,17 +212,7 @@ final class EncounterProgressStore implements AutoCloseable {
                 || receipt.participants() == null || receipt.participants().size() < 2 || receipt.participants().size() > 6)
             throw new IOException("Invalid terminal encounter receipt");
         try { Instant.parse(receipt.completedUtc()); } catch (RuntimeException invalid) { throw new IOException("Invalid receipt time", invalid); }
-        var seats = new ArrayList<MatchSetupSpecification.Seat>(); var ids = new HashSet<String>(); var players = new HashSet<Integer>();
-        for (var participant : receipt.participants()) {
-            if (!validId(participant.participantId()) || !validId(participant.deckSelectionId()) || !ids.add(participant.participantId())
-                    || participant.playerId() < 0 || !players.add(participant.playerId()))
-                throw new IOException("Invalid receipt participant");
-            seats.add(new MatchSetupSpecification.Seat(participant.index(), participant.teamId(), participant.role()));
-        }
-        try {
-            var setup = new MatchSetupSpecification(receipt.rulesetId(), seats);
-            if (setup.partyTeam() != receipt.partyTeamId()) throw new IllegalArgumentException();
-        } catch (RuntimeException invalid) { throw new IOException("Invalid receipt setup", invalid); }
+        validateParticipants(receipt.participants(), receipt.rulesetId(), receipt.partyTeamId());
         var outcome = receipt.outcome();
         if (outcome.winningPlayerIds() == null || outcome.winningTeamIds() == null
                 || new HashSet<>(outcome.winningPlayerIds()).size() != outcome.winningPlayerIds().size()
@@ -143,6 +224,20 @@ final class EncounterProgressStore implements AutoCloseable {
         }
         if (!teams.equals(new HashSet<>(outcome.winningTeamIds())) || outcome.kind().equals("win") && teams.isEmpty()
                 || outcome.kind().equals("draw") && !teams.isEmpty()) throw new IOException("Invalid receipt winning teams");
+    }
+    private static void validateParticipants(List<Participant> participants, String ruleset, int partyTeam) throws IOException {
+        if (participants == null || participants.size() < 2 || participants.size() > 6) throw new IOException("Invalid encounter participants");
+        var seats = new ArrayList<MatchSetupSpecification.Seat>(); var ids = new HashSet<String>(); var players = new HashSet<Integer>();
+        for (var participant : participants) {
+            if (!validId(participant.participantId()) || !validId(participant.deckSelectionId()) || !ids.add(participant.participantId())
+                    || participant.playerId() < 0 || !players.add(participant.playerId()))
+                throw new IOException("Invalid receipt participant");
+            seats.add(new MatchSetupSpecification.Seat(participant.index(), participant.teamId(), participant.role()));
+        }
+        try {
+            var setup = new MatchSetupSpecification(ruleset, seats);
+            if (setup.partyTeam() != partyTeam) throw new IllegalArgumentException();
+        } catch (RuntimeException invalid) { throw new IOException("Invalid receipt setup", invalid); }
     }
     private static List<Path> files(Path directory) throws IOException {
         try (var paths = Files.list(directory)) {

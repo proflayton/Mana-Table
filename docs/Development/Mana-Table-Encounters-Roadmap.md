@@ -82,10 +82,12 @@ tempo consent, actual teams, frozen enrollment/deck assignments, durable receipt
 and checkpoint replay, same-lobby return, and a continuous six-seat table to the
 earlier team/outcome foundation. The automated gates include actual one-, two-
 and four-human provider journeys, native UI/wire checks and a real native adapter
-journey. An authoritative durable started/unresolved-attempt record is still
-missing: a process crash before the first terminal receipt cannot distinguish
-that attempt from not played. This is remaining M1 work, independently of M4's
-saved-party selector. Exact-candidate CI, visual review and a complete human
+journey. The next source slice records an immutable admission before starting
+the rules worker and preserves opened attempts without terminal receipts as
+outcome unknown. It fences cancellation and retries without fabricating results
+or blocking the lobby on storage. Versioned records retain an explicit reader for
+the earlier receipt/checkpoint format. This closes the started-attempt storage
+gap independently of M4's saved-party selector. Exact-candidate CI, visual review and a complete human
 cooperative journey also remain required before M1 acceptance. Neither roadmap
 approval nor a passing boundary test marks M1 complete. Persistent journal replay
 does not yet

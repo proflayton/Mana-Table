@@ -49,6 +49,17 @@ consent, reconnect, host loss with surviving AI allies, real win/loss, rematch,
 and receipt/checkpoint failure, retry, replay and conflict handling. Preserve
 first-failure logs; correcting a test fixture is not evidence of an engine fix.
 
+The source admission slice also runs `EncounterAdmissionStoreTest` and
+`EncounterAdmissionTest` in that reactor suite. Block the opened-attempt writer
+while making real local/TCP requests: lobby reads, chat, Ready revocation and
+leaving must remain responsive, with no rules launch before acknowledgement.
+Exercise cancellation/late callbacks, closed/rehosted tables, same-attempt retry
+after an uncertain write, and exact setup/tempo/enrollment/deck fences. Store
+recovery must retain opened-without-receipt as unresolved without awarding a
+result, reject conflicting identities, recover receipt-before-checkpoint once,
+and still read raw 0.2.337 receipts/checkpoints. None of these tests promises live
+game restoration or proves that a different journal owner has stopped running.
+
 The graphics-free client runner adds `EncounterSetupRegression`, including
 immutable specification/receipt validation and pending -> failed -> saved lobby
 updates while the terminal match revision stays unchanged. Native headless
@@ -70,6 +81,21 @@ The full presentation suite still includes these groups. Wait for both async
 work and the existing presentation activity to settle before asserting that a
 new lobby control can be pressed. Keep exact missing-hit/bounds evidence when
 the assertion fails; do not relax reachability to accommodate an overlay.
+The co-op lobby group also uses physical pointer gestures at both window sizes
+for pending admission, failed retry, cancellation/late completion, Not ready and
+unsupported-host refusal. It keeps ordinary lobby polling active throughout;
+no authored provisional game can satisfy its pending-state assertions. The real
+adapter journey additionally exercises the new Begin port and awaited Start
+compatibility path against the production engine. Inspect GPU pending/failure
+captures independently of these authored provider checks and keep human review
+pending for the exact candidate.
+`EncounterAdmissionRegression` runs in the graphics-free client runner. The
+`encounter-start` presentation group exercises strict wire/scope validation and
+the actual public `StartAsync` compatibility branch through a test-only process
+probe: unsupported co-op emits no start RPC, while legacy free-for-all still
+starts normally. This probe supplies protocol responses, not Magic rules; the
+real-engine journey remains the pending-to-playing integration gate. The full
+presentation suite includes the same group.
 
 The compiled native test app's `--smoke-cooperative-encounter` runs
 `CooperativeEncounterEngineJourney` against the real Forge adapter. Supply

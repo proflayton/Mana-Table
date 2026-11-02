@@ -1314,6 +1314,19 @@ Unready remains a revocation. The native composition root supplies the optional
 port; game presentation does not discover Forge implementation types.
 
 `EncounterContext` supplies party/encounter identity to the rules snapshot.
+The optional `ITableEncounterStart` port separates admission from rules state.
+The host submits the displayed table, setup consent and tempo revision. The
+lobby publishes `StartState` while a private coordinator prepares an unstarted
+match and records its exact game/player/enrollment/deck-selection identities.
+Neither preparation, journal I/O nor rules-worker launch runs inside lobby or
+transport command monitors. Only durable acknowledgement and a fresh validation
+of the captured inputs permit launch. Chat/name changes do not revoke consent;
+Unready, deck, enrollment, setup or tempo changes before launch cancel admission.
+Retries retain the same prepared game and immutable attempt. A late completion
+cannot revive a cancelled reservation or a closed table. The native app retains
+the party lobby throughout this work and observes the actual match afterward;
+it never constructs a provisional rules player or snapshot to represent waiting.
+
 `PartyProgress` belongs to the lobby, outside `GameSnapshot`. After an actual
 rules conclusion, the provider copies immutable outcome and enrollment facts
 into an `EncounterReceipt`. `EncounterProgressStore` performs journal I/O on its
@@ -1343,11 +1356,13 @@ cleanup do not increment played or victory counts. Journal replay recovers
 committed completion work; selecting a previous party across application launches,
 restoring invites, and restoring live rules state are separate, unimplemented
 capabilities. Expeditions, rewards and circuit scoring remain later milestones.
-The current journal begins at terminal receipt persistence. There is no durable
-started-attempt record yet: a forced process exit before that first receipt loses
-the unresolved attempt's identity, although it awards no result. Recording that
-attempt before gameplay is remaining M1 acceptance work, distinct from M4's UI
-for selecting a saved party or run.
+The source admission slice adds versioned opened-attempt records under
+`encounters-v1/attempts` before gameplay. Recovery preserves an opened attempt
+without a receipt as unresolved: its outcome is unknown and it grants no count,
+reward, automatic takeover or live-game restoration. This is durable boundary
+evidence, not proof that another process died. New versioned terminal records
+must match their admission; raw 0.2.337 receipt/checkpoint files remain readable
+through an explicit legacy path. Selecting a saved party or run remains M4 work.
 
 ### Seat connections and lifetime
 

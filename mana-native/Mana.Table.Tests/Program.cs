@@ -8,6 +8,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Contains(EncounterStartProtocolProbe.Marker)) return EncounterStartProtocolProbe.Serve(args);
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         string? Arg(string name) { int index = Array.IndexOf(args, name); return index >= 0 && index + 1 < args.Length ? args[index + 1] : null; }
         bool testRun = args.Any(a => a is "--smoke" or "--smoke-ai" or "--smoke-ui-ai" or "--smoke-presentation" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-card-states" or "--smoke-compact-selection" or "--smoke-cleanup" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-analysis" or "--smoke-workshop-adapter" or "--smoke-analysis-adapter" or "--smoke-deck-tuning" or "--smoke-lobby" or "--smoke-social" or "--smoke-advance" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-onboarding" or "--smoke-loading" or "--smoke-engine-startup" or "--smoke-deck-import" or "--smoke-priority-abilities");

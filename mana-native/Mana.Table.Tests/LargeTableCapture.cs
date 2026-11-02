@@ -15,7 +15,8 @@ internal static class LargeTableCapture
 {
     internal static void Run(string profile, Point? size, string? artCache, string captureView)
     {
-        if (captureView is not ("table" or "lobby" or "access")) throw new ArgumentOutOfRangeException(nameof(captureView));
+        if (captureView is not ("table" or "lobby" or "access" or "admission" or "admission-failed"))
+            throw new ArgumentOutOfRangeException(nameof(captureView));
         Directory.CreateDirectory(profile);
         new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false }.Save(profile);
         var state = captureView == "access" ? LargeTablePlayAccessChecks.CaptureState() : LargeTableChecks.State(6, 0);
@@ -24,8 +25,10 @@ internal static class LargeTableCapture
         File.WriteAllText(fixture, JsonSerializer.Serialize(state));
         var engine = new InteractionScenarioEngine(); engine.Present(state);
         using var source = new MagicArtSource(artCache ?? profile);
-        bool table = captureView != "lobby";
-        var services = table ? TestTableServices.For(engine) : CooperativeLobbyInteractionChecks.CreateCaptureServices();
+        bool admission = captureView is "admission" or "admission-failed";
+        bool table = captureView is "table" or "access";
+        var services = table ? TestTableServices.For(engine) : CooperativeLobbyInteractionChecks.CreateCaptureServices(
+            holdAdmission: admission, failAdmission: captureView == "admission-failed");
         using var window = new TableWindow(services, profile, null, null, size,
             initialState: table ? state : null, artSource: source, enableLiveTableStudy: true);
         // Capture from the real GPU target without presenting an interactive
@@ -38,7 +41,7 @@ internal static class LargeTableCapture
         }
         var cards = state.Players.SelectMany(player => player.Zones).SelectMany(zone => zone.Cards)
             .Where(card => !card.FaceDown).ToArray();
-        window.Automation = table ? new Capture(window.TestPort, cards) : new LobbyCapture(window.TestPort);
+        window.Automation = table ? new Capture(window.TestPort, cards) : new LobbyCapture(window.TestPort, captureView);
         window.Run();
     }
 
@@ -74,7 +77,7 @@ internal static class LargeTableCapture
         }
     }
 
-    private sealed class LobbyCapture(TableWindow.Probe view) : ITableAutomation
+    private sealed class LobbyCapture(TableWindow.Probe view, string captureView) : ITableAutomation
     {
         private readonly DateTime deadline = DateTime.UtcNow.AddSeconds(180);
         private int stage, next, mousePhase, alliedSeat = 1;
@@ -140,7 +143,15 @@ internal static class LargeTableCapture
                     break;
                 case 10: Click("lobby-ai-deck:ai-a", 12); break;
                 case 12: if (view.SetupModal.Length == 0) { alliedSeat++; stage = 9; } break;
-                case 11: if (CaptureView(surface, "cooperative-lobby")) stage = 13; break;
+                case 11:
+                    if (captureView is "admission" or "admission-failed") Click("ready", 14);
+                    else if (CaptureView(surface, "cooperative-lobby")) stage = 13;
+                    break;
+                case 14: if (view.Lobby?.CanStart == true) Click("start", 15); break;
+                case 15:
+                    var expected = captureView == "admission-failed" ? EncounterStartPhase.Failed : EncounterStartPhase.Recording;
+                    if (view.Lobby?.StartState?.Phase == expected && CaptureView(surface, "cooperative-" + captureView)) stage = 13;
+                    break;
                 case 13: view.Exit(); break;
             }
         }

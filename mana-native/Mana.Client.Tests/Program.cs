@@ -197,6 +197,7 @@ await ExternalObservationRegression.RunAsync(Check);
 await AppUpdateSessionRegression.RunAsync(Check);
 await DeckWorkspaceRegression.RunAsync(Check);
 await LobbyStateRegression.RunAsync(Check);
+await EncounterAdmissionRegression.RunAsync(Check);
 await InteractionContractMatrix.RunAsync(Check);
 AllocationRegression.Run(Check);
 await RecoveryRegression.RunAsync(Check);

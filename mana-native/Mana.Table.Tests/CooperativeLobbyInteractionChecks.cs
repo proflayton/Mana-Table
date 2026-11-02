@@ -17,11 +17,11 @@ namespace Mana.Table;
 // publications. This port models setup/receipt ordering, not Magic rules.
 internal static partial class CooperativeLobbyInteractionChecks
 {
-    internal static TableServices CreateCaptureServices()
+    internal static TableServices CreateCaptureServices(bool holdAdmission = false, bool failAdmission = false)
     {
         var catalog = PregameFlowChecks.CooperativeCatalog();
-        var port = new Port { Catalog = catalog };
-        return new(catalog, port, port, () => Task.CompletedTask) { Seats = port, MatchSetup = port, Tempo = port };
+        var port = new Port { Catalog = catalog, HoldAdmission = holdAdmission, FailAdmissionOnBegin = failAdmission };
+        return new(catalog, port, port, () => Task.CompletedTask) { Seats = port, MatchSetup = port, EncounterStart = port, Tempo = port };
     }
 
     internal static void Run(string profile, Action<bool, string> check)
@@ -40,6 +40,9 @@ internal static partial class CooperativeLobbyInteractionChecks
             CheckUnknownCompletion(profile, viewport, "hosting", check);
             CheckUnknownCompletion(profile, viewport, "joined", check);
             CheckEarlyFailurePresentation(profile, viewport, check);
+            CheckEncounterAdmission(profile, viewport, check);
+            CheckCancelledAdmission(profile, viewport, check);
+            CheckUnsupportedAdmission(profile, viewport, check);
             using var unsupported = new Journey(profile, "unsupported", viewport, new Port { SupportsMatchSetup = false }, check);
             check(!unsupported.Has("cooperative-tab") && unsupported.Has("solo-tab") && unsupported.Has("friends-tab"),
                 "An absent provider capability hides co-op without removing existing play modes at " + viewport);
@@ -338,7 +341,7 @@ internal static partial class CooperativeLobbyInteractionChecks
             this.viewport = viewport; this.check = check;
             var catalog = PregameFlowChecks.CooperativeCatalog(); port.Catalog = catalog;
             var resources = new PresentationResources { Card = card => { ArtRequests.Add(card.Name); return null; } };
-            var services = new TableServices(catalog, port, port, () => Task.CompletedTask) { Seats = port, MatchSetup = port, Tempo = port };
+            var services = new TableServices(catalog, port, port, () => Task.CompletedTask) { Seats = port, MatchSetup = port, EncounterStart = port, Tempo = port };
             app = new(services, directory, initialState: state, resources: resources) { Automated = true };
             app.Initialize();
             Until(() => View.Loaded && !View.Busy && !View.ActivityOpen, "The co-op production interaction composition is ready");
@@ -383,7 +386,7 @@ internal static partial class CooperativeLobbyInteractionChecks
         public void Dispose() => app.Dispose();
     }
 
-    private sealed class Port : ITableSetup, ITableSeatSetup, ITableMatchSetup, ITableTempo, IMatchConnection
+    private sealed partial class Port : ITableSetup, ITableSeatSetup, ITableMatchSetup, ITableTempo, IMatchConnection
     {
         private readonly object gate = new();
         private Lobby? lobby;
@@ -414,7 +417,8 @@ internal static partial class CooperativeLobbyInteractionChecks
             DeckPreview = Preview(seat.Index, (choice == "ai-a" ? "Ramp allies " : "Cinder foes ") + seat.Index,
                 choice == "ai-a" ? "Goreclaw, Terror of Qal Sisma" : "Torbran, Thane of Red Fell") };
         private void Refresh() => lobby = lobby! with { Revision = lobby.Revision + 1,
-            CanStart = lobby.Seats.All(seat => seat.Type != "OPEN" && seat.Ready && seat.DeckPreview != null) };
+            CanStart = !lobby.MatchActive && (lobby.StartState == null || lobby.StartState.Phase == EncounterStartPhase.Cancelled)
+                && lobby.Seats.All(seat => seat.Type != "OPEN" && seat.Ready && seat.DeckPreview != null) };
         public Task<Lobby> HostAsync(int players, bool forwarding)
         {
             lock (gate) {
@@ -423,6 +427,7 @@ internal static partial class CooperativeLobbyInteractionChecks
                 lobby = new("hosting", "Open", null, false, "Choose decks and Ready", false, "", null, [],
                     specification.Seats.Select(seat => NewSeat(seat.Index, seat)).ToImmutableArray(), "cooperative-table") {
                     Revision = 1, MatchSetup = specification, MatchSetupCapabilities = Capabilities,
+                    EncounterStartSupported = SupportsEncounterStart,
                     MatchSetupConsent = Guid.NewGuid().ToString(), Tempo = new(TempoPreset.Standard, TempoExpiry.Pass, 60, 60, "reviewed-tempo"),
                     AiOpponents = [new("ai-a", "Ramp allies", "Saved Commander list"), new("ai-b", "Cinder foes", "Saved Commander list")]
                 };
@@ -483,6 +488,7 @@ internal static partial class CooperativeLobbyInteractionChecks
             lobby = lobby with { Seats = lobby.Seats.SetItem(index, seat) }; if (enrollmentChanged) RotateConsent(); Refresh(); return Task.FromResult(lobby);
         } }
         private void SetReady(bool ready) { ReadyCalls++; var local = lobby!.Seats.Single(seat => seat.Local);
+            if (!ready) CancelPendingAdmission();
             lobby = lobby with { Seats = lobby.Seats.SetItem(local.Index, local with { Ready = ready }) }; Refresh();
         }
         public Task SetReadyAsync(bool ready) { lock (gate) {
@@ -525,6 +531,9 @@ internal static partial class CooperativeLobbyInteractionChecks
             }).ToImmutableArray();
             lobby = new(mode, "Finished", null, false, null, true, "", null, [], seats, "cooperative-table") {
                 Revision = 10, MatchSetup = specification, MatchSetupCapabilities = Capabilities,
+                // Existing completion/recovery cases retain the pre-admission
+                // host publication, including legitimately absent start metadata.
+                EncounterStartSupported = false,
                 MatchSetupConsent = Guid.NewGuid().ToString(), Tempo = new(TempoPreset.Standard, TempoExpiry.Pass, 60, 60, "reviewed-tempo"),
                 AiOpponents = [new("ai-a", "Ramp allies", "Saved Commander list"), new("ai-b", "Cinder foes", "Saved Commander list")],
                 PartyProgress = new("party", "encounter", 0, 0, EncounterSaveState.Pending, null, false, null)

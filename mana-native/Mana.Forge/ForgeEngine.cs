@@ -8,7 +8,7 @@ namespace Mana.Forge;
 
 public sealed record ForgePaths(string Java, string Jar, string Resources, string Profile);
 
-public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial, IDeckWorkshop, ITableSeatSetup, ITableMatchSetup, ICardPrintings, ISourceActions, ITableTempo, IAutomatedSeatProvider
+public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial, IDeckWorkshop, ITableSeatSetup, ITableMatchSetup, ITableEncounterStart, ICardPrintings, ISourceActions, ITableTempo, IAutomatedSeatProvider
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
     private sealed record PendingRequest(string Method, TaskCompletionSource<JsonElement> Completion);
@@ -30,6 +30,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         public bool CertifiedUndoAvailable { get; set; }
         public bool HistoryAvailable { get; set; }
         public bool MatchSetupAvailable { get; set; }
+        public bool EncounterStartAvailable { get; set; }
         public ForgeCommandScope Commands { get; } = new();
         public volatile Exception? Failure;
     }
@@ -73,6 +74,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                             owner.CertifiedUndoAvailable = capabilities.Contains("certified-one-step-undo");
                             owner.HistoryAvailable = capabilities.Contains("match-history");
                             owner.MatchSetupAvailable = capabilities.Contains("match-setup");
+                            owner.EncounterStartAvailable = capabilities.Contains("durable-encounter-admission");
                             owner.Ready.TrySetResult();
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
@@ -106,7 +108,8 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         ObjectDisposedException.ThrowIf(disposed, this);
         var owner = current ?? throw new IOException("The engine is not running");
         if (method is "matchStart" or "workshopStartTest" or "multiplayerHost" or "multiplayerJoin"
-            or "multiplayerStart" or "multiplayerReturn" or "multiplayerClose" or "matchConcede") owner.Commands.Clear();
+            or "multiplayerStart" or "startEncounter" or "retryEncounterStart" or "cancelEncounterStart"
+            or "multiplayerReturn" or "multiplayerClose" or "matchConcede") owner.Commands.Clear();
         await owner.Ready.Task;
         if (current != owner || owner.Failure != null || owner.Process.HasExited) throw new IOException("The engine is not running");
         long id = Interlocked.Increment(ref sequence);
@@ -251,14 +254,18 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                 MatchSetupCapabilities = OptionalLobbyFact<MatchSetupCapabilities>(data, "matchSetupCapabilities"),
                 MatchSetup = OptionalLobbyFact<MatchSetupSpecification>(data, "matchSetup"),
                 MatchSetupConsent = data.TryGetProperty("matchSetupConsent", out var consent) && consent.ValueKind != JsonValueKind.Null ? consent.GetString() : null,
-                PartyProgress = OptionalLobbyFact<PartyProgress>(data, "partyProgress")
+                PartyProgress = OptionalLobbyFact<PartyProgress>(data, "partyProgress"),
+                EncounterStartSupported = data.TryGetProperty("encounterStartSupported", out var supported) && supported.GetBoolean(),
+                StartState = OptionalLobbyFact<EncounterStartState>(data, "startState")
             };
-            if ((lobby.MatchSetupCapabilities != null || lobby.MatchSetup != null || lobby.PartyProgress != null)
+            if ((lobby.MatchSetupCapabilities != null || lobby.MatchSetup != null || lobby.PartyProgress != null
+                    || lobby.EncounterStartSupported || lobby.StartState != null)
                 && (!data.TryGetProperty("revision", out var exactRevision) || exactRevision.ValueKind != JsonValueKind.Number
                     || !exactRevision.TryGetInt64(out long exactValue) || exactValue < 0))
                 throw new InvalidOperationException("Match setup requires an exact lobby revision.");
             MatchSetupFacts.Validate(lobby);
             if (lobby.PartyProgress is { } progress) EncounterFacts.Validate(progress);
+            EncounterStartFacts.Validate(lobby);
             return lobby;
         } catch (Exception error) when (error is JsonException or InvalidOperationException or ArgumentException or FormatException or OverflowException or KeyNotFoundException) {
             throw new IOException("The rules provider published an invalid lobby snapshot.", error);
@@ -304,7 +311,6 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         MapLobby(await Request("multiplayerConfigure", new { tableId, format = "Commander", playerCount = players }));
     public async Task<Lobby> SetSeatAsync(string tableId, int seat, string type, string? opponentId = null) =>
         MapLobby(await Request("multiplayerSetSeat", new { tableId, seat, type, opponentId }));
-    public async Task StartAsync() => await Request("multiplayerStart");
     public async Task ReturnToLobbyAsync() => await Request("multiplayerReturn");
     public async Task LeaveAsync() => await Request("multiplayerClose");
     public async Task ConcedeAsync(string gameId) => await Request("matchConcede", new { sessionId = gameId });

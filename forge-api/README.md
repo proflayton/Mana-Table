@@ -504,9 +504,31 @@ a crash between receipt and checkpoint can recover without another completion.
 The M1 checkpoint exposes saved counts in the current party and retained files;
 selecting an old party after restarting, restoring live games and cross-process
 invitation rejoin are outside this slice. No map, rewards or circuit is implied.
-The journal currently starts with the terminal receipt. A forced exit before its
-first durable write loses the unresolved attempt's identity; a durable started
-attempt remains M1 acceptance work. Such an exit never invents a completion.
+Source admission slice: the process and sync host negotiate
+`durable-encounter-admission`; lobby `encounterStartSupported` certifies the
+actual host, independently of a local process capability. The optional native
+`ITableEncounterStart` submits `startEncounter {tableId, matchSetupConsent,
+tempoRevision?}` using displayed tokens. It returns the lobby promptly, with
+`startState {attemptId, phase, error, retryAllowed}`. Phases are `preparing`,
+`recording`, `starting`, `failed` and retained `cancelled`; `attemptId` is the
+encounter ID. No viewer ID or game snapshot exists merely because admission is
+pending. Scoped host `retryEncounterStart` and `cancelEncounterStart` commands
+require `{tableId, attemptId}`. Retry retains the same prepared game. Cancellation
+is allowed before launch; accepted Unready or a changed deck, setup, tempo or
+enrollment also revokes pending admission. Chat and display-name changes do not.
+
+A private coordinator prepares the unstarted match, writes an immutable version1
+opened-attempt record in `encounters-v1/attempts`, revalidates captured inputs and
+launches only after durable acknowledgement. Preparation, storage and worker
+launch run outside transport, lobby and rules monitors. Opened records contain
+public participant/player/team/role/deck-selection links and setup/tempo tokens,
+not private deck documents or live game state. Recovery retains opened attempts
+without terminal receipts as unresolved/outcome unknown. This is not evidence
+that another owner has died and never awards completion or automatically resumes
+play. The source adds version2 terminal receipt envelopes requiring matching
+admission evidence; an explicit legacy reader continues accepting raw 0.2.337
+receipts and their checkpoints. Existing deck files are unchanged. Older callers
+can still start ordinary free-for-all; unscoped cooperative start is rejected.
 These are additive IPC capability and snapshot fields. Existing deck/profile
 files need no migration; the new journal uses its own `encounters-v1` directory.
 An older client may still use ordinary free-for-all, but cannot acknowledge the
@@ -1022,6 +1044,8 @@ and avoid source-creature printing metadata in artwork requests.
 | `multiplayerSetSeat` | `{tableId, seat, type: "AI" / "OPEN", opponentId?}`; host-only setup operation on an open/AI slot |
 | `multiplayerConfigure` | `{tableId, format, playerCount}`; host-only setup changes, preserving occupied human seats and rejecting stale table IDs |
 | `configureMatch` | `{tableId, expectedLobbyRevision, specification}`; optional `match-setup`, host-only immutable team/role setup before a match |
+| `startEncounter` | `{tableId, matchSetupConsent, tempoRevision?}`; optional `durable-encounter-admission`, host reserves the reviewed ready party and returns pending lobby facts |
+| `retryEncounterStart`, `cancelEncounterStart` | `{tableId, attemptId}`; host retries the same failed admission or cancels before launch |
 | `retryEncounterSave` | `{tableId, encounterId}`; host retries the current terminal encounter's failed durable checkpoint |
 
 Explicit setup requires the `explicit-deck-setup` capability in the matching

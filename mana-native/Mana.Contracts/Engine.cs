@@ -144,6 +144,8 @@ public sealed record Lobby(string Mode, string Status, string? Error, bool CanSt
     public MatchSetupSpecification? MatchSetup { get; init; }
     public string? MatchSetupConsent { get; init; }
     public PartyProgress? PartyProgress { get; init; }
+    public bool EncounterStartSupported { get; init; }
+    public EncounterStartState? StartState { get; init; }
     public ImmutableArray<AiOpponent> AiOpponents { get; init; } = [];
     public TempoSettings? Tempo { get; init; }
     public long Revision { get; init; }

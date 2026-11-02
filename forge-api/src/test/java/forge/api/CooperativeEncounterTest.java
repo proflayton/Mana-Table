@@ -149,15 +149,16 @@ public class CooperativeEncounterTest {
     private static JsonObject viewer(JsonObject state) { int id = state.get("viewerId").getAsInt(); return state.getAsJsonArray("players").asList().stream()
             .map(JsonElement::getAsJsonObject).filter(player -> player.get("id").getAsInt() == id).findFirst().orElseThrow(); }
 
-    private static final class Fixture implements AutoCloseable {
+    static final class Fixture implements AutoCloseable {
         final SyncLobby host; final List<SyncLobby> guests = new ArrayList<>(); final int humanCount, partyCount, enemyCount;
         final Map<Integer, String> answered = new HashMap<>();
         Fixture(String name, int humans, int party, int opposition, EncounterProgressStore supplied, boolean network) throws Exception {
             if (StaticData.instance() == null) EngineResources.load(RESOURCES);
             humanCount = humans; partyCount = party; enemyCount = opposition;
             Path profile = ApiTestWorkspace.profile(name);
+            var suppliedUsed = new AtomicBoolean();
             host = new SyncLobby(RESOURCES, profile, true, null, () -> CompletableFuture.completedFuture(Map.of()),
-                    () -> CompletableFuture.completedFuture(null), () -> supplied == null ? new EncounterProgressStore(profile) : supplied);
+                    () -> CompletableFuture.completedFuture(null), () -> supplied == null || suppliedUsed.getAndSet(true) ? new EncounterProgressStore(profile) : supplied);
             var state = object(host.host("Commander", party + opposition, false, network ? "mixed" : "local"));
             for (int i = 1; i < humans; i++) {
                 if (network && i == 1) {
@@ -188,7 +189,15 @@ public class CooperativeEncounterTest {
                 human.ready(args);
             }
         }
-        void start() { host.start(); answered.clear(); }
+        void start() throws Exception {
+            var current = object(host.state());
+            host.startEncounter(object(Map.of("tableId", text(current, "tableId"), "matchSetupConsent", text(current, "matchSetupConsent"),
+                    "tempoRevision", text(current.getAsJsonObject("tempo"), "revision"))));
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (!object(host.state()).get("matchActive").getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(5);
+            assertTrue(object(host.state()).get("matchActive").getAsBoolean(), "Durable admission must finish before accessing the real game");
+            answered.clear();
+        }
         List<MatchEndpoint> endpoints() { var endpoints = new ArrayList<MatchEndpoint>(); for (var human : humans()) endpoints.add(human.match()); endpoints.addAll(host.automatedSeats()); return endpoints; }
         void main() throws Exception { until(states -> states.stream().anyMatch(state -> text(state, "phaseKey").equals("MAIN1") && state.get("prompt").isJsonObject())); }
         void until(Predicate<List<JsonObject>> stop) throws Exception {
