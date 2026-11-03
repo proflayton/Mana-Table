@@ -11,6 +11,7 @@ internal static class Program
         try {
             if (args.Contains(EncounterStartProtocolProbe.Marker)) return EncounterStartProtocolProbe.Serve(args);
             if (args.Contains(ConfiguredSimulationProtocolProbe.Marker)) return ConfiguredSimulationProtocolProbe.Serve(args);
+            if (args.Contains(AutomatedHistoryProtocolProbe.Marker)) return AutomatedHistoryProtocolProbe.Serve(args);
         } catch (Exception error) {
             Console.Error.WriteLine(error);
             return 1;
@@ -34,6 +35,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-cooperative-encounter");
         testRun |= args.Contains("--smoke-configured-simulation");
         testRun |= args.Contains("--smoke-ai-team-goldens");
+        testRun |= args.Contains("--smoke-ai-resources");
         testRun |= args.Contains("--smoke-whole-seat-ai");
         testRun |= args.Contains("--replay-ai-decision");
         testRun |= args.Contains("--replay-projection");
@@ -155,6 +157,10 @@ internal static class Program
             if (args.Contains("--smoke-ai-team-goldens")) {
                 AiReleaseGoldens.RunCooperativeStandaloneAsync(paths, Arg("--production-engine-jar")
                     ?? throw new ArgumentException("Team goldens require the actual production engine dependency.")).GetAwaiter().GetResult(); return 0;
+            }
+            if (args.Contains("--smoke-ai-resources")) {
+                AiResourceQualificationJourney.RunStandaloneAsync(paths, Arg("--production-engine-jar")
+                    ?? throw new ArgumentException("Resource qualification requires the actual production engine dependency.")).GetAwaiter().GetResult(); return 0;
             }
             if (args.Contains("--smoke-execution-journey")) {
                 ExecutionEngineJourney.RunStandaloneAsync(paths, Arg("--production-engine-jar")

@@ -16,6 +16,8 @@ internal static class NativeSmoke
         void Check(bool value, string name) { if (!value) throw new InvalidOperationException(name); results.Add(name); File.AppendAllText(Path.Combine(paths.Profile, "progress.log"), name + "\n"); }
         try {
             await Task.WhenAll(engines.Select(e => e.InitializeAsync()));
+            await engines[0].EnableAutomatedSeatsAsync();
+            await engines[1].EnableAutomatedSeatsAsync();
             var decks = new List<DeckSummary>();
             for (int i = 0; i < engines.Length; i++) {
                 var deck = await engines[i].ImportAsync("Native adapter smoke " + i, "Deck\n99 Mountain\nCommander\n1 Rograkh, Son of Rohgahh");
@@ -59,9 +61,17 @@ internal static class NativeSmoke
                         if (source != null) {
                             Check(state.Players.All(player => player.Zone("Battlefield").Cards.All(card => card.Name == "Mountain")),
                                 "The TCP guest reversal runs on a quiet basic-land battlefield before commanders introduce unrelated traits");
-                            var actions = await engines[i].SourceActionsAsync(state.Id, d.Id, source.Key);
-                            var mana = actions.Actions.Single(action => action.Kind == "activate");
-                            await engines[i].ExecuteAsync(new UseOfferedAction(state.Id, d.Id, source.Key, mana.Id));
+                            try {
+                                var actions = await engines[i].SourceActionsAsync(state.Id, d.Id, source.Key);
+                                var mana = actions.Actions.Single(action => action.Kind == "activate");
+                                await engines[i].ExecuteAsync(new UseOfferedAction(state.Id, d.Id, source.Key, mana.Id));
+                            } catch (EngineCommandRejectedException error) when (error.Message == "The table changed. Read the current card again."
+                                || error.Message == "That command does not answer the currently observed decision. Observe the table again.") {
+                                // A TCP publication can replace these current
+                                // keys before the query/dispatch. Reobserve within
+                                // the same deadline; never reuse the stale offer.
+                                continue;
+                            }
                             GameSnapshot? tapped = null;
                             while (DateTime.UtcNow < deadline && UndoFacts.Command(tapped ?? state) == null) {
                                 tapped = await engines[i].ObserveAsync();
@@ -141,6 +151,7 @@ internal static class NativeSmoke
             Check((await engines[0].ObserveAsync())?.Result == "Victory", "Last remaining player wins");
             await engines[0].ReturnToLobbyAsync();
             Check(!(await engines[0].LobbyAsync()).MatchActive, "Return to lobby after game");
+            await MixedLobbyEngineJourney.RunAsync(engines, await engines[0].LobbyAsync(), paths.Profile, deadline, Check);
             await File.WriteAllTextAsync(Path.Combine(paths.Profile, "smoke-results.json"), JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
         } finally { foreach (var engine in engines) await engine.DisposeAsync(); }
     }

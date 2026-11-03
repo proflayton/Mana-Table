@@ -54,7 +54,7 @@ final class MatchHistory {
         var safe = new MatchActivity.Entry(entry.id(), entry.turn(), entry.phaseKey(), entry.kind(),
                 entry.playerId(), entry.message(), entry.cardId(), entry.cardName(), publicFact ? "" : entry.detail(), entry.outcome(), entry.count(),
                 entry.change(), cause, entry.interruptsQuietYield(), entry.impact(), entry.stackId(),
-                discloseExecution ? entry.executionId() : null, discloseExecution ? entry.executionStep() : null);
+                discloseExecution ? entry.executionId() : null, discloseExecution ? entry.executionStep() : null, entry.historicSpell());
         append(new Record(++sequence, entry.turn(), entry.phaseKey(), publicFact ? "public" : "seatPrivate",
                 safe.executionId(), null, safe.cardId(), safe.cardName(), safe, null, null));
     }

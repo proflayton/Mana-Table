@@ -37,6 +37,11 @@ internal static class HistoryWireChecks
         check(Reject(otherExposure), "A host-private payload cannot masquerade as a player historical disclosure");
         var hiddenNested = wire.DeepClone(); hiddenNested["records"]![2]!["payment"]!["hand"] = new JsonArray("secret");
         check(Reject(hiddenNested), "A payment receipt cannot carry an untyped hidden-card attachment");
+        var foreignPrivate = wire.DeepClone(); foreignPrivate["records"]![2]!["payment"]!["payerId"] = 1;
+        check(Reject(foreignPrivate), "A same-viewer history batch cannot smuggle another payer's private bill or pool");
+        var foreignPublic = foreignPrivate.DeepClone(); foreignPublic["records"]![2]!["exposure"] = "public";
+        check(ForgeHistoryDecoder.Decode(Element(foreignPublic)).Records[2].Payment?.PayerId == 1,
+            "Actual public payment facts from another payer remain readable without acquiring that player's private ledger");
         var numericStep = wire.DeepClone(); numericStep["records"]![0]!["execution"]!["occurrence"]!["step"] = 2;
         check(Reject(numericStep), "Execution steps keep their closed named wire values inside archived history");
         var duplicate = wire.DeepClone(); duplicate["records"]![2]!["sequence"] = 2;
@@ -44,9 +49,20 @@ internal static class HistoryWireChecks
         using var unavailable = JsonDocument.Parse("""{"error":"Different text","errorCode":"history-unavailable"}""");
         using var prose = JsonDocument.Parse("""{"error":"history-unavailable"}""");
         check(ForgeEngine.RequestFailure("matchHistory", unavailable.RootElement) is NotSupportedException
+            && ForgeEngine.RequestFailure("automatedMatchHistory", unavailable.RootElement) is NotSupportedException
             && ForgeEngine.RequestFailure("matchState", unavailable.RootElement) is not NotSupportedException
             && ForgeEngine.RequestFailure("matchHistory", prose.RootElement) is not NotSupportedException,
             "Only the exact typed history-unavailable response on the read-only history method negotiates unsupported history");
+        var owned = ForgeEngine.DecodeAutomatedHistory(Element(wire), "history-game", 0, 0, 128);
+        check(owned.GameId == decoded.GameId && owned.ViewerId == decoded.ViewerId
+            && owned.Records[2].Payment?.Spent?["U"] == 3 && owned.Records[2].Exposure == "seatPrivate",
+            "Automated history preserves the existing typed ledger's exact audience, committed payment and private exposure");
+        bool RejectOwned(JsonNode value, string game = "history-game", int seat = 0, long cursor = 0, int limit = 128)
+        { try { ForgeEngine.DecodeAutomatedHistory(Element(value), game, seat, cursor, limit); return false; } catch (IOException) { return true; } }
+        check(RejectOwned(wire, game: "foreign-game") && RejectOwned(wire, seat: 1),
+            "Automated history cannot substitute another game or player's audience even with otherwise valid typed facts");
+        check(RejectOwned(wire, cursor: 3) && RejectOwned(wire, limit: 2),
+            "A history provider cannot replay retired cursor records or exceed the caller's narrower chunk budget");
     }
     private static JsonElement Element(JsonNode value) => JsonSerializer.SerializeToElement(value);
     private static bool Reject(JsonNode value) { try { ForgeHistoryDecoder.Decode(Element(value)); return false; } catch (IOException) { return true; } }

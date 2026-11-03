@@ -13,6 +13,15 @@ public interface IMatchHistory
     Task<HistoryBatch> HistoryAsync(string gameId, long afterSequence, int limit = 128);
 }
 
+// Host-only historical evidence for one genuinely owned automated audience.
+// This port is not supplied to policies or remote seats and grants no commands.
+public interface IAutomatedMatchHistory
+{
+    bool SupportsAutomatedHistory => false;
+    Task<HistoryBatch> AutomatedHistoryAsync(string gameId, int seatId, long afterSequence, int limit = 128)
+        => throw new NotSupportedException("This provider does not expose automated-seat history.");
+}
+
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record HistoryBatch([property: JsonRequired] int SchemaVersion,
     [property: JsonRequired] string GameId, [property: JsonRequired] int ViewerId,
@@ -118,6 +127,7 @@ public static class HistoryFacts
             previous = record.Sequence;
             if (record.Execution is { } execution) Validate(execution, record);
             if (record.Activity is { } activity) {
+                PublicActivityFacts.ValidateEntry(activity);
                 if (activity.Id < 1 || activity.Turn != record.Turn || activity.PhaseKey != record.PhaseKey
                     || !Text(activity.Kind, 64) || !Bounded(activity.Message, 16384) || !Bounded(activity.Detail, 16384)
                     || !Bounded(activity.Outcome, 256) || activity.Count < 0 || !OptionalKey(activity.CardId)
@@ -126,7 +136,10 @@ public static class HistoryFacts
                     || record.ExecutionId != null && activity.ExecutionId.Length > 0 && record.ExecutionId != activity.ExecutionId
                     || activity.ExecutionStep is { } step && !Enum.IsDefined(step)) throw Invalid();
             }
-            if (record.Payment is { } payment) Validate(payment);
+            if (record.Payment is { } payment) {
+                Validate(payment);
+                if (record.Exposure == "seatPrivate" && payment.PayerId != batch.ViewerId) throw Invalid();
+            }
             int recordBytes = RecordBytes(record);
             bytes += recordBytes;
             if (recordBytes > MaximumRecordBytes || bytes > MaximumBatchBytes) throw Invalid();

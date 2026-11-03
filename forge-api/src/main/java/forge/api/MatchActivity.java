@@ -15,7 +15,14 @@ public final class MatchActivity {
     public record Entry(long id, int turn, String phaseKey, String kind, Integer playerId,
                         String message, String cardId, String cardName, String detail, String outcome, int count,
                         PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact, String stackId,
-                        String executionId, String executionStep) {
+                        String executionId, String executionStep, Boolean historicSpell) {
+        public Entry(long id, int turn, String phaseKey, String kind, Integer playerId, String message,
+                     String cardId, String cardName, String detail, String outcome, int count,
+                     PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact, String stackId,
+                     String executionId, String executionStep) {
+            this(id, turn, phaseKey, kind, playerId, message, cardId, cardName, detail, outcome, count,
+                    change, cause, interruptsQuietYield, impact, stackId, executionId, executionStep, null);
+        }
         public Entry(long id, int turn, String phaseKey, String kind, Integer playerId, String message,
                      String cardId, String cardName, String detail, String outcome, int count,
                      PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact, String stackId) {
@@ -130,7 +137,7 @@ public final class MatchActivity {
     private static Entry withoutExecution(Entry entry) {
         return new Entry(entry.id(), entry.turn(), entry.phaseKey(), entry.kind(), entry.playerId(), entry.message(),
                 entry.cardId(), entry.cardName(), entry.detail(), entry.outcome(), entry.count(), entry.change(),
-                entry.cause(), entry.interruptsQuietYield(), entry.impact(), entry.stackId(), null, null);
+                entry.cause(), entry.interruptsQuietYield(), entry.impact(), entry.stackId(), null, null, entry.historicSpell());
     }
     public synchronized Frame frame() { return new Frame(revision, turn, phase, phaseName, activePlayerId, snapshot()); }
 
@@ -295,6 +302,9 @@ public final class MatchActivity {
             return damaged.amount() > 0 && (publicFaceDown(damaged.card()) || publicOccurrence(damaged.card()) && visible(damaged.card()));
         if (event instanceof GameEventCardCounters counters)
             return counters.oldValue() != counters.newValue() && (visible(counters.card()) || publicFaceDown(counters.card()));
+        if (event instanceof GameEventCardTapped tapped)
+            return tapped.card() != null && tapped.card().getZone() == ZoneType.Battlefield && currentView.test(tapped.card())
+                    && (visible(tapped.card()) || publicFaceDown(tapped.card()));
         return false;
     }
     private String playerName(PlayerView player) { return player == null ? "A player" : player.equals(viewer) ? "You" : player.getName(); }
@@ -356,6 +366,12 @@ public final class MatchActivity {
 
     private void add(String kind, PlayerView player, String message, CardView card, String detail, String outcome, int count,
                      PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact, String stackId) {
+        add(kind, player, message, card, detail, outcome, count, change, cause, interruptsQuietYield, impact, stackId, null);
+    }
+
+    private void add(String kind, PlayerView player, String message, CardView card, String detail, String outcome, int count,
+                     PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact, String stackId,
+                     Boolean historicSpell) {
         revision++;
         if (interruptsQuietYield) quietSequence++;
         boolean anonymousTarget = change != null && publicFaceDown(card);
@@ -364,7 +380,7 @@ public final class MatchActivity {
                 message, anonymousTarget ? identities.concealed(card) : eventVisualId(card),
                 anonymousTarget ? "Face-down card" : visible(card) ? card.getCurrentState().getName() : null,
                 detail, outcome, count, change, cause, interruptsQuietYield, impact, stackId,
-                execution == null ? null : execution.id(), execution == null ? null : execution.step());
+                execution == null ? null : execution.id(), execution == null ? null : execution.step(), historicSpell);
         entries.addLast(added);
         boolean publicFact = (card == null || !visible(card) || publicOccurrence(card))
                 && (cause == null || publicHistoryReference(cause.cardId()));
@@ -437,7 +453,8 @@ public final class MatchActivity {
             }
             String action = e.sa().isSpell() ? " cast " : e.si().isTrigger() ? " triggered an ability of " : " activated an ability of ";
             add(e.sa().isSpell() ? "cast" : "ability", player, playerName(player) + action + cardName(card) + ".", card,
-                    "", "", 0, null, null, true, null, String.valueOf(e.si().getId()));
+                    "", "", 0, null, null, true, null, String.valueOf(e.si().getId()),
+                    visible(card) && e.sa().isSpell() && !e.copied() ? e.historicSpell() : null);
         } else if (event instanceof GameEventSpellResolved e) {
             var card = e.spell().getHostCard();
             String detail = visible(card) ? Objects.requireNonNullElse(e.stackDescription(), "") : "";
@@ -518,6 +535,11 @@ public final class MatchActivity {
                     + (cause == null ? "." : " from " + cause.name() + ".");
             add("counters", e.card().getController(), message, e.card(), "", "", 0,
                     new PublicCardChange("counters", e.type().getName(), e.oldValue(), e.newValue()), cause);
+        } else if (event instanceof GameEventCardTapped e && e.card() != null && e.card().getZone() == ZoneType.Battlefield
+                && currentView.test(e.card()) && (visible(e.card()) || publicFaceDown(e.card()))) {
+            String target = publicFaceDown(e.card()) ? "Face-down card" : cardName(e.card());
+            add("tapped", e.controller(), target + (e.tapped() ? " tapped." : " untapped."), e.card(), "", "", 0,
+                    new PublicCardChange("state", "tapped", e.tapped() ? 0 : 1, e.tapped() ? 1 : 0), null, false);
         } else if (event instanceof GameEventShuffle e) {
             // A shuffle breaks identity correlation even when the new top is visible.
             visibleIds.values().removeIf(occurrence -> occurrence.view().getZone() == ZoneType.Library

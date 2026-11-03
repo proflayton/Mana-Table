@@ -287,6 +287,12 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     void detach() { game.unsubscribeFromEvents(activity); game.unsubscribeFromEvents(executions); game.unsubscribeFromEvents(history); game.unsubscribeFromEvents(combatIds); game.unsubscribeFromEvents(this); }
 
     @Override public Map<String, Object> history(JsonObject query) { return history.read(query); }
+    Map<String, Object> automatedHistory(JsonObject query) {
+        synchronized (gate) {
+            if (table.retired()) throw new IllegalArgumentException("The automated history owner has retired");
+            return history.read(query);
+        }
+    }
     void clearDecision() { pending = null; }
     void cancelDecision() {
         combatChoices.clear();

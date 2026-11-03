@@ -11,6 +11,7 @@ internal static class AiCampaignQualificationChecks
     internal static void Run(Action<bool, string> check)
     {
         AiCausalMechanicEvidenceChecks.Run(check);
+        AiCausalResourceEvidenceChecks.Run(check);
         var decks = AiCampaignDecks.All.Select((deck, index) => new AiCampaignDeckBinding(deck.Id, deck.Hash,
             new string((char)('a' + index), 64), "saved-" + index, 1, "deck:saved-" + index + ":bytes", deck.Family,
             deck.IntendedMechanics, deck.RequiredWitnessIds)).ToImmutableArray();

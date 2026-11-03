@@ -474,6 +474,54 @@ Offline policy evaluation of a captured decision proves a proposal only; the
 scripted counterfactual proves those actual rules consequences only. Mixed
 human/AI review and general strategic quality remain separate pending gates.
 
+### Historic untaps and explicit colorless payment
+
+`AiCausalResourceEvidenceChecks` extends that same verifier in the existing
+`configured-simulation` group. It covers actual historic casts, direct trigger
+ancestry, committed untaps, explicit `C` bills and spending, generic-payment
+negative controls, restoration, cancellation, redaction, archive gaps and
+completion ahead of the current public cohort. `ResourceEvidenceWireChecks`
+validates the additive live/archive facts. `AutomatedHistoryProtocolProbe`
+exercises actual child-process negotiation, audience validation and delayed
+responses across lifecycle replacement. These are evidence and boundary checks,
+not another rules simulator or a strategic-quality result.
+
+Java `TraxosExecutionJourneyTest` exercises the real historic trigger, ordinary
+upkeep untaps and a stun-prevented untap. It distinguishes an Adventure cast from
+the historic creature face of the same physical card. Run it with
+`AutomatedHistoryTest`, `MatchActivityTest`, `MatchHistoryTest`,
+`PlaytestObservationsTest`, `ExecutionDisclosureTest`,
+`ActionOperationProjectionTest`, `SourceActionDomainTest`,
+`ConfiguredSimulationTest` and `AutomatedSeatBoundaryTest` in the existing API
+reactor lane. Preserve first failures and report results by actual invocation;
+stale Surefire files do not belong to a later focused run.
+
+`AiResourceQualificationJourney` reuses the initialized fixture engine in the
+normal source-bound headless engine smoke, with an optional local
+`--smoke-ai-resources` route. Its declared pregame fixture supplies eight Wastes
+and an eight-card runtime library. Scripted ordinary commands cast Traxos using
+generic mana, then Mind Stone to trigger its actual untap, then Spatial Contortion
+with an explicit colorless requirement. Archived receipts must distinguish the
+generic negative control from actual `C` consumption. The saved Commander list
+is legal; the deliberately shortened runtime is a test fixture. This does not
+qualify a campaign deck, prove AI strategy, or replace mixed human play review.
+External resources alone remain unbound; exact-source CI establishes package
+identity separately. No test cutoff becomes a draw or a reason to extend budgets.
+
+`NativeSmoke` then reuses its four warmed clients and original four-minute match
+deadline for `MixedLobbyEngineJourney`. Two connections leave after the existing
+four-human match; the retained host/TCP guest start another match with distinct
+green/red AI decks. Automation is configured before opening the table. The
+journey derives actual human IDs from their viewer frames and bot IDs from
+host-owned audiences; ordinary free-for-all snapshots do not promise lobby
+participant UUIDs. It checks private disclosure, same-board public projections,
+owned history access, real bot development, host concession and subsequent bot
+progress for the remaining guest. Exact stale TCP source offers are reobserved
+within the original deadline, never replayed. `mixed-lobby/prefix-results.json`
+is a bounded integration result; private observations stay separately labelled.
+The human connections are scripted and supply no human UX, natural outcome or
+deck-qualification credit.
+
 ## AI release evaluation
 
 The graphics-free client suite includes `AiDamageTargetRegression`: known five

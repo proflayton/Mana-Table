@@ -85,6 +85,25 @@ including the viewer's private choices requires explicit consent. Unclassified
 raw activity detail is not certified public. No snapshots, live action handles,
 private AI observations, chat or profile-directory bundles are exported.
 
+The resource-qualification slice adds the optional `IAutomatedMatchHistory` port
+and `automated-match-history` capability. It reads the same `MatchSession` ledger
+and `HistoryBatch` contract for an already observed, host-owned bot audience;
+it does not create another payment log or expose bot history to policy knowledge.
+The provider fences each response by process owner, accepted match generation,
+game and seat, both before and after the asynchronous read. Successful world
+replacement invalidates those audiences before completing the lifecycle response.
+Rejected requests preserve them; conceding a player does not retire a continuing
+table. Remote human connections cannot read the host's private bot ledger.
+
+Committed tap transitions carry actual before/after state and the current
+execution when available. Only the exact occurrence still on the battlefield
+can supply that anchor. No-op or prevented untaps supply no transition; these
+entries do not interrupt quiet passing. Cast activity also carries nullable
+`HistoricSpell`, captured from the actual cast state rather than the physical
+card's other face. Missing facts remain unknown. Both live and archival contracts
+validate these shapes. The fields are additive within history schema 1; absent
+capability remains explicitly unsupported rather than an empty successful read.
+
 ## Optional payment consent
 
 Optional human payment preferences belong to `Mana.Client/ClientSession`, not
@@ -321,6 +340,22 @@ occurrences and redacted identities cannot create qualification credit. Its
 immutable evidence never becomes a current command permission. Developmental
 spell timing remains policy-owned in the existing turn planner and consumes only
 the actor's accepted knowledge and current offered action domain.
+
+The same verifier now consumes bounded owned-seat history for historic-cast
+untaps and explicit colorless payment. It requires a fresh accepted cast,
+disclosed execution ancestry, actual committed effects or spending, and an
+independently published board cohort. Traxos credit requires its own resolved
+trigger and actual tapped-to-untapped transition; subsequently countering the
+historic spell does not undo that cast trigger. Explicit colorless credit requires
+a reduced explicit `C` bill, an actual `C` spending receipt and a resolved spell;
+colorless spent on a generic bill is insufficient. Cancelled or known-restored
+payments and countered roots cannot earn that payment credit. Conflicting immutable records fail;
+gaps and bounded retention loss revoke the incomplete evidence baseline.
+
+The test host drains at most two ordinary history chunks per changed owned
+publication, continuing a known backlog on later polls. The verifier retains at
+most 1,024 records/4 MiB per audience. Archive completion alone cannot establish
+the current board, and unknown spending stays distinct from known empty spending.
 
 Backend failure is a table interruption, separate from a player's concession.
 The provider revokes all seat inputs before terminalizing rules work and

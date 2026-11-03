@@ -14,6 +14,62 @@ import org.testng.annotations.Test;
 import static org.testng.Assert.*;
 
 public class MatchActivityTest {
+    @Test public void tapEventsKeepTheirCommittedControllerAndOnlyDiscloseCurrentBattlefieldObjects() {
+        var viewer = new PlayerView(1, null); var owner = new PlayerView(2, null); var later = new PlayerView(3, null);
+        var target = publicCard(310, "Visible target", owner);
+        var untapped = new GameEventCardTapped(target, false);
+        target.set(TrackableProperty.Controller, later);
+        var activity = new MatchActivity(viewer);
+        activity.onGameEvent(untapped);
+        var result = activity.snapshot().get(0);
+        assertEquals(result.kind(), "tapped");
+        assertEquals(result.playerId(), Integer.valueOf(2), "A later controller cannot relabel the committed mutation");
+        assertEquals(result.change(), new MatchActivity.PublicCardChange("state", "tapped", 1, 0));
+        assertNull(result.cause(), "A missing producing cause is not invented from the affected permanent");
+        assertNull(result.historicSpell());
+        activity.onGameEvent(new GameEventCardTapped(target, true));
+        assertEquals(activity.snapshot().get(1).change(), new MatchActivity.PublicCardChange("state", "tapped", 0, 1));
+        assertFalse(result.interruptsQuietYield());
+        assertEquals(activity.quietSequence(), 0L, "Routine per-card state facts do not introduce new Auto interruptions");
+
+        var hidden = publicCard(311, "Secret hand face", owner);
+        hidden.set(TrackableProperty.Zone, ZoneType.Hand);
+        activity.onGameEvent(new GameEventCardTapped(hidden, false));
+        assertEquals(activity.snapshot().size(), 2, "A private zone cannot publish a tap-state fact or its face");
+        var departing = publicCard(312, "Departed permanent", owner);
+        departing.set(TrackableProperty.Zone, ZoneType.Graveyard);
+        activity.onGameEvent(new GameEventCardTapped(departing, false));
+        activity.onGameEvent(new GameEventCardTapped((CardView) null, false));
+        assertEquals(activity.snapshot().size(), 2, "Zone-departure cleanup and absent targets are not battlefield untaps");
+
+        var concealed = publicCard(313, "Concealed printed identity", owner);
+        concealed.set(TrackableProperty.Facedown, true);
+        activity.onGameEvent(new GameEventCardTapped(concealed, false));
+        var anonymous = activity.snapshot().get(2);
+        assertNotNull(anonymous.cardId());
+        assertEquals(anonymous.cardName(), "Face-down card");
+        assertFalse(anonymous.message().contains("Concealed printed identity"));
+
+        var actual = new java.util.concurrent.atomic.AtomicReference<>(target);
+        var currentOnly = new MatchActivity(viewer, new MatchIdentities(), card -> card == actual.get());
+        actual.set(hidden);
+        currentOnly.onGameEvent(untapped);
+        assertTrue(currentOnly.snapshot().isEmpty(), "A historical battlefield view cannot grant a new current mutation anchor");
+        assertFalse(currentOnly.publicCommitted(untapped));
+    }
+
+    @Test public void aHistoricCastFactSurvivesExecutionReferenceEvictionWithoutBecomingNewAuthority() {
+        var cast = new MatchActivity.Entry(1, 1, "MAIN1", "cast", 1, "Cast", "public-source", "Artifact",
+                "", "", 0, null, null, true, null, "stack-item", "expired-execution", "stack", true);
+        var retained = MatchActivity.retainedExecutions(java.util.List.of(cast), java.util.Set.of()).get(0);
+        assertEquals(retained.historicSpell(), Boolean.TRUE);
+        assertNull(retained.executionId());
+        assertNull(retained.executionStep());
+        assertEquals(cast.executionId(), "expired-execution", "The original immutable historical fact is not rewritten");
+        assertNull(new MatchActivity.Entry(2, 1, "MAIN1", "cast", 1, "Legacy cast", "source", "Artifact", "", "", 0).historicSpell(),
+                "Legacy records have unknown cast-route classification");
+    }
+
     @Test public void aCurrentVisibleReplacementKeepsItsDisplayAnchorWithoutGrantingHistoricalAuthority() {
         var owner = new PlayerView(1, null); var observer = new PlayerView(2, null);
         var hand = publicCard(211, "Known card", owner); hand.set(TrackableProperty.Zone, ZoneType.Hand);

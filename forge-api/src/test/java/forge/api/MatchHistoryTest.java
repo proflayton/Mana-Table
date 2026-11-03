@@ -89,6 +89,11 @@ public class MatchHistoryTest {
             var own = history(table.seat(0), table.id);
             assertTrue(own.stream().anyMatch(record -> record.exposure().equals("seatPrivate") && record.executionId() != null
                     && record.executionId().equals(hiddenId)));
+            assertTrue(own.stream().anyMatch(record -> record.exposure().equals("seatPrivate") && record.payment() != null),
+                    "The real hidden bill creates an actual private payment witness");
+            assertTrue(own.stream().filter(record -> record.exposure().equals("seatPrivate") && record.payment() != null)
+                    .allMatch(record -> record.payment().payerId() == owner.getId()),
+                    "Private payment admission belongs to this ledger's actual payer audience");
             var opponent = history(table.seat(1), table.id);
             String publicJson = JSON.toJson(opponent);
             assertFalse(publicJson.contains(hiddenId));
@@ -96,6 +101,8 @@ public class MatchHistoryTest {
             var produced = opponent.stream().filter(record -> record.payment() != null && record.payment().kind().equals("produced"))
                     .findFirst().orElseThrow();
             assertEquals(produced.exposure(), "public");
+            assertEquals(produced.payment().payerId(), owner.getId(),
+                    "The other audience may retain the producing payer's public fact without its private bill");
             assertEquals(produced.payment().produced(), Map.of("U", 1));
             assertNull(produced.payment().billBefore()); assertNull(produced.payment().billAfter());
             assertTrue(opponent.stream().noneMatch(record -> record.payment() != null && record.payment().kind().equals("spent")));
