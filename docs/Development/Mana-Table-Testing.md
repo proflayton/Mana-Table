@@ -346,6 +346,17 @@ their tokens, late execution remaining an unknown receipt, no replay, and recove
 only through an independently observed fresh scope. The first baseline failures
 are retained separately from the corrected candidate's passing invocation.
 
+Accepted-input progress regressions cover opening, required payment, selection
+and combat, closed presentation pacing, stale snapshots and regressed offer
+versions. Repeated successful polls stay quiet through 44 virtual seconds and
+fault once at 45, preserving the Accepted receipt without replay. Fresh scope,
+retired input, human waiting, completion and missing seats are separate controls.
+The payment cadence journey includes two separately observed mana activations
+with actual-shaped public tap-cost facts. It keeps payment and a required number
+choice within the initial beat while a real cast gets a new beat. Missing or
+non-cost evidence and the existing mana-side-effect controls retain ordinary
+announcement timing. These authored journeys do not measure the user's session.
+
 `ForgeRequestCancellationProtocolProbe` belongs to the existing
 `configured-simulation` group and full headless lane. Its five real child-process
 cases cover cancellation while queued at the write gate, interrupted large

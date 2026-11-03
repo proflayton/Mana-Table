@@ -1,6 +1,6 @@
 # Multiplayer AI framework and investigation
 
-## Provider cancellation and bounded transport: source candidate
+## Automated waits and payment cadence: source candidate
 
 A friend reported that AI players were stalling games, without a version or
 specific decision. The exact cause remains unidentified. The retained local
@@ -26,8 +26,28 @@ remain observed. Canceling execution is an uncertain receipt, not retraction or
 proof that the rules action failed: the host never replays it or fabricates a
 pass, concession or outcome. Existing recovery owns the next step.
 
-The current candidate passed 2,598 client checks, including the reproduced
-held-operation cancellation and shutdown regressions, and five actual child-process transport cases in the
+Successful polling can also stall: after an accepted command, the same decision
+can be returned indefinitely while policy time no longer accumulates. The host
+now gives that accepted input 45 seconds to publish fresh authoritative scope.
+Only the seat session's full chronology admission retires that wait; identical
+polls, stale revisions and regressed offer versions cannot reset it. The check
+runs before presentation pacing. Valid input retirement, another player's turn,
+table completion and a missing seat retire the wait without borrowing someone
+else's decision time. Expiry reports `accepted-no-progress` once, preserves the
+known Accepted receipt and stops through the existing fault path. This does not
+detect every higher-revision semantic loop or a globally frozen JVM.
+
+The player also reported slow Auto decisions. An authored payment journey
+reproduced an independent pacing defect: each separately observed mana tap cost
+could restart a 2.4-second announcement. The announcement comparison now excludes
+only a typed tap cost matched to a completed Mana occurrence's source and actor,
+with no other known consequence or queued occurrence. All events remain in
+cohort and ancestry guards. Missing evidence, mana side effects, actual casts,
+responses and resolutions retain their ordinary beats. Human Auto has separate
+presentation gates; their contribution to the reported session is unmeasured.
+
+The current candidate passed 2,621 client checks, including the reproduced
+held-operation, accepted-scope and two-source payment regressions, and five actual child-process transport cases in the
 existing configured-simulation group. A separate current-source harness sample
 with the released 0.2.364 JAR finished 37 turns in 56.6 seconds. That sample used
 no shipping pacing and was not an exact shipping-native-byte test; it does not

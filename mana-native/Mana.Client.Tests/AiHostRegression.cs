@@ -92,6 +92,7 @@ internal static partial class AiHostRegression
         cadence.Observe([]);
         check(!cadence.Ready(announced.GameId, announced.SeatId), "Leaving the match clears its public cadence state");
         await CancellationAsync(check);
+        await ProgressAsync(check);
     }
 
     private sealed class Clock : TimeProvider

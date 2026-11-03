@@ -21,6 +21,7 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
     TimeProvider? operationClock = null) : IAsyncDisposable
 {
     private static readonly TimeSpan ProviderTimeout = TimeSpan.FromSeconds(45);
+    private static readonly TimeSpan ObservationTimeout = TimeSpan.FromSeconds(45);
     private readonly TimeProvider operationTime = operationClock ?? TimeProvider.System;
     private readonly SemaphoreSlim step = new(1);
     private readonly SemaphoreSlim startup = new(1);
@@ -28,6 +29,7 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
     private readonly CancellationTokenSource lifetime = new();
     private readonly HashSet<string> faultedGames = [];
     private readonly Dictionary<(string Game, int Seat), AiDecisionStamp> rejected = [];
+    private readonly Dictionary<(string Game, int Seat), long> awaitingObservation = [];
     private Task? runner;
     private bool enabled, disposed;
     public AiHostFault? LastFault { get; private set; }
@@ -76,6 +78,7 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                 foreach (var key in seats.Keys.Where(key => !active.Contains(key)).ToArray()) {
                     seats[key].Dispose(); seats.Remove(key);
                     rejected.Remove(key);
+                    awaitingObservation.Remove(key);
                 }
             }
             foreach (var item in observed) {
@@ -99,14 +102,27 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                     await FaultAsync(state.Id, item.SeatId, "policy-configuration", token, error).ConfigureAwait(false);
                     continue;
                 }
-                if (!session.ObserveRestoration(state)) continue;
+                if (!session.ObserveRestoration(state)) {
+                    await CheckObservationProgress(key, token).ConfigureAwait(false);
+                    continue;
+                }
                 if (state.Status != "playing" || state.Decision == null || state.Viewer?.Eliminated != false) {
+                    awaitingObservation.Remove(key);
                     session.Observe(null); continue;
                 }
-                // A presentation pause is never a stored decision or answer.
+                AiDecisionFrame? frame = null;
+                // Only a valid newly admitted authority retires an accepted
+                // command's wait. Identical successful polls and presentation
+                // pauses cannot continually grant another waiting allowance.
+                if (awaitingObservation.ContainsKey(key)) {
+                    frame = new(state, domain: item.Domain, semantics: item.Semantics);
+                    if (session.Observe(frame)) awaitingObservation.Remove(key);
+                    if (await CheckObservationProgress(key, token).ConfigureAwait(false)) continue;
+                }
+                // A presentation pause never caches an answer.
                 // Skip this iteration and re-observe current authority next time.
                 if (pacing != null && !pacing.Ready(state.Id, item.SeatId)) continue;
-                var frame = new AiDecisionFrame(state, domain: item.Domain, semantics: item.Semantics);
+                frame ??= new(state, domain: item.Domain, semantics: item.Semantics);
                 if (rejected.Remove(key, out var priorRejection) && priorRejection == frame.Stamp) {
                     await FaultAsync(state.Id, item.SeatId, "rejected-command", token).ConfigureAwait(false);
                     continue;
@@ -122,6 +138,7 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                 try {
                     await AwaitProvider("execute", stop => provider.ExecuteAutomatedAsync(item.SeatId, ticket.Command, stop), token).ConfigureAwait(false);
                     session.Report(ticket, AiExecutionReceipt.Accepted);
+                    awaitingObservation[key] = operationTime.GetTimestamp();
                 } catch (EngineCommandRejectedException) {
                     session.Report(ticket, AiExecutionReceipt.Rejected);
                     rejected[key] = ticket.Stamp;
@@ -138,6 +155,16 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                 }
             }
         } finally { step.Release(); }
+    }
+
+    private async Task<bool> CheckObservationProgress((string Game, int Seat) key, CancellationToken cancellation)
+    {
+        if (!awaitingObservation.TryGetValue(key, out var started)
+            || operationTime.GetElapsedTime(started) < ObservationTimeout) return false;
+        awaitingObservation.Remove(key);
+        await FaultAsync(key.Game, key.Seat, "accepted-no-progress", cancellation,
+            new TimeoutException("The automated decision did not advance after an accepted command.")).ConfigureAwait(false);
+        return true;
     }
 
     private async Task FaultAsync(string game, int seat, string reason, CancellationToken cancellation, Exception? error = null)
@@ -212,7 +239,10 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
         try {
             if (runner != null) await runner.ConfigureAwait(false);
             await step.WaitAsync().ConfigureAwait(false);
-            try { lock (seats) { foreach (var seat in seats.Values) seat.Dispose(); seats.Clear(); } }
+            try {
+                lock (seats) { foreach (var seat in seats.Values) seat.Dispose(); seats.Clear(); }
+                awaitingObservation.Clear();
+            }
             finally { step.Release(); }
         } finally { startup.Release(); lifetime.Dispose(); }
     }

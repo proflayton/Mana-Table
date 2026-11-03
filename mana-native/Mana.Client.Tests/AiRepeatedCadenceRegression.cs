@@ -165,7 +165,9 @@ internal static class AiRepeatedCadenceRegression
         if (change == "action") return state with { StackActionVersion = 2 };
         if (change == "phase") return state with { PhaseKey = "MAIN2" };
         if (change == "mana-consequence") return Alter(state, "mana") with {
-            Activity = state.Activity.Add(new(99, 7, "MAIN1", "damage", state.ViewerId, "Mana ability dealt public damage", "own-source", null) {
+            Activity = state.Activity.Add(new(98, 7, "MAIN1", "tapped", state.ViewerId, "Mana source tapped", "own-source", null) {
+                ExecutionId = "private-cost", ExecutionStep = ExecutionStep.Cost, Change = new("state", "tapped", 0, 1) })
+            .Add(new(99, 7, "MAIN1", "damage", state.ViewerId, "Mana ability dealt public damage", "own-source", null) {
                 ExecutionId = "private-cost", ExecutionStep = ExecutionStep.Complete }) };
         if (change is "mana" or "private-choice") {
             // MagicStack's immediate mana path emits MANA, not the ordinary
@@ -237,66 +239,93 @@ internal static class AiRepeatedCadenceRegression
         clock.Advance(TimeSpan.FromSeconds(.4)); await host.StepAsync();
         check(provider.Commands.LastOrDefault() is UseOfferedAction { Card: "mana-key-0", ActionId: "mana-0" },
             "After the original beat the shipping policy activates the exact currently offered mana source");
-        await host.StepAsync(); await host.StepAsync();
-        check(provider.Commands is [UseOfferedAction, PayMana { DecisionId: "cost-1" }, ChooseNumber { DecisionId: "cost-2", Value: 1 }]
+        await host.StepAsync(); await host.StepAsync(); await host.StepAsync();
+        check(provider.Commands is [UseOfferedAction, UseOfferedAction { Card: "mana-key-1", ActionId: "mana-1" },
+                PayMana { DecisionId: "cost-2" }, ChooseNumber { DecisionId: "cost-3", Value: 1 }]
                 && clock.Elapsed == TimeSpan.FromSeconds(2.4) && host.LastFault == null,
-            "Fresh payment and required-number inputs progress through the real bot host and policy without another pause for their private mana and choice guards");
+            "Separate current mana activations with actual-shaped public tap facts, payment and required-number inputs progress without another announcement pause for cost bookkeeping");
         await host.StepAsync(); clock.Advance(TimeSpan.FromSeconds(2.39)); await host.StepAsync();
-        check(provider.Commands.Count == 3, "The actual public cast after private cost inputs receives its own complete announcement beat");
+        check(provider.Commands.Count == 4, "The actual public cast after private cost inputs receives its own complete announcement beat");
         clock.Advance(TimeSpan.FromSeconds(.01)); await host.StepAsync();
-        check(provider.Commands.LastOrDefault() is PassPriority { DecisionId: "cost-3" } && provider.Commands.Count == 4,
+        check(provider.Commands.LastOrDefault() is PassPriority { DecisionId: "cost-4" } && provider.Commands.Count == 5,
             "After the cast announcement the host submits a fresh current priority answer rather than an answer cached during the beat");
+
+        foreach (ExecutionStep? tapStep in new ExecutionStep?[] { null, ExecutionStep.Resolution }) {
+            var uncertainClock = new Clock();
+            var uncertainPace = new TimedAiHostPacing(TimeSpan.FromSeconds(2.4), uncertainClock);
+            var uncertain = new CostProvider(tapStep);
+            await using var uncertainHost = new AiTableHost(uncertain, _ => new CasualCommanderPolicy(), 42, pacing: uncertainPace);
+            await uncertainHost.StepAsync(); uncertainClock.Advance(TimeSpan.FromSeconds(2.4)); await uncertainHost.StepAsync();
+            await uncertainHost.StepAsync(); uncertainClock.Advance(TimeSpan.FromSeconds(2.39)); await uncertainHost.StepAsync();
+            bool held = uncertain.Commands.Count == 1 && !uncertainPace.Ready("cost-cadence", 0);
+            uncertainClock.Advance(TimeSpan.FromSeconds(.01)); await uncertainHost.StepAsync();
+            check(held && uncertain.Commands is [UseOfferedAction, UseOfferedAction { ActionId: "mana-1" }]
+                    && uncertainHost.LastFault == null,
+                "A mana-source tap with " + (tapStep == null ? "missing" : "non-cost")
+                    + " execution-step evidence retains its ordinary complete announcement beat");
+        }
     }
 
     // Scripted authoritative observations/receipts, not a mana or Magic rules
     // model. The ordinary host, production policy and scoped commands run here.
-    private sealed class CostProvider : IAutomatedSeatProvider
+    private sealed class CostProvider(ExecutionStep? tapStep = ExecutionStep.Cost) : IAutomatedSeatProvider
     {
         private int stage;
         internal List<GameCommand> Commands { get; } = [];
         private AutomatedSeatObservation Current()
         {
             string prompt = "cost-" + stage;
-            var mana = new Card { VisualId = "mana-source", Key = "mana-key-" + stage, Name = "Producer", Type = "Land", Tapped = stage > 0 };
+            var mana = Enumerable.Range(0, 2).Select(index => new Card {
+                VisualId = "mana-source-" + index, Key = index == stage ? "mana-key-" + stage : "inactive-mana-key-" + stage + "-" + index,
+                Name = "Producer", Type = "Land", Tapped = stage > index
+            }).ToImmutableArray();
             var spell = new Card { VisualId = "spell", Key = "spell-key-" + stage, Name = "Spell", Type = "Sorcery" };
             var prior = new Card { VisualId = "prior", Name = "Prior public source", Type = "Artifact" };
             var executions = ImmutableArray.Create(
                 new ExecutionOccurrence("prior", "prior", ExecutionKind.Trigger, ExecutionStep.Stack) { ActorPlayerId = 1, SourceCardId = "prior" },
-                new ExecutionOccurrence("spell", "spell", ExecutionKind.Spell, stage == 3 ? ExecutionStep.Stack : stage == 2 ? ExecutionStep.Choice : ExecutionStep.Cost) {
+                new ExecutionOccurrence("spell", "spell", ExecutionKind.Spell, stage == 4 ? ExecutionStep.Stack : stage == 3 ? ExecutionStep.Choice : ExecutionStep.Cost) {
                     ActorPlayerId = 0, SourceCardId = "spell" });
-            if (stage > 0) executions = executions.Add(new("mana", "spell", ExecutionKind.Mana, ExecutionStep.Complete) {
-                ActorPlayerId = 0, SourceCardId = "mana-source", ParentId = "spell", Outcome = ExecutionOutcome.Resolved });
+            foreach (int index in Enumerable.Range(0, Math.Min(stage, 2)))
+                executions = executions.Add(new("mana-" + index, "spell", ExecutionKind.Mana, ExecutionStep.Complete) {
+                    ActorPlayerId = 0, SourceCardId = "mana-source-" + index, ParentId = "spell", Outcome = ExecutionOutcome.Resolved });
             var stack = ImmutableArray.Create(new StackItem("Prior public source", "Prior ability", StackActionKind.TriggeredAbility, prior) {
                 Id = "prior-stack", ExecutionId = "prior", ControllerId = 1 });
             var activity = ImmutableArray.Create(new ActivityEntry(1, 7, "MAIN1", "ability", 1, "Prior ability announced", "prior", null) {
                 ExecutionId = "prior", ExecutionStep = ExecutionStep.Stack });
-            if (stage == 3) {
+            // MatchActivity publishes the exact tap while paying each real
+            // mana ability's cost. Its Mana occurrence completes immediately;
+            // no ordinary cast/resolved activity is manufactured for it.
+            foreach (int index in Enumerable.Range(0, Math.Min(stage, 2)))
+                activity = activity.Add(new(index + 2, 7, "MAIN1", "tapped", 0, "Producer tapped.", "mana-source-" + index, "Producer") {
+                    ExecutionId = tapStep == null ? "" : "mana-" + index, ExecutionStep = tapStep,
+                    Change = new("state", "tapped", 0, 1), InterruptsQuietYield = false });
+            if (stage == 4) {
                 stack = stack.Insert(0, new("Spell", "Public cast", StackActionKind.Spell, spell) { Id = "spell-stack", ExecutionId = "spell", ControllerId = 0 });
-                activity = activity.Add(new(2, 7, "MAIN1", "cast", 0, "Spell cast", "spell", null) { ExecutionId = "spell", ExecutionStep = ExecutionStep.Stack });
+                activity = activity.Add(new(4, 7, "MAIN1", "cast", 0, "Spell cast", "spell", null) { ExecutionId = "spell", ExecutionStep = ExecutionStep.Stack });
             }
             DecisionPayload payload = stage switch {
-                0 or 1 => new PaymentPayload(new("Pay", stage == 1), new("Cancel", true)),
-                2 => new NumberPayload("1", new(1, 1)),
+                0 or 1 or 2 => new PaymentPayload(new("Pay", stage == 2), new("Cancel", true)),
+                3 => new NumberPayload("1", new(1, 1)),
                 _ => new PriorityPayload(new("Pass", true))
             };
             var state = new GameSnapshot("cost-cadence", "playing", null, null, 0, 7, "Main", "MAIN1", 0,
                 [new(0, "Bot", 40, false, false, ImmutableDictionary<string, int>.Empty,
-                    [new("Battlefield", 1, [mana], null), new("Hand", stage == 3 ? 0 : 1, stage == 3 ? [] : [spell], null)]),
+                    [new("Battlefield", 2, mana, null), new("Hand", stage == 4 ? 0 : 1, stage == 4 ? [] : [spell], null)]),
                  new(1, "Other player", 40, false, false, ImmutableDictionary<string, int>.Empty, [new("Battlefield", 1, [prior], null)])],
                 stack, null, new(prompt, new(Source: new("spell")), payload) {
-                    ExecutionId = stage < 3 ? "spell" : "", ExecutionStep = stage < 2 ? Mana.Contracts.ExecutionStep.Cost
-                        : stage == 2 ? Mana.Contracts.ExecutionStep.Choice : null }) {
-                    Revision = stage + 1, BoardRevision = stage + 1, DecisionOwnerId = 0, PriorityPlayerId = stage == 3 ? 0 : null,
-                    StackActionVersion = stage == 0 ? 1 : 2, ResolutionChoiceVersion = stage < 2 ? 1 : 2,
+                    ExecutionId = stage < 4 ? "spell" : "", ExecutionStep = stage < 3 ? Mana.Contracts.ExecutionStep.Cost
+                        : stage == 3 ? Mana.Contracts.ExecutionStep.Choice : null }) {
+                    Revision = stage + 1, BoardRevision = stage + 1, DecisionOwnerId = 0, PriorityPlayerId = stage == 4 ? 0 : null,
+                    StackActionVersion = Math.Min(stage + 1, 3), ResolutionChoiceVersion = stage < 3 ? 1 : 2,
                     Activity = activity, Executions = new(1, stage, executions, []) };
             var domain = payload is NumberPayload ? DecisionActionDomain.None : new DecisionActionDomain(stage + 1,
                 ActionDomainCoverage.Complete, [], []);
-            if (stage == 0) domain = domain with {
-                Sources = [new(state.Id, prompt, mana.Key, mana.VisualId, [new("mana-0", "activate", "Add green")])],
-                Actions = [new("mana-0", ActionEffectKind.Mana, [ActionEffectKind.Mana], [new(ActionCostKind.Tap, 1, true, "")], ActionAffordability.Payable) {
-                    StableId = "producer", ManaAbility = true, ManaAmount = 1, ManaColors = ["G"], PaymentManaColors = ["G"],
+            if (stage < 2) domain = domain with {
+                Sources = [new(state.Id, prompt, mana[stage].Key, mana[stage].VisualId, [new("mana-" + stage, "activate", "Add green")])],
+                Actions = [new("mana-" + stage, ActionEffectKind.Mana, [ActionEffectKind.Mana], [new(ActionCostKind.Tap, 1, true, "")], ActionAffordability.Payable) {
+                    StableId = "producer-" + stage, ManaAbility = true, ManaAmount = 1, ManaColors = ["G"], PaymentManaColors = ["G"],
                     Production = new(SemanticKnowledge.Known, [new(ImmutableDictionary<string, int>.Empty.Add("G", 1))]) }] };
-            return new(0, state, domain, new() { UnpaidMana = stage == 0 ? ["{G}"] : [] });
+            return new(0, state, domain, new() { UnpaidMana = stage < 2 ? ["{G}"] : [] });
         }
         public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); return Task.CompletedTask; }
         public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); return Task.FromResult(ImmutableArray.Create(Current())); }
@@ -306,7 +335,7 @@ internal static class AiRepeatedCadenceRegression
             var current = Current();
             if (seatId != 0 || command is not DecisionCommand answer || !new AiDecisionFrame(current.State, domain: current.Domain, semantics: current.Semantics).Allows(answer))
                 throw new EngineCommandRejectedException("The scripted receipt requires this exact current input and offer.");
-            Commands.Add(command); stage = Math.Min(3, stage + 1); return Task.CompletedTask;
+            Commands.Add(command); stage = Math.Min(4, stage + 1); return Task.CompletedTask;
         }
         public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode, CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); throw new Exception("Unexpected cost cadence fault: " + reasonCode); }
     }
