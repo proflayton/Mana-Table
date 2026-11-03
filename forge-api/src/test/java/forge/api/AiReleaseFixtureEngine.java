@@ -21,6 +21,20 @@ public final class AiReleaseFixtureEngine {
 
     static void configure(List<RegisteredPlayer> players) {
         String name = players.get(0).getDeck().getName();
+        if (name.equals("AI cooperative ally-benefit") || name.equals("AI cooperative enemy-removal")) {
+            if (players.size() != 4) throw new IllegalArgumentException("The cooperative tactical fixture requires four registered players");
+            if (name.equals("AI cooperative ally-benefit")) {
+                addExtras(players.get(0), List.of("Dragon Blood", "Wastes", "Wastes"));
+                addExtras(players.get(1), List.of("Grizzly Bears"));
+                addExtras(players.get(2), List.of("Colossal Dreadmaw"));
+            } else {
+                addExtras(players.get(0), List.of("Aeolipile", "Wastes"));
+                addExtras(players.get(1), List.of("Ancient Brontodon"));
+                addExtras(players.get(2), List.of("Priest of Titania"));
+            }
+            addExtras(players.get(3), List.of("Colossal Dreadmaw"));
+            return;
+        }
         List<String> extras = switch (name) {
             case "AI gate x-funded" -> List.of("Wastes", "Wastes", "Wastes", "Wastes", "Wastes");
             case "AI gate x-unfunded" -> List.of();
@@ -50,12 +64,16 @@ public final class AiReleaseFixtureEngine {
         if (name.equals("Execution journey Loch Mare")) players.get(0).setEnableETBCountersEffect(true);
         // The deck is a valid Commander deck, not a truncated test library.
         // Setup occurs before constructing a table; no live game edits or synthetic replies.
+        addExtras(players.get(0), extras);
+    }
+
+    private static void addExtras(RegisteredPlayer player, List<String> extras) {
         List<IPaperCard> cards = new ArrayList<>();
         for (String card : extras) {
             var printing = StaticData.instance().getCommonCards().getCard(card);
             if (printing == null) throw new IllegalArgumentException("Missing release fixture card: " + card);
             cards.add(printing);
         }
-        players.get(0).addExtraCardsOnBattlefield(cards);
+        player.addExtraCardsOnBattlefield(cards);
     }
 }

@@ -278,6 +278,32 @@ cached public state; `automatedSimulationStop` requires its `sessionId`.
 Spectator ID -1 has no action keys, prompt, hand/library faces or private activity.
 Ordinary live tables retain their human-seat invariant. Existing deck files,
 network protocol and non-negotiating clients keep their previous formats.
+
+Source configured-simulation slice: optional `simulation-match-setup` advertises
+the distinct `automatedSimulationStartConfigured` command. Its flat request is
+`{specification: {rulesetId, seats: [{index, teamId, role}]}, decks: [handles]}`.
+It accepts exactly four Commander deck handles, either four-seat free-for-all
+or two party/two opposition seats using `commander.cooperative.v1`. Teams can
+use nonsequential IDs. Handles may repeat for explicit symmetry tests; varied
+deck coverage is a qualification requirement rather than rules legality.
+The response is `{setup: {specification, decks}, participants: [{index,
+playerId}], state}`. Bindings come from exact registered-player references and
+actual teams, not names, counters or roster order. All request validation and
+new-game mapping checks precede replacement of the previous simulation.
+
+The native configured port waits through every genuine `starting` frame,
+including an initial full registered roster, until a committed publication
+matches the accepted mapping. The producer publishes owned frames before that
+public commit. Full starting rosters still undergo team validation; waiting
+does not authorize partial or wrong identities. The port fails closed
+on unsupported capabilities, changed process/game, mismatched teams, private
+spectator data or malformed receipts. Bot-owned frames are validated separately
+before policy evaluation; observing an ally does not authorize its private hand
+or mana. These simulations create no encounter context, party journal or reward.
+They add no arbitrary battlefield/resource injection command. The older start
+method and bare spectator response are unchanged; no saved-deck migration is
+required. Versioned `deck:<saved-id>:<token>` handles pin campaign assignments.
+
 Printing IDs are opaque, case-sensitive identifiers; clients must round-trip them.
 `cardPrintings` takes `{cardId, offset, limit, text, finish}` (limit 1–200, default 6) and returns
 a catalog page of exact printings of that card, including alternate artwork and

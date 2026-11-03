@@ -289,6 +289,25 @@ strategic controller is never a fallback for that negotiated mode.
 `IAutomatedSimulation` supports explicit all-bot tables with a separate public,
 non-acting spectator. Live tables retain their human requirement. Forecasting,
 deeper deck planning and human evaluation of the policy remain future work.
+The source configured-simulation slice adds an optional capability and distinct
+start method, reusing `MatchSetupSpecification` for four-seat free-for-all or
+two-versus-two cooperative teams. Its immutable receipt contains the accepted
+ordered deck plan and actual slot-to-player bindings. Java sets registered teams
+before creating the game, then verifies the real registrations before launch.
+Native code waits for the actual roster and checks those identities and teams;
+it never derives player IDs from array order. The campaign validates every public
+poll and every bot-owned batch before policy execution. Allies retain independent
+hands, decks, mana and decision permissions. Qualification simulations have no
+party, encounter journal or progression side effects. Legacy simulation start
+and its bare spectator response remain compatible.
+
+Campaign version-2 manifests distinguish source list hashes, the workshop's
+existing semantic deck version, saved assignment tokens, configuration digests
+and engine/resources/policy/harness provenance. Per-deck required mechanic
+observations supplement global board witnesses. Missing or unobserved mechanics,
+unfinished games and unbound resources do not certify a deck. The short CI prefix
+keeps its existing budget; natural team games and human play review remain
+separate evidence.
 This builds on the action-execution migration rather
 than reconstructing rules from card prose or exposing live Forge objects to a
 nominally neutral policy.

@@ -1,5 +1,32 @@
 # Multiplayer AI framework and investigation
 
+## M2 configured team qualification: 2 November 2026 source candidate
+
+The existing whole-seat campaign now accepts explicit two-versus-two team setup
+and verifies actual player/deck/team bindings before any policy answer. It keeps
+the existing policy, authoritative rules, private replay captures and public
+parity checks. The first two team configurations rotate the four existing Rhys,
+Pir/Toothy, Balmor and Traxos lists. They are qualification cases, not new shipped
+encounters or boss definitions. Arbitrary legal saved decks remain supported.
+
+The campaign pins the workshop's existing semantic version for each saved list,
+separately from its assignment token and source list hash. Its version-2 manifest
+records configuration and runtime provenance. Mechanic evidence belongs to the
+exact deck and actor that executed it; another player's generic token or counter
+change cannot qualify that list. Required effects that were not observed stay
+explicit. Missing verifier support is reported as `not-instrumented`, distinct
+from a supported branch that was not observed. Universal integrity checks are
+separate from those defining mechanic requirements. Power remains unassessed, and neither a short prefix nor a timeout is a
+natural outcome. Fixture tactics, sampled natural games and mixed human/AI review
+are separate evidence; human review remains pending.
+
+The cooperative CI prefix retains the earlier one-game, 16-turn, 35-second budget.
+Standalone `cooperative-smoke` and `cooperative-release` profiles use the existing
+per-game ceilings. Their results do not by themselves qualify eight decks, meet
+the six-encounter/two-boss target, prove all interactions or establish enjoyable
+opponents. The detailed [testing guide](Mana-Table-Testing.md) records commands
+and how to interpret missing evidence.
+
 ## M1 team relationships: 1 November 2026 source candidate
 
 The first slice of the approved [encounter roadmap](Mana-Table-Encounters-Roadmap.md)
@@ -19,7 +46,8 @@ every team field is absent. That fallback does not certify team-format support.
 Real-engine/public projection and tactical checks establish bounded correctness.
 They do not establish enjoyable cooperative play, shared turns, a completed M1,
 or human acceptance. The cooperative lobby, durable checkpoints and end-to-end
-party journey remain further M1 work. The older investigation entries below
+party journey are implemented in the cooperative preview; full human M1 review
+remains pending. The older investigation entries below
 retain the source/release status that applied to their individual candidates.
 
 Investigated 26 October 2026 against source `c801eaf9b70b53f07f7234148def4f1811fa5db7`.

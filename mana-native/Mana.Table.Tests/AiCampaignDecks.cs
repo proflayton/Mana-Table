@@ -7,6 +7,20 @@ namespace Mana.Table;
 // Java import regressions and the native campaign consume the same decklists.
 internal sealed record AiCampaignDeck(string Id, string List, ImmutableArray<string> IntendedMechanics)
 {
+    internal string Family => Id switch {
+        "rhys-token-equipment.v1" => "combat/tokens",
+        "pir-toothy-counter-ramp.v1" => "counters",
+        "balmor-spells-multitarget.v1" => "spells",
+        "traxos-colorless-artifacts.v1" => "artifacts",
+        _ => throw new InvalidDataException("Unknown campaign candidate: " + Id)
+    };
+    internal ImmutableArray<string> RequiredWitnessIds => Id switch {
+        "rhys-token-equipment.v1" => ["rhys-paid-tokens", "owned-equipment-attachment", "legal-owned-combat"],
+        "pir-toothy-counter-ramp.v1" => ["dual-commander-casts", "pir-toothy-draw-counters", "loch-mare-counter-cost-draw", "empty-partner-search-decline", "source-cost-ownership"],
+        "balmor-spells-multitarget.v1" => ["balmor-spell-buff", "useful-opponent-removal", "modal-multitarget-resolution"],
+        "traxos-colorless-artifacts.v1" => ["historic-traxos-untap", "required-colorless-payment", "positive-consuming-artifact-activation"],
+        _ => throw new InvalidDataException("Unknown campaign candidate: " + Id)
+    };
     private static string[] Lines(string text) => text.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
     private static string Name(string row) => row[(row.IndexOf(' ') + 1)..];
     internal ImmutableArray<string> Commanders => Lines(List).SkipWhile(line => line != "Commander").Skip(1).Select(Name).ToImmutableArray();

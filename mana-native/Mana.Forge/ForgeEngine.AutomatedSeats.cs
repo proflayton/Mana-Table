@@ -26,44 +26,62 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
     {
         if (deckIds.IsDefault || deckIds.Length != 4 || deckIds.Any(string.IsNullOrWhiteSpace))
             throw new ArgumentException("Choose four Commander decks.", nameof(deckIds));
-        lock (automatedScopes) automatedScopes.Clear();
         var owner = current ?? throw new IOException("The engine is not running");
-        return ForgeSnapshotDecoder.Decode(await Request("automatedSimulationStart", new { decks = deckIds }), spectator: true,
-                certifiedUndo: owner.CertifiedUndoAvailable)
-            ?? throw new IOException("The simulation did not start.");
+        await simulationLifecycle.WaitAsync();
+        try {
+            EnsureSimulationConnection(owner);
+            var raw = await Request("automatedSimulationStart", new { decks = deckIds });
+            EnsureSimulationConnection(owner);
+            lock (automatedScopes) { Interlocked.Increment(ref simulationGeneration); automatedScopes.Clear(); }
+            return ForgeSnapshotDecoder.Decode(raw, spectator: true, certifiedUndo: owner.CertifiedUndoAvailable)
+                ?? throw new IOException("The simulation did not start.");
+        } finally { simulationLifecycle.Release(); }
     }
     public async Task<GameSnapshot?> ObserveSimulationAsync()
     {
         var owner = current ?? throw new IOException("The engine is not running");
-        return ForgeSnapshotDecoder.Decode(await Request("automatedSimulationState"), spectator: true,
+        long generation = simulationGeneration;
+        var raw = await Request("automatedSimulationState");
+        EnsureSimulationOwner(owner, generation);
+        return ForgeSnapshotDecoder.Decode(raw, spectator: true,
             certifiedUndo: owner.CertifiedUndoAvailable);
     }
     public async Task StopSimulationAsync(string gameId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(gameId);
-        await Request("automatedSimulationStop", new { sessionId = gameId });
-        lock (automatedScopes) automatedScopes.Clear();
+        var owner = current ?? throw new IOException("The engine is not running");
+        await simulationLifecycle.WaitAsync();
+        try {
+            EnsureSimulationConnection(owner);
+            await Request("automatedSimulationStop", new { sessionId = gameId });
+            EnsureSimulationConnection(owner);
+            lock (automatedScopes) { Interlocked.Increment(ref simulationGeneration); automatedScopes.Clear(); }
+        } finally { simulationLifecycle.Release(); }
     }
 
     public async Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync()
     {
         var owner = current ?? throw new IOException("The engine is not running");
         if (!owner.AutomationAvailable) throw new NotSupportedException("This engine has no automated-seat port.");
+        long generation = simulationGeneration;
         JsonElement raw;
         try { raw = await Request("automatedState"); }
         catch (EngineObservationSupersededException) {
-            lock (automatedScopes) automatedScopes.Clear();
+            lock (automatedScopes)
+                if (current == owner && owner.Failure == null && simulationGeneration == generation) automatedScopes.Clear();
             throw;
         }
-        if (current != owner || owner.Failure != null) throw new IOException("The engine changed during automated observation.");
+        lock (automatedScopes) EnsureSimulationOwner(owner, generation);
         ImmutableArray<AutomatedSeatObservation> result;
         try { result = DecodeAutomatedObservations(raw, owner.CertifiedUndoAvailable); }
         catch (Exception error) {
-            lock (automatedScopes) automatedScopes.Clear();
+            lock (automatedScopes)
+                if (current == owner && owner.Failure == null && simulationGeneration == generation) automatedScopes.Clear();
             PreserveRejectedAutomatedObservation(paths.Profile, raw, error);
             throw;
         }
         lock (automatedScopes) {
+            EnsureSimulationOwner(owner, generation);
             automatedScopes.Clear();
             // Request already returned an owned immutable JSON clone.
             lastDecodedAutomatedWire = raw;

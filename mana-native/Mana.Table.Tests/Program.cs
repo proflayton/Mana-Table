@@ -8,7 +8,13 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        if (args.Contains(EncounterStartProtocolProbe.Marker)) return EncounterStartProtocolProbe.Serve(args);
+        try {
+            if (args.Contains(EncounterStartProtocolProbe.Marker)) return EncounterStartProtocolProbe.Serve(args);
+            if (args.Contains(ConfiguredSimulationProtocolProbe.Marker)) return ConfiguredSimulationProtocolProbe.Serve(args);
+        } catch (Exception error) {
+            Console.Error.WriteLine(error);
+            return 1;
+        }
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         string? Arg(string name) { int index = Array.IndexOf(args, name); return index >= 0 && index + 1 < args.Length ? args[index + 1] : null; }
         bool testRun = args.Any(a => a is "--smoke" or "--smoke-ai" or "--smoke-ui-ai" or "--smoke-presentation" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-card-states" or "--smoke-compact-selection" or "--smoke-cleanup" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-analysis" or "--smoke-workshop-adapter" or "--smoke-analysis-adapter" or "--smoke-deck-tuning" or "--smoke-lobby" or "--smoke-social" or "--smoke-advance" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-onboarding" or "--smoke-loading" or "--smoke-engine-startup" or "--smoke-deck-import" or "--smoke-priority-abilities");
@@ -26,6 +32,8 @@ internal static class Program
         testRun |= args.Contains("--smoke-headless-presentation");
         testRun |= args.Contains("--smoke-headless-engine");
         testRun |= args.Contains("--smoke-cooperative-encounter");
+        testRun |= args.Contains("--smoke-configured-simulation");
+        testRun |= args.Contains("--smoke-ai-team-goldens");
         testRun |= args.Contains("--smoke-whole-seat-ai");
         testRun |= args.Contains("--replay-ai-decision");
         testRun |= args.Contains("--replay-projection");
@@ -141,6 +149,13 @@ internal static class Program
             if (args.Contains("--smoke-cooperative-encounter")) {
                 CooperativeEncounterEngineJourney.RunStandaloneAsync(paths).GetAwaiter().GetResult(); return 0;
             }
+            if (args.Contains("--smoke-configured-simulation")) {
+                ConfiguredSimulationEngineJourney.RunStandaloneAsync(paths).GetAwaiter().GetResult(); return 0;
+            }
+            if (args.Contains("--smoke-ai-team-goldens")) {
+                AiReleaseGoldens.RunCooperativeStandaloneAsync(paths, Arg("--production-engine-jar")
+                    ?? throw new ArgumentException("Team goldens require the actual production engine dependency.")).GetAwaiter().GetResult(); return 0;
+            }
             if (args.Contains("--smoke-execution-journey")) {
                 ExecutionEngineJourney.RunStandaloneAsync(paths, Arg("--production-engine-jar")
                     ?? throw new ArgumentException("The execution journey requires its real production engine dependency.")).GetAwaiter().GetResult();
@@ -155,7 +170,8 @@ internal static class Program
             if (args.Contains("--smoke-engine-startup")) { EngineStartupRegression.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-headless-engine")) { HeadlessEngineSmoke.RunAsync(paths, Arg("--production-engine-jar"), Arg("--source-revision"), Arg("--source-manifest")).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-whole-seat-ai")) { AiWholeSeatEngineCheck.RunStandaloneAsync(paths, args.Contains("--ai-complete")).GetAwaiter().GetResult(); return 0; }
-            if (args.Contains("--smoke-ai-campaign")) { AiEngineCampaign.RunStandaloneAsync(paths).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--smoke-ai-campaign")) { AiEngineCampaign.RunStandaloneAsync(paths,
+                AiCampaignLimits.ForProfile(Arg("--campaign-profile")), Arg("--production-engine-jar")).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--evaluate-ai-release")) { AiReleaseEvaluation.RunAsync(paths,
                 Arg("--production-engine-jar") ?? throw new ArgumentException("Release evaluation requires --production-engine-jar for exact production provenance."),
                 Arg("--source-revision") ?? throw new ArgumentException("Release evaluation requires --source-revision for the exact tested source."),

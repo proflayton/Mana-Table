@@ -27,6 +27,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         public bool DeckTokensAvailable { get; set; }
         public bool TempoAvailable { get; set; }
         public bool AutomationAvailable { get; set; }
+        public bool ConfiguredSimulationAvailable { get; set; }
         public bool CertifiedUndoAvailable { get; set; }
         public bool HistoryAvailable { get; set; }
         public bool MatchSetupAvailable { get; set; }
@@ -71,6 +72,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                             owner.DeckTokensAvailable = capabilities.Contains("deck-tokens");
                             owner.TempoAvailable = capabilities.Contains("decision-tempo");
                             owner.AutomationAvailable = capabilities.Contains("automated-seats");
+                            owner.ConfiguredSimulationAvailable = capabilities.Contains("simulation-match-setup");
                             owner.CertifiedUndoAvailable = capabilities.Contains("certified-one-step-undo");
                             owner.HistoryAvailable = capabilities.Contains("match-history");
                             owner.MatchSetupAvailable = capabilities.Contains("match-setup");
