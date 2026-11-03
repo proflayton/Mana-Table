@@ -40,13 +40,14 @@ internal static class ExecutionEngineJourney
         string directory = Path.Combine(profile, "execution-loch-mare"); Directory.CreateDirectory(directory);
         var observations = new List<GameSnapshot>();
         var commands = new List<object>();
+        var causal = new AiCausalMechanicEvidence();
         string actorDeck = await Save("Execution journey Loch Mare");
         string otherDeck = await Save("Execution journey harmless opponents");
         await engine.EnableAutomatedSeatsAsync();
         var spectator = await engine.StartSimulationAsync([actorDeck, otherDeck, otherDeck, otherDeck]);
         string gameId = spectator.Id, activation = "", sourceId = "";
-        int beforeHand = -1, beforeSkulkerCounters = -1;
-        bool started = false, stacked = false;
+        int beforeHand = -1, beforeSkulkerCounters = -1, beforeToothyCounters = -1;
+        bool started = false, stacked = false, selectedCounterSource = false;
         GameSnapshot? result = null;
         var acceptedStackPasses = new List<GameSnapshot>();
         GameSnapshot? pending = null;
@@ -57,6 +58,7 @@ internal static class ExecutionEngineJourney
             while (result == null) {
                 if (timer.Elapsed > TimeSpan.FromSeconds(25)) throw new TimeoutException("The native Loch Mare execution journey exceeded its focused watchdog.");
                 var seats = await engine.ObserveAutomatedSeatsAsync();
+                foreach (var seat in seats) causal.ObserveOwned(seat);
                 var actor = seats.FirstOrDefault(item => item.SeatId == 0)?.State;
                 if (actor?.Status is "error" or "finished") throw new InvalidOperationException(actor.Error ?? "Execution fixture ended before its result.");
                 if (actor != null && (started || actor.Decision?.Payload is PriorityPayload
@@ -65,10 +67,11 @@ internal static class ExecutionEngineJourney
                         var mare = Mare(actor);
                         sourceId = CardViews.Identity(mare); beforeHand = actor.Viewer!.Zone("Hand").Count;
                         beforeSkulkerCounters = Skulker(actor).Counters.Values.Sum();
+                        beforeToothyCounters = Toothy(actor).Counters.Values.Sum();
                         check(actor.Players.Length == 4 && mare.Counters.Values.Sum() == 3
                                 && actor.Viewer.Zone("Battlefield").Cards.Count(card => card.Name == "Island" && !card.Tapped) == 3
                                 && actor.Viewer.Zone("Battlefield").Cards.Any(card => card.Name == "Pir, Imaginative Rascal"),
-                            "The packaged test wrapper supplies Loch Mare's real three ETB counters, three untapped Islands and Pir/Skulker before its actual activation");
+                            "The packaged test wrapper supplies Loch Mare's real three ETB counters, three untapped Islands and Pir/Skulker/Toothy before its actual activation");
                         started = true;
                     }
                     if (observations.Count == 0 || observations[^1].Revision != actor.Revision
@@ -91,6 +94,7 @@ internal static class ExecutionEngineJourney
                     }
                     if (stacked && actor.Stack.IsEmpty && actor.Viewer!.Zone("Hand").Count == beforeHand + 1
                         && Skulker(actor).Counters.Values.Sum() == beforeSkulkerCounters + 2
+                        && Toothy(actor).Counters.Values.Sum() == beforeToothyCounters + 2
                         && ExecutionFrames.Find(actor, activation)?.Outcome == ExecutionOutcome.Resolved
                         && actor.Decision?.Payload is PriorityPayload { QuietYieldToken.Length: > 0 }) {
                         result = actor; break;
@@ -124,6 +128,8 @@ internal static class ExecutionEngineJourney
                     } else command = Answer(state);
                     if (!GameCommandPermissions.Allows(state, command)) throw new InvalidDataException("The focused driver proposed an answer outside its exact current capability.");
                     await engine.ExecuteAutomatedAsync(observation.SeatId, command);
+                    causal.Receipt(observation, command, true);
+                    selectedCounterSource |= observation.SeatId == 0 && started && command is SelectCard;
                     if (observation.SeatId == 0 && started && activation.Length > 0 && command is PassPriority && !state.Stack.IsEmpty)
                         acceptedStackPasses.Add(state);
                     commands.Add(new { observation.SeatId, state.Revision, decision.Id, decision.ExecutionId, command = command.GetType().Name });
@@ -143,6 +149,19 @@ internal static class ExecutionEngineJourney
                     && result.Activity.Any(item => item.Change is { Kind: "counters" } change
                         && item.CardId == CardViews.Identity(Skulker(result)) && change.After - change.Before == 2),
                 "The real draw trigger owns Pir's replacement and commits exactly two Skulker counters rather than predicting a printed one-counter result");
+            var publicResult = await engine.ObserveSimulationAsync()
+                ?? throw new InvalidDataException("The execution journey lost its public result.");
+            causal.ObservePublic(publicResult);
+            var causalWitnesses = causal.Witnesses;
+            check(causalWitnesses.Any(witness => witness.WitnessId == "loch-mare-counter-cost-draw"
+                    && witness.SourceCardId == sourceId && witness.ExecutionId == activation && !witness.IntegrityFailure)
+                && causalWitnesses.Any(witness => witness.WitnessId == "pir-toothy-draw-counters" && !witness.IntegrityFailure)
+                && !selectedCounterSource,
+                "The campaign's same causal consumer proves automatic Mare payment through its resolved draw and the separate Toothy/Pir counter chain without a source-selection command");
+            File.WriteAllText(Path.Combine(directory, "causal-mechanic-witnesses.json"), JsonSerializer.Serialize(new {
+                scope = "Actual packaged adapter journey; controlled pregame permanents, not campaign deck qualification.",
+                witnesses = causalWitnesses
+            }, new JsonSerializerOptions { WriteIndented = true }));
             Replay(observations, directory, activation, sourceId, check, sourceRevision);
             CheckAcceptedResponse(observations, acceptedStackPasses, result, check);
         } catch (Exception error) {
@@ -199,6 +218,7 @@ internal static class ExecutionEngineJourney
 
     private static Card Mare(GameSnapshot state) => state.Viewer!.Zone("Battlefield").Cards.Single(card => card.Name == "Loch Mare");
     private static Card Skulker(GameSnapshot state) => state.Viewer!.Zone("Battlefield").Cards.Single(card => card.Name == "Chasm Skulker");
+    private static Card Toothy(GameSnapshot state) => state.Viewer!.Zone("Battlefield").Cards.Single(card => card.Name == "Toothy, Imaginary Friend");
     private static DecisionCommand Answer(GameSnapshot state)
     {
         var decision = state.Decision!;

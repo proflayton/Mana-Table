@@ -81,6 +81,13 @@ final class ActionSemantics {
         result.put("manaColors", List.copyOf(colors));
         result.put("manaAmount", produced);
         result.put("targeted", ability.usesTargeting());
+        var restrictions = ability.getRestrictions();
+        // Sub-abilities can lack their own route restriction object. They do
+        // not inherit a certified unrestricted timing fact from an absent one.
+        result.put("phaseRestricted", restrictions == null ? null : ability.isLandAbility() || restrictions.isSorcerySpeed()
+                || restrictions.isPlayerTurn() || restrictions.isOpponentTurn()
+                || !restrictions.getPhases().isEmpty() || restrictions.getFirstCombatOnly()
+                || restrictions.getAfterBlockersOnly());
         result.put("targetsAvailable", targetsAvailable(ability));
         // Costs/once-per-turn restrictions still remain authority at invocation.
         result.put("repeatable", ability.isActivatedAbility());

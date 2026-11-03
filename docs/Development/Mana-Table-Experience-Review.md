@@ -6,6 +6,27 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Preserve development options before committing mana: source candidate
+
+**AI timing candidate; exact-candidate mixed human/AI review pending.** An
+observed Rhys bot cast March of the Multitudes in its own upkeep with an empty
+stack, a land in hand and its first land opportunity unused. The player intent
+is to watch an opponent develop a coherent turn. The source remains its actual
+hand card; the target and payment remain the engine's current choices. No new
+human gesture is introduced. Quiet passing can reach draw/main, where the bot
+must reacquire actual land and spell offers before committing anything.
+
+Wizards' [The Instances for Instants](https://magic.wizards.com/en/news/feature/instances-instants-2017-06-08)
+grounds the adaptation in Magic play: retain information and options while
+recognizing combat, response and countermagic exceptions. It does not document
+Arena's bot strategy. The candidate narrowly defers actor-only development from
+hand, or an ordinary owned activation with explicit provider timing facts, with
+a known remaining land opportunity. Responses, expiring resources and
+insufficiently described effects retain their existing decisions. The existing
+card-to-stack-to-battlefield presentation and response windows remain the
+visible journey. Replays and controlled engine comparisons measure separate
+parts of this behavior; neither establishes enjoyable or humanlike opponents.
+
 ## Start an encounter without losing the party: 2 November 2026
 
 **Source candidate; human review pending for recording, failure/retry and

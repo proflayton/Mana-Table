@@ -1,5 +1,48 @@
 # Multiplayer AI framework and investigation
 
+## Development timing and causal mechanic evidence: source candidate
+
+A captured Rhys decision cast March of the Multitudes during its own upkeep,
+with an empty stack, no floating mana and a Plains in hand before an unused land
+play. The legal, affordable X=1 was not evidence of a payment bug or a globally
+maximal investment; Convoke was not assessed. That concrete episode motivates a
+bounded timing experiment, not a general claim that upkeep casts are mistakes.
+
+The existing turn planner may defer an unconditional, actor-only developmental
+spell from hand, or an ordinary owned battlefield activation, until its own main
+phase when a known land opportunity remains.
+It does not authorize that future land play. Actual current offers still control
+every answer. Responses, floating mana, expiring access and timing-sensitive or
+insufficiently described effects keep their existing policy. A deferred
+development route requires the provider's explicit `phaseRestricted: false`;
+activations allow only mana/source-tap costs. Missing legacy timing facts remain
+unknown, so replaying the original file keeps its original assessment; fresh
+provider evidence is a separate gate. The property describes declared
+restrictions, not all future availability.
+There is no card-name strategy exception or new rules evaluator.
+
+Wizards' [The Instances for Instants](https://magic.wizards.com/en/news/feature/instances-instants-2017-06-08)
+describes preserving information and options while explicitly explaining combat
+and countermagic exceptions. The developmental defer is our adaptation of that
+principle and the captured game; the article does not describe Arena's AI.
+Captured-policy replays, controlled engine counterfactuals and actual policy
+games establish different evidence. Human mixed-table review remains pending.
+
+The campaign and focused Loch Mare journey share one bounded causal evidence
+consumer. Accepted source commands anchor attempts; committed cost, draw,
+execution-parent, replacement and counter facts prove consequences. An automatic
+counter payment needs no additional SelectCard command. A paid cost survives
+parent cancellation as cost evidence only. A Toothy/Pir witness requires the
+actual draw-producing activation, distinct trigger, applied replacement and
+resolved counter mutation on that Toothy occurrence. Shared budget roots, names
+or adjacent board changes cannot supply a missing parent relationship.
+Detected retention gaps make unproven coverage inconclusive; ambiguous bindings
+never receive credit.
+Activity has no exported lower-retention watermark, so the reader proves
+witnessed positive ancestry rather than exhaustive event history. Natural
+turn-based draws without an exported cause remain outside this causal proof.
+Other unsupported deck mechanics, power assessment and human review remain open.
+
 ## M2 configured team qualification: 2 November 2026 source candidate
 
 The existing whole-seat campaign now accepts explicit two-versus-two team setup

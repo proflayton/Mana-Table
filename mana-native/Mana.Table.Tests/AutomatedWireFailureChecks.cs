@@ -30,6 +30,26 @@ internal static class AutomatedWireFailureChecks
         var last = ForgeEngine.DecodeAutomatedObservations(accepted.RootElement);
         check(last is [{ SeatId: 0, State.Id: "wire-failure-fixture" }],
             "The production automated wire decoder retains a fully decoded batch independently of later rejected input");
+        var timing = JsonNode.Parse(valid)!;
+        timing[0]!["domain"]!["actions"] = JsonNode.Parse("""
+            [{"actionId":"timing-fact","effect":"Token","effects":["Token"],"costs":[],"affordability":"Unknown"}]
+            """);
+        using (var legacy = JsonDocument.Parse(timing.ToJsonString()))
+            check(ForgeEngine.DecodeAutomatedObservations(legacy.RootElement)[0].Domain.Actions[0].PhaseRestricted == null,
+                "An older provider's absent timing fact remains unknown rather than certifying a future opportunity");
+        foreach (bool restricted in new[] { false, true }) {
+            timing[0]!["domain"]!["actions"]![0]!["phaseRestricted"] = restricted;
+            using var currentTiming = JsonDocument.Parse(timing.ToJsonString());
+            check(ForgeEngine.DecodeAutomatedObservations(currentTiming.RootElement)[0].Domain.Actions[0].PhaseRestricted == restricted,
+                "The shipping decoder preserves the provider's declared phase restriction: " + restricted);
+        }
+        timing[0]!["domain"]!["actions"]![0]!["phaseRestricted"] = "false";
+        using (var malformedTiming = JsonDocument.Parse(timing.ToJsonString())) {
+            bool refused = false;
+            try { ForgeEngine.DecodeAutomatedObservations(malformedTiming.RootElement); }
+            catch (ForgeAutomatedObservationException) { refused = true; }
+            check(refused, "A malformed timing string is a rejected observation, never permissive false metadata");
+        }
         var bad = JsonNode.Parse(valid)!;
         bad[0]!["state"]!["playAccesses"] = JsonNode.Parse("""
             [{"playerId":0,"zone":"Library","cardId":"not-published","routes":[

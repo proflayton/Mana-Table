@@ -49,7 +49,7 @@ public final class AiReleaseFixtureEngine {
             // Variant setup creatures begin sick. A real passive haste grant
             // makes both tap abilities legal before the first land play.
             case "AI gate tap-cost-funding" -> List.of("Selesnya Evangel", "Birds of Paradise", "Grizzly Bears", "Concordant Crossroads");
-            case "Execution journey Loch Mare" -> List.of("Loch Mare", "Pir, Imaginative Rascal", "Chasm Skulker",
+            case "Execution journey Loch Mare" -> List.of("Loch Mare", "Pir, Imaginative Rascal", "Chasm Skulker", "Toothy, Imaginary Friend",
                     "Island", "Island", "Island");
             case "AI cadence fifty forced draws" -> {
                 // One real Pestilence activation kills fifty nontoken creatures.

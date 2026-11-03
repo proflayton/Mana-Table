@@ -218,6 +218,8 @@ public class ActionOperationProjectionTest {
                     "Base costs are not represented as an adjusted current payment quote");
             var top = AbilityFactory.getAbility("DB$ ChangeZone | Defined$ TopOfLibrary | Origin$ Library | Destination$ Exile", jarad.getHostCard());
             top.setActivatingPlayer(fixture.actor());
+            assertNull(ActionSemantics.describeAbility(top).get("phaseRestricted"),
+                    "A sub-ability without route restrictions retains unknown timing instead of crashing or certifying false");
             assertNotEquals(ActionSemantics.describeAbility(top).get("effect"), "Search", "Moving a defined library card does not search a library");
             var ambiguous = AbilityFactory.getAbility("DB$ ChangeZone | Origin$ Graveyard,Library | Destination$ Hand | ChangeType$ Card", jarad.getHostCard());
             ambiguous.setActivatingPlayer(fixture.actor());

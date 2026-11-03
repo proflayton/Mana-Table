@@ -64,10 +64,15 @@ public class CounterCostExperienceTest {
             input = floatBlue(game, input, amount == 1 ? 2 : 3);
             activate(game, input, card(input.state(), MARE), amount == 1 ? "Draw a card" : "Tap target creature");
             var counter = payAndReachCounterOrStack(game, amount == 1 ? null : MARE);
+            String paymentExecution = "";
+            String sourceId = text(card(counter.state(), MARE), "visualId");
             if (stunRemovalForbidden) {
                 assertTrue(priority(counter), "A forbidden stun removal is not a second legal payment choice");
             } else {
                 assertEquals(text(counter.prompt(), "inputType"), "InputSelectCardToRemoveCounter");
+                paymentExecution = text(counter.prompt(), "executionId");
+                assertFalse(paymentExecution.isBlank());
+                assertEquals(text(counter.prompt(), "executionStep"), "cost");
                 assertPayment(game, counter, amount, amount);
                 assertTrue(card(counter.state(), MARE).get("selectable").getAsBoolean(),
                         "The actual counter input publishes the source as selectable for the native client");
@@ -91,6 +96,18 @@ public class CounterCostExperienceTest {
             assertEquals(counters.has("Stun") ? counters.get("Stun").getAsInt() : 0, stunRemovalForbidden || amount == 2 ? 1 : 0);
             assertEquals(counters.get("-1/-1").getAsInt(), stunRemovalForbidden || amount == 2 ? 2 : 3);
             assertEquals(count(viewer(resolved.state()), "Hand"), handBefore + (amount == 1 ? 1 : 0));
+            if (!paymentExecution.isBlank()) {
+                String owner = paymentExecution;
+                var owned = resolved.state().getAsJsonArray("activity").asList().stream().map(value -> value.getAsJsonObject())
+                        .filter(value -> text(value, "executionId").equals(owner)).toList();
+                assertTrue(owned.stream().anyMatch(value -> text(value, "cardId").equals(sourceId)
+                        && text(value, "executionStep").equals("cost") && text(value, "kind").equals("counters")
+                        && value.getAsJsonObject("change").get("before").getAsInt()
+                            - value.getAsJsonObject("change").get("after").getAsInt() == 1),
+                        "The explicit source/type choice must result in a committed decrement under its own cost occurrence");
+                assertEquals(owned.stream().filter(value -> text(value, "kind").equals("draw")
+                        && text(value, "executionStep").equals("resolution")).count(), amount == 1 ? 1L : 0L);
+            }
         }
     }
 

@@ -7,6 +7,53 @@ namespace Mana.AI;
 // lifetime; this planner cannot submit commands, retain handles or undo costs.
 internal static class AiTurnPlanner
 {
+    // Preserve the next draw/land opportunity before committing an ordinary
+    // hand-based development instant or ordinary owned activated effect. This
+    // is a current preference, not a
+    // promise that a later land or spell will be legal. Responses, floating
+    // mana, transient play access and phase-sensitive/unknown effects retain
+    // their existing assessment. Even Scry is excluded: it can matter before
+    // the normal draw. Unknown quantities alone do not hide a typed Token/Draw.
+    internal static bool WaitForOwnDevelopment(AiDecisionRequest request, SourceActionSet set,
+        SourceAction route, ActionSemantics action)
+    {
+        var state = request.Frame.State;
+        if (state.Decision?.Payload is not PriorityPayload { Pass.Enabled: true }
+            || state.ActivePlayerId != state.ViewerId || state.PhaseKey is not ("UPKEEP" or "DRAW")
+            || !state.Stack.IsEmpty || state.Combat != null || state.Viewer is not { } actor
+            || actor.Mana.Values.Any(amount => amount > 0) || actor.LandPlaysUsed is not >= 0
+            || actor.LandPlayLimit is { } limit && actor.LandPlaysUsed >= limit
+            || !actor.Zone("Hand").Cards.Any(card => !card.FaceDown && CasualTableAssessment.IsLand(card))
+            || action.Targeted || action.ManaAbility || action.PhaseRestricted != false
+            || CardViews.FindActionSource(state, set.SourceCardKey) is not { } source
+            || source.PlayerId != state.ViewerId || source.Card.FaceDown
+            || source.Card.PhasedOut) return false;
+        bool ordinaryActivation = route.Kind == "activate" && source.Zone == "Battlefield" && action.PhaseRestricted == false;
+        bool handInstant = route.Kind == "cast" && source.Zone == "Hand"
+            && source.Card.Type.Contains("Instant", StringComparison.OrdinalIgnoreCase);
+        if (!ordinaryActivation && !handInstant || !OrdinaryCosts(action.Costs)) return false;
+        var graph = action.OperationGraph;
+        if (graph.Knowledge == SemanticKnowledge.Unsupported || graph.Operations.Length != 1) return false;
+        var operation = graph.Operations[0];
+        return request.Work.TrySpend() && operation.Id == graph.RootId
+            && operation.Knowledge != SemanticKnowledge.Unsupported && !operation.Conditional
+            && operation.ActorPlayerId == state.ViewerId && operation.Targets == null && operation.Links.IsEmpty
+            && OrdinaryCosts(operation.Costs)
+            && operation.Effect is ActionEffectKind.Token or ActionEffectKind.Draw
+            && operation.Effect == action.Effect && action.Effects.All(effect => effect == operation.Effect)
+            && operation.Sources is { Knowledge: SemanticKnowledge.Known } sources
+            && !sources.Entities.IsDefaultOrEmpty
+            && sources.Entities.All(entity => entity.Kind == SemanticEntityKind.Card && entity.CardId == set.SourceCardId)
+            && operation.Recipients is { Knowledge: SemanticKnowledge.Known, Binding: EffectRecipientBinding.Actor } recipients
+            && !recipients.Entities.IsDefaultOrEmpty
+            && recipients.Entities.All(entity => entity.Kind == SemanticEntityKind.Player && entity.PlayerId == state.ViewerId);
+
+        bool OrdinaryCosts(ImmutableArray<ActionCost> costs)
+            => costs.Count(cost => cost.Kind == ActionCostKind.Tap) <= 1
+                && costs.All(cost => cost.Kind == ActionCostKind.Mana
+                    || ordinaryActivation && cost.Kind == ActionCostKind.Tap && cost.FromSource && cost.Amount == 1);
+    }
+
     // The selected part is distinct from the other unpaid commitments. A
     // resource may pay a tap and then a sacrifice, but cannot pay two taps
     // without an intervening untap. Unknown sequences remain engine-owned.

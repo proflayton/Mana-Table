@@ -438,6 +438,42 @@ increasing the budget. Per-deck mechanical coverage, source/runtime binding,
 natural games and human review are separate gates. Eight candidates, six families
 and future encounter/boss definitions remain targets rather than passed checks.
 
+### Causal mechanics and development timing
+
+`AiCausalMechanicEvidenceChecks` runs through the existing `configured-simulation`
+headless group and full native suite. It exercises automatic source payment,
+explicit choices, cancellation after a committed subcost, fresh occurrence
+binding, sibling/foreign/nested draws, redaction, duplicate polls and bounded
+retention. Missing execution baselines cannot anchor new attempts. Activity IDs
+deduplicate exact events but do not imply a continuous audience history; the
+provider has no activity lower-retention watermark. A witnessed positive chain
+does not certify that every intervening event was retained.
+
+The normal packaged `ExecutionEngineJourney` now includes Toothy alongside Pir
+and Skulker. Its existing `--smoke-execution-journey` local route consumes the
+same campaign verifier, requiring automatic Mare counter payment without a
+SelectCard callback, an attributed resolved draw and the distinct Toothy/Pir
+counter chain. It writes private `causal-mechanic-witnesses.json` below its
+`execution-loch-mare` profile directory. The controlled pregame permanents do not
+qualify a campaign deck. Java `CounterCostExperienceTest` separately retains the
+actual mixed-counter selection/cancellation journey.
+
+`AiDevelopmentTimingRegression` runs in the normal graphics-free client suite.
+Java `ActionPhaseRestrictionTest` checks actual current Rhys and draw-step-only
+Well of Knowledge routes, including the latter's disappearance in main phase.
+Native automated-wire tests preserve absent/null timing facts, round-trip true
+and false, and reject malformed values. The additive field never supplies a
+future action handle.
+
+Java `AiDevelopmentTimingJourneyTest` compares two scripted rules journeys with
+declared identical resources: an early upkeep March and waiting for the actual
+draw/main, offered Plains and fresh cast. It records actual X, mana spending,
+tokens and untapped Convoke creatures. Its eight-card library is a deliberate
+test fixture, not a valid shipping Commander list or deck qualification.
+Offline policy evaluation of a captured decision proves a proposal only; the
+scripted counterfactual proves those actual rules consequences only. Mixed
+human/AI review and general strategic quality remain separate pending gates.
+
 ## AI release evaluation
 
 The graphics-free client suite includes `AiDamageTargetRegression`: known five

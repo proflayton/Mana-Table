@@ -60,6 +60,15 @@ process pipe. `automatedEnable` selects external policy controllers before table
 creation. `automatedState` returns independent private seat observations and
 complete timing-legal action domains with structured costs/effects;
 `automatedAction` takes the same scoped semantic reply plus `seatId`.
+Action semantics may include `phaseRestricted`: true reports declared phase/turn,
+sorcery-speed or combat-step restrictions; false reports their absence on the
+live route. This descriptive fact does not predict future legality, resource
+availability, source survival or other dynamic restrictions. An omitted/null
+field remains unknown, including in older private replay files. Native policy
+does not defer hand development spells or battlefield activations on unknown
+timing facts.
+Older clients ignore this additive property; no command or persisted schema
+migration is required. The ordinary current offer still authorizes every input.
 Additive operation graphs retain source/recipient/target bindings, sequence and
 mode/conditional structure, and explicit known/unknown facts. Mana production
 alternatives distinguish a choice of colors from a simultaneous bundle. These

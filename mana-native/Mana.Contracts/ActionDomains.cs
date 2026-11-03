@@ -38,6 +38,10 @@ public sealed record ActionSemantics(string ActionId, ActionEffectKind Effect,
     public ImmutableArray<string>? PaymentManaColors { get; init; }
     public int ManaAmount { get; init; }
     public bool Targeted { get; init; }
+    // Declared phase/turn restrictions on this route, not future legality.
+    // Null preserves unknown/older-provider facts; false does not promise that
+    // resources, other restrictions or the source will remain available.
+    public bool? PhaseRestricted { get; init; }
     // False proves too few legal targets; null preserves unresolved combination
     // constraints. A mere candidate count is not proof of a legal target set.
     public bool? TargetsAvailable { get; init; }
