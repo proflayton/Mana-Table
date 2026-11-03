@@ -162,19 +162,23 @@ public class ExecutionRulesJourneyTest {
         }
     }
 
-    @Test(groups = "canonical-interaction", timeOut = 90000)
-    public void pirReplacementChangesTheCommittedCounterDeltaInsideTheActualDrawTrigger() throws Exception {
-        try (var game = new RulesScenario("execution-rules-pir", Map.of(0, List.of("Loch Mare", "Pir, Imaginative Rascal",
-                "Chasm Skulker", "Island", "Island", "Island")), "Island", "Rhys the Redeemed", true)) {
+    @DataProvider public Object[][] drawRecipients() {
+        return new Object[][] {{"Chasm Skulker"}, {"Toothy, Imaginary Friend"}};
+    }
+
+    @Test(groups = "canonical-interaction", dataProvider = "drawRecipients", timeOut = 90000)
+    public void pirReplacementChangesTheCommittedCounterDeltaInsideTheActualDrawTrigger(String recipient) throws Exception {
+        try (var game = new RulesScenario("execution-rules-pir-" + recipient.replaceAll("[^A-Za-z]", ""), Map.of(0, List.of("Loch Mare", "Pir, Imaginative Rascal",
+                recipient, "Island", "Island", "Island")), "Island", "Rhys the Redeemed", true)) {
             var main = main(game);
-            var source = card(viewer(main.state()), "Battlefield", "Chasm Skulker");
+            var source = card(viewer(main.state()), "Battlefield", recipient);
             int before = counters(source, "+1/+1");
             long baseline = main.state().getAsJsonObject("executions").get("lastSequence").getAsLong();
             start(game, main, card(viewer(main.state()), "Battlefield", "Loch Mare"), "Draw a card");
             var payment = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").startsWith("InputPayMana"));
             assertTrue(game.answer(payment, Map.of("action", "ok")));
             var settled = settled(game);
-            assertEquals(counters(card(viewer(settled.state()), "Battlefield", "Chasm Skulker"), "+1/+1"), before + 2);
+            assertEquals(counters(card(viewer(settled.state()), "Battlefield", recipient), "+1/+1"), before + 2);
             var transitionIds = settled.state().getAsJsonObject("executions").getAsJsonArray("transitions").asList().stream()
                     .map(value -> value.getAsJsonObject()).filter(value -> value.get("sequence").getAsLong() > baseline)
                     .map(value -> text(value, "executionId")).toList();
@@ -183,7 +187,10 @@ public class ExecutionRulesJourneyTest {
                     .findFirst().orElseThrow();
             assertEquals(text(replacement, "ruleResult"), "updated");
             var trigger = occurrence(settled.state(), text(replacement, "parentId"));
-            assertEquals(text(trigger, "kind"), "trigger"); assertEquals(text(trigger, "sourceName"), "Chasm Skulker");
+            assertEquals(text(trigger, "kind"), "trigger"); assertEquals(text(trigger, "sourceName"), recipient);
+            assertEquals(text(trigger, "parentId"), text(payment.prompt(), "executionId"));
+            assertNotEquals(text(trigger, "budgetRootId"), text(payment.prompt(), "executionId"),
+                    "A draw trigger has its own allowance while retaining the activation as its actual causal parent");
             assertEquals(text(replacement, "budgetRootId"), text(trigger, "budgetRootId"));
             var result = activities(settled.state()).stream().filter(value -> text(value, "kind").equals("counters")
                     && text(value, "executionId").equals(text(trigger, "id"))).findFirst().orElseThrow();

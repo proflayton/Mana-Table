@@ -10,6 +10,7 @@ internal static class AiDecisionQualityRegression
 
     internal static async Task RunAsync(Action<bool, string> check)
     {
+        await AiDevelopmentTimingRegression.RunAsync(check);
         var confirmation = State(new ConfirmationPayload(Yes, No), life: 2);
         var harmful = Graph(Known(0, ActionEffectKind.Draw, 2) with { Links = [new(1, OperationLinkKind.Sequence)] },
             Known(1, ActionEffectKind.LifeLoss, 2));

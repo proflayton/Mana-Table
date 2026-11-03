@@ -11,7 +11,7 @@ namespace Mana.AI;
 /// </summary>
 public sealed class CasualCommanderPolicy : IAiPolicy
 {
-    public AiPolicyDescriptor Descriptor { get; } = new("casual-commander.v4", AiTasks.All);
+    public AiPolicyDescriptor Descriptor { get; } = new("casual-commander.v5", AiTasks.All);
 
     public Task<AiProposal> EvaluateAsync(AiDecisionRequest request, CancellationToken cancellation)
     {
@@ -50,7 +50,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         var offers = Offers(request).ToArray();
         var reservation = AiTurnPlanner.Interaction(request);
         var candidates = new List<(Offered Offer, double Score, bool Preserve)>();
-        bool limited = false;
+        bool limited = false, waitingForDevelopment = false;
         foreach (var offer in offers.Where(offer => !offer.Semantics.ManaAbility && offer.Semantics.Affordability != ActionAffordability.Unavailable
                 && offer.Semantics.TargetsAvailable != false
                 && !request.History.HasAttemptedRoute(state.Turn, offer.Set.SourceCardId, offer.Semantics.StableId))
@@ -58,6 +58,10 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             .ThenBy(offer => offer.Semantics.StableId, StringComparer.Ordinal).ThenBy(offer => offer.Source.VisualId, StringComparer.Ordinal)) {
             if (request.Work.Remaining <= 4) { limited = true; break; }
             var local = request with { Work = request.Work.CreateSlice(512, 4) };
+            if (AiTurnPlanner.WaitForOwnDevelopment(local, offer.Set, offer.Action, offer.Semantics)) {
+                waitingForDevelopment = true;
+                continue;
+            }
             double score = ActionScore(local, offer, offers);
             bool response = reservation != null && AiTurnPlanner.Matches(reservation, offer.Set.SourceCardId, offer.Semantics);
             int tax = CardViews.FindActionSource(state, offer.Set.SourceCardKey)?.Zone == "Command" && offer.Action.Kind == "cast" ? offer.Source.CommanderTax : 0;
@@ -94,7 +98,8 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 nextReservation);
         }
         return priority.Pass.Enabled ? AiTurnPlanner.Remember(request,
-            Answer(request, new PassPriority(state.Id, state.Decision!.Id), limited ? "priority-bounded-search" : "priority-no-profitable-route"),
+            Answer(request, new PassPriority(state.Id, state.Decision!.Id), limited ? "priority-bounded-search"
+                : waitingForDevelopment ? "priority-wait-for-own-development" : "priority-no-profitable-route"),
             reservation?.Purpose == AiReservationPurpose.Interaction ? AiPlanPurpose.HoldInteraction : AiPlanPurpose.Develop, reservation)
             : Missing("required-priority-route");
     }

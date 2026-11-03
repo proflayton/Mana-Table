@@ -16,7 +16,11 @@ internal sealed record AiCampaignDeckBinding(string CandidateId, string SourceSh
 internal sealed record AiCampaignWitnessOccurrence(string GameId, int SlotIndex, int PlayerId,
     string SourceCardId, string SourceName, string DecisionId, string CommandType, bool Accepted,
     long BeforeRevision, long BeforeBoardRevision, long AfterBoardRevision, string ExecutionId,
-    ImmutableArray<long> ActivityIds, string Consequence);
+    ImmutableArray<long> ActivityIds, string Consequence)
+{
+    public ImmutableArray<string> CausalExecutionIds { get; init; } = [];
+    public int? ObservedCounterDelta { get; init; }
+}
 internal sealed record AiCampaignDeckWitness(string Id, string Status, string Detail,
     ImmutableArray<AiCampaignWitnessOccurrence> Evidence);
 internal sealed record AiCampaignDeckQualification(AiCampaignDeckBinding Deck, string ConfigurationId,
@@ -26,14 +30,16 @@ internal sealed record AiCampaignDeckQualification(AiCampaignDeckBinding Deck, s
 {
     public ImmutableArray<AiCampaignWitnessOccurrence> IntegrityFailures { get; init; } = [];
     public string Interpretation => "Observed mechanics are scoped to this semantic deck/configuration/runtime evidence. "
-        + "Missing defining branches remain unobserved. A smoke prefix, natural finish or legality is not strategic qualification.";
+        + "Missing defining branches remain unobserved. A smoke prefix, natural finish or legality is not strategic qualification. "
+        + "Causal witnesses certify positive committed-event ancestry, not exhaustive activity history; activity has no exported lower-retention watermark.";
 }
 
 internal static class AiCampaignQualification
 {
     internal static ImmutableHashSet<string> SupportedWitnessIds { get; } = ImmutableHashSet.Create(StringComparer.Ordinal,
         "rhys-paid-tokens", "owned-equipment-attachment", "dual-commander-casts",
-        "useful-opponent-removal", "source-cost-ownership");
+        "useful-opponent-removal", "source-cost-ownership",
+        "loch-mare-counter-cost-draw", "pir-toothy-draw-counters");
     internal static async Task<AiCampaignDeckBinding> BindDeckAsync(IDeckWorkshop workshop, AiCampaignDeck manifest,
         DeckDetails committed, string handle)
     {
@@ -83,9 +89,8 @@ internal sealed class AiCampaignQualificationTracker
     private readonly List<Action> actions = [];
     private readonly Dictionary<(int Slot, string Witness), List<AiCampaignWitnessOccurrence>> observed = [];
     private readonly Dictionary<int, List<AiCampaignWitnessOccurrence>> wrongSourceCosts = [];
-    private sealed record SourceCost(AutomatedSeatObservation Before, GameCommand Command, ActionCost Cost,
-        string ExpectedId, Card Selected, string ExecutionId) { internal bool Recorded { get; set; } }
-    private readonly List<SourceCost> sourceCosts = [];
+    private readonly AiCausalMechanicEvidence causal = new();
+    private int importedCausalWitnesses;
     private readonly Dictionary<int, Dictionary<string, AiCampaignWitnessOccurrence>> commanderCasts = [];
     private const int MaximumActions = 512, MaximumWitnesses = 8;
 
@@ -115,15 +120,7 @@ internal sealed class AiCampaignQualificationTracker
         var state = observation.State;
         if (command.GameId != state.Id || command is not DecisionCommand decision || decision.DecisionId != state.Decision?.Id
             || !GameCommandPermissions.Allows(state, command)) throw new InvalidDataException("Qualification receipt has stale or foreign command scope.");
-        if (command is SelectCard selected && observation.Semantics.CostPayment is { } cost
-            && cost.CurrentCostIndex is int costIndex && costIndex >= 0 && costIndex < cost.RemainingCosts.Length
-            && cost.RemainingCosts[costIndex].FromSource && cost.SourceCardId.Length > 0 && cost.PayerId == observation.SeatId
-            && cost.RemainingCosts.Count(part => part.Kind == cost.RemainingCosts[costIndex].Kind) == 1
-            && CardViews.InZones(state).FirstOrDefault(item => item.Card.Key == selected.Card).Card is { } selectedCard) {
-            if (sourceCosts.Count < MaximumActions && state.Decision!.ExecutionId.Length > 0)
-                sourceCosts.Add(new(observation, command, cost.RemainingCosts[costIndex], cost.SourceCardId,
-                    selectedCard, state.Decision.ExecutionId));
-        }
+        causal.Receipt(observation, command, true);
         if (actions.Count >= MaximumActions) return;
         SourceActionSet? source = command is UseOfferedAction use
             ? observation.Domain.Sources.SingleOrDefault(item => item.SourceCardKey == use.Card
@@ -145,33 +142,8 @@ internal sealed class AiCampaignQualificationTracker
     internal void ObserveOwned(AutomatedSeatObservation observation)
     {
         Validate(observation);
-        foreach (var cost in sourceCosts.Where(item => !item.Recorded && item.Before.SeatId == observation.SeatId)) {
-            var state = observation.State;
-            var execution = ExecutionFrames.Find(state, cost.ExecutionId);
-            if (state.BoardRevision <= cost.Before.State.BoardRevision || execution?.ActorPlayerId != observation.SeatId
-                || execution.SourceCardId != cost.ExpectedId) continue;
-            string selectedId = CardViews.Identity(cost.Selected);
-            long prior = cost.Before.State.Activity.Select(item => item.Id).DefaultIfEmpty().Max();
-            var mutation = state.Activity.FirstOrDefault(entry => entry.Id > prior && entry.CardId == selectedId
-                && entry.ExecutionStep == ExecutionStep.Cost && Related(state, entry.ExecutionId, cost.ExecutionId)
-                && (cost.Cost.Kind switch {
-                    ActionCostKind.Sacrifice => entry.Impact is { Kind: "zone", FromZone: "Battlefield", ToZone: "Graveyard" or "Exile" },
-                    ActionCostKind.RemoveCounters when cost.Cost.Amount is int amount && amount > 0 => entry.Change is { Kind: "counters" } change
-                        && change.Property == cost.Cost.CounterType && change.Before - change.After == amount,
-                    _ => false
-                }));
-            // A later tap or counter delta is not a cost receipt. Require the
-            // rules-owned mutation inside this exact execution's Cost stage.
-            // An already paid subcost remains real if its parent later cancels.
-            if (mutation == null) continue;
-            var proof = Occurrence(cost.Before, cost.Command, cost.ExpectedId, cost.Before.State.Decision?.Context.Source?.Card?.Name ?? "",
-                cost.ExecutionId, state.BoardRevision, [mutation.Id], "Accepted source-cost selection followed by attributed committed " + cost.Cost.Kind + " of " + selectedId);
-            if (selectedId != cost.ExpectedId) {
-                if (!wrongSourceCosts.TryGetValue(observation.SeatId, out var failures)) wrongSourceCosts[observation.SeatId] = failures = [];
-                if (failures.Count < MaximumWitnesses) failures.Add(proof);
-            } else Credit(observation.SeatId, "source-cost-ownership", proof);
-            cost.Recorded = true;
-        }
+        causal.ObserveOwned(observation);
+        ImportCausalWitnesses();
         foreach (var action in actions.Where(item => item.Before.SeatId == observation.SeatId && item.Before.State.Id == observation.State.Id)) {
             var state = observation.State;
             if (action.ExecutionId.Length == 0 && state.Executions is { } frame) {
@@ -196,6 +168,8 @@ internal sealed class AiCampaignQualificationTracker
     internal void ObservePublic(GameSnapshot state)
     {
         ConfiguredSimulationFacts.ValidateState(accepted, state);
+        causal.ObservePublic(state);
+        ImportCausalWitnesses();
         foreach (var action in actions.Where(item => item.Resolved && item.ExecutionId.Length > 0 && state.BoardRevision >= item.Before.State.BoardRevision)) {
             int player = action.Before.SeatId;
             var current = state.Players.Single(item => item.Id == player);
@@ -234,7 +208,8 @@ internal sealed class AiCampaignQualificationTracker
 
     internal ImmutableArray<AiCampaignDeckQualification> Summary(string stopReason, bool verifiedNaturalOutcome, string? mechanicalFailure)
         => accepted.Participants.OrderBy(item => item.Index).Select(participant => {
-            bool incomplete = mechanicalFailure != null || stopReason is "time-budget" or "mechanical-failure";
+            bool incomplete = mechanicalFailure != null || stopReason is "time-budget" or "mechanical-failure"
+                || causal.IsIncomplete(accepted.State.Id, participant.PlayerId);
             var witnesses = decks[participant.Index].RequiredWitnessIds.Select(id => {
                 var proof = observed.GetValueOrDefault((participant.Index, id))?.ToImmutableArray() ?? [];
                 bool failed = id == "source-cost-ownership" && wrongSourceCosts.TryGetValue(participant.PlayerId, out var errors) && errors.Count > 0;
@@ -261,6 +236,22 @@ internal sealed class AiCampaignQualificationTracker
         if (observation.SeatId != observation.State.ViewerId || !slots.ContainsKey(observation.SeatId))
             throw new InvalidDataException("Unknown qualification observation audience.");
         ConfiguredSimulationFacts.ValidateOwnedState(accepted, observation.State);
+    }
+    private void ImportCausalWitnesses()
+    {
+        var records = causal.Witnesses;
+        while (importedCausalWitnesses < records.Length) {
+            var record = records[importedCausalWitnesses++];
+            var proof = Occurrence(record.Before, record.Command, record.SourceCardId, record.SourceName,
+                record.ExecutionId, record.AfterBoardRevision, record.ActivityIds, record.Consequence) with {
+                    CausalExecutionIds = record.CausalExecutionIds, ObservedCounterDelta = record.ObservedCounterDelta
+                };
+            if (record.IntegrityFailure) {
+                if (!wrongSourceCosts.TryGetValue(record.Before.SeatId, out var failures))
+                    wrongSourceCosts[record.Before.SeatId] = failures = [];
+                if (failures.Count < MaximumWitnesses) failures.Add(proof);
+            } else Credit(record.Before.SeatId, record.WitnessId, proof);
+        }
     }
     private void Credit(int player, string id, AiCampaignWitnessOccurrence proof)
     {

@@ -81,6 +81,11 @@ final class ActionSemantics {
         result.put("manaColors", List.copyOf(colors));
         result.put("manaAmount", produced);
         result.put("targeted", ability.usesTargeting());
+        var restrictions = ability.getRestrictions();
+        result.put("phaseRestricted", ability.isLandAbility() || restrictions.isSorcerySpeed()
+                || restrictions.isPlayerTurn() || restrictions.isOpponentTurn()
+                || !restrictions.getPhases().isEmpty() || restrictions.getFirstCombatOnly()
+                || restrictions.getAfterBlockersOnly());
         result.put("targetsAvailable", targetsAvailable(ability));
         // Costs/once-per-turn restrictions still remain authority at invocation.
         result.put("repeatable", ability.isActivatedAbility());

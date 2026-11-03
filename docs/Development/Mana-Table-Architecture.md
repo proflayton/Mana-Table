@@ -312,6 +312,16 @@ This builds on the action-execution migration rather
 than reconstructing rules from card prose or exposing live Forge objects to a
 nominally neutral policy.
 
+The campaign's causal mechanic verifier is a bounded evidence consumer shared
+with the actual-engine journey, not another rules adapter. Accepted source
+commands anchor attempts; actual cost and resolution events establish payment
+and effects. Trigger/replacement ancestry follows disclosed execution ParentId
+links across separate budget roots. Duplicate observations, gaps, ambiguous
+occurrences and redacted identities cannot create qualification credit. Its
+immutable evidence never becomes a current command permission. Developmental
+spell timing remains policy-owned in the existing turn planner and consumes only
+the actor's accepted knowledge and current offered action domain.
+
 Backend failure is a table interruption, separate from a player's concession.
 The provider revokes all seat inputs before terminalizing rules work and
 releasing waits. It cannot start new reveal acknowledgements during abort or
