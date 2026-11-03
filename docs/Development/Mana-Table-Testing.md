@@ -1005,6 +1005,16 @@ stack rearming after Take control; Hold must not make that consent inaccessible.
 combat and queued required-choice invalidation; `QuietPriorityRegression` checks
 the corresponding immutable native permissions. These cases extend existing lanes
 without a new engine startup or a duplicate broad interaction campaign.
+The Omnath regression retains actual black mana through own-turn combat into
+the second main phase, with an opponent-turn control. Availability checks must
+preserve the quiet permission and publish no hypothetical pool events. Companion
+cases cover exact floating-unit order, nested true/false preview scopes,
+exception restoration, an exact detached pool, a still-usable certified Undo,
+and genuine resource changes that must still interrupt waiting. The mandatory
+quote fallback checks that an inconclusive detached quote still uses the full
+rules check without changing the actual bill or mana inventory. These cases run
+in the existing Maven tests on Java 17 and 21. They establish the bounded pool
+preview contract, not full-world rollback or exhaustive card interactions.
 `ExecutionEngineJourney` adds that independent causal check in the existing
 packaged-engine smoke: it records the successfully submitted real Loch Mare
 stack response and feeds its subsequent authorized native snapshots into the

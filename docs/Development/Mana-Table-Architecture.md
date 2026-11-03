@@ -113,6 +113,19 @@ capability remains explicitly unsupported rather than an empty successful read.
 
 ## Optional payment consent
 
+Legacy affordability checks still borrow from live floating mana inside the
+existing `ExecutionTracker.PaymentPreview` scope. The first mutation checkpoints
+each exact owned `ManaPool`; only the outer preview exit restores its original
+immutable units and order, including exceptional exits. Nested helpers retain
+their partial-payment semantics until that exit. Hypothetical pool mutations
+publish no mana events, view changes, spending receipts or Undo invalidations.
+The direct mandatory-payment fallback uses this same scope. Actual payments and
+resource changes keep their ordinary publications and interruption behavior.
+This boundary protects floating-unit inventory and notifications; it is not a
+full-game rollback or a guarantee that every legacy planner side effect is pure.
+The detached bounded `ManaPoolPaymentQuote` remains preferred where supported;
+an inconclusive quote still requires the ordinary rules check.
+
 Optional human payment preferences belong to `Mana.Client/ClientSession`, not
 the renderer, AI policy or Forge's strategic controller. The rules provider
 certifies the actual original fixed bill, current optional input provenance and

@@ -202,7 +202,7 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
                     DrawCommand.Text value => value.Value, DrawCommand.CenterText value => value.Value, _ => null
                 }).Where(value => value != null).Cast<string>().ToArray();
                 check(probe.Overlay == "priority-stops" && rows.Length > 0
-                    && text.Contains("7 of 20 skipping until your next turn")
+                    && text.Any(value => value.EndsWith("7 of 20 skipping until your next turn", StringComparison.Ordinal))
                     && scenario.Replies.Count == 0,
                     "The expanded list distinguishes seven skipped abilities from twenty exact options without advancing gameplay at " + viewport);
                 foreach (var row in rows) {
@@ -274,6 +274,9 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
                     && view.Hits.Any(h => h.Id == "ability-pass:mesa-fetch"
                         && h.Intent is MatchIntent.SetPriorityAbility { Id: "mesa-fetch", Ignored: true }),
                     "Opening activation stops lists an exact named ability without toggling its preference or answering priority");
+                Check(view.Frame!.Drawing.Commands.OfType<DrawCommand.Text>()
+                        .Any(text => text.Value?.StartsWith("Hold on; skips paused ·", StringComparison.Ordinal) == true),
+                    "The direct preference list explains that Hold pauses configured skips without silently resuming Auto");
                 Capture(surface, "02-ability-list"); Press("ability-read:mesa-fetch"); Next(); break;
             case 3: Release(); Next(); break;
             case 4:

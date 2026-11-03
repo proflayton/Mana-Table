@@ -447,7 +447,7 @@ automated command and geometry checks cannot supply that approval.
 
 ## Readable passing controls: 1 November 2026
 
-**Source revision after 0.2.348; human gameplay review pending.**
+**Source revision after 0.2.350; human gameplay review pending.**
 Automated validation and exact-candidate CI belong in the pull request record.
 The first named **ACTIVATION STOP** card made the ability
 readable, but the player's Ghost Town screenshot shows that a persistent source
@@ -456,6 +456,15 @@ a list row and a full reader. The player then reported that ignoring abilities
 seemed unavailable and they were repeatedly passing. The intended journey is to
 find the ability controls beside Auto, expand them, then explicitly skip one
 exact activation or read it without changing a preference.
+
+The player's retained logs also showed waiting ending without an intervening
+public action. A real Omnath reproduction found a separate engine cause:
+affordability checks borrowed and refunded floating mana while publishing both
+steps as actual resource changes. The existing payment-preview scope now restores
+the exact pool inventory and order without publishing hypothetical changes. Real
+payments, new effects and required decisions retain their normal interruption
+boundaries. This fixes a reproduced cause of repeated stops; the bounded historic
+logs cannot attribute every reported stop to it.
 
 [Magic Online's gameplay controls](https://www.mtgo.com/getting-started/getting-started-tips-tricks)
 put effect-specific yield and optional-answer choices behind a right-click on
@@ -499,7 +508,8 @@ permanently occupied scrolling settings panel.
 only the current engine-issued ability ID;
 **Stop for this ability** restores that exact retained stop. A skipped ability
 remains manually usable, and other available responses still stop Auto. Hold
-or Full Control pauses the preference's automatic effect. Yielding priority,
+or Full Control pauses the preference's automatic effect. The list labels that
+paused state; changing one skip does not enable Auto or release Hold. Yielding priority,
 answering an optional trigger and ignoring an available activation remain
 different permissions with their existing lifetimes.
 

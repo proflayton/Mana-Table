@@ -121,7 +121,9 @@ internal sealed partial class TableApplication
             content = new(drawer.X + 28, drawer.Y + 132, 508, top);
         }
         int ignored = abilities.Count(ability => ability.IgnoredUntilNextTurn);
-        canvas.Text($"{ignored} of {abilities.Length} skipping until your next turn", content.X, content.Y - 45, Blue, .6f, content.Width, 2, true);
+        string mode = !automatic ? "Auto off; skips paused" : held ? "Hold on; skips paused" : "Auto on";
+        canvas.Text($"{mode} · {ignored} of {abilities.Length} skipping until your next turn",
+            content.X, content.Y - 45, !automatic || held ? Gold : Blue, .6f, content.Width, 2, true);
         foreach (var row in pages[page]) {
             var bounds = row.Bounds; bounds.Offset(content.Location);
             var readingBounds = new Rectangle(bounds.X, bounds.Y, bounds.Width, bounds.Height - 64);
