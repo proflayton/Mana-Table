@@ -1880,18 +1880,24 @@ rounding, avoiding a second rounded-bound reduction without changing font or pad
 and share its exact scoped hit geometry. Their current P/T and typed state come
 from the same authorized occurrence. Pending-effect attention is a temporary
 presentation over the prepared scene, rather than a permanently empty rectangle
-that changes physical mat proportions. `PrepareStudyAttentionArea` runs after
-`UpdateBoardView` and stores one frame's placement; `StudyActionArea` reads that
-prepared field. `StudyHudObstacles` supplies the current projected physical
-scene and fixed HUD. Its `StudyAttentionObstacles` copy excludes unpinned stack
-flights owned by that destination, preventing a moving spell from repelling its
-own resting position; focused and pinned readers remain reserved.
-`DecisionWorkspaceLayout` ranks overlap with current legal
-recipients, source and counter recipient before ordinary background costs;
-active readers and newly placed bill/action footers reserve the prepared area.
-Its placement preserves current legal card targets and their displayed input
-geometry without using source-inspector painting to recalculate itself. This comparison
-uses no automatic camera movement and alters no engine permissions.
+that changes physical mat proportions. The source candidate prepares current
+decision/turn facts with `PrepareMatchFacts`, then owner readouts and the table
+view, before `PrepareStudyAttentionArea` measures and places the complete
+priority controls, combat context, pending stack and announcements. Painters and
+hit registration consume those prepared rectangles, including additional action
+rows and shadows; `StudyActionArea` reads that frame's placement. Draw order does
+not supply another layout or use a previously painted dock as current geometry.
+`StudyHudObstacles` supplies projected physical objects and measured fixed HUD
+pieces. Its `StudyAttentionObstacles` copy excludes unpinned stack flights owned
+by that destination, preventing a moving spell from repelling its own resting
+position; focused and pinned readers remain reserved. Placement prefers clear
+physical cards, then permits unrelated background overlap while protecting
+owner facts, current controls and required sources/recipients. Same-font width
+alternatives can change the measured context height; a constrained no-fit result
+is explicit best effort, not a universal nonoverlap guarantee. Active readers
+and newly placed bill/action footers consume the prepared reservations without
+source-inspector painting recalculating them. This presentation boundary uses
+no automatic camera movement and alters no engine permissions.
 Pending reference previews reserve current sources, targets, counter recipients
 and response controls. The shared free-space geometry can fit the complete
 printed portrait proportionally, with a 300-unit minimum width; measured rules

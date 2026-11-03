@@ -9,15 +9,20 @@ internal sealed partial class TableApplication
 {
     private string[] matchReadingPages = [""];
 
+    private void PrepareMatchFacts()
+    {
+        PrepareDecisionSession();
+        decisionDock = decisions.Presentation;
+        turnProgress = match == null ? null : TurnProgressPresentation.From(match, preferences.Stops);
+        priorityView = match == null ? null : PriorityPresentation.From(match);
+    }
+
     // Navigation and draft reconciliation happen once after input and accepted
     // observations, before registering the next frame's controls.
     private void PrepareMatchPresentation()
     {
-        PrepareDecisionSession();
         abilityActionPlan = null;
         if (match is not { } state) return;
-        turnProgress = TurnProgressPresentation.From(state, preferences.Stops);
-        priorityView = PriorityPresentation.From(state);
         if (decisions.Allocation is { } draft) {
             bool validInspection = draft.Inspection switch {
                 null => true,

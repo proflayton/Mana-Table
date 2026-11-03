@@ -56,13 +56,13 @@ internal sealed partial class TableApplication
         const int gap = 14;
         int width = Math.Min(146, (area.Width - gap * (shown - 1)) / shown);
         int left = area.X;
-        canvas.Text(state.Stack.Length + " pending · by source", area.X, area.Y - 25, Muted, .55f, area.Width - 110, 1);
+        canvas.Text(state.Stack.Length + " pending · by source", area.X, area.Y, Muted, .55f, area.Width - 110, 1);
         if (groups.Length > shown)
-            Button("stack-all-sources", "+" + (groups.Length - shown) + " sources", area.Right - 106, area.Y - 28, 106,
+            Button("stack-all-sources", "+" + (groups.Length - shown) + " sources", area.Right - 106, area.Y, 106,
                 new MatchIntent.OpenStack(), height: 25);
         for (int index = 0; index < shown; index++) {
             var group = visible[index]; var first = group.First;
-            var bounds = new Rectangle(left + index * (width + gap), area.Y, width, Math.Min(151, area.Height));
+            var bounds = new Rectangle(left + index * (width + gap), area.Y + 30, width, Math.Min(151, area.Height - 30));
             for (int layer = Math.Min(3, group.Members.Length - 1); layer > 0; layer--)
                 canvas.CardFrame(new(bounds.Center.ToVector2() + new Vector2(layer * 3, -layer * 3),
                     new Vector2(bounds.Width - 12, bounds.Height - 16)), Muted * .6f, 1);

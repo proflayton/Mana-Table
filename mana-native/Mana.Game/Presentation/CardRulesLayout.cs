@@ -10,7 +10,7 @@ internal sealed record CardRulesLayout(int Width, int Height, SourceActionTextLa
     int IllustrationHeight = 0)
 {
     internal const float NameFont = .96f, ManaFont = .78f, TypeFont = .70f, RulesFont = .82f;
-    internal static CardRulesLayout Measure(DrawList canvas, Card card, int illustrationHeight = 0)
+    internal static CardRulesLayout Measure(DrawList canvas, Card card, int illustrationHeight = 0, int minimumHeight = 574, int initialWidth = 410)
     {
         CardRulesLayout At(int width) {
             int inner = width - 40;
@@ -22,9 +22,9 @@ internal sealed record CardRulesLayout(int Width, int Height, SourceActionTextLa
             int height = 28 + name.Height + (card.ManaCost.Length == 0 ? 0 : mana.Height + 6)
                 + (illustrationHeight > 0 ? illustrationHeight + 12 : 0)
                 + type.Height + 26 + paragraphs.Sum(paragraph => paragraph.Height + 12) + 60;
-            return new(width, Math.Max(574, height), name, mana, type, Array.AsReadOnly(paragraphs), illustrationHeight);
+            return new(width, Math.Max(minimumHeight, height), name, mana, type, Array.AsReadOnly(paragraphs), illustrationHeight);
         }
-        var layout = At(410);
+        var layout = At(initialWidth);
         while (layout.Height > 690 && layout.Width < 1130) layout = At(layout.Width + 90);
         return layout;
     }

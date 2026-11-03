@@ -19,6 +19,9 @@ internal sealed partial class TableApplication
     private double studyHudTime = double.NaN;
     private IReadOnlyList<Rectangle> studyHudObstacles = [];
     private IReadOnlyList<Rectangle> studyAttentionObstacles = [];
+    private IReadOnlyList<Rectangle> studyFixedHudObstacles = [];
+    private sealed record PortraitPriorityPlan(Rectangle Area, int HeadingHeight, int UndoHeight, string Source, string Progress);
+    private PortraitPriorityPlan? portraitPriorityPlan;
 
     private IReadOnlyList<Rectangle> StudyAttentionObstacles {
         get { _ = StudyHudObstacles; return studyAttentionObstacles; }
@@ -37,6 +40,7 @@ internal sealed partial class TableApplication
                 occupied.Add(body.Backing.Bounds); occupied.Add(body.Shadow.Bounds);
             }
             foreach (var card in tableScene.BattlefieldDrawOrder) AddCard(boardView.Apply(card.Pose));
+            int backgroundCount = occupied.Count;
             foreach (var card in tableScene.Hand.Cards) AddCard(card.Pose);
             foreach (var card in tableScene.PlayAccess.Groups.SelectMany(group => group.Cards)) AddCard(card.Scene.Pose);
             foreach (var seat in tableScene.Seats) {
@@ -94,6 +98,7 @@ internal sealed partial class TableApplication
             // moving spell cannot also repel that destination every frame.
             // Other HUD consumers still avoid the complete physical journey.
             studyAttentionObstacles = Array.AsReadOnly(occupied.Where(bounds => !bounds.IsEmpty).ToArray());
+            studyFixedHudObstacles = Array.AsReadOnly(occupied.Skip(backgroundCount).Where(bounds => !bounds.IsEmpty).ToArray());
             foreach (var card in matchPresentation.Cards.Cards.Where(card => !card.Focused && card.Zone == "Stack"
                 && (card.Layer is CardPresentationLayer.Returning or CardPresentationLayer.Playing))) AddCard(card.Display);
             return studyHudObstacles = Array.AsReadOnly(occupied.Where(bounds => !bounds.IsEmpty).ToArray());
@@ -104,13 +109,20 @@ internal sealed partial class TableApplication
         && match is { Status: not ("finished" or "error"), Viewer: { Eliminated: false }, Turn: > 0 }
         && turnProgress != null;
 
+    private bool PortraitPriorityCanPaint => PortraitTurnControlsCanPaint && (turnPassRequest != null || finiteResolutionIntent != null
+        || !SelectingActionTarget && (QuietPriorityArmed || ResolvingCapturedStack)
+        || !SelectingActionTarget && match?.Decision?.Payload is null or PriorityPayload
+            && (decisions.Presentation?.Surface == DecisionDockSurface.Portrait
+                || automatic && !held && decisions.Presentation?.Surface == DecisionDockSurface.None));
+
     private IReadOnlyList<Rectangle> ReaderControlReservations {
         get {
             if (!PortraitTurnControlsCanPaint) return [];
             var layout = LocalTurnControls;
             var phases = layout.PhaseBounds.Take(turnProgress!.Markers.Length).ToArray();
             return SelectingActionTarget ? phases
-                : [.. phases, layout.AutoBounds, layout.HoldBounds, layout.AlertBounds, AbilityPassingControlBounds()];
+                : [.. phases, layout.AutoBounds, layout.HoldBounds, layout.AlertBounds, AbilityPassingControlBounds(),
+                    HudPaint(portraitPriorityPlan?.Area ?? Rectangle.Empty), HudPaint(combatBarArea)];
         }
     }
 
@@ -201,6 +213,29 @@ internal sealed partial class TableApplication
         return area;
     }
 
+    private PortraitPriorityPlan MeasurePortraitPriority()
+    {
+        var area = PortraitPriorityArea();
+        var state = match!;
+        string source = finiteResolutionIntent?.SourceName ?? "";
+        if (finiteResolutionIntent is { DeclinesOptionalPayments: false } resolving)
+            source = state.Executions?.Occurrences.FirstOrDefault(item => resolving.CapturedExecutionIds.Contains(item.Id)
+                    && item.Step is ExecutionStep.Choice or ExecutionStep.Cost or ExecutionStep.Resolution)?.SourceName
+                ?? state.Stack.FirstOrDefault(item => resolving.CapturedExecutionIds.Contains(item.ExecutionId))?.Name ?? source;
+        string progress = finiteResolutionIntent != null && finiteProgressProjection is { } finite
+            ? (finite.DeclineProgress is { } declined ? $"Source: {declined.CompletedCount} / {declined.CapturedCount} completed\nQueue: " : "")
+                + $"{finite.Progress.CompletedCount} / {finite.Progress.CapturedCount} completed · {finite.Progress.RemainingCount} remaining" : "";
+        int heading = Math.Max(22, canvas.TextSize("Your response · Auto paused", .62f, area.Width - 28, 1, true).Y);
+        int details = progress.Length == 0 ? 0 : (source.Length == 0 ? 0 : canvas.TextSize(source, .62f, area.Width - 28, 80, true).Y + 5)
+            + canvas.TextSize(progress, .6f, area.Width - 28, 80).Y + 8;
+        int undo = UndoControlHeight(area.Width);
+        bool following = busy || state.Decision == null || decisions.Presentation?.Status == DecisionDockStatus.AutoPassing;
+        int actions = !following && !QuietPriorityArmed && !ResolvingCapturedStack && !CanOfferQuietPriority && CanOfferStackResolution ? 88 : 40;
+        int height = Math.Max(area.Height, heading + 8 + details + (undo > 0 ? undo + 8 : 0) + actions);
+        area.Y -= height - area.Height; area.Height = height;
+        return new(area, heading, undo, source, progress);
+    }
+
     private Rectangle PlacePortraitPriorityArea(Rectangle area)
     {
         // Both automatic waiting and its explicit continuation use the same
@@ -209,16 +244,13 @@ internal sealed partial class TableApplication
         int resourceRight = mana.IsEmpty ? 0 : mana.Right;
         bool extended = match!.Players.Length > 4;
         var access = tableScene?.PlayAccess;
-        var occupied = extended && access is { Groups.Count: > 0 }
-            ? StudyHudObstacles.Append(access.Bounds).Append(access.UnfoldBounds).ToArray()
-            : StudyHudObstacles;
+        if (TableStudyEnabled) {
+            if (!extended) area = access?.PreferredPriorityArea(area) ?? area;
+            area.X = Math.Min(Math.Max(area.X, resourceRight + 14), 1592 - area.Width);
+            return PlaceStudyHud(area, [], new(8, 58, 1584, 834));
+        }
         int right = extended ? 1592 : 1550;
         area.X = Math.Clamp(Math.Max(area.X, resourceRight + 14), Math.Min(area.X, right - area.Width), right - area.Width);
-        if (TableStudyEnabled && occupied.Any(bounds => bounds.Intersects(area)))
-            area = extended ? DecisionWorkspaceLayout.TranslateComplete([area], new(8, 54, 1584, 838), occupied) ?? Rectangle.Empty
-                : DecisionWorkspaceLayout.Place(mana.IsEmpty ? new((int)SeatHero(match!.ViewerId).X - 47,
-                    (int)SeatHero(match.ViewerId).Y - 47, 94, 94) : mana,
-                area.Width, area.Height, occupied, bounded: true, minimumWidth: area.Width, minimumHeight: area.Height);
         var readers = matchPresentation.Cards.Cards.Where(card => card.Focused
                 || card.Layer is Presentation.CardPresentationLayer.Returning or Presentation.CardPresentationLayer.Playing)
             .Select(card => card.Display.Bounds).Append(sourceReaderActionsBounds);
@@ -232,7 +264,7 @@ internal sealed partial class TableApplication
     private void DrawAutomaticPassingControl()
     {
         if (!automatic || held || !PortraitTurnControlsCanPaint) return;
-        var area = PlacePortraitPriorityArea(PortraitPriorityArea());
+        var area = portraitPriorityPlan?.Area ?? PlacePortraitPriorityArea(PortraitPriorityArea());
         if (area.IsEmpty) return;
         decisionPanelBounds = area;
         string heading = decisionDock?.PauseReason switch {
@@ -262,25 +294,12 @@ internal sealed partial class TableApplication
             DrawAutomaticPassingControl();
             return;
         }
-        var area = PortraitPriorityArea();
+        var plan = portraitPriorityPlan ?? MeasurePortraitPriority();
+        var area = plan.Area;
         int waitWidth = PriorityWaitWidth;
-        string finiteSource = finiteResolutionIntent?.SourceName ?? "";
-        if (finiteResolutionIntent is { DeclinesOptionalPayments: false } resolving)
-            finiteSource = state.Executions?.Occurrences.FirstOrDefault(item => resolving.CapturedExecutionIds.Contains(item.Id)
-                    && item.Step is ExecutionStep.Choice or ExecutionStep.Cost or ExecutionStep.Resolution)?.SourceName
-                ?? state.Stack.FirstOrDefault(item => resolving.CapturedExecutionIds.Contains(item.ExecutionId))?.Name ?? finiteSource;
-        string finiteProgress = finiteResolutionIntent != null && finiteProgressProjection is { } finite
-            ? (finite.DeclineProgress is { } declined ? $"Source: {declined.CompletedCount} / {declined.CapturedCount} completed\nQueue: " : "")
-                + $"{finite.Progress.CompletedCount} / {finite.Progress.CapturedCount} completed \u00b7 {finite.Progress.RemainingCount} remaining" : "";
-        if (finiteProgress.Length > 0) {
-            int sourceHeight = finiteSource.Length == 0 ? 0 : canvas.TextSize(finiteSource, .62f, area.Width - 28, 80, true).Y + 5;
-            int progressHeight = canvas.TextSize(finiteProgress, .6f, area.Width - 28, 80).Y;
-            int extra = Math.Max(0, 26 + sourceHeight + progressHeight + 48 - area.Height);
-            area.Y -= extra; area.Height += extra;
-        }
-        int undoHeight = UndoControlHeight(area.Width);
-        if (undoHeight > 0) { area.Y -= undoHeight + 8; area.Height += undoHeight + 8; }
-        area = PlacePortraitPriorityArea(area);
+        string finiteSource = plan.Source, finiteProgress = plan.Progress;
+        int undoHeight = plan.UndoHeight;
+        if (portraitPriorityPlan == null) area = PlacePortraitPriorityArea(area);
         decisionPanelBounds = area; decisionTextBounds = Rectangle.Empty; decisionText = ""; decisionTextOverflow = false;
         if (area.IsEmpty) return;
         if (DrawTurnPassConfirmation(area)) return;
@@ -295,10 +314,10 @@ internal sealed partial class TableApplication
             : stopped ? view.Caption : held ? "Your control · This turn"
             : view.Status == DecisionDockStatus.Priority && automatic && priorityAttention.NeedsResponse && state.Stack.Length > 0
                 ? "Your response · Auto paused" : view.Headline;
-        canvas.Text(heading, area.X + 28, area.Y - 2, accent, .62f, stopped ? area.Width - 62 : area.Width - 28, 1, true);
-        if (undoHeight > 0) DrawUndoControl(new(area.X, area.Y + 22, area.Width, undoHeight));
+        canvas.Text(heading, area.X + 28, area.Y, accent, .62f, stopped ? area.Width - 62 : area.Width - 28, 1, true);
+        if (undoHeight > 0) DrawUndoControl(new(area.X, area.Y + plan.HeadingHeight + 4, area.Width, undoHeight));
         if (finiteProgress.Length > 0) {
-            int progressY = area.Y + 22;
+            int progressY = area.Y + plan.HeadingHeight + 4 + (undoHeight > 0 ? undoHeight + 8 : 0);
             if (finiteSource.Length > 0) {
                 canvas.Text(finiteSource, area.X + 28, progressY, Ink, .62f, area.Width - 28, 80, true);
                 progressY += canvas.TextSize(finiteSource, .62f, area.Width - 28, 80, true).Y + 5;
@@ -329,10 +348,9 @@ internal sealed partial class TableApplication
             }
         } else if (!following && d?.Payload is PriorityPayload { Pass.Enabled: true }) {
             if (CanOfferStackResolution) {
-                Button("confirm", view.ActionLabel, action.X, action.Y - 43, action.Width,
+                Button("confirm", view.ActionLabel, action.X, action.Y - 48, action.Width,
                     new MatchIntent.ConfirmDecision(), CombatGuide.CanConfirm(state), true, action.Height);
                 Button("stack-resolution-arm", "Resolve these", action, new MatchIntent.SetStackResolution(true), true);
-                decisionPanelBounds = Rectangle.Union(area, new(action.X, action.Y - 43, action.Width, 83));
             } else Button("confirm", view.ActionLabel, action.X, action.Y, action.Width,
                 new MatchIntent.ConfirmDecision(), CombatGuide.CanConfirm(state), true, action.Height);
         }

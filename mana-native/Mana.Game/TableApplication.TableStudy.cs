@@ -31,20 +31,27 @@ internal sealed partial class TableApplication
         pressed = null;
     }
 
+    private static string StudyEffectText(Mana.Contracts.StackItem entry) => entry.Text.Length > 0 ? entry.Text
+        : !entry.Ability && entry.Card is { Text.Length: > 0 } spell ? spell.Text : "Effect text not reported.";
+
+    private int MeasureStudyStackHeight(int width)
+    {
+        var entry = match!.Stack[0];
+        string owner = entry.ControllerId is { } controller ? StateClarity.PlayerName(match, controller) : "Controller not reported";
+        int source = Math.Max(entry.Ability ? 51 : 75, 14 + canvas.TextSize(entry.Name, .67f, width - 78, 80, true).Y
+            + canvas.TextSize(owner, .48f, width - 78, 80).Y);
+        int effect = entry.Effect is { Kind: "damage" } damage ? 62 + PendingDamageCounterHeight(damage, width - 24)
+            : canvas.TextSize(StudyEffectText(entry), .66f, width - 24, 80, true).Y;
+        // A long rules passage keeps its normal type and full hover reader;
+        // ordinary triggers expand instead of shrinking into a fixed tile.
+        return 25 + source + Math.Min(340, effect) + (entry.Targets.Length > 0 ? 28 : 0) + 12;
+    }
+
     private void DrawStudyStackFlow()
     {
         var state = match!;
         var entry = state.Stack[0];
         var area = StudyActionArea;
-        if (matchPresentation.Cards.Pinned?.ReaderTarget is { } reading && reading.Bounds.Intersects(area)) {
-            var reader = reading.Bounds;
-            reader.Width += CardPresentationController.StudyDetailsGap + CardPresentationController.StudyDetailsWidth;
-            int leftWidth = Math.Max(0, reader.Left - area.Left - 12);
-            int rightWidth = Math.Max(0, area.Right - reader.Right - 12);
-            area = leftWidth >= rightWidth
-                ? new(area.X, area.Y, Math.Max(1, leftWidth), area.Height)
-                : new(reader.Right + 12, area.Y, Math.Max(1, rightWidth), area.Height);
-        }
         if (RepeatedStackWorkload) { DrawStackWorkloads(area); return; }
         string owner = entry.ControllerId is { } controller ? StateClarity.PlayerName(state, controller) : "Controller not reported";
         string status = StackHeading(entry);
@@ -81,13 +88,10 @@ internal sealed partial class TableApplication
             stackRows.Add(new(entry.Id, 1, body));
             return;
         }
-        string effect = entry.Text.Length > 0 ? entry.Text
-            : !entry.Ability && entry.Card is { Text.Length: > 0 } spell ? spell.Text : "Effect text not reported.";
+        string effect = StudyEffectText(entry);
         var effectArea = new Rectangle(body.X + 12, body.Y + sourceHeight, body.Width - 24,
             Math.Max(25, body.Height - sourceHeight - (entry.Targets.Length > 0 ? 28 : 0) - 8));
-        float effectSize = .66f;
-        while (effectSize > .5f && canvas.TextSize(effect, effectSize, effectArea.Width, 80, true).Y > effectArea.Height)
-            effectSize = Math.Max(.5f, effectSize - .025f);
+        const float effectSize = .66f;
         string[] effectPages = canvas.TextPages(effect, effectSize, effectArea.Width, effectArea.Height, 80, true);
         string preview = effectPages[0];
         if (effectPages.Length > 1) {

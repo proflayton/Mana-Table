@@ -238,6 +238,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             "Auto must resume once the visible stack announcement finishes");
         QueueRevealChecks();
         QueueHistoryChecks();
+        QueueStackDockChecks();
 
     }
     // Reporting needs no further input update or rendered frame after the last checked action.
@@ -1040,6 +1041,6 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
                     physicalPointer = new { mouse.X, mouse.Y }, view.Scope, view.Overlay }); }
                 if (steps.Count == 0) FinishReading();
             }
-        } catch (Exception error) { WriteReadingDiagnostic("exception", error); throw; }
+        } catch (Exception error) { ReleaseStackDockFixture(); WriteReadingDiagnostic("exception", error); throw; }
     }
 }

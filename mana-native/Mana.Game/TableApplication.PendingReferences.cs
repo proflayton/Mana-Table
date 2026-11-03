@@ -173,14 +173,22 @@ internal sealed partial class TableApplication
                 // This is a read-only face for the actual stack action, not a
                 // replacement for its physical source or a new game occurrence.
                 stackReadFace = new Card { Name = effect.Name, Text = text, ManaCost = cost, Type = type };
-                stackReadLayout = CardRulesLayout.Measure(canvas, stackReadFace, 150);
+                // An ability is an announced effect, not another printed card.
+                // Keep all of its rules at reading size without blank card-height
+                // padding. Real spell/card faces retain their portrait minimum.
+                stackReadLayout = CardRulesLayout.Measure(canvas, stackReadFace, 150, effect.Ability ? 0 : 574);
                 stackReadKey = key;
             }
         }
         var boardCard = PendingConnectionCard(CardViews.Identity(card));
         if (boardCard != null) canvas.CardFocus(boardCard.Display, HoverAccent);
-        var context = stackRows.Select(row => row.Bounds).Append(decisionPanelBounds).Append(targetingEffectBounds)
-            .Concat(ReaderControlReservations).Where(bounds => !bounds.IsEmpty).ToArray();
+        var context = stackRows.Select(row => row.Bounds)
+            .Append(decisionPanelBounds).Append(targetingEffectBounds)
+            .Concat(ReaderControlReservations)
+            .Concat(TableStudyEnabled ? seatReadoutBounds : [])
+            .Append(TableStudyEnabled && StudyAttentionActive ? HudPaint(StudyActionArea) : Rectangle.Empty)
+            .Append(publicAnnouncementPlan?.Area ?? Rectangle.Empty)
+            .Where(bounds => !bounds.IsEmpty).ToArray();
         var objects = new List<Rectangle>();
         var protectedCards = new HashSet<string>(StringComparer.Ordinal);
         void ProtectCard(string id) {
@@ -206,8 +214,8 @@ internal sealed partial class TableApplication
             foreach (var recipientPlayer in match.Players.Where(candidate => IsPlayerTarget(candidate.Id))) ProtectPlayer(recipientPlayer.Id);
             ProtectCounter((decision.Payload as TargetSelectionPayload)?.Effect);
         }
-        foreach (var item in match!.Stack.Where((item, index) => index < 3 || item.Id == reference.StackId
-            || stackRows.Any(row => row.Id == item.Id))) {
+        foreach (var item in match!.Stack.Where((item, index) => effect != null ? item.Id == reference.StackId
+            : index < 3 || item.Id == reference.StackId || stackRows.Any(row => row.Id == item.Id))) {
             if (item.Card != null) ProtectCard(CardViews.Identity(item.Card));
             foreach (var target in item.Targets) {
                 if (target.Kind == "card") ProtectCard(target.Id);
@@ -242,6 +250,12 @@ internal sealed partial class TableApplication
                     minimumWidth: 300) is { } held)
                 pendingPreviewBounds = held;
             else if (clear.Length > 0) pendingPreviewBounds = clear[0];
+            else if (effect != null && DecisionWorkspaceLayout.TranslateComplete([candidates[0]], viewport, critical) is { } measuredFace)
+                pendingPreviewBounds = measuredFace;
+            else if (effect is { Ability: true } && TryPlaceAbilityRules(candidates[0].Location, viewport, critical) is { } wideFace) {
+                pendingPreviewBounds = wideFace;
+                size = wideFace.Size;
+            }
             else if (effect == null && DecisionWorkspaceLayout.Fit(candidates[0], viewport, critical, minimumWidth: 300) is { } fitted)
                 pendingPreviewBounds = fitted;
             else {
@@ -265,5 +279,18 @@ internal sealed partial class TableApplication
         // The read-only face absorbs input rather than passing clicks through
         // to the battlefield beneath it. It never becomes a game-card occurrence.
         hits.Add(new("stack-card-preview", Scope, bounds, new MatchIntent.PreviewPendingCard(reference.StackId, reference.CardId, reference.DecisionId), ShowPointer: false));
+    }
+
+    private Rectangle? TryPlaceAbilityRules(Point preferred, Rectangle viewport, IReadOnlyList<Rectangle> occupied)
+    {
+        if (stackReadFace == null) return null;
+        foreach (int width in new[] { 500, 590, 680, 770 }) {
+            var layout = CardRulesLayout.Measure(canvas, stackReadFace, 150, 0, width);
+            if (DecisionWorkspaceLayout.TranslateComplete([new(preferred.X, preferred.Y, layout.Width, layout.Height)], viewport, occupied) is not { } area)
+                continue;
+            stackReadLayout = layout;
+            return area;
+        }
+        return null;
     }
 }

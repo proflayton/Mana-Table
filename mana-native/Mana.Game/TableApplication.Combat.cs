@@ -4,6 +4,7 @@ using Mana.Contracts;
 using Mana.Renderer;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
+using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Table;
 
@@ -13,6 +14,8 @@ internal sealed partial class TableApplication
     private bool combatCandidates;
     private string? inspectedStack;
     private string? reviewedAttacker;
+    private Rectangle combatBarArea;
+    private string combatBarMessage = "";
     private string? CombatSource => dragging ? dragSource?.Card?.CombatId : selectedCombat;
     private bool HasCombat => match?.Combat is { } combat && (combat.Attackers.Length > 0 || match.Decision?.Payload is AttackPayload or BlockPayload);
     private bool CombatTarget(Card card) => match is { } state && CombatSource is { } source &&
@@ -33,6 +36,26 @@ internal sealed partial class TableApplication
         // Formation counts belong to their physical links. The declaration's
         // actions live below its existing dock rather than over public piles.
         if (CanGroupBlock || GroupBlocksOpen) return;
+        if (TableStudyEnabled) {
+            if (combatBarArea.IsEmpty) return;
+            var area = combatBarArea;
+            int y = area.Bottom - 29;
+            if (!GroupedCombatReview) {
+                canvas.Gradient(area, Color.Transparent, new Color(14, 22, 27) * .8f);
+                canvas.Text(combatBarMessage, area.X + 8, area.Y + 5, CombatSource != null ? Gold : Ink,
+                    .61f, area.Width - 16, 80, true);
+            }
+            if (selectedCombat != null && !GroupedCombatReview) {
+                int cancel = canvas.TextWidth("Cancel", .76f) + 24;
+                int remove = canvas.TextWidth("Remove", .76f) + 24;
+                Button("combat-clear", "Cancel", area.X, y, cancel, new MatchIntent.ClearCombatant(), height: 29);
+                Button("combat-remove", "Remove", area.X + cancel + 8, y, remove, new MatchIntent.RemoveCombatAssignment(selectedCombat),
+                    !busy && CombatGuide.Remove(match, selectedCombat) != null, height: 29);
+            }
+            int review = canvas.TextWidth("Combat", .76f) + 24;
+            Button("combat-review", "Combat", area.Right - review, y, review, new MatchIntent.OpenCombat(), height: 29);
+            return;
+        }
         if (GroupedCombatReview) {
             if (match.Status == "playing" && match.Viewer is { Eliminated: false })
                 Button("combat-review", "Combat", 1266, DecisionY(868), 110, new MatchIntent.OpenCombat(), height: 29);
@@ -52,6 +75,24 @@ internal sealed partial class TableApplication
         else if (CanGroupBlock && !GroupBlocksOpen)
             Button("group-block-begin", "Group blocks", 1266, 677, 179, new MatchIntent.BeginGroupBlocks(), !busy, height: 29);
         Button("combat-review", "Combat", 1451, 677, 111, new MatchIntent.OpenCombat(), height: 29);
+    }
+
+    private void PrepareCombatBar(IReadOnlyList<Rectangle> reserved)
+    {
+        if (!HasCombat || match == null || CanGroupBlock || GroupBlocksOpen) return;
+        if (GroupedCombatReview && (match.Status != "playing" || match.Viewer is not { Eliminated: false })) return;
+        var priority = portraitPriorityPlan?.Area ?? LocalTurnControls.PriorityArea;
+        var attacks = match.Combat!.Attackers;
+        var selected = CombatSource == null ? null : CombatGuide.Find(match, CombatSource);
+        combatBarMessage = selected != null ? selected.Name + " · choose a blue target"
+            : $"{attacks.Length} attacking · {attacks.Count(attack => attack.Blocked || attack.BlockerIds.Length > 0)} blocked";
+        if (!string.IsNullOrWhiteSpace(match.Combat.BlockProblem)) combatBarMessage = match.Combat.BlockProblem;
+        int width = priority.Width;
+        int buttons = new[] { "Cancel", "Remove", "Combat" }.Sum(label => canvas.TextWidth(label, .76f) + 24) + 16;
+        if (selectedCombat != null) width = Math.Max(width, buttons);
+        int textHeight = GroupedCombatReview ? 0 : canvas.TextSize(combatBarMessage, .61f, width - 16, 80, true).Y + 10;
+        int height = textHeight + 29;
+        combatBarArea = PlaceStudyHud(new(priority.Right - width, priority.Top - height - 14, width, height), reserved, new(12, 64, 1576, 696));
     }
     private void DrawBlockReviewActions()
     {
