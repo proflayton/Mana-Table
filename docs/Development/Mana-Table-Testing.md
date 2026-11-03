@@ -963,19 +963,28 @@ observations do not restart that announcement.
 `PriorityContinuationChecks` runs in the existing headless presentation lane.
 Source candidate: its routine-Auto journey and the existing
 `PriorityAbilitySmoke` journey cover the larger portrait-adjacent
-Take control action and named activation entry. Opening the activation entry
-must send no command or change a preference. Pointer checks must distinguish
-Skip this activation, Stop for this ability and Back to table; preserve a second
-ability's preference; retain manual activation; and close an expired selected
+Take control action and visible **Auto · Abilities · N** button. The headless
+artwork handoff also keeps that button reachable for current unskipped options
+when ordinary Auto has no decision dock, and checks its measured control surface.
+Opening the entry or reading a row must send no command or change a preference.
+Each expanded row has a separate direct **Skip until next turn** or **Stop for
+this ability** button, while its name/rules open the complete noncommitting reader.
+Pointer checks must exercise direct Skip and Stop without entering that reader,
+distinguish its full-reader actions and Back to table, preserve a second
+ability's preference, retain manual activation, and close an expired selected
 ID without retargeting. A source face requires its exact disclosed card handle;
 missing handles retain full name/rules. Reading pauses Auto while the host's
 decision clock remains authoritative. Take control during polling or send holds
 the current turn without replaying or undoing an already submitted pass.
 Use the existing headless and window lanes at 1000 x 740 and 1540 x 980 with
-130% text. The existing `priority-1280` window case is included in the ordinary
+130% text. Expanded-list checks keep all twenty exact abilities reachable with
+complete names/rules and separate nonoverlapping reading/preference hits. The
+required window journey also rejects a stale direct Skip after ability replacement,
+restores a retained ability between prompts, and leaves a required choice manual.
+The existing `priority-1280` window case is included in the ordinary
 four-shard CI partition as well as the extended inventory; no new CLI mode or CI
-lane is introduced. Local headless and window checks passed; exact-head CI and
-human gameplay acceptance remain separate and pending.
+lane is introduced. Checks for this source revision and human gameplay acceptance
+remain separate; see the exact candidate's PR for completed run evidence.
 Actual pointer journeys at 1000x740 and 1540x980 with 130% text cover default
 opponent Auto with an available instant, explicit own/opponent waiting, fresh
 decisions retaining one original permission, cast/trigger interruption, no silent
@@ -2271,6 +2280,12 @@ command family and outcome stage, submitted numeric value, current target
 progress, counted remaining mana and execution step when disclosed. The source
 name is only the current decision's visible portrait; this can be a card the
 local player chose from their hand. Review excerpts before sharing them.
+
+The ability-control follow-up adds disclosed turn, received automatic-pass and
+quiet-permission availability, and available/ignored ability counts. Older logs
+without those fields cannot explain why Auto stopped. No tokens, ability IDs,
+card handles or ability rules are recorded. A permission change is retained even
+if the outer revision and decision ID remain equal; identical polls still coalesce.
 
 The journal does not collect complete zones, raw snapshots, live action handles,
 chat, arbitrary text replies or exception messages. Nothing uploads automatically.

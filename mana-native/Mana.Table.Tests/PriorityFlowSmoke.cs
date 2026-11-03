@@ -103,7 +103,8 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
             Check(view.Overlay == "priority-stops" && Text().Contains(ability.SourceName) && Text().Contains(ability.Text)
                 && view.Hits.Any(hit => hit.Id == "ability-read:" + ability.Id
                     && hit.Intent is MatchIntent.ReadPriorityAbility { Id: "optional-mesa" })
-                && !view.Hits.Any(hit => hit.Id.StartsWith("ability-pass:", StringComparison.Ordinal))
+                && view.Hits.Any(hit => hit.Id == "ability-pass:" + ability.Id
+                    && hit.Intent is MatchIntent.SetPriorityAbility { Id: "optional-mesa", Ignored: true })
                 && view.Match?.Decision?.Id == engine.State.Decision.Id && engine.Replies.Count == 0,
                 "Opening activation stops lists the exact source and complete ability without changing the unanswered decision or its preference");
             Observe("activation-list"); Capture("01a-activation-list"); MoveHit("ability-read:" + ability.Id);

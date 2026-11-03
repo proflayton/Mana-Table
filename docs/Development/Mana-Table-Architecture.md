@@ -49,6 +49,13 @@ save, rules replay, public activity stream or automatic upload. See
 [local command diagnostics](Mana-Table-Testing.md#local-command-diagnostics) for
 limits and tests.
 
+Priority diagnostics also retain the received automatic-pass flag, whether a
+quiet permission is offered, and current/ignored ability counts for the local
+disclosed decision, plus its turn. They retain no permission token, ability ID,
+card handle or rules text. Missing fields in older logs remain unknown. These
+facts describe a received offer; they do not establish that an automatic pass
+executed or explain an unrecorded attention-state transition.
+
 ## Match history and archival records
 
 The source candidate after 0.2.317 adds the optional `IMatchHistory` port and

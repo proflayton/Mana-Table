@@ -117,20 +117,26 @@ internal static class ClientDiagnosticRegression
                 "A late command receipt rejected by the owner boundary is recorded as a discarded publication");
         }
         var original = State(new PriorityPayload(new("Pass", true)));
-        var foreign = new Port(original with { ViewerId = 1, Revision = 2, DecisionOwnerId = 1,
-            Decision = new("foreign", Source("FOREIGN-SECRET"), Payment()) });
-        var session = new ClientSession(foreign); var captured = Track(session); session.Accept(original); captured.Clear();
-        session.Submit(new PassPriority(original.Id, original.Decision!.Id)); await Drain(session);
-        check(captured.Where(item => item.Stage is ClientDiagnosticStage.ProviderObservationReturned or ClientDiagnosticStage.ObservationAccepted)
-                .All(item => item.Facts is { Decision: ClientDiagnosticDecision.Undisclosed, DecisionSourceName: null }
-                    && item.Facts.RemainingMana.IsEmpty),
-            "A foreign audience's returned or published snapshot contributes no source portrait, target progress or payment details");
+        foreach (var payload in new DecisionPayload[] { Payment(), new PriorityPayload(new("Pass", true),
+            CanAutoPass: true, QuietYieldToken: "FOREIGN-TOKEN", Abilities: [new("FOREIGN-ABILITY", "FOREIGN-KEY", "FOREIGN-NAME", "FOREIGN-RULES", false)]) }) {
+            var foreign = new Port(original with { ViewerId = 1, Revision = 2, DecisionOwnerId = 1,
+                Decision = new("foreign", Source("FOREIGN-SECRET"), payload) });
+            var session = new ClientSession(foreign); var captured = Track(session); session.Accept(original); captured.Clear();
+            session.Submit(new PassPriority(original.Id, original.Decision!.Id)); await Drain(session);
+            check(captured.Where(item => item.Stage is ClientDiagnosticStage.ProviderObservationReturned or ClientDiagnosticStage.ObservationAccepted)
+                    .All(item => item.Facts is { Decision: ClientDiagnosticDecision.Undisclosed, DecisionSourceName: null, Turn: null, Priority: null }
+                        && item.Facts.RemainingMana.IsEmpty),
+                "A foreign audience's returned or published snapshot contributes no source, payment, turn or priority-permission details");
+        }
     }
 
     private static async Task AutomaticJourney(Action<bool, string> check)
     {
-        var initial = State(new PriorityPayload(new("Pass", true), CanAutoPass: true, QuietYieldToken: "PRIVATE-TOKEN"));
-        var next = initial with { Revision = 2, Decision = new("next", new(), new PriorityPayload(new("Pass", true), CanAutoPass: false)) };
+        var ignored = new PriorityAbility("PRIVATE-ABILITY-ID", "PRIVATE-CARD-KEY", "PRIVATE-ABILITY-NAME", "PRIVATE-ABILITY-RULES", true);
+        var initial = State(new PriorityPayload(new("Pass", true), CanAutoPass: true, QuietYieldToken: "PRIVATE-TOKEN",
+            Abilities: [ignored])) with { Turn = 7, IgnoredPriorityAbilities = [ignored] };
+        var next = initial with { Revision = 2, Decision = new("next", new(), new PriorityPayload(new("Pass", true),
+            CanAutoPass: false, Abilities: [ignored, ignored with { Id = "PRIVATE-SECOND-ID", IgnoredUntilNextTurn = false }])) };
         var port = new Port(next); var client = new ClientSession(port); var events = Track(client); client.Accept(initial); events.Clear();
         check(client.Advance(state => state.Decision?.Payload is PriorityPayload { CanAutoPass: true }, (_, _) => false),
             "Automatic priority uses its existing eligibility and continuation lane");
@@ -139,6 +145,14 @@ internal static class ClientDiagnosticRegression
                 && events.Count(item => item.Stage == ClientDiagnosticStage.ProviderObservationReturned) == 1
                 && events.Single(item => item.Stage == ClientDiagnosticStage.ObservationAccepted).AttemptId == null && port.Commands == 1,
             "Automatic commands record actual dispatch and returned observation without inventing a causal publication acknowledgement");
+        check(events.Single(item => item.Stage == ClientDiagnosticStage.Admitted).Facts is {
+                Turn: 7, Priority: { CanAutoPass: true, QuietYieldOffered: true, AvailableAbilityCount: 1, IgnoredAbilityCount: 1 } }
+            && events.Single(item => item.Stage == ClientDiagnosticStage.ProviderObservationReturned).Facts is {
+                Priority: { CanAutoPass: false, QuietYieldOffered: false, AvailableAbilityCount: 2, IgnoredAbilityCount: 1 } },
+            "Priority diagnostics retain received automatic-pass permission and ability counts before and after a command");
+        var serializedPriority = JsonSerializer.Serialize(events.ToArray());
+        check(!serializedPriority.Contains("PRIVATE-", StringComparison.Ordinal),
+            "Priority permission diagnostics omit live tokens, ability IDs, card handles, names and rules");
 
         var quietInitial = initial with { ActivePlayerId = 1 };
         var quietPort = new Port(quietInitial with { Revision = 2, Decision = next.Decision });
@@ -208,6 +222,10 @@ internal static class ClientDiagnosticRegression
         for (int i = 0; i < 10; i++) client.Accept(state with { });
         client.Poll(false, _ => { }); await Drain(client);
         check(events.IsEmpty, "Identical accepted snapshots and ordinary polling do not consume the bounded diagnostic history");
+        client.Accept(state with { Decision = state.Decision! with { Payload = new PriorityPayload(new("Pass", true), CanAutoPass: true) } });
+        check(events.Count == 1 && events.Single().Facts.Priority is { CanAutoPass: true },
+            "A changed received priority permission remains diagnostic evidence even when the outer revision and prompt ID are unchanged");
+        events.Clear();
         client.Accept(state with { Decision = state.Decision! with { Id = "changed" } });
         check(events.Single() is { AttemptId: null, Stage: ClientDiagnosticStage.ObservationAccepted },
             "A genuinely changed decision produces one uncorrelated accepted-publication event");

@@ -92,7 +92,7 @@ internal sealed partial class TableApplication
             decisionPanelBounds = Rectangle.Empty;
             DrawAutomaticPassingControl();
             var passingAbilities = PriorityAbilityOptions();
-            if (passingAbilities.Any(ability => ability.IgnoredUntilNextTurn)) DrawPriorityAbilityControl(passingAbilities);
+            if (passingAbilities.Length > 0) DrawPriorityAbilityControl(passingAbilities);
             return;
         }
         if (!SelectingActionTarget && decisionDock.Surface == DecisionDockSurface.Portrait) {

@@ -116,6 +116,7 @@ internal static class Program
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PriorityAbilitySmoke.Example());
                 using var test = new TableWindow(TestTableServices.For(scenario), profile, null, null, size, initialState: scenario.State,
                     artSource: new CardReadingArtFixture(Arg("--art-cache")));
+                if (args.Contains("--test-offscreen")) test.Window.Position = new Microsoft.Xna.Framework.Point(-32000, -32000);
                 test.Automation = new PriorityAbilitySmoke(test.TestPort, scenario);
                 test.Run(); return 0;
             }
