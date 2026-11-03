@@ -373,6 +373,7 @@ internal static partial class AiReleaseGoldens
         public long BoardRevision { get; init; }
         public string SelectedCardId { get; init; } = "";
         public int? SelectedControllerId { get; init; }
+        public int? SelectedPlusOneCounters { get; init; }
         public bool SelectionIsCost { get; init; }
         public bool ManaAbility { get; init; }
     }
@@ -426,6 +427,21 @@ internal static partial class AiReleaseGoldens
 
     internal static void CheckReceiptEvidence(Action<bool, string> check)
     {
+        var alliedTarget = new AcceptedCommand(0, nameof(SelectCard), 4, "MAIN1", "", "dragon-blood",
+            null, null, null, null, 5, false, false, false, false, null, false) {
+                ExecutionId = "actual-activation", SelectedCardId = "newly-cast-allied-commander",
+                SelectedControllerId = 1, SelectedPlusOneCounters = 0
+            };
+        check(AlliedCounterTarget([alliedTarget], 0, 1, "dragon-blood") is {
+                SelectedCardId: "newly-cast-allied-commander", SelectedPlusOneCounters: 0 },
+            "Cooperative counter proof follows the accepted allied recipient, including a creature cast after initial fixture setup");
+        foreach (var unrelated in new[] { alliedTarget with { Seat = 2 }, alliedTarget with { SelectedControllerId = 2 },
+            alliedTarget with { SelectedControllerId = 0 }, alliedTarget with { SelectionIsCost = true },
+            alliedTarget with { CostOwner = "other-source" }, alliedTarget with { ExecutionId = "" },
+            alliedTarget with { SelectedCardId = "" }, alliedTarget with { SelectedPlusOneCounters = null },
+            alliedTarget with { Kind = nameof(PassPriority) } })
+            check(AlliedCounterTarget([unrelated], 0, 1, "dragon-blood") == null,
+                "Cooperative target evidence rejects foreign seats, non-allies, costs, wrong owners and missing target/execution/baseline facts");
         var passedTargetOffer = new AcceptedCommand(0, nameof(PassPriority), 4, "MAIN1", "", "",
             null, null, null, null, 7, false, false, false, true, null, false) {
                 ActivePlayerId = 0, OfferedTargetId = "commander"
@@ -514,6 +530,11 @@ internal static partial class AiReleaseGoldens
             if (owner.Length == 0 && observation.State.Decision?.Context.Source?.Card is { } portrait) owner = CardViews.Identity(portrait);
             var paymentBill = CapturePaymentBill(observation.State);
             var reduction = CaptureReduction(observation.State, ReductionCreatures);
+            // Copy target facts before dispatch revokes the observed card keys.
+            var selectedTarget = command is SelectCard selectedCard ? CardViews.InZones(observation.State)
+                .Where(item => item.Card.Key == selectedCard.Card)
+                .Select(item => new { Id = CardViews.Identity(item.Card), Controller = item.PlayerId,
+                    Counters = PlusOneCounters(item.Card) }).SingleOrDefault() : null;
             var targetOffer = observation.Domain.Sources.FirstOrDefault(set => set.SourceCardId == Target
                 && set.Actions.Any(item => item.Kind == "cast"));
             var costSelection = command is SelectCard selected && observation.Semantics.CostPayment is { } cost
@@ -535,10 +556,9 @@ internal static partial class AiReleaseGoldens
                 DecisionId = observation.State.Decision?.Id ?? "", ExecutionId = observation.State.Decision?.ExecutionId ?? "",
                 BoardRevision = observation.State.BoardRevision, SelectionIsCost = observation.Semantics.SelectionIsCost,
                 ManaAbility = action?.ManaAbility == true,
-                SelectedCardId = command is SelectCard chosenCard ? CardViews.InZones(observation.State)
-                    .Where(item => item.Card.Key == chosenCard.Card).Select(item => CardViews.Identity(item.Card)).SingleOrDefault() ?? "" : "",
-                SelectedControllerId = command is SelectCard targetCard ? CardViews.InZones(observation.State)
-                    .Where(item => item.Card.Key == targetCard.Card).Select(item => (int?)item.PlayerId).SingleOrDefault() : null,
+                SelectedCardId = selectedTarget?.Id ?? "",
+                SelectedControllerId = selectedTarget?.Controller,
+                SelectedPlusOneCounters = selectedTarget?.Counters,
                 PaymentBill = paymentBill, ManaReduction = reduction, CostSelection = costSelection
             });
         }

@@ -9,6 +9,11 @@ namespace Mana.Table;
 
 internal static partial class AiReleaseGoldens
 {
+    private static AcceptedCommand? AlliedCounterTarget(IEnumerable<AcceptedCommand> receipts, int actorId, int allyId, string sourceId) =>
+        sourceId.Length == 0 ? null : receipts.FirstOrDefault(item => item.Seat == actorId && item.Kind == nameof(SelectCard)
+            && !item.SelectionIsCost && item.CostOwner == sourceId && item.ExecutionId.Length > 0
+            && item.SelectedCardId.Length > 0 && item.SelectedControllerId == allyId && item.SelectedPlusOneCounters.HasValue);
+
     internal static async Task RunCooperativeStandaloneAsync(ForgePaths paths, string productionJar)
     {
         Directory.CreateDirectory(paths.Profile);
@@ -81,7 +86,8 @@ internal static partial class AiReleaseGoldens
         int steps = 0, comparisons = 0, actorId = -1, allyId = -1, enemyId = -1, otherEnemy = -1;
         string sourceId = "", targetId = "", allyCardId = "", otherEnemyCardId = "", stop = "not-started", detail = "";
         int beforeCounter = 0;
-        bool passed = false, stackSeen = false, resolved = false, ownCost = false, targetChosen = false, reportedDamage = false;
+        bool passed = false, stackSeen = false, resolved = false, ownCost = false, targetChosen = false, reportedDamage = false,
+            counterApplied = false;
         Exception? failure = null;
         var captureErrors = new List<string>();
         try {
@@ -129,6 +135,13 @@ internal static partial class AiReleaseGoldens
                 }
                 await trace.WriteLineAsync(JsonSerializer.Serialize(new { steps, state }));
                 var actorReceipts = provider.Accepted.Where(item => item.Seat == actorId).ToArray();
+                // The ally may naturally cast another creature before our turn.
+                // Follow the actual accepted allied target, retaining its value
+                // before dispatch; no card-name or final-board guess supplies it.
+                if (!removal && !targetChosen && AlliedCounterTarget(actorReceipts, actorId, allyId, sourceId) is { } alliedTarget) {
+                    targetId = alliedTarget.SelectedCardId;
+                    beforeCounter = alliedTarget.SelectedPlusOneCounters!.Value;
+                }
                 targetChosen = actorReceipts.Any(item => !item.SelectionIsCost && item.SelectedCardId == targetId
                     && item.SelectedControllerId == (removal ? enemyId : allyId) && item.CostOwner == sourceId);
                 var executions = actorReceipts.Where(item => !item.SelectionIsCost && item.SelectedCardId == targetId
@@ -139,6 +152,9 @@ internal static partial class AiReleaseGoldens
                 // source-name matching cannot replace that historical identity.
                 var actorActivity = provider.Last.Where(item => item.SeatId == actorId).SelectMany(item => item.State.Activity).ToArray();
                 resolved |= actorActivity.Any(entry => entry.Kind == "resolved" && entry.Outcome == "resolved" && executions.Contains(entry.ExecutionId));
+                counterApplied |= actorActivity.Any(entry => executions.Contains(entry.ExecutionId)
+                    && entry.CardId == targetId && entry.Change is { Kind: "counters", Property: "+1/+1" } change
+                    && change.Before == beforeCounter && change.After == beforeCounter + 1);
                 reportedDamage |= actorActivity.Any(entry => executions.Contains(entry.ExecutionId) && entry.Impact is {
                     Kind: "damage", Amount: 2, SourceControllerId: var sourceController, RecipientControllerId: var recipient, CardId: var damaged }
                     && sourceController == actorId && recipient == enemyId && damaged == targetId);
@@ -159,12 +175,13 @@ internal static partial class AiReleaseGoldens
                                     .Select(item => item.SourceId).Distinct(StringComparer.Ordinal).Count() >= (removal ? 1 : 3);
                         });
                 var allyNow = state.Players.Single(item => item.Id == allyId).Zone("Battlefield").Cards.SingleOrDefault(card => CardViews.Identity(card) == allyCardId);
+                var buffTarget = state.Players.Single(item => item.Id == allyId).Zone("Battlefield").Cards.SingleOrDefault(card => CardViews.Identity(card) == targetId);
                 bool enemyIntact = state.Players.Single(item => item.Id == otherEnemy).Zone("Battlefield").Cards.Any(card => CardViews.Identity(card) == otherEnemyCardId);
                 bool useful = removal
                     ? state.Players.Single(item => item.Id == enemyId).Zone("Graveyard").Cards.Any(card => CardViews.Identity(card) == targetId)
                         && actorNow.Zone("Graveyard").Cards.Any(card => CardViews.Identity(card) == sourceId)
                         && allyNow != null && enemyIntact && reportedDamage
-                    : allyNow != null && PlusOneCounters(allyNow) == beforeCounter + 1
+                    : buffTarget != null && counterApplied && PlusOneCounters(buffTarget) == beforeCounter + 1
                         && actorNow.Zone("Battlefield").Cards.Any(card => CardViews.Identity(card) == sourceId && card.Tapped)
                         && enemyIntact;
                 if (targetChosen && ownCost && stackSeen && resolved && useful && comparisons > 0) {
@@ -184,7 +201,7 @@ internal static partial class AiReleaseGoldens
                 catch (Exception error) { captureErrors.Add(error.ToString()); passed = false; }
         }
         var evidence = JsonSerializer.SerializeToElement(new { audience = "host-private targeted fixture", accepted,
-            actorId, allyId, enemyId, sourceId, targetId, targetChosen, ownCost, stackSeen, resolved, reportedDamage,
+            actorId, allyId, enemyId, sourceId, targetId, beforeCounter, targetChosen, ownCost, stackSeen, resolved, reportedDamage, counterApplied,
             commands = provider.Accepted, diagnostics = diagnostics.Summary(), failure = failure?.ToString(), captureErrors,
             campaignDeckQualificationCredit = false, naturalGameCompletionCredit = false,
             scope = "Actual policy/engine/controller/command consequence; fixture lists are not the pinned campaign deck versions." });

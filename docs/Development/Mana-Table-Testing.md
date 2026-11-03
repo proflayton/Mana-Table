@@ -406,6 +406,15 @@ The source-bound fixture lane separately exercises useful resolved ally benefit
 and useful enemy removal through normal policy, costs and rules. Pregame fixture
 setup remains absent from the shipping command pipe.
 
+The cooperative ally-benefit golden follows the actual accepted allied target,
+including a creature cast after fixture setup. Its pre-dispatch receipt retains
+the counter baseline; exact-source payment, execution-correlated resolution and
+counter change, and the target's actual board state must all agree. It does not
+require one named starting creature to receive the counter or survive unrelated
+combat. Receipt regressions reject foreign seats, non-allies, cost selections
+and missing owner, execution, target or baseline facts. The enemy-removal golden
+keeps its declared lethal target and surviving ally/nonlethal enemy checks.
+
 For varied team play, run the compiled native test driver with the normal fresh
 profile/runtime/resource arguments and:
 
