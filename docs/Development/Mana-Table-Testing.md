@@ -1204,12 +1204,14 @@ nested visible/hidden paint, complete rollback, publication rejection for open
 groups and protection of enclosing camera/clip scopes.
 
 `CanvasPrimitiveChecks` additionally paints actual recorded commands on the GPU
-in the existing `--smoke-ui-interactions` CI journey. Empty/inverted rounded
+in the required `canvas-primitives` CI suite. Empty/inverted rounded
 bounds must paint no pixels; one- and two-pixel panels must survive an empty
 border inset, and ordinary fills must remain intact. The focused
 `--smoke-canvas-primitives --profile <fresh-profile>` route uses an offscreen
 window and synthetic input, writing `canvas-primitives-results.json`. This
 catches painter exceptions that GPU-free frame preparation cannot exercise.
+The native catalog fixture requires this exact mode and result in both the
+four-shard release subset and the extended inventory.
 
 Opponent resource checks compare actual fixed counter hits and text observations during camera movement,
 including reachable state-detail controls, while preserving the anchored portrait,

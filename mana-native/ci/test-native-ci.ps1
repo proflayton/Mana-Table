@@ -17,6 +17,14 @@ function Assert-ManaFixtureArt($Inventory) {
         throw 'Only the mana-payment CI case must request fixture artwork exactly once.'
     }
 }
+function Assert-ManaCanvasPrimitives($Inventory) {
+    $cases = @($Inventory | Where-Object { $_.name -ceq 'canvas-primitives' })
+    if ($cases.Count -ne 1 -or $cases[0].shard -ne 1 -or
+        $cases[0].mode -cne '--smoke-canvas-primitives' -or $cases[0].size -cne '1280x720' -or
+        $cases[0].result -cne 'canvas-primitives-results.json' -or @($cases[0].arguments).Count -ne 0) {
+        throw 'The required GPU primitive case must retain its exact standalone mode, size, result and shard.'
+    }
+}
 function New-PackageFixture([string]$Name, [string]$Mutation, [switch]$EngineLauncher) {
     $directory = Join-Path $TestDirectory $Name
     $package = Join-Path $directory 'input/package'
@@ -100,10 +108,11 @@ try {
     $env:GITHUB_ENV = Join-Path $TestDirectory 'github-env.txt'
     [object[]]$inventory = & (Join-Path $PSScriptRoot 'native-ui.ps1') -ListOnly | ConvertFrom-Json
     Assert-ManaFixtureArt $inventory
-    $criticalNames = @('startup','loading','analysis-1000','clutter-1000','audio-settings-1000',
+    Assert-ManaCanvasPrimitives $inventory
+    $criticalNames = @('canvas-primitives','startup','loading','analysis-1000','clutter-1000','audio-settings-1000',
         'deck-experience-1000','equipment-1000','card-states-1000','printings-1000','audio-settings-1540',
         'lobby-ai-1000','card-reading-1000','mana-payment-1000','lobby-three-1000','full-battlefield-1000','priority-1280')
-    if ($inventory.Count -ne 16 -or @($inventory.name | Sort-Object -Unique).Count -ne 16 -or @($inventory.shard | Sort-Object -Unique).Count -ne 4 -or
+    if ($inventory.Count -ne 17 -or @($inventory.name | Sort-Object -Unique).Count -ne 17 -or @($inventory.shard | Sort-Object -Unique).Count -ne 4 -or
         @(Compare-Object $criticalNames $inventory.name -CaseSensitive).Count -ne 0 -or
         @($inventory | Where-Object name -eq 'card-reading-1000').Count -ne 1 -or
         @($inventory | Where-Object name -eq 'full-battlefield-1000').Count -ne 1 -or
@@ -114,7 +123,8 @@ try {
     $checks++
     [object[]]$inventory = & (Join-Path $PSScriptRoot 'native-ui.ps1') -ListOnly -Extended | ConvertFrom-Json
     Assert-ManaFixtureArt $inventory
-    if ($inventory.Count -ne 49 -or @($inventory.name | Sort-Object -Unique).Count -ne 49 -or @($inventory.shard | Sort-Object -Unique).Count -ne 12 -or
+    Assert-ManaCanvasPrimitives $inventory
+    if ($inventory.Count -ne 50 -or @($inventory.name | Sort-Object -Unique).Count -ne 50 -or @($inventory.shard | Sort-Object -Unique).Count -ne 12 -or
         @($inventory | Where-Object { $_.name -ceq 'mana-payment-1000' -and $_.mode -ceq '--smoke-mana-payment' -and $_.size -ceq '1000x740' -and $_.result -ceq 'mana-payment-ci-results.json' }).Count -ne 1) { throw 'Extended native suite discovery is incomplete or duplicated.' }
     $checks++
     $valid = New-PackageFixture 'valid' ''
