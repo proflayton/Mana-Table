@@ -25,6 +25,7 @@ internal sealed class StackArrivalPresentation
     private readonly Dictionary<string, string> finiteGroups = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> finiteCounts = new(StringComparer.Ordinal);
     private readonly HashSet<string> finitePresented = new(StringComparer.Ordinal);
+    private readonly HashSet<string> acknowledged = new(StringComparer.Ordinal);
     internal int IncompleteCount { get; private set; }
     internal int PendingCount => pending.Count + (current == null ? 0 : 1);
 
@@ -38,7 +39,8 @@ internal sealed class StackArrivalPresentation
         foreach (var group in finiteGroups.Values) finiteCounts[group] = finiteCounts.GetValueOrDefault(group) + 1;
         Tick(now);
         var queued = (current == null ? pending.ToArray() : new[] { current }.Concat(pending)).ToArray();
-        current = null; pending.Clear(); elapsed = 0; lastTick = now; presented = false;
+        // Regrouping the same visible queue does not restart its animation.
+        current = null; pending.Clear();
         foreach (var announcement in queued) {
             if (GroupFinite(announcement) is not { } grouped) continue;
             if (current == null) current = grouped; else pending.Enqueue(grouped);
@@ -48,6 +50,15 @@ internal sealed class StackArrivalPresentation
     internal void EndFinite()
     {
         finiteGroups.Clear(); finiteCounts.Clear(); finitePresented.Clear();
+        acknowledged.Clear();
+    }
+
+    internal void AcknowledgeCurrent(double now)
+    {
+        Tick(now);
+        acknowledged.Clear();
+        if (current is { AwaitingMetadata: false }) acknowledged.Add(current.Id);
+        foreach (var item in pending.Where(item => !item.AwaitingMetadata)) acknowledged.Add(item.Id);
     }
 
     internal void Observe(GameSnapshot? before, GameSnapshot after, double now,
@@ -118,7 +129,7 @@ internal sealed class StackArrivalPresentation
         var queued = pending.ToArray(); pending.Clear();
         foreach (var announcement in queued) if (Enrich(announcement) is { } ready) pending.Enqueue(ready);
         if (current == null) current = pending.TryDequeue(out var next) ? next : null;
-        if (wasWaiting && current?.AwaitingMetadata != true) { elapsed = 0; lastTick = now; }
+        if (wasWaiting && current?.AwaitingMetadata != true) { elapsed = 0; lastTick = now; presented = false; }
 
         Announcement? Enrich(Announcement? announcement)
         {
@@ -155,7 +166,7 @@ internal sealed class StackArrivalPresentation
         foreach (var item in urgent.Skip(1)) pending.Enqueue(item);
         if (current != null && !keys.Contains(current.Id)) pending.Enqueue(current);
         foreach (var item in queued.Where(item => !keys.Contains(item.Id))) pending.Enqueue(item);
-        current = urgent[0]; elapsed = 0; lastTick = now;
+        current = urgent[0]; elapsed = 0; lastTick = now; presented = false;
     }
 
     private void Add(Announcement announcement, double now)
@@ -197,10 +208,16 @@ internal sealed class StackArrivalPresentation
         return current?.StackId == stackId ? (float)Math.Max(0, 1 - elapsed / Duration) : 0;
     }
     internal bool Ready(double now) { Tick(now); return current == null; }
-    // Explicit finite-stack intent may proceed after the first readable beat.
+    // Explicit finite-stack intent may proceed after the first readable beat
+    // or acknowledgement of its current known announcements. Later arrivals
+    // and deferred reading material do not inherit that acknowledgement.
     // Remaining arrivals stay visible as a census/announcement queue; every
     // actual settled engine change still owns its independent pacing interval.
-    internal bool ProgressReady(double now) { Tick(now); return current == null || presented; }
+    internal bool ProgressReady(double now)
+    {
+        Tick(now);
+        return current == null || !current.AwaitingMetadata && (presented || acknowledged.Contains(current.Id));
+    }
     internal void Clear()
     {
         current = null; pending.Clear(); seen.Clear(); recent.Clear();

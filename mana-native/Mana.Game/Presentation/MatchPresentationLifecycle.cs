@@ -48,6 +48,12 @@ internal sealed class MatchPresentationLifecycle
         finiteBeatUntil = now + 1.2;
     }
     internal void EndFinite() => stackArrival.EndFinite();
+    internal void AcknowledgeCurrentStack(double now)
+    {
+        pacing.Acknowledge(now);
+        finiteBeatUntil = Math.Min(finiteBeatUntil, now);
+        stackArrival.AcknowledgeCurrent(now);
+    }
     internal float StackArrivalStrength(string id, double now) => stackArrival.Strength(id, now);
     internal StackArrivalPresentation.Announcement? Announcement(double now) => stackArrival.Current(now);
     internal int AnnouncementCount => stackArrival.PendingCount;

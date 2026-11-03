@@ -1132,6 +1132,23 @@ diagnosis. Explicit-stop coverage also retains a later committed receipt.
 Their authored snapshots establish presentation behavior; Java establishes the
 real rules transitions. Neither supplies human UX approval or all-card coverage.
 
+The source candidate adds a first-dispatch regression to the same
+`FiniteResolutionPresentationChecks` in the existing `pending-effects` group
+and full headless lane. Physical Resolve these clicks at 1000 x 740 and
+1540 x 980, with ordinary and reduced motion, begin with an unaged announcement.
+Presentation time stays frozen while the real session worker reaches the first
+current grant/pass dispatch. A held receipt checks that only one RPC is active
+and Take control remains available; a newly published response interrupts the
+capture, keeps its own reading beat and cannot acquire another pass or replay.
+Companion checks retain deferred-metadata and ordinary Auto queue boundaries.
+The first baseline run failed the intended no-first-grant assertion, and the
+focused candidate run passed. The full headless lane and GPU reading journeys at
+both window sizes passed; the rendered first-request allowance is 0.6 seconds.
+No new
+test lane or process is introduced. These checks measure virtual-clock
+click-to-dispatch behavior, not JVM callback elapsed time, availability-scan
+cost or a human mixed-table review.
+
 `FiniteCombatStagingTest` issues 100 actual attack toggles and 100 actual block
 toggles with fresh offered authority, checks every staged count, and requires a
 separate final confirmation under its unchanged 180-second limit. Its bounded

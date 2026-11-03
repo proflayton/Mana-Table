@@ -56,6 +56,7 @@ internal sealed partial class TableApplication
         finiteResolutionIntent = FiniteResolutionIntent.TryArm(match, match.Stack.Select(item => item.Id));
         if (finiteResolutionIntent != null) BeginFinitePresentation(match, finiteResolutionIntent);
         else stackResolutionIntent = StackResolutionIntent.TryArm(match);
+        if (ResolvingCapturedStack) matchPresentation.AcknowledgeCurrentStack(now);
         error = ""; commandFailure = false;
     }
 
@@ -65,6 +66,7 @@ internal sealed partial class TableApplication
         StopQuietPriority(); StopStackResolution(); session.CancelAdvance();
         held = false; priorityAttention.Resume(); finiteResolutionIntent = intent;
         BeginFinitePresentation(match, intent);
+        matchPresentation.AcknowledgeCurrentStack(now);
         error = ""; commandFailure = false;
     }
 
