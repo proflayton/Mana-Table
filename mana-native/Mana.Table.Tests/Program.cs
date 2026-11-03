@@ -143,6 +143,14 @@ internal static class Program
                 if (args.Contains("--smoke-card-states")) new PlayPreferences { TextScale = 1.3f, Sounds = false, Automatic = false }.Save(profile);
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.Example());
                 using var test = new TableWindow(TestTableServices.For(scenario) with { HistoryArchive = new HistorySmokeArchive() }, profile, null, null, size: size, initialState: scenario.State, artSource: new CardReadingArtFixture(Arg("--art-cache")));
+                if (args.Contains("--test-offscreen")) {
+                    test.Window.Position = new Microsoft.Xna.Framework.Point(-32000, -32000);
+                    if (Control.FromHandle(test.Window.Handle) is Form captureWindow) {
+                        captureWindow.Enabled = false;
+                        captureWindow.ShowInTaskbar = false;
+                        captureWindow.Shown += (_, _) => captureWindow.Hide();
+                    }
+                }
                 test.Automation = new CardReadingSmoke(test.TestPort, scenario, selectionOnly: args.Contains("--smoke-compact-selection"), statesOnly: args.Contains("--smoke-card-states"));
                 test.Run(); return 0;
             }

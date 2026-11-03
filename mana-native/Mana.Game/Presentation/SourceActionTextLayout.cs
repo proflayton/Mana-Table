@@ -6,7 +6,7 @@ using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Table.Presentation;
 
-internal sealed record SourceActionTextRun(string Text, string? Symbol, int X, int Width);
+internal sealed record SourceActionTextRun(string Text, string? Symbol, int X, int Width, int SourceStart = -1);
 
 /// <summary>Display tokens only. The original offer text and command remain untouched.</summary>
 internal sealed record SourceActionTextLayout(string Text, IReadOnlyList<IReadOnlyList<SourceActionTextRun>> Lines,
@@ -30,25 +30,26 @@ internal sealed record SourceActionTextLayout(string Text, IReadOnlyList<IReadOn
             lines.Add(current.AsReadOnly()); current = []; x = 0;
         }
         foreach (Match word in Regex.Matches(text, @"\S+")) {
-            var parts = new List<(string Text, string? Symbol)>();
+            var parts = new List<(string Text, string? Symbol, int SourceStart)>();
             int start = 0;
             foreach (Match token in Regex.Matches(word.Value, @"\{([^{}]+)\}")) {
                 string symbol = token.Groups[1].Value;
                 if (SymbolCrop(symbol).IsEmpty) continue;
-                if (token.Index > start) parts.Add((word.Value[start..token.Index], null));
-                parts.Add((token.Value, symbol)); start = token.Index + token.Length;
+                if (token.Index > start) parts.Add((word.Value[start..token.Index], null, word.Index + start));
+                parts.Add((token.Value, symbol, word.Index + token.Index)); start = token.Index + token.Length;
             }
-            if (start < word.Length) parts.Add((word.Value[start..], null));
+            if (start < word.Length) parts.Add((word.Value[start..], null, word.Index + start));
             int wordWidth = parts.Sum(part => part.Symbol == null ? Advance(part.Text) : symbolAdvance);
             if (x > 0 && x + space + wordWidth > width) FinishLine();
             else if (x > 0) x += space;
             foreach (var part in parts) {
                 if (part.Symbol != null) {
                     if (x > 0 && x + symbolAdvance > width) FinishLine();
-                    current.Add(new(part.Text, part.Symbol, x, symbolSide)); x += symbolAdvance;
+                    current.Add(new(part.Text, part.Symbol, x, symbolSide, part.SourceStart)); x += symbolAdvance;
                     continue;
                 }
                 string remaining = part.Text;
+                int sourceStart = part.SourceStart;
                 while (remaining.Length > 0) {
                     int available = width - x;
                     if (available <= 0) { FinishLine(); available = width; }
@@ -66,8 +67,9 @@ internal sealed record SourceActionTextLayout(string Text, IReadOnlyList<IReadOn
                     }
                     string fragment = remaining[..length];
                     int advance = Advance(fragment);
-                    current.Add(new(fragment, null, x, advance + 6)); x += advance;
+                    current.Add(new(fragment, null, x, advance + 6, sourceStart)); x += advance;
                     remaining = remaining[length..];
+                    sourceStart += length;
                     if (remaining.Length > 0) FinishLine();
                 }
             }

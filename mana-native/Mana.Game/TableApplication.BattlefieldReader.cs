@@ -10,7 +10,7 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private sealed record BattlefieldReaderChip(string Text, Color Accent);
+    private sealed record BattlefieldReaderChip(string Text, Color Accent, IReadOnlyList<PublicState>? Keywords = null);
     private Rectangle battlefieldReaderStateBounds;
     private int battlefieldReaderStateScroll, battlefieldReaderStateScrollMax;
     private string battlefieldReaderStateBinding = "";
@@ -55,7 +55,10 @@ internal sealed partial class TableApplication
         if (card.Sick && CardPresentation.HasCombatStats(card)
             && !abilityLabels.Contains("Summoning sick", StringComparer.OrdinalIgnoreCase))
             chips.Add(new("Summoning sick", Blue));
-        chips.AddRange(abilityLabels.Select(label => new BattlefieldReaderChip(label, Blue)));
+        if (card.States is { } abilities) chips.AddRange(abilities.Where(state => state.Kind == "ability")
+            .Select(state => new BattlefieldReaderChip(PublicStatePresentation.Caption(state), Blue,
+                string.IsNullOrWhiteSpace(state.Detail) ? null : [state])));
+        else chips.AddRange(abilityLabels.Select(label => new BattlefieldReaderChip(label, Blue)));
         if (card.States is { } states) chips.AddRange(states.Where(state => state.Kind == "status")
             .Select(state => new BattlefieldReaderChip(PublicStatePresentation.Description(state), Gold)));
         if (chips.Count == 0) return;
@@ -87,6 +90,8 @@ internal sealed partial class TableApplication
             int y = top + item.Y - scroll;
             var bounds = Rectangle.Intersect(new(x, y, width, item.Height), battlefieldReaderStateBounds);
             if (bounds.IsEmpty) continue;
+            if (item.Chip.Keywords is { } keywords)
+                RegisterKeywordHelp(entry.Id + ":state", bounds, keywords, ["battlefield-reader-state"]);
             canvas.Rounded(bounds, new(13, 25, 31), 5);
             if (bounds.Height > 16) canvas.Fill(new(bounds.Left, bounds.Top + 8, 3, bounds.Height - 16), item.Chip.Accent * .75f);
             for (int line = 0; line < item.Lines.Length; line++) {

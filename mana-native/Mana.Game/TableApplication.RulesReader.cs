@@ -121,7 +121,11 @@ internal sealed partial class TableApplication
         if (card.ManaCost.Length > 0) { y += 6; Paint(layout.Mana, CardRulesLayout.ManaFont, false); }
         y += 8; Paint(layout.Type, CardRulesLayout.TypeFont, true);
         y += 8; canvas.Line(new(x, y), new(face.Right - 20, y), new(114, 115, 99), 1); y += 12;
-        foreach (var paragraph in layout.Paragraphs) { Paint(paragraph, CardRulesLayout.RulesFont, false); y += 12; }
+        for (int index = 0; index < layout.Paragraphs.Count; index++) {
+            var paragraph = layout.Paragraphs[index];
+            RegisterRulesKeywordHelp(card, paragraph, x, y, index);
+            Paint(paragraph, CardRulesLayout.RulesFont, false); y += 12;
+        }
         var statsCard = illustration ?? card;
         if (CardPresentation.HasCombatStats(statsCard)) {
             var stats = new Rectangle(face.Right - 112, face.Bottom - 45, 92, 32);

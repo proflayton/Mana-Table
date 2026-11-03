@@ -33,6 +33,7 @@ internal static partial class HeadlessPresentationSmoke
         try {
             if (group != null) {
                 if (group == "mana-pool") CheckManaPoolPaymentClarity(profile, Check, trace, performance);
+                else if (group == "keyword-help") CheckKeywordHelp(profile, Check, trace, performance);
                 else if (group == "match-header") MatchHeaderInteractionChecks.Run(profile, Check);
                 else if (group == "cooperative-lobby") CooperativeLobbyInteractionChecks.Run(profile, Check);
                 else if (group == "cooperative-opening") CooperativeOpeningChecks.Run(Check);
@@ -101,6 +102,7 @@ internal static partial class HeadlessPresentationSmoke
             CheckOptionalDecisions(profile, Check, trace, performance);
             CheckCounterCost(profile, Check, trace, performance);
             CheckRulesReader(profile, Check, trace, performance);
+            CheckKeywordHelp(profile, Check, trace, performance);
             CheckHandSourceAlternatives(profile, Check, trace, performance);
             CheckMatchFailure(profile, Check, trace, performance);
             ConcessionLifetimeChecks.Run(profile, Check);
@@ -534,22 +536,23 @@ internal static partial class HeadlessPresentationSmoke
         internal PresentationFrame Frame { get; private set; } = null!;
 
         internal Runner(string profile, string scenario, GameSnapshot state, List<object> trace, List<object> performance,
-            ObservationDeliveryMode delivery = ObservationDeliveryMode.External)
+            ObservationDeliveryMode delivery = ObservationDeliveryMode.External, bool reducedMotion = true)
         {
             this.scenario = scenario; this.trace = trace; this.performance = performance;
             string directory = Path.Combine(profile, scenario); Directory.CreateDirectory(directory);
-            new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f,
+            new PlayPreferences { Automatic = false, ReducedMotion = reducedMotion, Sounds = false, TextScale = 1.3f,
                 Stops = scenario == "reader-drag-over-control" ? ["MAIN1"] : [] }.Save(directory);
             Engine.Present(state);
             application = new(TestTableServices.For(Engine), directory, Engine.State, viewport, delivery);
         }
         internal PresentationFrame Tick(string label) => Input(pointer, label: label);
         internal PresentationFrame Input(Point point, ButtonState left = ButtonState.Released,
-            ButtonState right = ButtonState.Released, string label = "input", KeyboardState? keys = null, ButtonState middle = ButtonState.Released)
+            ButtonState right = ButtonState.Released, string label = "input", KeyboardState? keys = null, ButtonState middle = ButtonState.Released,
+            bool active = true)
         {
             pointer = point;
             var timer = Stopwatch.StartNew();
-            application.Tick(TimeSpan.FromSeconds(1.0 / 60), new(point.X, point.Y, 0, left, middle, right, ButtonState.Released, ButtonState.Released), keys ?? new());
+            application.Tick(TimeSpan.FromSeconds(1.0 / 60), new(point.X, point.Y, 0, left, middle, right, ButtonState.Released, ButtonState.Released), keys ?? new(), active: active);
             timer.Stop(); updateMilliseconds.Add(timer.Elapsed.TotalMilliseconds);
             return ReadFrame(label);
         }
@@ -565,6 +568,7 @@ internal static partial class HeadlessPresentationSmoke
         internal void Settle(string label) { Tick(label + "-restore"); Tick(label + "-settled"); }
         internal void Present(GameSnapshot state) { Engine.Present(state); QueueExact(Engine.State); }
         internal void QueueExact(GameSnapshot state) => application.QueueObservation(state);
+        internal void Deactivate() => application.Deactivate();
         internal TableHit Hit(string id) => Frame.Hits.LastOrDefault(hit => hit.Id == id)
             ?? throw new InvalidOperationException("Missing production input target: " + id);
         internal void ClickHit(string id) { var point = PointFor(Hit(id)); Input(point, left: ButtonState.Pressed, label: "press-" + id); Input(point, label: "release-" + id); }

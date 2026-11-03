@@ -68,6 +68,11 @@ public static class CardPresentation
         : card.States != null ? card.States.Value.Where(state => state.Kind == "ability")
             .Select(PublicStatePresentation.Description).ToArray()
         : AbilityLabels(card);
+    // Reminder text belongs to the current disclosed engine descriptor. Missing
+    // legacy/catalog facts do not authorize a name-based glossary guess.
+    public static PublicState[] KeywordDescriptions(Card card) => card.FaceDown && card.Type.Length == 0 ? []
+        : card.States is { } states ? states.Where(state => state.Kind == "ability"
+            && !string.IsNullOrWhiteSpace(state.Label) && !string.IsNullOrWhiteSpace(state.Detail)).ToArray() : [];
     public static string AbilityName(string keyword) => System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(keyword);
     public static string[] DescriptorLabels(Card card) => card.FaceDown && card.Type.Length == 0 ? []
         : card.States == null ? AbilityLabels(card)

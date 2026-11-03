@@ -23,6 +23,7 @@ internal sealed partial class TableApplication
 
     private void CancelLocalInput()
     {
+        ClearKeywordHelp();
         FinishAudioAdjustment(); audioVolumeFocused = false;
         CancelReleasedPlayIntent();
         pressed = null; dragSource = null; dragging = false; selectedCombat = null;
@@ -123,6 +124,8 @@ internal sealed partial class TableApplication
             overlay = ""; pressed = null;
         } else if (escapePressed && turnPassRequest != null) {
             turnPassRequest = null;
+        } else if (escapePressed && DismissKeywordHelp()) {
+            pressed = null;
         } else if (escapePressed && !cancelledDrag) {
             CancelReleasedPlayIntent();
             bool closedReader = readingId != null;

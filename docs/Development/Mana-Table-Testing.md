@@ -2289,6 +2289,19 @@ scope, stale publications, cancellation and both delayed and hung observations.
 Real native journeys retain their original watchdogs while waiting for actual
 departure or completion, including conformance-to-rematch and workshop returns.
 
+## Keyword explanation checks
+
+The keyword-help candidate extends the existing presentation lanes.
+`KeywordHelpChecks` exercises exact engine-label matching, qualified mana costs,
+wrapped multiword phrases, original Unicode offsets and missing/unknown facts.
+The headless presentation journey uses real composed hit geometry to hover
+keyword rows and Rules text, transfer into the popup, dismiss it and revoke
+changed or concealed descriptions without a gameplay command. Normal dwell and
+reduced motion remain distinct. These checks certify presentation behavior,
+not a second rules engine or human readability approval. All source descriptions
+come from current `PublicState` records; unrelated prose and absent catalog facts
+must not acquire guessed help.
+
 ## Local command diagnostics
 
 The source implementation after 0.2.290 adds a journal for ordinary `Submit`

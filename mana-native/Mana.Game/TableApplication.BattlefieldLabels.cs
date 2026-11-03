@@ -27,8 +27,11 @@ internal sealed partial class TableApplication
             var states = CardPresentation.Abilities(card).ToList();
             if (card.Sick && CardPresentation.HasCombatStats(card)) states.Insert(0, "summoning sick");
             if (card.PhasedOut) states.Insert(0, "phased out");
-            for (int index = 0; index < Math.Min(2, states.Count); index++)
-                PaintAbilityIcon(states[index], new(pose.Bounds.Left + 12 + index * 23, pose.Center.Y - 2));
+            for (int index = 0; index < Math.Min(2, states.Count); index++) {
+                var center = new Vector2(pose.Bounds.Left + 12 + index * 23, pose.Center.Y - 2);
+                PaintAbilityIcon(states[index], center);
+                RegisterKeywordIcon(card, states[index], new((int)center.X - 11, (int)center.Y - 11, 22, 22));
+            }
         }
         PaintAttachedCardState(card, pose, owner);
         PaintBattlefieldCopies(card, pose, owner, copies);

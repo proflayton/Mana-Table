@@ -211,6 +211,7 @@ internal sealed partial class TableApplication
         {
             var center = new Vector2(badgeRow.Left + copyWidth + 8 + index * 15, badgeRow.Center.Y);
             PaintBattlefieldScanGlyph(abilities[index], center);
+            RegisterKeywordIcon(card, abilities[index], new((int)center.X - 6, (int)center.Y - 6, 12, 12));
             RecordBattlefieldLabel(card, owner, "ability", abilities[index], new((int)center.X - 6, (int)center.Y - 6, 12, 12), 12, 12);
         }
     }
