@@ -22,6 +22,8 @@ internal sealed partial class TableApplication
     private IReadOnlyList<Rectangle> studyFixedHudObstacles = [];
     private sealed record PortraitPriorityPlan(Rectangle Area, int HeadingHeight, int UndoHeight, string Source, string Progress);
     private PortraitPriorityPlan? portraitPriorityPlan;
+    private Rectangle automaticModeArea;
+    private Rectangle AutomaticModeBounds => automaticModeArea.IsEmpty ? LocalTurnControls.AutoBounds : automaticModeArea;
 
     private IReadOnlyList<Rectangle> StudyAttentionObstacles {
         get { _ = StudyHudObstacles; return studyAttentionObstacles; }
@@ -67,7 +69,6 @@ internal sealed partial class TableApplication
                     if (seatReadoutPlans.TryGetValue(player.Id, out var readout)) occupied.AddRange(readout.Pieces);
                 } else {
                     occupied.AddRange(seat.Geometry.TurnControls.PhaseBounds);
-                    occupied.Add(seat.Geometry.TurnControls.AutoBounds);
                     occupied.Add(seat.Geometry.TurnControls.HoldBounds);
                     occupied.Add(seat.Geometry.TurnControls.AlertBounds);
                     if (StateClarity.PlayerStates(player).Length > 0 && seat.Geometry.PublicCounterArea is { } counters) occupied.Add(counters);
@@ -121,7 +122,7 @@ internal sealed partial class TableApplication
             var layout = LocalTurnControls;
             var phases = layout.PhaseBounds.Take(turnProgress!.Markers.Length).ToArray();
             return SelectingActionTarget ? phases
-                : [.. phases, layout.AutoBounds, layout.HoldBounds, layout.AlertBounds, AbilityPassingControlBounds(),
+                : [.. phases, AutomaticModeBounds, layout.HoldBounds, layout.AlertBounds, AbilityPassingControlBounds(),
                     HudPaint(portraitPriorityPlan?.Area ?? Rectangle.Empty), HudPaint(combatBarArea)];
         }
     }
@@ -178,23 +179,26 @@ internal sealed partial class TableApplication
             hits.Add(new(id, ScopeFor(new MatchIntent.TogglePhaseStop(key)), bounds, new MatchIntent.TogglePhaseStop(key), Shape: point => Vector2.DistanceSquared(point.ToVector2(), center) <= 18 * 18));
         }
         if (!SelectingActionTarget) {
-            TurnControlIcon("auto", layout.AutoCenter, automatic, new MatchIntent.SetAutomatic(!automatic));
+            var mode = AutomaticModeBounds;
+            TurnControlIcon("auto", new(mode.Right - 18, mode.Center.Y), automatic && !held,
+                new MatchIntent.SetAutomatic(decisionDock?.AutomaticPassing.ToggleEnables ?? (held || !automatic)));
             TurnControlIcon("hold", layout.HoldCenter, held, new MatchIntent.ToggleHold(), pause: true);
             DrawPriorityAlertControl(layout);
         }
         for (int i = 0; i < markers.Length; i++)
             if (IsControlHovered("phase-stop:" + markers[i].Key)) DrawTurnHint(markers[i].Hint, layout.Markers[i]);
         if (IsControlHovered("auto")) {
-            string detail = automatic ? "Auto: skip quiet windows, stop for actions · Full control (F)" : "Enable Auto: wait for actions (F)";
+            string detail = held ? "Resume Auto (F) · Stop for new actions and choices"
+                : automatic ? "Auto on · Switch to full control (F)" : "Enable Auto (F) · Stop for new actions and choices";
             if (decisionDock?.PauseReason is DecisionDockPauseReason.Inspection or DecisionDockPauseReason.Presentation)
                 detail = decisionDock.Caption + " · " + detail;
-            DrawTurnHint(detail, layout.AutoCenter);
+            DrawTurnHint(detail, AutomaticModeBounds.Center.ToVector2());
         }
         if (IsControlHovered("hold")) DrawTurnHint(held ? "Stop holding priority (Ctrl)" : "Hold priority this turn (Ctrl)", layout.HoldCenter);
     }
 
-    private int PriorityWaitWidth => Math.Max(150, Math.Max(canvas.TextWidth("Wait for action", .76f),
-        canvas.TextWidth("Take control", .76f, true)) + 24);
+    private int PriorityWaitWidth => Math.Max(150, new[] { "Auto pass", "Resume Auto", "Take control" }
+        .Max(label => canvas.TextWidth(label, .76f, true)) + 24);
 
     private Rectangle PortraitPriorityArea()
     {
@@ -264,9 +268,11 @@ internal sealed partial class TableApplication
     private void DrawAutomaticPassingControl()
     {
         if (!automatic || held || !PortraitTurnControlsCanPaint) return;
-        var area = portraitPriorityPlan?.Area ?? PlacePortraitPriorityArea(PortraitPriorityArea());
+        var plan = portraitPriorityPlan ?? MeasurePortraitPriority();
+        if (portraitPriorityPlan == null) plan = plan with { Area = PlacePortraitPriorityArea(plan.Area) };
+        var area = plan.Area;
         if (area.IsEmpty) return;
-        decisionPanelBounds = area;
+        decisionPanelBounds = plan.Area;
         string heading = decisionDock?.PauseReason switch {
             DecisionDockPauseReason.Inspection => "Auto paused · Reading",
             DecisionDockPauseReason.Presentation => "Auto · Watching play",
@@ -295,12 +301,12 @@ internal sealed partial class TableApplication
             return;
         }
         var plan = portraitPriorityPlan ?? MeasurePortraitPriority();
+        if (portraitPriorityPlan == null) plan = plan with { Area = PlacePortraitPriorityArea(plan.Area) };
         var area = plan.Area;
         int waitWidth = PriorityWaitWidth;
         string finiteSource = plan.Source, finiteProgress = plan.Progress;
         int undoHeight = plan.UndoHeight;
-        if (portraitPriorityPlan == null) area = PlacePortraitPriorityArea(area);
-        decisionPanelBounds = area; decisionTextBounds = Rectangle.Empty; decisionText = ""; decisionTextOverflow = false;
+        decisionPanelBounds = plan.Area; decisionTextBounds = Rectangle.Empty; decisionText = ""; decisionTextOverflow = false;
         if (area.IsEmpty) return;
         if (DrawTurnPassConfirmation(area)) return;
         bool stopped = view.PauseReason == DecisionDockPauseReason.PhaseStop;
@@ -310,7 +316,7 @@ internal sealed partial class TableApplication
         else DrawDecisionRole(view, statusPoint, accent);
         string heading = finiteResolutionIntent is { } batch ? batch.DeclinesOptionalPayments ? "Decline costs \u00b7 resolve queue" : "Resolving captured effects"
             : ResolvingCapturedStack ? "Resolving · " + CapturedStackRemaining + " remaining"
-            : QuietPriorityArmed ? automatic ? "Auto · Waiting for action" : "Waiting for action"
+            : QuietPriorityArmed ? "Auto · Stops for new actions"
             : stopped ? view.Caption : held ? "Your control · This turn"
             : view.Status == DecisionDockStatus.Priority && automatic && priorityAttention.NeedsResponse && state.Stack.Length > 0
                 ? "Your response · Auto paused" : view.Headline;
@@ -325,7 +331,7 @@ internal sealed partial class TableApplication
             canvas.Text(finiteProgress, area.X + 28, progressY, Muted, .6f, area.Width - 28, 80);
         }
         if (Vector2.DistanceSquared(pointer.ToVector2(), statusPoint) <= 16 * 16)
-            DrawTurnHint(QuietPriorityArmed ? "Waiting this turn · Stops for new actions · Take control to stop now"
+            DrawTurnHint(QuietPriorityArmed ? "Auto passing · Stops for new actions · Take control to stop now"
                 : view.Headline + (view.Caption.Length > 0 ? " · " + view.Caption : ""), statusPoint);
         if (stopped) {
             string id = "resume-phase-stop", key = state.PhaseKey;
@@ -339,9 +345,9 @@ internal sealed partial class TableApplication
             Button("stack-resolution-stop", "Take control", action, new MatchIntent.SetStackResolution(false), true, true);
         } else if (QuietPriorityArmed || !following && CanOfferQuietPriority) {
             var wait = new Rectangle(action.Right - waitWidth, action.Y, waitWidth, action.Height);
-            Button(QuietPriorityArmed ? "quiet-priority-stop" : "quiet-priority-arm", QuietPriorityArmed ? "Take control" : "Wait for action",
+            Button(QuietPriorityArmed ? "quiet-priority-stop" : "quiet-priority-arm", QuietPriorityArmed ? "Take control" : view.AutomaticPassing.StartLabel,
                 wait, new MatchIntent.SetQuietPriority(!QuietPriorityArmed), !busy || QuietPriorityArmed, QuietPriorityArmed);
-            if (IsControlHovered("quiet-priority-arm")) DrawTurnHint("Wait this turn · Stop for spells, abilities, combat and choices", wait.Center.ToVector2());
+            if (IsControlHovered("quiet-priority-arm")) DrawTurnHint("Start Auto now · Stop for spells, abilities, combat and choices", wait.Center.ToVector2());
             if (!QuietPriorityArmed && !busy && d is { Payload: PriorityPayload { Pass.Enabled: true } }) {
                 Button("confirm", view.ActionLabel, new(action.X, action.Y, action.Width - waitWidth - 8, action.Height),
                     new MatchIntent.ConfirmDecision(), CombatGuide.CanConfirm(state), true);
@@ -360,12 +366,21 @@ internal sealed partial class TableApplication
     {
         bool hover = IsControlHovered(id), down = hover && pressed?.Id == id && CurrentHit(pressed);
         Color color = hover ? Ink : selected ? id == "hold" ? Gold : Blue : Muted;
+        bool namedAuto = id == "auto" && portraitPriorityPlan != null;
+        if (namedAuto) {
+            var mode = AutomaticModeBounds;
+            canvas.Rounded(mode, new(13, 24, 30), 6);
+            string label = decisionDock!.AutomaticPassing.ControlLabel;
+            canvas.CenterText(label, new(mode.X + 6, mode.Y, mode.Width - 48, mode.Height), color, .65f, true);
+        }
         canvas.Circle(center + new Vector2(0, 2), 17, Color.Black * .8f);
         canvas.Circle(center, 16, hover ? Blue : selected ? color : new Color(65, 78, 82));
         canvas.Circle(center, 14, down ? new(35, 60, 69) : new(13, 24, 30));
         if (pause) PaintTurnPause(center, color, 6); else PaintTurnAdvance(center, color);
-        var bounds = new Rectangle((int)center.X - 18, (int)center.Y - 18, 36, 36);
-        hits.Add(new(id, ScopeFor(action), bounds, action,
+        var bounds = namedAuto ? AutomaticModeBounds
+            : new Rectangle((int)center.X - 18, (int)center.Y - 18, 36, 36);
+        if (namedAuto) hits.Add(new(id, ScopeFor(action), bounds, action));
+        else hits.Add(new(id, ScopeFor(action), bounds, action,
             Shape: point => Vector2.DistanceSquared(point.ToVector2(), center) <= 18 * 18));
     }
 

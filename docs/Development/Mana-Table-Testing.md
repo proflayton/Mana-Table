@@ -1003,6 +1003,16 @@ visible stack announcement, rather than assuming the earlier shorter animation
 duration. The existing headless arrival check separately verifies that unchanged
 observations do not restart that announcement.
 
+`VisibleAutoPriorityChecks` exercises the physical Auto pass, Take control and
+Resume Auto journey from a saved-off profile in the existing headless
+presentation lane. Its first start holds presentation time fixed while a
+controlled request is in flight, then checks exact token scope, one command
+lane, reading, new-response interruption and first-land confirmation. It also
+checks the F and portrait-toggle path after a temporary hold. These checks use
+the actual controls rather than enabling Auto through a test hook; they do not
+establish human discoverability or real JVM latency. Review the rendered
+priority action at 1000 x 740 and 1540 x 980 with enlarged text.
+
 `PriorityContinuationChecks` runs in the existing headless presentation lane.
 Source candidate: its routine-Auto journey and the existing
 `PriorityAbilitySmoke` journey cover the larger portrait-adjacent

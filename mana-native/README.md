@@ -163,9 +163,17 @@ exact scope, such as "Stop on my end step"; clicking a saved mark removes it.
 The active opponent has a read-only actual-phase cue at their portrait. Your
 controls stay in place as the turn moves; there are not four competing sets.
 
-Auto/Full control and Hold use portrait-side icons with hover explanations;
-F toggles Auto and Ctrl holds priority for the current turn. Wait for action,
-Take control and the readable Pass once action live beside that same portrait.
+Source candidate: **Auto pass** beside the current priority action enables Auto
+and starts the current quiet window. It becomes **Take control**, then
+**Resume Auto** after a temporary hold. The running heading says Auto stops for
+new actions; hovering the start action explains the complete scope. Its mode
+label shows Auto off or a temporary pause.
+The mode control reads Auto off, Auto on or Auto paused. It and F resume
+a temporary hold; otherwise they switch
+between Auto and full control. Ctrl holds priority for the current turn.
+During required choices and payment, the compact portrait Auto icon and F keep
+their mode-only behavior while the source's controls own the decision.
+Auto pass, Take control and the readable Pass once action live beside that same portrait.
 Required targets, searches and payment remain at their source/decision surfaces.
 
 Source candidate after 0.2.356: hover a keyword icon or its label beside an

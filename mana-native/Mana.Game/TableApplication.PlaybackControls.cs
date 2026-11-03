@@ -2,6 +2,8 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
+    private void ToggleAutomaticControl() => UseAutomaticControl(held || !automatic);
+
     private void UseAutomaticControl(bool value) {
         if (!value) session.ClearAllOptionalPaymentPolicies();
         StopQuietPriority(); StopStackResolution(); StopGroupBlocks();

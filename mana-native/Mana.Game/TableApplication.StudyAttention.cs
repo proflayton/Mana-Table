@@ -47,7 +47,8 @@ internal sealed partial class TableApplication
 
     private void PrepareStudyAttentionArea()
     {
-        portraitPriorityPlan = null; combatBarArea = Rectangle.Empty; abilityPassingArea = Rectangle.Empty;
+        portraitPriorityPlan = null; automaticModeArea = Rectangle.Empty;
+        combatBarArea = Rectangle.Empty; abilityPassingArea = Rectangle.Empty;
         publicAnnouncementPlan = null;
         studyRequiredObjects = [];
         studyHudConstrained = false;
@@ -60,8 +61,14 @@ internal sealed partial class TableApplication
             var measured = MeasurePortraitPriority();
             portraitPriorityPlan = measured with { Area = PlacePortraitPriorityArea(measured.Area) };
         }
+        if (portraitPriorityPlan is { } priority) {
+            var body = priority.Area;
+            var preferredMode = new Rectangle(body.Right - TurnControlLayout.AutoControlWidth, body.Bottom + 8,
+                TurnControlLayout.AutoControlWidth, TurnControlLayout.AutoControlHeight);
+            automaticModeArea = PlaceStudyHud(preferredMode, [HudPaint(body)], new(8, 58, 1584, 834));
+        }
         if (!TableStudyEnabled) return;
-        var reserved = new List<Rectangle> { HudPaint(portraitPriorityPlan?.Area ?? Rectangle.Empty) };
+        var reserved = new List<Rectangle> { HudPaint(portraitPriorityPlan?.Area ?? Rectangle.Empty), HudPaint(automaticModeArea) };
         PrepareAbilityPassingArea(reserved);
         if (!abilityPassingArea.IsEmpty) reserved.Add(HudPaint(abilityPassingArea));
         PrepareCombatBar(reserved);

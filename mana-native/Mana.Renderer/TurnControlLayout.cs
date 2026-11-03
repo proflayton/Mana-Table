@@ -9,6 +9,7 @@ namespace Mana.Renderer;
 public sealed record TurnControlLayout(ImmutableArray<Vector2> Markers, Vector2 AutoCenter, Vector2 HoldCenter, Rectangle PriorityArea)
 {
     public const int MarkerRadius = 16, ToggleRadius = 16, ManaOffset = 102;
+    public const int AutoControlWidth = 176, AutoControlHeight = 36;
     // Include the saved-pause corner badge and the generous circular hit areas.
     public ImmutableArray<Rectangle> PhaseBounds => Markers.Select(center => Bounds(center, MarkerRadius + 4)).ToImmutableArray();
     public Rectangle ArcBounds => PhaseBounds.Aggregate(Rectangle.Union);

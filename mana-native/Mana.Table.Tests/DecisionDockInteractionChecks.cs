@@ -258,10 +258,11 @@ internal static class DecisionDockInteractionChecks
         app.QueueObservation(engine.State); Tick();
         var search = view.Match!.Decision!;
         Click("close-overlay"); // The actual View battlefield gesture keeps the choice pending.
-        check(NearOwnPortrait("auto") && NearOwnPortrait("hold"),
-            "Auto and Hold remain attached to the local portrait while a required search is pending");
+        check(frame.Hits.Single(hit => hit.Id == "auto").Scope == frame.Hits.Single(hit => hit.Id == "hold").Scope
+                && NearOwnPortrait("auto") && NearOwnPortrait("hold"),
+            "The compact timing controls retain their local playback scope at the portrait while a required search is pending");
         Click("auto");
-        check(view.Automatic && !view.Held, "The portrait Auto icon changes only the local automation mode");
+        check(view.Automatic && !view.Held, "The named Auto control changes only the local automation mode");
         Click("hold");
         check(view.Automatic && view.Held, "The portrait Hold icon pauses that mode for the current turn");
         Click("hold"); Click("auto");

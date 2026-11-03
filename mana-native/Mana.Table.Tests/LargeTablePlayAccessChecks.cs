@@ -110,6 +110,10 @@ internal static class LargeTablePlayAccessChecks
                     && frame.Hits.Any(hit => hit.Id == "confirm") && frame.Hits.Any(hit => hit.Id == "quiet-priority-arm")
                     && solids.All(bounds => !bounds.Intersects(priority)),
                 $"{count} seats at {size.X}: real priority controls stay clear of every owner, hand, battlefield and external-card source packet");
+            var autoMode = frame.Hits.Single(hit => hit.Id == "auto").Bounds;
+            check(new Rectangle(0, 54, 1600, 846).Contains(autoMode) && !autoMode.Intersects(priority)
+                    && solids.All(bounds => !bounds.Intersects(autoMode)),
+                $"{count} seats at {size.X}: the named Auto mode keeps its full target clear of priority, owners and actual cards");
             check(cards.Length == 4 && plan.Groups.Count == 4 && cards.All(card => card.Scene.Pose.Size == new Vector2(137, 192))
                     && cards.All(card => ownerFurniture.All(bounds => !bounds.Intersects(card.Scene.Pose.Bounds)))
                     && sourceHits.Length == 5 && sourceHits.All(hit => ownerFurniture.All(bounds => !bounds.Intersects(hit.Bounds)))
