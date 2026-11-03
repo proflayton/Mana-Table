@@ -142,6 +142,17 @@ internal static class AttachmentStackChecks
         engine.Present(stages[2].Snapshot); view.Accept(engine.State); Settle();
         check(frame.Scene!.BattlefieldCard(0, AttachmentScenario.Boots)!.Attachment == null && engine.Replies.Count == 0,
             "The current snapshot removes obsolete stacking geometry without submitting a game command");
+        // Retaining the foreign Aura reader across that observation is valid.
+        // Dismiss its actual displayed face before independently testing the
+        // battlefield's seat-facing targets beneath an incidental reader.
+        var beforeFacing = view.Match;
+        var foreignReader = frame.Cards.Single(card => card.Focused && card.Id == AttachmentScenario.Foreign);
+        var dismissPoint = foreignReader.Display.Center.ToPoint();
+        check(view.HitAt(dismissPoint)?.Card?.VisualId == AttachmentScenario.Foreign,
+            "The retained foreign attachment reader owns its actual displayed face before an ordinary close gesture");
+        Tick(dismissPoint, ButtonState.Pressed); Tick(dismissPoint); Settle();
+        check(frame.Cards.All(card => !card.Focused) && ReferenceEquals(beforeFacing, view.Match) && engine.Replies.Count == 0,
+            "Clicking the retained attachment reader closes only inspection and preserves the exact canonical snapshot without a game command");
         foreach (int seat in new[] { 0, 1, 2 }) {
             var node = frame.Scene!.Seats.Single(item => item.Index == seat).Battlefield.SelectMany(cluster => cluster.Cards)
                 .First(card => card.Attachment == null && card.GroupFront && card.Card.AttachedTo == null);

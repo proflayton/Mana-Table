@@ -356,6 +356,7 @@ internal sealed partial class TableApplication : IDisposable
             allowInlineOrdering: TableChoices.IsDirect(match), sharedTableStudy: TableStudyEnabled,
             spread: spreadCollection == null ? null : new(spreadCollection, spreadTarget, spreadAreaTop), spreadMeasure: MeasureSpreadPacketHeader,
             groupCombatCandidates: GroupedCombatReview);
+        PrepareMatchFacts();
         PrepareSeatReadouts();
         CompletePlayAccessPlacement();
         PrepareCardCollection();

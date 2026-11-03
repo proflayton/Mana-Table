@@ -6,6 +6,39 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Read the pending effect and keep the response clear: source candidate
+
+**Source candidate; exact-candidate human review pending.** A reported combat
+frame put the Mithril Coat trigger, attacking/blocked counts, another player's
+land summary and Pass once / Resolve these over one another. The intent is to
+read what will resolve while keeping combat, ownership and the next response
+understandable. The source remains the actual current stack entry and its
+disclosed card; hover reads that effect without committing a game action.
+Combat still opens the existing review. Pass once answers the current priority
+prompt, and Resolve these retains its existing captured-queue scope. The rules
+engine receives those same commands and permissions.
+
+The player's Arena screenshots earlier in this conversation show **Next / To
+Combat** in a stable lower-right action area and **Stop on my end step** beside
+the hovered phase control. Those are observations of response placement and
+source-attached explanation. Sharing that clarity among four players, combat
+and several pending effects is our adaptation; those images do not establish a
+four-player arrangement or readability of a large trigger queue.
+
+One prepared frame now measures the complete priority controls, combat context,
+pending effect and announcements before painting their text, shadows and hit
+regions. Effects use their natural content height at the existing font size;
+width alternatives retain that size. Cards keep their portrait proportions.
+Owner/resource readouts and current required objects participate in placement;
+an explicit constrained no-fit result is best effort, not proof that every
+full-size surface can fit simultaneously. No camera move, new gesture or rules
+transition supplies space.
+
+Validation is being run at 1000 x 740 and 1540 x 980, normal and 130% text,
+reduced and ordinary motion, focused views and long names with distinct suffixes,
+including actual GPU captures. This entry records the intended journey; it does
+not claim those checks have passed or supply human approval.
+
 ## Preserve development options before committing mana: source candidate
 
 **AI timing candidate; exact-candidate mixed human/AI review pending.** An

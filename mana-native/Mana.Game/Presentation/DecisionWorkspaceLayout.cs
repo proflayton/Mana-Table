@@ -36,17 +36,23 @@ internal static class DecisionWorkspaceLayout
     internal static Rectangle? Fit(Rectangle preferred, Rectangle viewport, IReadOnlyList<Rectangle> occupied, int minimumWidth = 1)
     {
         if (preferred.Width <= 0 || preferred.Height <= 0 || viewport.Width <= 0 || viewport.Height <= 0) return null;
-        var candidates = FreeAreas(viewport, occupied).Select(area => {
-            int width = Math.Min(preferred.Width, Math.Min(area.Width,
-                (int)Math.Floor(area.Height * (double)preferred.Width / preferred.Height)));
-            if (width < minimumWidth || width <= 0) return Rectangle.Empty;
-            int height = (int)Math.Round(width * (double)preferred.Height / preferred.Width);
-            if (height <= 0) return Rectangle.Empty;
-            return new Rectangle(Math.Clamp(preferred.X, area.Left, area.Right - width),
-                Math.Clamp(preferred.Y, area.Top, area.Bottom - height), width, height);
-        }).Where(area => !area.IsEmpty).OrderByDescending(area => area.Width)
-            .ThenBy(area => Vector2.DistanceSquared(area.Center.ToVector2(), preferred.Center.ToVector2())).ToArray();
-        return candidates.Length == 0 ? null : candidates[0];
+        Rectangle? AtWidth(int width) {
+            int height = Math.Max(1, (int)Math.Round(width * (double)preferred.Height / preferred.Width));
+            return TranslateComplete([new(preferred.X, preferred.Y, width, height)], viewport, occupied);
+        }
+        int low = Math.Max(1, minimumWidth), high = Math.Min(preferred.Width, viewport.Width);
+        if (high < low) return null;
+        if (AtWidth(high) is { } full) return full;
+        if (AtWidth(low) is not { } best) return null;
+        // A physical face fits monotonically as its width decreases. Searching
+        // integer widths avoids exponentially duplicated free rectangles when
+        // many owner labels, controls and their shadows overlap each other.
+        while (low < high) {
+            int width = low + (high - low + 1) / 2;
+            if (AtWidth(width) is { } fitted) { best = fitted; low = width; }
+            else high = width - 1;
+        }
+        return best;
     }
 
     private static List<Rectangle> FreeAreas(Rectangle viewport, IReadOnlyList<Rectangle> occupied)

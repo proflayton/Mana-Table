@@ -50,7 +50,10 @@ internal static partial class HeadlessPresentationSmoke
                 }
                 else if (group == "play-access") CheckPlayAccess(profile, Check, trace, performance);
                 else if (group == "attachment-stack") AttachmentStackChecks.Run(profile, Check);
-                else if (group == "pending-effects") PendingEffectPresentationChecks.Run(profile, Check);
+                else if (group == "pending-effects") {
+                    PendingEffectPresentationChecks.Run(profile, Check);
+                    StackCombatLayoutChecks.Run(profile, Check);
+                }
                 else if (group == "seated-plane") {
                     TableSurfaceProjectionChecks.Run(Check);
                     SeatZoneChecks.Run(profile, Check);
@@ -133,6 +136,7 @@ internal static partial class HeadlessPresentationSmoke
             TokenArtworkChecks.Run(profile, Check);
             AttachmentStackChecks.Run(profile, Check);
             PendingEffectPresentationChecks.Run(profile, Check);
+            StackCombatLayoutChecks.Run(profile, Check);
             CardPlayChecks.RunPresentation(profile, Check);
             ImpactFeedbackChecks.RunPresentation(profile, Check);
             PublicActivityCursorChecks.RunPresentation(profile, Check);

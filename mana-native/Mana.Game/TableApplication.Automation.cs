@@ -27,6 +27,7 @@ internal sealed partial class TableApplication
         internal string? HistoryInspectedCardId => game.historyInspector ? game.inspected?.VisualId : null;
         internal Mana.Renderer.BoardView BoardView => game.boardView;
         internal Rectangle StudyAttentionBounds => game.StudyActionArea;
+        internal bool StudyHudConstrained => game.studyHudConstrained;
         internal bool FollowTurnEnabled => game.followTurnEnabled;
         internal bool BoardViewLimitedByLayout => game.boardViewMotion.LimitedByLayout;
         internal void SetTurnFollow(bool enabled) => game.SetTurnFollow(enabled);

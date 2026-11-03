@@ -13,6 +13,7 @@ internal sealed partial class TableApplication
     private string priorityAbilityId = "";
     private int priorityAbilityTextPage;
     private int priorityAbilityListPage;
+    private Rectangle abilityPassingArea;
 
     private PriorityAbility[] PriorityAbilityOptions()
     {
@@ -51,6 +52,7 @@ internal sealed partial class TableApplication
 
     private Rectangle AbilityPassingControlBounds()
     {
+        if (TableStudyEnabled) return abilityPassingArea;
         var abilities = PriorityAbilityOptions();
         if (match == null || abilities.Length == 0) return Rectangle.Empty;
         var priority = LocalTurnControls.PriorityArea;
@@ -58,12 +60,19 @@ internal sealed partial class TableApplication
         int width = canvas.TextWidth(label, .76f, true) + 32;
         int height = Math.Max(40, canvas.TextSize(label, .76f, width - 24, 1, true).Y + 16);
         var area = new Rectangle(priority.Right - width, priority.Top - height - 8, width, height);
-        if (TableStudyEnabled && StudyHudObstacles.Any(bounds => bounds.Intersects(area))) {
-            var occupied = StudyHudObstacles.Append(PlacePortraitPriorityArea(PortraitPriorityArea())).ToArray();
-            area = DecisionWorkspaceLayout.Place(priority, width, height, occupied,
-                bounded: true, minimumWidth: width, minimumHeight: height);
-        }
         return area;
+    }
+
+    private void PrepareAbilityPassingArea(IReadOnlyList<Rectangle> reserved)
+    {
+        var abilities = PriorityAbilityOptions();
+        if (abilities.Length == 0) return;
+        var priority = portraitPriorityPlan?.Area ?? LocalTurnControls.PriorityArea;
+        string label = AbilityPassingControlLabel(abilities.Length);
+        int width = canvas.TextWidth(label, .76f, true) + 32;
+        int height = Math.Max(40, canvas.TextSize(label, .76f, width - 24, 1, true).Y + 16);
+        abilityPassingArea = PlaceStudyHud(new(priority.Right - width, priority.Top - height - 12, width, height),
+            reserved, new(12, 64, 1576, 696));
     }
 
     private void DrawPriorityAbilityControl(PriorityAbility[] abilities)
