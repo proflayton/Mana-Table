@@ -530,6 +530,15 @@ within the original deadline, never replayed. `mixed-lobby/prefix-results.json`
 is a bounded integration result; private observations stay separately labelled.
 The human connections are scripted and supply no human UX, natural outcome or
 deck-qualification credit.
+The required native verification `engine` case now runs this existing `--smoke`
+route after the headless engine suite, using the verified **production** engine
+JAR and resources. It keeps the four warmed clients and original four-minute
+deadline; it adds no job or deadline extension. CI requires the canonical bounded
+prefix report (at most 1 MiB), no recorded failure, host concession, remote
+ownership checks and subsequent continuation. The engine artifact retains
+`mixed-lobby-checks` JSON/log evidence even on failure. Its per-seat snapshots,
+policy observations and test hands are private CI evidence and must not enter
+public release assets. Source CI execution does not imply human UX acceptance.
 
 ## AI release evaluation
 
@@ -2368,7 +2377,8 @@ unchanged `--smoke-presentation`, `--smoke-headless-presentation`,
 `--smoke-headless-clutter` and `--smoke-headless-priority-flow` modes with their
 existing profiles and assertions. `engine` runs the unchanged
 `--smoke-headless-engine` journey against the verified packaged runtime and
-resources. Both restore the source-bound harness; the engine case additionally
+resources, then the existing `--smoke` four-client TCP and mixed-lobby journey
+against the production JAR. Both restore the source-bound harness; the engine case additionally
 requires the bound launcher. Neither rebuilds the application. UI and installer
 jobs proceed alongside them. A failure does not cancel the sibling suite, and
 separate reports, logs and provenance manifests are retained even on failure.
@@ -2399,8 +2409,10 @@ the engine matrix suite supplies the actual gameplay execution evidence.
 The [orchestration fixtures](../../mana-native/ci/test-native-verification.ps1)
 execute the actual PowerShell restore and run blocks
 extracted from the workflow, with controlled command stubs. They verify the four
-presentation invocations and distinct profiles, the engine's complete command
-and launcher requirement, immediate stop on a failed mode, and rejection of
+presentation invocations and distinct profiles, both engine commands and their
+distinct fixture/production JAR requirements, immediate stop on a failed mode,
+and rejection of missing, malformed, failed or non-continuing mixed-lobby prefix
+evidence. They also reject inflated UX/outcome/qualification claims and
 empty, unknown or differently cased suite names before any command runs. They
 do not replace the controlled assertions or real-engine journey in CI.
 
