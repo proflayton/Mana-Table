@@ -108,6 +108,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
     {
         if (!request.Work.TrySpend()) return -1;
         var semantic = offer.Semantics;
+        if (!CanInitiate(request, semantic)) return -1;
         if (semantic.Effect == ActionEffectKind.Land || offer.Action.Kind == "play") return 1000;
         if (semantic.Effect == ActionEffectKind.Unknown && offer.Action.Kind != "cast" && semantic.OperationGraph.Operations.IsDefaultOrEmpty) return -1;
         var state = request.Frame.State;
@@ -221,14 +222,17 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         if (funding.Status == AiManaPlanStatus.Funded && funding.Steps.FirstOrDefault() is { } step) {
             if (step is AiManaStep.Pool pool)
                 return PaymentAnswer(new SpendPoolMana(state.Id, state.Decision!.Id, pool.Color), "payment-follow-assignment-pool");
-            if (step is AiManaStep.Source producer)
+            if (step is AiManaStep.Source producer && Offers(request).FirstOrDefault(offer =>
+                    offer.Set.SourceCardKey == producer.SourceCardKey && offer.Action.Id == producer.ActionId) is { } planned
+                && CanInitiate(request, planned.Semantics))
                 return PaymentAnswer(new UseOfferedAction(state.Id, state.Decision!.Id, producer.SourceCardKey, producer.ActionId) {
                     ManaOutput = new(producer.Output.Where(pair => pair.Value > 0).ToImmutableDictionary())
                 }, "payment-follow-assignment-source");
         }
         var sources = Offers(request).Where(offer => offer.Semantics.ManaAbility && offer.Semantics.ManaAmount > 0
                 && offer.Semantics.Affordability != ActionAffordability.Unavailable
-                && offer.Semantics.PaymentManaColors is not { IsEmpty: true })
+                && offer.Semantics.PaymentManaColors is not { IsEmpty: true }
+                && CanInitiate(request, offer.Semantics))
             .OrderByDescending(offer => ManaFit(request.Frame.Semantics.UnpaidMana, offer.Semantics.PaymentManaColors ?? offer.Semantics.ManaColors))
             .ThenBy(offer => ManaCost(offer)).ThenByDescending(offer => offer.Semantics.ManaAmount)
             .ThenBy(offer => CasualTableAssessment.Tie(request.Seed, offer.Semantics.StableId + offer.Source.VisualId)).ToArray();
@@ -254,6 +258,11 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         AiProposal PaymentAnswer(DecisionCommand command, string reason)
             => abandon ? AiTurnPlanner.AbandonReservation(request, Answer(request, command, reason)) : Answer(request, command, reason);
     }
+    private static bool CanInitiate(AiDecisionRequest request, ActionSemantics semantic)
+        => AiTerminalRisk.CanInitiate(request.Frame.State, semantic.OperationGraph, request.Work)
+            // Older/incomplete providers may supply only a terminal headline.
+            && !(semantic.OperationGraph.Operations.IsEmpty
+                && (semantic.Effect == ActionEffectKind.LoseGame || semantic.Effects.Contains(ActionEffectKind.LoseGame)));
     private static bool HasManaPrerequisite(ActionSemantics semantic) => semantic.Costs.Any(cost => cost.Kind == ActionCostKind.Mana
         && (cost.Amount != 0 || cost.ManaSymbols.Any(symbol => !int.TryParse(symbol.Trim('{', '}'), NumberStyles.None, CultureInfo.InvariantCulture, out int amount) || amount != 0)));
     private static double ManaCost(Offered offer) => offer.Semantics.Costs.Sum(cost => cost.Kind switch {
@@ -401,6 +410,9 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         if (confirmation.Decline == null) return Answer(request, new AcknowledgeDecision(state.Id, state.Decision!.Id), "acknowledge-required-step");
         bool decline = request.Frame.Semantics.SelectionIsCost && request.Frame.Semantics.Intent == DecisionIntent.Unknown;
         string declineReason = "decline-optional-cost";
+        // This is parent context, not an affirmative-branch graph. A payment
+        // confirmation can prevent its parent's harmful consequence; rejecting
+        // Yes based on that consequence would invert the actual choice.
         if (!request.Frame.Semantics.SelectionIsCost) {
             var assessment = CasualActionAssessment.Evaluate(state, request.Frame.Semantics.OperationGraph,
                 request.Work.CreateSlice(256, 4), CardViews.Source(state, state.Decision!));
@@ -488,6 +500,10 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         modeled = false;
         if (!request.Work.TrySpend()) return double.NegativeInfinity;
         var option = request.Frame.Semantics.Options.FirstOrDefault(option => option.Index == choice.Index);
+        if (!lose && !AiTerminalRisk.CanInitiate(request.Frame.State, option?.OperationGraph ?? ActionOperationGraph.Unknown, request.Work))
+            return double.NegativeInfinity;
+        if (!lose && option is { Effect: ActionEffectKind.LoseGame, OperationGraph.Operations.IsEmpty: true })
+            return double.NegativeInfinity;
         if (option?.Target is { Kind: SemanticEntityKind.Spell } target) {
             var semantics = request.Frame.Semantics;
             bool counter = semantics.Intent == DecisionIntent.Counter

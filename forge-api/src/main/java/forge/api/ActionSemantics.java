@@ -121,6 +121,13 @@ final class ActionSemantics {
     static String effect(SpellAbility ability) {
         if (ability.isLandAbility()) return "Land";
         ApiType api = ability.getApi();
+        if (api == ApiType.ChangeZone || api == ApiType.ChangeZoneAll) return zoneEffect(ability);
+        return effect(api);
+    }
+
+    /** Structural recipes use the same operator names without constructing a
+     * live ability or evaluating a future recipient/condition. */
+    static String effect(ApiType api) {
         if (api == null) return "Unknown";
         return switch (api) {
             case PermanentCreature, PermanentNoncreature -> "Permanent";
@@ -135,6 +142,8 @@ final class ActionSemantics {
             case RemoveCounter, RemoveCounterAll -> "RemoveCounters";
             case GainLife -> "LifeGain";
             case LoseLife -> "LifeLoss";
+            case LosesGame -> "LoseGame";
+            case WinsGame -> "WinGame";
             case Token, Investigate -> "Token";
             case Amass -> "Amass";
             case Tap, TapAll -> "Tap";
@@ -147,7 +156,6 @@ final class ActionSemantics {
             case Branch -> "Conditional";
             case Repeat, RepeatEach -> "Repeat";
             case Cleanup -> "Cleanup";
-            case ChangeZone, ChangeZoneAll -> zoneEffect(ability);
             default -> "Unknown";
         };
     }

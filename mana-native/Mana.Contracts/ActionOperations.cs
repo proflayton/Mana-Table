@@ -6,7 +6,9 @@ namespace Mana.Contracts;
 public enum SemanticKnowledge { Unknown, Known, Unsupported }
 public enum SemanticEntityKind { Player, Card, Spell }
 public enum EffectRecipientBinding { Unknown, Actor, Source, Explicit, Targets, TargetControllers, TargetOwners }
-public enum OperationLinkKind { Sequence, Choice, IfTrue, IfFalse, Repeat, Additional }
+// Scheduled is a future recipe, not another effect executing now. Its trigger,
+// future recipients, payments and conditions have not been resolved.
+public enum OperationLinkKind { Sequence, Choice, IfTrue, IfFalse, Repeat, Additional, Scheduled }
 
 // Id belongs to this semantic graph. CardId refers only to an entitled source
 // occurrence; a Spell may omit it when its permanent source has departed.

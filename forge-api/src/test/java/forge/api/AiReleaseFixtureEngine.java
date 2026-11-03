@@ -21,6 +21,21 @@ public final class AiReleaseFixtureEngine {
 
     static void configure(List<RegisteredPlayer> players) {
         String name = players.get(0).getDeck().getName();
+        if (name.equals("AI terminal-risk current routes")) {
+            // Declared test-only opening library: seven plus the first natural
+            // draw reveals every witness. Stop after the nondrawing safe spell;
+            // this is not a shipping list or a natural-game qualification.
+            var main = players.get(0).getDeck().getMain();
+            main.clear();
+            for (String card : List.of("Final Fortune", "Glorious End", "Sol Ring",
+                    "Mountain", "Mountain", "Mountain", "Mountain", "Mountain")) {
+                var printing = StaticData.instance().getCommonCards().getCard(card);
+                if (printing == null) throw new IllegalArgumentException("Missing terminal-risk fixture card: " + card);
+                main.add(printing);
+            }
+            addExtras(players.get(0), Collections.nCopies(4, "Mountain"));
+            return;
+        }
         if (name.equals("Resource qualification Traxos")) {
             // Explicit controlled runtime, not a shipping Commander list or
             // campaign deck qualification: opening seven plus the actual first

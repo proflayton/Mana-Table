@@ -9,7 +9,7 @@ import java.util.concurrent.*;
 
 /** Ordered request/receipt transport. No cards, rules, decisions, or engine types belong here. */
 public final class SyncTransport {
-    public static final int VERSION = 3;
+    public static final int VERSION = 4;
     public static final Gson JSON = new GsonBuilder().serializeNulls()
             .setObjectToNumberStrategy(ToNumberPolicy.LONG_OR_DOUBLE).create();
     private static final int MAX_FRAME = 8 * 1024 * 1024;

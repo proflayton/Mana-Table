@@ -30,7 +30,7 @@ internal static partial class AiReleaseGoldens
         new("tap-cost-funding", "Rhys the Redeemed", "Forest",
             ["Selesnya Evangel", "Birds of Paradise", "Grizzly Bears", "Concordant Crossroads"])
     ];
-    internal static int ExpectedCount => Scenarios.Length + 2;
+    internal static int ExpectedCount => Scenarios.Length + 3;
 
     internal static async Task<ImmutableArray<AiGoldenResult>> RunAsync(ForgeEngine engine, string profile, Action<bool, string> check)
     {
@@ -51,6 +51,12 @@ internal static partial class AiReleaseGoldens
         }
         if (results.Count == Scenarios.Length && results.All(result => result.Passed))
             results.AddRange(await RunCooperativeGoldensAsync(engine, directory, check));
+        if (results.Count == Scenarios.Length + 2 && results.All(result => result.Passed)) {
+            string terminalDeck = await Save("AI terminal-risk current routes", "Niv-Mizzet, Parun", "Mountain");
+            results.Add(await RunTerminalRiskGoldenAsync(engine, Path.Combine(directory, "terminal-risk-current-routes"),
+                [terminalDeck, opponent, opponent, opponent]));
+            File.WriteAllText(Path.Combine(directory, "summary.json"), JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
+        }
         var completed = results.ToImmutable();
         check(completed.Length == ExpectedCount && completed.All(result => result.Passed),
             "Real policy goldens: " + string.Join("; ", completed.Select(result => result.Id + ": " + result.Detail)));

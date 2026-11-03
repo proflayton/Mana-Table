@@ -792,7 +792,7 @@ retained legacy command even if an older provider advertises it. Pass-turn
 commands never emulate Forge's overloaded Cancel button. The Java adapter
 validates current meaning both before queueing and on the input thread. Ordinary
 priority passing also invokes the explicit pass operation, independently of a
-Forge yield-suggestion button. The private IPC remains version 2 and adds the
+Forge yield-suggestion button. The private IPC uses version 3 and includes the
 required `semantic-priority-actions` capability; new clients reject older jars.
 An `expectedTask` discriminator prevents a typed answer being interpreted as a
 different task by the private wire's generic confirmation operation. Persisted
@@ -1584,7 +1584,7 @@ switching, reopening or editing revokes that capture before it can start a game.
 The native adapter validates the returned setup identity/revision and no longer
 keeps a second active-deck cache or changes selection while mapping a response.
 
-The private IPC remains version 2 with required `explicit-deck-setup` capability;
+The private IPC uses version 3 with required `explicit-deck-setup` capability;
 new native builds reject older jars before startup succeeds. Legacy callers may
 omit the setup's deck ID to read the selected document. Saved decks, workshop
 data, profiles and multiplayer synchronization require no migration.

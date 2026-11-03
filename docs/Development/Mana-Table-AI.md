@@ -1,5 +1,56 @@
 # Multiplayer AI framework and investigation
 
+## Delayed self-defeat commitments: source candidate
+
+A player reported a bot casting a card that made it lose at the end of the
+turn, then taking no useful action before losing. The card and original match
+are unidentified; local logs did not establish that particular sequence. The
+audit found a consistent framework gap: future loss recipes could be absent
+from the operation graph, and incomplete casts receive a small exploration
+score. An unknown immediate benefit must not erase a disclosed self-defeat.
+
+The existing graph now carries typed `LoseGame`/`WinGame` effects and `Scheduled`
+edges for bounded delayed continuations of the exact offered route. A scheduled
+recipe is future rules structure, not a committed outcome or a current effect.
+Its conditions, future recipients and payments remain unresolved. Projection
+neither installs triggers nor mutates the match. The ordinary finite graph
+budget and visibility boundary apply to these recipes too.
+
+Before scoring a voluntary action, the policy checks reachable known loss
+recipes, including conditional loss and loss beside unknown sibling effects.
+It declines when the actor is affected or cannot be excluded. An exhausted or
+unsupported graph cannot become a safe exploratory cast. Ordinary incomplete
+casts without a disclosed terminal risk remain supported. Current actor-owned
+mode choices can retain a safe route when enough safe alternatives satisfy the
+published minimum; future choices are not treated as an already selected plan.
+Individual modes and mana activations during payment use the same veto.
+Mandatory acknowledgments and required legal replies remain available.
+
+Confirmation graphs currently describe parent context, not the consequences of
+Yes and No. A free unless-payment can open a confirmation before entering the
+cost stack: accepting prevents the parent's loss, while declining causes it.
+The terminal veto therefore does not apply to those ambiguous confirmations.
+An explicit affirmative/decline consequence boundary remains separate work;
+neither display wording nor parent effect type certifies a branch.
+
+There is no protection, future-payment or guaranteed winning-line witness yet.
+Even an immediate win headline does not waive a future loss. This conservative
+baseline can miss intentional Pact or extra-turn strategies; it does not claim
+optimal play. Safe alternative costs are assessed from their own recipe, rather
+than being rejected because another route on the physical card has a loss
+clause. Scheduled effects are excluded from immediate effect valuation.
+
+The regressions belong to the existing warmed Java projection and graphics-free
+native policy lanes. They distinguish actual Forge card recipes from authored
+policy fixtures. An additional golden reuses the warmed real-engine gate with a
+declared eight-card test-only library: both affordable delayed-loss spells must
+remain offered while the ordinary policy instead casts and resolves the same
+Sol Ring occurrence. It verifies the current decoded input and accepted real
+consequence, not a natural game or Commander-deck qualification. None of these
+checks substitutes for observing a complete human/AI game.
+Human strategic review remains pending. Deck qualification and M1/M2 completion
+are unchanged.
+
 ## Development timing and causal mechanic evidence: source candidate
 
 A captured Rhys decision cast March of the Multitudes during its own upkeep,

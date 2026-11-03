@@ -16,7 +16,7 @@ public class SyncTransportTest {
         try (var server = new SyncTransport.Server((seat, method, args) -> Map.of("seat", seat), () -> 1,
                 ignored -> { }, Set.of("match-history")); var local = server.local(0);
              var remote = new SyncTransport.Remote("127.0.0.1:" + server.listen())) {
-            assertEquals(SyncTransport.VERSION, 3);
+            assertEquals(SyncTransport.VERSION, 4);
             assertEquals(local.capabilities(), Set.of("match-history"));
             assertEquals(remote.capabilities(), local.capabilities());
             remote.reconnect(); remote.request("observe", null);
@@ -29,7 +29,7 @@ public class SyncTransportTest {
             var done = CompletableFuture.runAsync(() -> {
                 try (var socket = listener.accept(); var input = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
                      var output = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))) {
-                    input.readLine(); output.write("{\"version\":3,\"resume\":\"legacy\",\"seat\":1}\n"); output.flush();
+                    input.readLine(); output.write("{\"version\":4,\"resume\":\"legacy\",\"seat\":1}\n"); output.flush();
                     while (input.readLine() != null) { }
                 } catch (IOException failure) { throw new CompletionException(failure); }
             });
@@ -60,33 +60,60 @@ public class SyncTransportTest {
             int port = server.listen(); String resume;
             var command = JsonParser.parseString("{\"sequence\":1,\"method\":\"add\",\"arguments\":{}}").getAsJsonObject();
             try (var wire = new Wire(port)) {
-                var hello = wire.exchange("{\"version\":3,\"resume\":\"\"}"); resume = hello.get("resume").getAsString();
+                var hello = wire.exchange("{\"version\":4,\"resume\":\"\"}"); resume = hello.get("resume").getAsString();
                 var first = wire.exchange(command.toString());
                 board.put("value", 999); // Cached receipts must not alias mutable engine data.
                 assertEquals(wire.exchange(command.toString()), first);
             }
             try (var wire = new Wire(port)) {
-                wire.exchange(SyncTransport.JSON.toJson(Map.of("version", 3, "resume", resume)));
+                wire.exchange(SyncTransport.JSON.toJson(Map.of("version", 4, "resume", resume)));
                 var receipt = wire.exchange(command.toString());
                 assertEquals(receipt.getAsJsonObject("result").get("value").getAsInt(), 1);
                 assertEquals(applied.get(), 1);
             }
             server.revoke(1);
             try (var wire = new Wire(port)) {
-                assertThrows(EOFException.class, () -> wire.exchange(SyncTransport.JSON.toJson(Map.of("version", 3, "resume", resume))));
+                assertThrows(EOFException.class, () -> wire.exchange(SyncTransport.JSON.toJson(Map.of("version", 4, "resume", resume))));
             }
         }
     }
     @Test(timeOut = 10000) public void mismatchedVersionsAndOutOfOrderCommandsNeverReachTheEngine() throws Exception {
-        var applied = new AtomicInteger();
-        try (var server = new SyncTransport.Server((seat, method, args) -> applied.incrementAndGet(), () -> 1)) {
+        var applied = new AtomicInteger(); var joined = new AtomicInteger();
+        try (var server = new SyncTransport.Server((seat, method, args) -> applied.incrementAndGet(), () -> { joined.incrementAndGet(); return 1; })) {
             int port = server.listen();
-            try (var wire = new Wire(port)) { assertTrue(wire.exchange("{\"version\":1}").has("error")); }
+            for (int version : new int[] { 1, 3, 5 }) {
+                try (var wire = new Wire(port)) {
+                    assertTrue(wire.exchange(SyncTransport.JSON.toJson(Map.of("version", version))).has("error"));
+                }
+                assertEquals(joined.get(), 0, "Incompatible peers cannot acquire a seat before rejection");
+            }
             try (var wire = new Wire(port)) {
-                wire.exchange("{\"version\":3}");
+                wire.exchange("{\"version\":4}");
                 assertThrows(EOFException.class, () -> wire.exchange("{\"sequence\":2,\"method\":\"add\",\"arguments\":{}}"));
             }
             assertEquals(applied.get(), 0);
+        }
+    }
+    @Test(timeOut = 10000) public void remoteRejectsOldAndFutureServersBeforeSendingCommands() throws Exception {
+        for (int version : new int[] { 3, 5 }) {
+            try (var listener = new java.net.ServerSocket(0)) {
+                var done = CompletableFuture.runAsync(() -> {
+                    try (var socket = listener.accept(); var input = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+                         var output = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))) {
+                        socket.setSoTimeout(3000);
+                        var hello = JsonParser.parseString(input.readLine()).getAsJsonObject();
+                        assertEquals(hello.get("version").getAsInt(), 4);
+                        output.write(SyncTransport.JSON.toJson(Map.of("version", version, "resume", "mismatch", "seat", 1)) + "\n"); output.flush();
+                        assertNull(input.readLine(), "The rejected server cannot receive any command after its incompatible handshake");
+                    } catch (IOException failure) { throw new CompletionException(failure); }
+                });
+                assertThrows(IllegalStateException.class, () -> {
+                    try (var remote = new SyncTransport.Remote("127.0.0.1:" + listener.getLocalPort())) {
+                        fail("An incompatible server was accepted");
+                    }
+                });
+                done.get(3, TimeUnit.SECONDS);
+            }
         }
     }
     @Test(timeOut = 10000) public void pollingSeesOnlyCompletedAuthoritativeSnapshots() throws Exception {
