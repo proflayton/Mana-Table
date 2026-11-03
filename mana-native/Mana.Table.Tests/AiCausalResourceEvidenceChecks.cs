@@ -184,10 +184,10 @@ internal static class AiCausalResourceEvidenceChecks
                         Payment = new("opened", Fixture.Actor, "manual") { BillBefore = [], BillAfter = [] }
                     }).ToImmutableArray()));
         }
-        public Task EnableAutomatedSeatsAsync() => Task.CompletedTask;
-        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync() => throw new NotSupportedException();
-        public Task ExecuteAutomatedAsync(int seatId, GameCommand command) => throw new InvalidOperationException("A history reader cannot answer gameplay.");
-        public Task ReportAutomationFaultAsync(string game, int seat, string reason) => throw new NotSupportedException();
+        public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); return Task.CompletedTask; }
+        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); throw new NotSupportedException(); }
+        public Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); throw new InvalidOperationException("A history reader cannot answer gameplay."); }
+        public Task ReportAutomationFaultAsync(string game, int seat, string reason, CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); throw new NotSupportedException(); }
     }
 
     private sealed class Fixture

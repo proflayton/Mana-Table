@@ -521,11 +521,12 @@ internal static partial class AiReleaseGoldens
         internal ImmutableHashSet<string> ReductionCreatures { get; set; } = ImmutableHashSet<string>.Empty;
         internal List<AcceptedCommand> Accepted { get; } = [];
         internal ImmutableArray<AutomatedSeatObservation> Last => inner.Last;
-        public Task EnableAutomatedSeatsAsync() => inner.EnableAutomatedSeatsAsync();
-        public Task ReportAutomationFaultAsync(string game, int seat, string reason) => inner.ReportAutomationFaultAsync(game, seat, reason);
-        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync() => inner.ObserveAutomatedSeatsAsync();
-        public async Task ExecuteAutomatedAsync(int seat, GameCommand command)
+        public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) => inner.EnableAutomatedSeatsAsync(cancellation);
+        public Task ReportAutomationFaultAsync(string game, int seat, string reason, CancellationToken cancellation = default) => inner.ReportAutomationFaultAsync(game, seat, reason, cancellation);
+        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default) => inner.ObserveAutomatedSeatsAsync(cancellation);
+        public async Task ExecuteAutomatedAsync(int seat, GameCommand command, CancellationToken cancellation = default)
         {
+            cancellation.ThrowIfCancellationRequested();
             var observation = inner.Last.Single(item => item.SeatId == seat);
             var source = command is UseOfferedAction offered ? observation.Domain.Sources.Single(set => set.SourceCardKey == offered.Card) : null;
             var action = command is UseOfferedAction use ? observation.Domain.Actions.Single(item => item.ActionId == use.ActionId) : null;
@@ -549,7 +550,7 @@ internal static partial class AiReleaseGoldens
                     cost.RemainingCosts.Any(part => part.Kind == ActionCostKind.Mana && (part.Amount > 0 || !part.ManaSymbols.IsEmpty))) {
                     RemainingCosts = cost.RemainingCosts, CurrentCostIndex = cost.CurrentCostIndex
                 } : null;
-            await inner.ExecuteAutomatedAsync(seat, command);
+            await inner.ExecuteAutomatedAsync(seat, command, cancellation);
             Accepted.Add(new(seat, command.GetType().Name, observation.State.Turn, observation.State.PhaseKey, source?.SourceCardId ?? "", owner,
                 command is ChooseNumber number ? number.Value : null, observation.Semantics.Numeric?.Purpose,
                 observation.Semantics.Payment?.Purpose, observation.Semantics.Payment?.PayerId ?? observation.Semantics.CostPayment?.PayerId,

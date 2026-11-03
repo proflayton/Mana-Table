@@ -17,8 +17,11 @@ public interface IAiHostDiagnostics
 /// inputs. There is no legacy strategy or automatic concession fallback.
 /// </summary>
 public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPolicy> policy,
-    long seed, AiSeatLimits? limits = null, IAiHostDiagnostics? diagnostics = null, IAiHostPacing? pacing = null) : IAsyncDisposable
+    long seed, AiSeatLimits? limits = null, IAiHostDiagnostics? diagnostics = null, IAiHostPacing? pacing = null,
+    TimeProvider? operationClock = null) : IAsyncDisposable
 {
+    private static readonly TimeSpan ProviderTimeout = TimeSpan.FromSeconds(45);
+    private readonly TimeProvider operationTime = operationClock ?? TimeProvider.System;
     private readonly SemaphoreSlim step = new(1);
     private readonly SemaphoreSlim startup = new(1);
     private readonly Dictionary<(string Game, int Seat), AiSeatSession> seats = [];
@@ -32,13 +35,17 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
         get { lock (seats) return seats.Values.Select(seat => seat.History).ToImmutableArray(); }
     }
 
-    public async Task StartAsync()
+    public async Task StartAsync(CancellationToken cancellation = default)
     {
-        await startup.WaitAsync().ConfigureAwait(false);
+        ObjectDisposedException.ThrowIf(disposed, this);
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(cancellation, lifetime.Token);
+        var token = stopping.Token;
+        await startup.WaitAsync(token).ConfigureAwait(false);
         try {
             ObjectDisposedException.ThrowIf(disposed, this);
             if (enabled && runner is { IsCompleted: false }) return;
-            await provider.EnableAutomatedSeatsAsync().ConfigureAwait(false);
+            await AwaitProvider("enable", provider.EnableAutomatedSeatsAsync, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
             enabled = true;
             LastFault = null;
             runner = Task.Run(RunAsync);
@@ -50,10 +57,12 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
     public async Task StepAsync(CancellationToken cancellation = default)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        await step.WaitAsync(cancellation).ConfigureAwait(false);
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(cancellation, lifetime.Token);
+        var token = stopping.Token;
+        await step.WaitAsync(token).ConfigureAwait(false);
         try {
             ImmutableArray<AutomatedSeatObservation> observed;
-            try { observed = await provider.ObserveAutomatedSeatsAsync().ConfigureAwait(false); }
+            try { observed = await AwaitProvider("observe", provider.ObserveAutomatedSeatsAsync, token).ConfigureAwait(false); }
             catch (EngineObservationSupersededException) {
                 // Discovery produced no authority. The next ordinary host step
                 // must obtain a new complete batch before evaluating any seat.
@@ -70,7 +79,7 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                 }
             }
             foreach (var item in observed) {
-                cancellation.ThrowIfCancellationRequested();
+                token.ThrowIfCancellationRequested();
                 var state = item.State;
                 if (state.ViewerId != item.SeatId) throw new InvalidDataException("The automated observation belongs to another seat.");
                 if (faultedGames.Contains(state.Id)) continue;
@@ -87,7 +96,7 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                         }
                     }
                 } catch (Exception error) {
-                    await FaultAsync(state.Id, item.SeatId, "policy-configuration", error).ConfigureAwait(false);
+                    await FaultAsync(state.Id, item.SeatId, "policy-configuration", token, error).ConfigureAwait(false);
                     continue;
                 }
                 if (!session.ObserveRestoration(state)) continue;
@@ -99,38 +108,67 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                 if (pacing != null && !pacing.Ready(state.Id, item.SeatId)) continue;
                 var frame = new AiDecisionFrame(state, domain: item.Domain, semantics: item.Semantics);
                 if (rejected.Remove(key, out var priorRejection) && priorRejection == frame.Stamp) {
-                    await FaultAsync(state.Id, item.SeatId, "rejected-command").ConfigureAwait(false);
+                    await FaultAsync(state.Id, item.SeatId, "rejected-command", token).ConfigureAwait(false);
                     continue;
                 }
                 session.Observe(frame);
-                var result = await session.EvaluateAsync(cancellation).ConfigureAwait(false);
+                var result = await session.EvaluateAsync(token).ConfigureAwait(false);
+                token.ThrowIfCancellationRequested();
                 if (result.Status is AiSeatStatus.Unavailable or AiSeatStatus.Invalid or AiSeatStatus.BudgetExceeded or AiSeatStatus.NeedsRecovery) {
-                    await FaultAsync(state.Id, item.SeatId, result.Status.ToString().ToLowerInvariant()).ConfigureAwait(false);
+                    await FaultAsync(state.Id, item.SeatId, result.Status.ToString().ToLowerInvariant(), token).ConfigureAwait(false);
                     continue;
                 }
                 if (session.TakeCommand() is not { } ticket) continue;
                 try {
-                    await provider.ExecuteAutomatedAsync(item.SeatId, ticket.Command).ConfigureAwait(false);
+                    await AwaitProvider("execute", stop => provider.ExecuteAutomatedAsync(item.SeatId, ticket.Command, stop), token).ConfigureAwait(false);
                     session.Report(ticket, AiExecutionReceipt.Accepted);
                 } catch (EngineCommandRejectedException) {
                     session.Report(ticket, AiExecutionReceipt.Rejected);
                     rejected[key] = ticket.Stamp;
                     // The engine may have advanced between observation and reply.
                     // The next iteration must observe a new scope, never replay.
+                } catch (OperationCanceledException) when (token.IsCancellationRequested) {
+                    // Cancellation stops waiting. A dispatched command may still
+                    // finish; neither acceptance nor a safe retry is inferred.
+                    session.Report(ticket, AiExecutionReceipt.Unknown);
+                    throw;
                 } catch (Exception error) {
                     session.Report(ticket, AiExecutionReceipt.Unknown);
-                    await FaultAsync(state.Id, item.SeatId, "execution-unknown", error).ConfigureAwait(false);
+                    await FaultAsync(state.Id, item.SeatId, "execution-unknown", token, error).ConfigureAwait(false);
                 }
             }
         } finally { step.Release(); }
     }
 
-    private async Task FaultAsync(string game, int seat, string reason, Exception? error = null)
+    private async Task FaultAsync(string game, int seat, string reason, CancellationToken cancellation, Exception? error = null)
     {
         LastFault = new(game, seat, reason);
         ReportDiagnostic(LastFault, error);
         faultedGames.Add(game);
-        await provider.ReportAutomationFaultAsync(game, seat, reason).ConfigureAwait(false);
+        await AwaitProvider("fault-report", stop => provider.ReportAutomationFaultAsync(game, seat, reason, stop), cancellation).ConfigureAwait(false);
+    }
+
+    private Task AwaitProvider(string operation, Func<CancellationToken, Task> begin, CancellationToken cancellation)
+        => AwaitProvider(operation, async stop => { await begin(stop).ConfigureAwait(false); return true; }, cancellation);
+
+    private async Task<T> AwaitProvider<T>(string operation, Func<CancellationToken, Task<T>> begin, CancellationToken cancellation)
+    {
+        using var deadline = new CancellationTokenSource(ProviderTimeout, operationTime);
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(cancellation, deadline.Token);
+        var token = stopping.Token;
+        // A provider can ignore cancellation or block before returning its Task.
+        // Its late completion has no host authority, and faults remain observed.
+        var pending = Task.Run(() => { token.ThrowIfCancellationRequested(); return begin(token); });
+        _ = pending.ContinueWith(task => { _ = task.Exception; }, CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        try {
+            var result = await pending.WaitAsync(token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            return result;
+        }
+        catch (OperationCanceledException error) when (deadline.IsCancellationRequested && !cancellation.IsCancellationRequested) {
+            throw new TimeoutException("The automated provider did not complete its " + operation + " operation in time.", error);
+        }
     }
 
     private void ReportDiagnostic(AiHostFault fault, Exception? error)
@@ -158,7 +196,9 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
             ReportDiagnostic(new("", -1, "provider-failed"), error);
             foreach (var game in owned.GroupBy(key => key.Game)) {
                 var seat = game.First();
-                try { await FaultAsync(seat.Game, seat.Seat, "provider-failed").ConfigureAwait(false); }
+                // A fault-report timeout is not permission to repeat that report.
+                if (faultedGames.Contains(seat.Game)) continue;
+                try { await FaultAsync(seat.Game, seat.Seat, "provider-failed", lifetime.Token).ConfigureAwait(false); }
                 catch { /* The disconnected engine owns connection-failure presentation. */ }
             }
         }
@@ -168,9 +208,12 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
     {
         if (disposed) return;
         disposed = true; lifetime.Cancel();
-        if (runner != null) await runner.ConfigureAwait(false);
-        await step.WaitAsync().ConfigureAwait(false);
-        try { lock (seats) { foreach (var seat in seats.Values) seat.Dispose(); seats.Clear(); } }
-        finally { step.Release(); lifetime.Dispose(); }
+        await startup.WaitAsync().ConfigureAwait(false);
+        try {
+            if (runner != null) await runner.ConfigureAwait(false);
+            await step.WaitAsync().ConfigureAwait(false);
+            try { lock (seats) { foreach (var seat in seats.Values) seat.Dispose(); seats.Clear(); } }
+            finally { step.Release(); }
+        } finally { startup.Release(); lifetime.Dispose(); }
     }
 }

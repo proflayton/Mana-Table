@@ -298,16 +298,17 @@ internal static class AiRepeatedCadenceRegression
                     Production = new(SemanticKnowledge.Known, [new(ImmutableDictionary<string, int>.Empty.Add("G", 1))]) }] };
             return new(0, state, domain, new() { UnpaidMana = stage == 0 ? ["{G}"] : [] });
         }
-        public Task EnableAutomatedSeatsAsync() => Task.CompletedTask;
-        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync() => Task.FromResult(ImmutableArray.Create(Current()));
-        public Task ExecuteAutomatedAsync(int seatId, GameCommand command)
+        public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); return Task.CompletedTask; }
+        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); return Task.FromResult(ImmutableArray.Create(Current())); }
+        public Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default)
         {
+            cancellation.ThrowIfCancellationRequested();
             var current = Current();
             if (seatId != 0 || command is not DecisionCommand answer || !new AiDecisionFrame(current.State, domain: current.Domain, semantics: current.Semantics).Allows(answer))
                 throw new EngineCommandRejectedException("The scripted receipt requires this exact current input and offer.");
             Commands.Add(command); stage = Math.Min(3, stage + 1); return Task.CompletedTask;
         }
-        public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode) => throw new Exception("Unexpected cost cadence fault: " + reasonCode);
+        public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode, CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); throw new Exception("Unexpected cost cadence fault: " + reasonCode); }
     }
     private static async Task Pump(ClientSession session)
     {
@@ -366,15 +367,18 @@ internal static class AiRepeatedCadenceRegression
         }
         internal Task PassHuman(int seat) => Pass(seat, new PassPriority(View(seat).Id, View(seat).Decision!.Id));
         internal IMatchConnection Human(int seat) => new HumanConnection(this, seat);
-        public Task EnableAutomatedSeatsAsync() => Task.CompletedTask;
-        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync()
-            => Task.FromResult(Enumerable.Range(2, 2).Select(seat => {
+        public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); return Task.CompletedTask; }
+        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            return Task.FromResult(Enumerable.Range(2, 2).Select(seat => {
                 var state = View(seat);
                 return new AutomatedSeatObservation(seat, state, state.Decision == null ? DecisionActionDomain.None
                     : new(state.Revision, ActionDomainCoverage.Complete, [], []), new());
             }).ToImmutableArray());
-        public Task ExecuteAutomatedAsync(int seatId, GameCommand command) => Pass(seatId, command);
-        public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode) => throw new Exception("Unexpected authored bot fault: " + reasonCode);
+        }
+        public Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); return Pass(seatId, command); }
+        public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode, CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); throw new Exception("Unexpected authored bot fault: " + reasonCode); }
         private sealed class HumanConnection(QueueProvider owner, int seat) : IMatchConnection
         {
             public Task<GameSnapshot?> ObserveAsync() => Task.FromResult<GameSnapshot?>(owner.View(seat));

@@ -561,16 +561,17 @@ internal static class AiPolicyRegression
     {
         internal AutomatedSeatObservation Observation = null!;
         internal List<GameCommand> Commands { get; } = [];
-        public Task EnableAutomatedSeatsAsync() => Task.CompletedTask;
-        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync() => Task.FromResult(ImmutableArray.Create(Observation));
-        public Task ExecuteAutomatedAsync(int seatId, GameCommand command)
+        public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); return Task.CompletedTask; }
+        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); return Task.FromResult(ImmutableArray.Create(Observation)); }
+        public Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default)
         {
+            cancellation.ThrowIfCancellationRequested();
             if (seatId != Observation.SeatId || command is not DecisionCommand decision
                 || !new AiDecisionFrame(Observation.State, domain: Observation.Domain, semantics: Observation.Semantics).Allows(decision))
                 throw new EngineCommandRejectedException("The payment probe received an unauthorized command.");
             Commands.Add(command); return Task.CompletedTask;
         }
-        public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode) => Task.CompletedTask;
+        public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode, CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); return Task.CompletedTask; }
     }
 
     private static async Task TargetsAndSocialMemory(Action<bool, string> check)

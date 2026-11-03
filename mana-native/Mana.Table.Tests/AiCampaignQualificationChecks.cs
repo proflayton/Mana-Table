@@ -179,10 +179,10 @@ internal static class AiCampaignQualificationChecks
         ImmutableArray<AutomatedSeatObservation> after) : IAutomatedSeatProvider
     {
         internal int Executions;
-        public Task EnableAutomatedSeatsAsync() => Task.CompletedTask;
-        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync() => Task.FromResult(Executions == 0 ? before : after);
-        public Task ExecuteAutomatedAsync(int seatId, GameCommand command) { Executions++; return Task.CompletedTask; }
-        public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode) => Task.CompletedTask;
+        public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); return Task.CompletedTask; }
+        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); return Task.FromResult(Executions == 0 ? before : after); }
+        public Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); Executions++; return Task.CompletedTask; }
+        public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode, CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); return Task.CompletedTask; }
     }
     private sealed class CountingPolicy : IAiPolicy
     {

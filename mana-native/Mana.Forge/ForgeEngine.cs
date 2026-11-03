@@ -8,12 +8,13 @@ namespace Mana.Forge;
 
 public sealed record ForgePaths(string Java, string Jar, string Resources, string Profile);
 
-public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial, IDeckWorkshop, ITableSeatSetup, ITableMatchSetup, ITableEncounterStart, ICardPrintings, ISourceActions, ITableTempo, IAutomatedSeatProvider
+public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestClock = null) : ICardEngine, ITableSocial, IDeckWorkshop, ITableSeatSetup, ITableMatchSetup, ITableEncounterStart, ICardPrintings, ISourceActions, ITableTempo, IAutomatedSeatProvider
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
-    private sealed record PendingRequest(string Method, TaskCompletionSource<JsonElement> Completion);
+    private sealed record PendingRequest(string Method, TaskCompletionSource<JsonElement> Completion, CancellationToken Cancellation);
     private readonly ConcurrentDictionary<long, PendingRequest> pending = new();
     private readonly SemaphoreSlim write = new(1);
+    private readonly TimeProvider requestTime = requestClock ?? TimeProvider.System;
     // Readers retain their own process and ready signal across a failed startup.
     private sealed class EngineProcess(Process process)
     {
@@ -35,6 +36,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         public bool EncounterStartAvailable { get; set; }
         public ForgeCommandScope Commands { get; } = new();
         public volatile Exception? Failure;
+        public volatile bool FramingFailed;
     }
     private EngineProcess? current;
     private long sequence;
@@ -83,6 +85,10 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
                     } else if (message.TryGetProperty("id", out var id) && pending.TryRemove(id.GetInt64(), out var reply)) {
+                        if (reply.Cancellation.IsCancellationRequested) {
+                            reply.Completion.TrySetCanceled(reply.Cancellation);
+                            continue;
+                        }
                         if (message.TryGetProperty("error", out _)) reply.Completion.TrySetException(RequestFailure(reply.Method, message));
                         else {
                             CommitAutomatedWorldReplacement(owner, reply.Method);
@@ -110,25 +116,73 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         if (current != owner) return;
         foreach (var item in pending) if (pending.TryRemove(item.Key, out var reply)) reply.Completion.TrySetException(ex);
     }
-    private async Task<JsonElement> Request(string method, object? arguments = null)
+    private async Task<JsonElement> Request(string method, object? arguments = null, CancellationToken cancellation = default)
     {
+        cancellation.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(disposed, this);
         var owner = current ?? throw new IOException("The engine is not running");
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(45), requestTime);
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(cancellation, deadline.Token);
+        var token = operation.Token;
+        EngineRequestPhase phase = EngineRequestPhase.Ready;
         if (method is "matchStart" or "workshopStartTest" or "multiplayerHost" or "multiplayerJoin"
             or "multiplayerStart" or "startEncounter" or "retryEncounterStart" or "cancelEncounterStart"
             or "multiplayerReturn" or "multiplayerClose" or "matchConcede") owner.Commands.Clear();
-        await owner.Ready.Task;
-        if (current != owner || owner.Failure != null || owner.Process.HasExited) throw new IOException("The engine is not running");
-        long id = Interlocked.Increment(ref sequence);
-        var reply = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
-        pending[id] = new(method, reply);
+        long id = 0;
         try {
-            await write.WaitAsync();
-            try { await owner.Process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new { id, method, @params = arguments ?? new { } })); await owner.Process.StandardInput.FlushAsync(); }
-            finally { write.Release(); }
-            return await reply.Task.WaitAsync(TimeSpan.FromSeconds(45));
-        } finally { pending.TryRemove(id, out _); }
+            await owner.Ready.Task.WaitAsync(token).ConfigureAwait(false);
+            if (current != owner || owner.Failure != null || owner.Process.HasExited) throw new IOException("The engine is not running");
+            id = Interlocked.Increment(ref sequence);
+            var reply = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+            pending[id] = new(method, reply, token);
+            using var abandoned = token.Register(() => {
+                if (pending.TryRemove(id, out var cancelled)) cancelled.Completion.TrySetCanceled(token);
+            });
+            string line = JsonSerializer.Serialize(new { id, method, @params = arguments ?? new { } });
+            phase = EngineRequestPhase.WriteGate;
+            await write.WaitAsync(token).ConfigureAwait(false);
+            Exception? damagedFrame = null;
+            try {
+                token.ThrowIfCancellationRequested();
+                if (current != owner || owner.Failure != null || owner.Process.HasExited) throw new IOException("The engine is not running");
+                phase = EngineRequestPhase.Writing;
+                var writing = owner.Process.StandardInput.WriteLineAsync(line.AsMemory(), token);
+                ObserveAbandonedRequestFault(writing);
+                await writing.WaitAsync(token).ConfigureAwait(false);
+                phase = EngineRequestPhase.Flushing;
+                var flushing = owner.Process.StandardInput.FlushAsync(token);
+                ObserveAbandonedRequestFault(flushing);
+                await flushing.WaitAsync(token).ConfigureAwait(false);
+            } catch (Exception error) when (phase is EngineRequestPhase.Writing or EngineRequestPhase.Flushing) {
+                damagedFrame = error is OperationCanceledException
+                    ? new IOException("The rules engine connection was interrupted while writing.", error) : error;
+                // Fence a queued writer before releasing the gate. Complete
+                // failures only afterward, so no awakened callback owns it.
+                owner.Failure = damagedFrame;
+                owner.FramingFailed = true;
+                throw;
+            } finally {
+                write.Release();
+                if (damagedFrame != null) {
+                    pending.TryRemove(id, out _);
+                    Fail(owner, damagedFrame);
+                }
+            }
+            phase = EngineRequestPhase.Reply;
+            var result = await reply.Task.WaitAsync(token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            return result;
+        } catch (OperationCanceledException error) when (token.IsCancellationRequested) {
+            if (cancellation.IsCancellationRequested)
+                throw new OperationCanceledException("The request was cancelled.", error, cancellation);
+            throw new EngineRequestTimeoutException(method switch {
+                "automatedEnable" => "automation-enable", "automatedState" => "automation-observe",
+                "automatedAction" => "automation-execute", "automatedFault" => "automation-fault", _ => "engine-request"
+            }, phase, error);
+        } finally { if (id != 0) pending.TryRemove(id, out _); }
     }
+    private static void ObserveAbandonedRequestFault(Task operation) => _ = operation.ContinueWith(task => { _ = task.Exception; },
+        CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     internal static Exception RequestFailure(string method, JsonElement message)
     {
         // A racing observation has no command receipt to retry. Only the
@@ -356,6 +410,12 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
     {
         var process = owner.Process;
         try {
+            // A partial framed write cannot be drained safely. End only that
+            // broken owner before closing a writer the OS may still hold.
+            if (owner.FramingFailed && !process.HasExited) {
+                try { process.Kill(true); }
+                catch (InvalidOperationException) when (process.HasExited) { }
+            }
             try { process.StandardInput.Close(); }
             catch (Exception ex) when (ex is IOException or InvalidOperationException) { }
             if (!process.HasExited) {

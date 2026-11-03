@@ -43,6 +43,7 @@ internal static partial class HeadlessPresentationSmoke
                     ResourceEvidenceWireChecks.Run(Check);
                     ConfiguredSimulationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                     AutomatedHistoryProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
+                    ForgeRequestCancellationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                 }
                 else if (group == "encounter-start") {
                     EncounterStartWireChecks.Run(Check);
@@ -80,6 +81,7 @@ internal static partial class HeadlessPresentationSmoke
             ResourceEvidenceWireChecks.Run(Check);
             ConfiguredSimulationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             AutomatedHistoryProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
+            ForgeRequestCancellationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             EncounterStartWireChecks.Run(Check);
             EncounterStartProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             CooperativeOpeningChecks.Run(Check);

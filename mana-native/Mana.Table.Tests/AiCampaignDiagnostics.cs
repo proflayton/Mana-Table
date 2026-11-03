@@ -419,11 +419,12 @@ internal sealed class AiCampaignProvider(IAutomatedSeatProvider inner, AiCampaig
         configured = start;
     }
     internal ImmutableArray<AutomatedSeatObservation> Last { get; private set; } = [];
-    public Task EnableAutomatedSeatsAsync() => inner.EnableAutomatedSeatsAsync();
-    public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode) => inner.ReportAutomationFaultAsync(gameId, seatId, reasonCode);
-    public async Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync()
+    public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) => inner.EnableAutomatedSeatsAsync(cancellation);
+    public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode, CancellationToken cancellation = default) => inner.ReportAutomationFaultAsync(gameId, seatId, reasonCode, cancellation);
+    public async Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default)
     {
-        Last = await inner.ObserveAutomatedSeatsAsync();
+        Last = await inner.ObserveAutomatedSeatsAsync(cancellation);
+        cancellation.ThrowIfCancellationRequested();
         foreach (var observation in Last)
             if (observation.State.ViewerId != observation.SeatId
                 || !AiCampaignVisibility.PrivateWindowsAreDisclosed(observation.State, observation.Semantics, observation.Domain))
@@ -442,12 +443,14 @@ internal sealed class AiCampaignProvider(IAutomatedSeatProvider inner, AiCampaig
         foreach (var observation in Last) diagnostics.Observe(observation);
         await history.DrainAsync(inner, Last, diagnostics.QualificationEvidence);
         if (stale != null) await stale.ObserveAsync(Last, staleReplay!, diagnostics.RecordStaleProbe);
+        cancellation.ThrowIfCancellationRequested();
         return Last;
     }
-    public async Task ExecuteAutomatedAsync(int seatId, GameCommand command)
+    public async Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default)
     {
+        cancellation.ThrowIfCancellationRequested();
         var observation = Last.FirstOrDefault(item => item.SeatId == seatId);
-        try { await inner.ExecuteAutomatedAsync(seatId, command); }
+        try { await inner.ExecuteAutomatedAsync(seatId, command, cancellation); }
         catch (Exception error) { diagnostics.Receipt(observation, command, false, error.GetType().Name); throw; }
         diagnostics.Receipt(observation, command, true, null);
         if (observation != null)

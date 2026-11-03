@@ -24,11 +24,12 @@ internal static partial class AiReleaseGoldens
         internal TerminalAcceptedFrame? SafeCast { get; private set; }
         internal TerminalAcceptedPass? PostSafePass { get; private set; }
         internal List<TerminalAcceptedFrame> UnsafeCasts { get; } = [];
-        public Task EnableAutomatedSeatsAsync() => inner.EnableAutomatedSeatsAsync();
-        public Task ReportAutomationFaultAsync(string game, int seat, string reason) => inner.ReportAutomationFaultAsync(game, seat, reason);
-        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync() => inner.ObserveAutomatedSeatsAsync();
-        public async Task ExecuteAutomatedAsync(int seat, GameCommand command)
+        public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) => inner.EnableAutomatedSeatsAsync(cancellation);
+        public Task ReportAutomationFaultAsync(string game, int seat, string reason, CancellationToken cancellation = default) => inner.ReportAutomationFaultAsync(game, seat, reason, cancellation);
+        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default) => inner.ObserveAutomatedSeatsAsync(cancellation);
+        public async Task ExecuteAutomatedAsync(int seat, GameCommand command, CancellationToken cancellation = default)
         {
+            cancellation.ThrowIfCancellationRequested();
             var observation = inner.Last.Single(item => item.SeatId == seat);
             if (seat == 0 && observation.State.ActivePlayerId == seat
                 && observation.State.PhaseKey == "MAIN1" && observation.State.Decision?.Payload is PriorityPayload)
@@ -37,7 +38,7 @@ internal static partial class AiReleaseGoldens
                 ? observation.Domain.Sources.Single(set => set.SourceCardKey == action.Card) : null;
             var route = command is UseOfferedAction offered ? source!.Actions.Single(item => item.Id == offered.ActionId) : null;
             var face = source == null ? null : CardViews.FindActionSource(observation.State, source.SourceCardKey)?.Card;
-            await inner.ExecuteAutomatedAsync(seat, command);
+            await inner.ExecuteAutomatedAsync(seat, command, cancellation);
             if (seat == 0 && command is PassPriority pass && SafeCast is { } safe
                 && observation.State.ActivePlayerId == 0 && observation.State.PhaseKey == "MAIN1"
                 && observation.State.Decision?.Payload is PriorityPayload && observation.State.Stack.IsEmpty) {
