@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $suites = @(
 
+  @{ Name='canvas-primitives'; Mode='--smoke-canvas-primitives'; Result='canvas-primitives-results.json'; Size='1280x720' },
   @{ Name='startup'; Mode='--smoke-engine-startup'; Result='engine-startup-regression.json' },
   @{ Name='adapter'; Mode='--smoke-workshop-adapter'; Result='workshop-adapter-results.json' },
   @{ Name='printings-1000'; Mode='--smoke-printings'; Result='printings-ui-results.json'; Size='1000x740' },
@@ -56,7 +57,7 @@ $suites = @(
 )
 # GPU/integration suites only; package already runs the pure presentation checks.
 $partitions = @(
-    @('lobby-ai-1000','card-states-1000','equipment-1000','clutter-1000','audio-settings-1000'),
+    @('canvas-primitives','lobby-ai-1000','card-states-1000','equipment-1000','clutter-1000','audio-settings-1000'),
     @('lobby-ai-1540','onboarding','card-states-1540','equipment-1540','clutter-1540','audio-settings-1540'),
     @('lobby-three-1000','loading','card-reading-1000','compact-selection-1000'),
     @('lobby-three-1540','startup','card-reading-1540','compact-selection-1540'),
@@ -71,11 +72,11 @@ $partitions = @(
 )
 $allNames = @($suites | ForEach-Object { $_.Name })
 $assigned = @($partitions | ForEach-Object { $_ })
-if ($suites.Count -ne 49 -or @($allNames | Sort-Object -Unique).Count -ne 49 -or $assigned.Count -ne 49 -or @($assigned | Sort-Object -Unique).Count -ne 49 -or @(Compare-Object $allNames $assigned).Count -ne 0) { throw 'Native UI partitions must cover all 49 suite/size cases exactly once.' }
+if ($suites.Count -ne 50 -or @($allNames | Sort-Object -Unique).Count -ne 50 -or $assigned.Count -ne 50 -or @($assigned | Sort-Object -Unique).Count -ne 50 -or @(Compare-Object $allNames $assigned).Count -ne 0) { throw 'Native UI partitions must cover all 50 suite/size cases exactly once.' }
 if (-not $Extended) {
     # Fast release gate; the complete inventory remains available on demand.
     $partitions = @(
-        @('startup','loading','analysis-1000','clutter-1000','audio-settings-1000'),
+        @('canvas-primitives','startup','loading','analysis-1000','clutter-1000','audio-settings-1000'),
         @('deck-experience-1000','equipment-1000','card-states-1000','printings-1000','audio-settings-1540'),
         @('lobby-ai-1000','card-reading-1000','mana-payment-1000'),
         @('lobby-three-1000','full-battlefield-1000','priority-1280')

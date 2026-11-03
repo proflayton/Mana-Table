@@ -406,6 +406,15 @@ The source-bound fixture lane separately exercises useful resolved ally benefit
 and useful enemy removal through normal policy, costs and rules. Pregame fixture
 setup remains absent from the shipping command pipe.
 
+The cooperative ally-benefit golden follows the actual accepted allied target,
+including a creature cast after fixture setup. Its pre-dispatch receipt retains
+the counter baseline; exact-source payment, execution-correlated resolution and
+counter change, and the target's actual board state must all agree. It does not
+require one named starting creature to receive the counter or survive unrelated
+combat. Receipt regressions reject foreign seats, non-allies, cost selections
+and missing owner, execution, target or baseline facts. The enemy-removal golden
+keeps its declared lethal target and surviving ally/nonlethal enemy checks.
+
 For varied team play, run the compiled native test driver with the normal fresh
 profile/runtime/resource arguments and:
 
@@ -1249,8 +1258,19 @@ observations retain the previous/current rectangles and complete frame.
 sprite/triangle coordinates, transformed clip rounding, canonical measurement,
 pixel-snapped text density and rejected invalid scopes. Drawing groups cover
 nested visible/hidden paint, complete rollback, publication rejection for open
-groups and protection of enclosing camera/clip scopes. Opponent resource checks
-compare actual fixed counter hits and text observations during camera movement,
+groups and protection of enclosing camera/clip scopes.
+
+`CanvasPrimitiveChecks` additionally paints actual recorded commands on the GPU
+in the required `canvas-primitives` CI suite. Empty/inverted rounded
+bounds must paint no pixels; one- and two-pixel panels must survive an empty
+border inset, and ordinary fills must remain intact. The focused
+`--smoke-canvas-primitives --profile <fresh-profile>` route uses an offscreen
+window and synthetic input, writing `canvas-primitives-results.json`. This
+catches painter exceptions that GPU-free frame preparation cannot exercise.
+The native catalog fixture requires this exact mode and result in both the
+four-shard release subset and the extended inventory.
+
+Opponent resource checks compare actual fixed counter hits and text observations during camera movement,
 including reachable state-detail controls, while preserving the anchored portrait,
 mana, public piles and local resource HUD. Dense overview captions that cannot
 fit at full font require a physical hover-to-reader journey; glyphs must not
