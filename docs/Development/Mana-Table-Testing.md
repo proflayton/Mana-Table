@@ -1201,8 +1201,17 @@ observations retain the previous/current rectangles and complete frame.
 sprite/triangle coordinates, transformed clip rounding, canonical measurement,
 pixel-snapped text density and rejected invalid scopes. Drawing groups cover
 nested visible/hidden paint, complete rollback, publication rejection for open
-groups and protection of enclosing camera/clip scopes. Opponent resource checks
-compare actual fixed counter hits and text observations during camera movement,
+groups and protection of enclosing camera/clip scopes.
+
+`CanvasPrimitiveChecks` additionally paints actual recorded commands on the GPU
+in the existing `--smoke-ui-interactions` CI journey. Empty/inverted rounded
+bounds must paint no pixels; one- and two-pixel panels must survive an empty
+border inset, and ordinary fills must remain intact. The focused
+`--smoke-canvas-primitives --profile <fresh-profile>` route uses an offscreen
+window and synthetic input, writing `canvas-primitives-results.json`. This
+catches painter exceptions that GPU-free frame preparation cannot exercise.
+
+Opponent resource checks compare actual fixed counter hits and text observations during camera movement,
 including reachable state-detail controls, while preserving the anchored portrait,
 mana, public piles and local resource HUD. Dense overview captions that cannot
 fit at full font require a physical hover-to-reader journey; glyphs must not
