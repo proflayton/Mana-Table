@@ -217,6 +217,7 @@ internal static class Program
             } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
             return 0;
         } catch (Exception ex) {
+            Console.Error.WriteLine(ex);
             File.WriteAllText(Path.Combine(profile, "native-error.log"), ex.ToString());
             if (!testRun && !args.Contains("--capture")) MessageBox.Show(ex.Message, "Mana Table", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;

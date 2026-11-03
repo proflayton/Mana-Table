@@ -540,6 +540,16 @@ ownership checks and subsequent continuation. The engine artifact retains
 policy observations and test hands are private CI evidence and must not enter
 public release assets. Source CI execution does not imply human UX acceptance.
 
+The earlier four-client guest-Undo check waits for the actual restoration marker
+and a shared newer board revision in both sequential TCP observations before
+asserting exact restored sources and mana. A matching persistent restoration
+marker alone does not establish a shared board cohort. The original deadline,
+poll cadence and consumed-command rejection remain unchanged. The private
+`guest-undo-restoration-observations.json` records the exact initial, tapped and
+restored audience frames before that assertion, including timeout evidence.
+The test executable also writes its exception to stderr, while retaining
+`native-error.log`, so a failed CI command exposes its actual cause.
+
 ## AI release evaluation
 
 The graphics-free client suite includes `AiDamageTargetRegression`: known five
