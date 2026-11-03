@@ -9,6 +9,15 @@ Use the package's `SOURCE.txt`/`build.json` and release notes to identify its be
 The [native development guide](../../mana-native/README.md) is the build/run entry
 point for the Windows client.
 
+The [3 November boundary audit](Mana-Table-Boundary-Audit-2026-11-03.md) follows
+recent regressions across published source facts, client audience lifetimes and
+current native composition. Those values have separate invalidation rules:
+game identity alone cannot certify an audience response, and a live input alone
+cannot certify the publication attached to a source-action query. Native HUD
+reservations are captured explicitly before placement; source readers and mana
+choices consume their current owners' measured geometry afterwards, without a
+lazy cache of the preceding composition's painter output.
+
 Java CI isolates API tests in two process-owned workspaces while keeping methods
 and upstream modules serial. Its opt-in Maven profile and shared accounting
 checker bind current compiled inputs, process owners, reports and invocation

@@ -1,5 +1,28 @@
 # Testing Mana Table
 
+The [3 November boundary audit](Mana-Table-Boundary-Audit-2026-11-03.md) identifies
+the invariants behind recent regressions. `SourceQueryPublicationTest` runs in
+the ordinary Java API collection: a real mana event between publications must
+not mint human source offers against the old board. `ExternalObservationRegression`
+in the graphics-free client executable holds old command receipts across an
+explicit audience replacement, and checks foreign transport receipts enter the
+existing recovery path without replacing the accepted audience. Stale rejected
+lobby cohorts must remain inert before any recovery error is admitted.
+An active or prospective finite-yield grant also holds audience replacement at
+the old owner until its negative acknowledgement completes; an explicit retry
+then accepts the replacement without dropping consent cleanup.
+
+The existing `--smoke-mana-payment --headless` journey also exercises an instant
+response while an opponent spell is pending. Its first-exposed child mana target
+must retain its scope, bounds and hit through frozen-time hover and the original
+press/release, then submit exactly the offered index once. It also runs inside
+`--smoke-headless-presentation`; no new engine or CI lane is required.
+`PresentationRunChecks` covers repeated composition at identical snapshot,
+scope and time, including immutability of the previously published targets.
+Ordinary native UI partitions now include both card-state window sizes;
+`-ListOnly` inventory checks verify their actual mode, size and result mapping.
+Passing these checks does not establish natural AI outcomes or human UX approval.
+
 Mana Table has one client: the Windows MonoGame app. Use the smallest check that
 covers the change. Reuse the existing Java and native harnesses; do not add a
 second client or rules simulator to test the shipping app.

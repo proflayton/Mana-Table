@@ -628,6 +628,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 if (current == null || !current.id.equals(string(request, "promptId")))
                     throw new IllegalArgumentException("That choice has changed. Use the current prompt.");
                 if (!sourceInputCurrent(current)) throw new IllegalArgumentException("Source actions are not available in this decision");
+                var captured = current.publishedDecision;
+                if (!decisionCaptureCurrent(current, captured))
+                    throw new IllegalArgumentException("The source actions changed. Read the current card again.");
                 String key = string(request, "key");
                 CardView view = current.cards.containsKey(key) ? current.cards.get(key) : current.additionalCards.get(key);
                 Card source = sourceCard(view);
@@ -647,6 +650,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 // was checked. The complete reply must retain that same owner.
                 Card currentSource = sourceCard(current.cards.containsKey(key) ? current.cards.get(key) : current.additionalCards.get(key));
                 if (pending != current || !sourceInputCurrent(current) || sourceActionVersion.get() != version
+                        || !decisionCaptureCurrent(current, captured)
                         || current.sourceActions.get(key) != observedCatalog || !catalog.matches(currentSource, version))
                     throw new IllegalArgumentException("The source actions changed. Read the current card again.");
                 var frozen = PublishedDecisionFacts.freeze(result);
@@ -865,11 +869,16 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private CurrentDecisionProjection.Capture currentDecisionCapture(Pending current) {
         if (current == null) return null;
         var captured = current.publishedDecision;
-        if (captured == null || !(latest.get("boardRevision") instanceof Number board)
-                || !captured.matches(current.id, board.longValue(), sourceActionVersion.get(),
-                        (String)current.prompt.get("executionId"), (String)current.prompt.get("executionStep"))
-                || !decisionOwnerCurrent(current)) throw new StaleObservationException();
+        if (!decisionCaptureCurrent(current, captured)) throw new StaleObservationException();
         return captured;
+    }
+
+    private boolean decisionCaptureCurrent(Pending current, CurrentDecisionProjection.Capture captured) {
+        return current != null && captured != null && current.publishedDecision == captured
+                && latest.get("boardRevision") instanceof Number board
+                && captured.matches(current.id, board.longValue(), sourceActionVersion.get(),
+                        (String)current.prompt.get("executionId"), (String)current.prompt.get("executionStep"))
+                && decisionOwnerCurrent(current);
     }
 
     private String semanticCardId(CardView card) {

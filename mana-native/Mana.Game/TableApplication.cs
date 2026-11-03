@@ -361,6 +361,7 @@ internal sealed partial class TableApplication : IDisposable
         CompletePlayAccessPlacement();
         PrepareCardCollection();
         UpdateBoardView();
+        PrepareStudyHudReservations();
         PrepareStudyAttentionArea();
         PrepareMatchPresentation();
         BeginCardReading(frameElapsed);

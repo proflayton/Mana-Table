@@ -15,96 +15,13 @@ internal sealed partial class TableApplication
         ? tableScene?.Seats.FirstOrDefault(seat => seat.PlayerId == state.ViewerId)?.Geometry.TurnControls
             ?? TurnControlLayout.For(SeatHero(state.ViewerId))
         : TurnControlLayout.For(TableLayout.Hero(3));
-    private TableScene? studyHudScene;
-    private double studyHudTime = double.NaN;
-    private IReadOnlyList<Rectangle> studyHudObstacles = [];
-    private IReadOnlyList<Rectangle> studyAttentionObstacles = [];
-    private IReadOnlyList<Rectangle> studyFixedHudObstacles = [];
+    private StudyHudReservations studyHudReservations = StudyHudReservations.Empty;
     private sealed record PortraitPriorityPlan(Rectangle Area, int HeadingHeight, int UndoHeight, string Source, string Progress);
     private PortraitPriorityPlan? portraitPriorityPlan;
     private Rectangle automaticModeArea;
     private Rectangle AutomaticModeBounds => automaticModeArea.IsEmpty ? LocalTurnControls.AutoBounds : automaticModeArea;
-
-    private IReadOnlyList<Rectangle> StudyAttentionObstacles {
-        get { _ = StudyHudObstacles; return studyAttentionObstacles; }
-    }
-
-    // One copied plan is shared by context placement, card readers and timing
-    // controls for the completed scene. Drawing order cannot change its inputs.
-    private IReadOnlyList<Rectangle> StudyHudObstacles {
-        get {
-            if (ReferenceEquals(studyHudScene, tableScene) && studyHudTime == now) return studyHudObstacles;
-            studyHudScene = tableScene; studyHudTime = now;
-            if (match is not { } state || tableScene == null) return studyAttentionObstacles = studyHudObstacles = [];
-            var occupied = new List<Rectangle>();
-            void AddCard(Pose pose) {
-                var body = new CardPaintGeometry(pose);
-                occupied.Add(body.Backing.Bounds); occupied.Add(body.Shadow.Bounds);
-            }
-            foreach (var card in tableScene.BattlefieldDrawOrder) AddCard(boardView.Apply(card.Pose));
-            int backgroundCount = occupied.Count;
-            foreach (var card in tableScene.Hand.Cards) AddCard(card.Pose);
-            foreach (var card in tableScene.PlayAccess.Groups.SelectMany(group => group.Cards)) AddCard(card.Scene.Pose);
-            foreach (var seat in tableScene.Seats) {
-                var player = state.Players.Single(player => player.Id == seat.PlayerId);
-                bool own = seat.PlayerId == state.ViewerId;
-                var hero = seat.Geometry.Hero;
-                int radius = own ? 47 : 41;
-                occupied.Add(new((int)hero.X - radius, (int)hero.Y - radius, radius * 2, radius * 2 + 6));
-                var mana = PlanManaHalo(player, seat.Index);
-                occupied.AddRange(mana.Parts.Select(part => part.Bounds));
-                if (!own) {
-                    if (!seatReadoutPlans.ContainsKey(seat.PlayerId))
-                        occupied.Add(SeatNameplateArea(hero, false, seat.Index, mana));
-                    foreach (var hand in OpponentHandPoses(player, seat.Index)) {
-                        occupied.Add(hand.Bounds);
-                        occupied.Add((hand with { Center = hand.Center + new Vector2(3, 6) }).Bounds);
-                    }
-                    bool far = state.Players.Length > 4 ? seat.Geometry.Frame.IsFar : seat.Index == 1;
-                    if (!far && StateClarity.PlayerStates(player).Length == 0)
-                        occupied.Add(new((int)seat.Geometry.Hand.X - 65, (int)seat.Geometry.Hand.Y + 35, 130, 22));
-                    if (OpponentPhaseCenter(player, hero, seat.Index) is { } phase) {
-                        occupied.Add(new((int)phase.X - 15, (int)phase.Y - 15, 30, 30));
-                    }
-                    if (seatReadoutPlans.TryGetValue(player.Id, out var readout)) occupied.AddRange(readout.Pieces);
-                } else {
-                    occupied.AddRange(seat.Geometry.TurnControls.PhaseBounds);
-                    occupied.Add(seat.Geometry.TurnControls.HoldBounds);
-                    occupied.Add(seat.Geometry.TurnControls.AlertBounds);
-                    if (StateClarity.PlayerStates(player).Length > 0 && seat.Geometry.PublicCounterArea is { } counters) occupied.Add(counters);
-                    if (seat.Geometry.LandReadoutArea is { } landArea) occupied.Add(landArea);
-                }
-                foreach (var commander in seat.Geometry.Commanders) {
-                    var pose = commander.Pose with { Size = commander.Pose.Size + new Vector2(13) };
-                    AddCard(commander.TableAnchored ? boardView.Apply(pose) : pose);
-                }
-                occupied.Add(DisplayCommandLabel(seat.Geometry));
-                if (AvailableZoneCount(player, "Command") > 0)
-                    occupied.Add(DisplayCommandActions(seat.Geometry));
-                foreach (var pile in seat.Geometry.Piles) {
-                    var paint = DisplayPileGeometry(pile, player.Zone(pile.Zone).Count);
-                    occupied.Add(paint.Shadow.Bounds); occupied.Add(paint.Top.Bounds); occupied.AddRange(paint.Layers.Select(layer => layer.Bounds));
-                    occupied.Add(paint.Label);
-                    if (!paint.Count.IsEmpty) occupied.Add(paint.Count);
-                }
-            }
-            foreach (var card in matchPresentation.Cards.Cards.Where(card => card.Focused
-                || card.Zone != "Stack" && (card.Layer is CardPresentationLayer.Returning or CardPresentationLayer.Playing))) AddCard(card.Display);
-            if (matchPresentation.Cards.Pinned?.ReaderTarget is { } reader) AddCard(reader);
-            if (!sourceReaderActionsBounds.IsEmpty) occupied.Add(sourceReaderActionsBounds);
-            if (!battlefieldReaderStateBounds.IsEmpty) occupied.Add(battlefieldReaderStateBounds);
-            if (manaJourneyPaint is { } bill) { occupied.Add(bill.Bounds); occupied.Add(bill.SourceBounds); }
-            occupied.AddRange(manaSourcePaint.SelectMany(source => new[] { source.Bounds, source.OutputBounds }));
-            // The attention area owns these unpinned stack destinations. Its
-            // moving spell cannot also repel that destination every frame.
-            // Other HUD consumers still avoid the complete physical journey.
-            studyAttentionObstacles = Array.AsReadOnly(occupied.Where(bounds => !bounds.IsEmpty).ToArray());
-            studyFixedHudObstacles = Array.AsReadOnly(occupied.Skip(backgroundCount).Where(bounds => !bounds.IsEmpty).ToArray());
-            foreach (var card in matchPresentation.Cards.Cards.Where(card => !card.Focused && card.Zone == "Stack"
-                && (card.Layer is CardPresentationLayer.Returning or CardPresentationLayer.Playing))) AddCard(card.Display);
-            return studyHudObstacles = Array.AsReadOnly(occupied.Where(bounds => !bounds.IsEmpty).ToArray());
-        }
-    }
+    private IReadOnlyList<Rectangle> StudyAttentionObstacles => studyHudReservations.Attention;
+    private IReadOnlyList<Rectangle> StudyHudObstacles => studyHudReservations.All;
 
     private bool PortraitTurnControlsCanPaint => DecisionDockCanPaint && !session.NeedsRecovery
         && match is { Status: not ("finished" or "error"), Viewer: { Eliminated: false }, Turn: > 0 }
@@ -257,7 +174,7 @@ internal sealed partial class TableApplication
         area.X = Math.Clamp(Math.Max(area.X, resourceRight + 14), Math.Min(area.X, right - area.Width), right - area.Width);
         var readers = matchPresentation.Cards.Cards.Where(card => card.Focused
                 || card.Layer is Presentation.CardPresentationLayer.Returning or Presentation.CardPresentationLayer.Playing)
-            .Select(card => card.Display.Bounds).Append(sourceReaderActionsBounds);
+            .Select(card => card.Display.Bounds);
         // The legacy table keeps its accepted adjacent-fan position. Larger
         // tables have already placed these controls against every owner's
         // furniture and the access fan; only reader occlusion remains here.

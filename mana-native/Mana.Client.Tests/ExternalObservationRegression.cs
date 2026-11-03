@@ -47,6 +47,8 @@ internal static class ExternalObservationRegression
         PumpBoundary(check);
         CapacityAndRevocation(check);
         LifetimeAndScope(check);
+        await AudienceCommandLifetime(check);
+        await TransportAudience(check);
         await ConcurrentProducer(check);
         check(Rejected(() => _ = new ClientSession(connection, observationDelivery: (ObservationDeliveryMode)99))
                 && Rejected(() => _ = new ClientSession(connection).OpenObservationIngress(state.Id, state.ViewerId)),
@@ -161,6 +163,78 @@ internal static class ExternalObservationRegression
             "A background source's immutable ordered window is accepted only by the existing owner pump");
     }
 
+    private static async Task AudienceCommandLifetime(Action<bool, string> check)
+    {
+        foreach (bool replaceGame in new[] { false, true })
+        foreach (bool lateFailure in new[] { false, true })
+        foreach (bool automatic in new[] { false, true }) {
+            var before = State(1);
+            before = before with { Decision = before.Decision! with {
+                Payload = ((PriorityPayload)before.Decision.Payload) with { CanAutoPass = true } } };
+            var late = before with { Revision = 4, Decision = before.Decision with { Id = "old-viewer-next" } };
+            var connection = new HeldConnection(late) { ExecuteError = lateFailure ? new IOException("Old audience command failed.") : null };
+            var session = new ClientSession(connection, observationDelivery: ObservationDeliveryMode.External);
+            session.Accept(before);
+            bool started = automatic ? session.Advance(_ => true, (_, _) => false)
+                : session.Submit(new PassPriority(before.Id, before.Decision.Id));
+            check(started, "The audience lifetime check starts one ordinary scoped " + (automatic ? "Auto pass" : "direct command"));
+            await connection.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            int viewer = replaceGame ? before.ViewerId : 1;
+            var handed = before with { Id = replaceGame ? "replacement-game" : before.Id,
+                ViewerId = viewer, Revision = 2, DecisionOwnerId = viewer, PriorityPlayerId = viewer,
+                Decision = before.Decision with { Id = "new-viewer-current" } };
+            check(session.Accept(handed) && session.State == handed && session.Busy,
+                "An explicit " + (replaceGame ? "game replacement" : "viewer handoff") + " accepts its audience while retaining the outstanding transport lane");
+            using var ingress = session.OpenObservationIngress(handed.Id, handed.ViewerId);
+            connection.Release.TrySetResult();
+            await Drain(session);
+            check(session.State == handed && connection.Commands == 1 && connection.Reads == (lateFailure ? 0 : 1)
+                    && !session.NeedsRecovery && !session.IsAdvancing,
+                "A prior audience's " + (lateFailure ? "late command failure" : "command receipt")
+                    + " cannot replace or fault the accepted audience or continue passing after handoff");
+            check(ingress.TryPost(handed with { Revision = 5 }),
+                "Discarding an old command receipt preserves the replacement audience's current observation ingress");
+            session.Pump();
+            check(session.State?.Id == handed.Id && session.State.ViewerId == viewer && session.State.Revision == 5,
+                "The replacement audience can continue observing without a second command lane or recovery");
+            session.Close();
+        }
+    }
+
+    private static async Task TransportAudience(Action<bool, string> check)
+    {
+        foreach (bool foreignGame in new[] { false, true }) {
+            foreach (string operation in new[] { "direct", "automatic", "poll" }) {
+                var initial = State(1);
+                initial = initial with { Decision = initial.Decision! with {
+                    Payload = ((PriorityPayload)initial.Decision.Payload) with { CanAutoPass = true } } };
+                var foreign = foreignGame ? initial with { Id = "foreign-game", Revision = 2 }
+                    : initial with { ViewerId = 1, DecisionOwnerId = 1, Revision = 2 };
+                var connection = new Connection(foreign);
+                var session = new ClientSession(connection); session.Accept(initial);
+                Exception? failure = null; session.Failed += error => failure = error;
+                if (operation == "poll") session.Poll(false, _ => throw new InvalidOperationException("A foreign poll must not publish."));
+                else check(operation == "automatic" ? session.Advance(_ => true, (_, _) => false)
+                    : session.Submit(new PassPriority(initial.Id, initial.Decision.Id)),
+                    "A current " + operation + " request begins before testing its transport audience");
+                await Drain(session);
+                check(session.State == initial && failure is IOException && session.NeedsRecovery
+                        && session.UncertainCommand == (operation != "poll")
+                        && session.LastFailureWasCommand == (operation != "poll")
+                        && connection.Commands == (operation == "poll" ? 0 : 1) && connection.Reads == 1,
+                    "A foreign " + (foreignGame ? "game" : "viewer") + " returned by " + operation
+                        + " is a connection failure, preserves the owned audience and never supplies another command");
+                connection.State = initial with { Revision = 3 };
+                session.Poll(false, _ => { }); await Drain(session);
+                check(session.State?.ViewerId == initial.ViewerId && session.State.Id == initial.Id
+                        && session.State.Revision == 3 && !session.NeedsRecovery
+                        && connection.Commands == (operation == "poll" ? 0 : 1),
+                    "Fresh observation recovers the original audience without replaying the uncertain " + operation + " request");
+                session.Close();
+            }
+        }
+    }
+
     private static bool Rejected(Action action)
     {
         try { action(); return false; }
@@ -190,5 +264,18 @@ internal static class ExternalObservationRegression
         public Task<GameSnapshot?> ObserveAsync() { Interlocked.Increment(ref Reads); return Task.FromResult<GameSnapshot?>(State); }
         public Task ExecuteAsync(GameCommand command) { Interlocked.Increment(ref Commands); return Task.CompletedTask; }
         public Task ConcedeAsync(string gameId) => throw new InvalidOperationException("An observation test must never concede a game.");
+    }
+    private sealed class HeldConnection(GameSnapshot state) : IMatchConnection
+    {
+        internal int Reads, Commands;
+        internal Exception? ExecuteError;
+        internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task<GameSnapshot?> ObserveAsync() { Interlocked.Increment(ref Reads); return Task.FromResult<GameSnapshot?>(state); }
+        public async Task ExecuteAsync(GameCommand command) {
+            Interlocked.Increment(ref Commands); Started.TrySetResult(); await Release.Task;
+            if (ExecuteError != null) throw ExecuteError;
+        }
+        public Task ConcedeAsync(string gameId) => throw new InvalidOperationException("An audience lifetime check must never concede.");
     }
 }

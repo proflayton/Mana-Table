@@ -127,6 +127,9 @@ internal static class ClientDiagnosticRegression
                     .All(item => item.Facts is { Decision: ClientDiagnosticDecision.Undisclosed, DecisionSourceName: null, Turn: null, Priority: null }
                         && item.Facts.RemainingMana.IsEmpty),
                 "A foreign audience's returned or published snapshot contributes no source, payment, turn or priority-permission details");
+            check(session.State == original && session.NeedsRecovery && session.UncertainCommand
+                    && !captured.Any(item => item.Stage == ClientDiagnosticStage.ObservationAccepted),
+                "A foreign command receipt remains unaccepted and uncertain while diagnostic facts stay redacted");
         }
     }
 
