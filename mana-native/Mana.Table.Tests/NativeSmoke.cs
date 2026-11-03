@@ -90,13 +90,29 @@ internal static class NativeSmoke
                                 "The original host observes the guest's tapped Mountain without borrowing the guest's Undo permission");
                             await engines[i].ExecuteAsync(undo!);
                             GameSnapshot? restored = null, hostRestored = null;
+                            bool coherentRestoration = false;
                             while (DateTime.UtcNow < deadline) {
                                 restored = await engines[i].ObserveAsync(); hostRestored = await engines[0].ObserveAsync();
-                                if (restored?.Undo?.RestorationVersion > tapped!.Undo!.RestorationVersion
-                                    && hostRestored?.Undo?.RestorationVersion == restored.Undo.RestorationVersion) break;
+                                // The restoration marker persists across later
+                                // publications. Equal markers alone do not make
+                                // these sequential TCP reads one board cohort.
+                                coherentRestoration = restored?.Id == state.Id && hostRestored?.Id == state.Id
+                                    && restored.Undo is { Offer: null, LastRestoration: { } guestMarker }
+                                    && guestMarker.ActionId == undo!.ActionId
+                                    && hostRestored.Undo is { Offer: null, LastRestoration: { } hostMarker }
+                                    && hostMarker.ActionId == undo.ActionId
+                                    && restored.Undo.RestorationVersion > tapped!.Undo!.RestorationVersion
+                                    && hostRestored.Undo.RestorationVersion == restored.Undo.RestorationVersion
+                                    && restored.BoardRevision > tapped.BoardRevision
+                                    && hostRestored.BoardRevision == restored.BoardRevision;
+                                if (coherentRestoration) break;
                                 await Task.Delay(10);
                             }
-                            Check(restored?.Undo is { Offer: null, LastRestoration: { } marker } && marker.ActionId == undo!.ActionId
+                            // Private CI evidence includes the exact audience
+                            // frames used by the assertion, including failures.
+                            await File.WriteAllTextAsync(Path.Combine(paths.Profile, "guest-undo-restoration-observations.json"),
+                                JsonSerializer.Serialize(new { coherentRestoration, initial = state, tapped, hostTapped, restored, hostRestored }));
+                            Check(coherentRestoration && restored?.Undo is { Offer: null, LastRestoration: { } marker } && marker.ActionId == undo!.ActionId
                                 && restored.BoardRevision > tapped!.BoardRevision && hostRestored?.BoardRevision == restored.BoardRevision
                                 && !restored.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == source.VisualId).Tapped
                                 && !hostRestored.Players.Single(player => player.Id == state.ViewerId).Zone("Battlefield").Cards
