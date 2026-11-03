@@ -369,8 +369,8 @@ No scripted driver answers a bot. A separate public spectator records
 the changing board and stack in `whole-seat-ai-public.jsonl`; private decision
 histories live separately in `whole-seat-ai.json`. The focused standalone option
 is `--smoke-whole-seat-ai` with the same engine and disposable-profile arguments.
-The same JVM then runs one diverse campaign match with a 16-global-turn limit
-and a 35-second progress cutoff. Its shared singleton deck manifests contain ordinary spells and
+The same JVM then runs one diverse cooperative 2v2 campaign match with the
+existing 16-global-turn limit and 35-second progress cutoff. Its shared singleton deck manifests contain ordinary spells and
 lands for Rhys, Pir/Toothy, Balmor and Traxos, rather than land-heavy isolation
 decks. `--smoke-ai-campaign` runs two seat rotations, each with a 32-turn limit
 and a 45-second progress cutoff, in one engine process. Time cutoffs are checked
@@ -382,6 +382,61 @@ failure stops subsequent rotations and records them as unrun. The campaign recor
 provenance, actual public state, missing mechanic coverage, and separate review
 findings. Review findings are not automatically strategy errors: a forced
 own-land return is legitimate. Policy seeds do not control Forge's rules RNG.
+
+## Configured team AI qualification
+
+The source team-simulation slice reuses that campaign. Java
+`ConfiguredSimulationTest` exercises actual registered teams/player bindings,
+independent resources and private audiences, invalid-request preservation,
+stale scopes, legacy free-for-all and a typed team-concession lifecycle result.
+Concession is not natural policy qualification. Native client/wire/process
+regressions reject unsupported or malformed configured starts and wrong actual
+rosters before any policy answer. Both empty and full `starting` publications
+remain unready until the producer commits its owned/public cohort; wrong teams
+still fail immediately. Rejected lifecycle requests and delayed old observation
+responses must preserve the newer accepted scope. The `configured-simulation` presentation group
+and full graphics-free/native suites include those checks.
+
+`ConfiguredSimulationEngineJourney` runs in the existing source-bound production
+engine smoke and has a standalone `--smoke-configured-simulation` route. It uses
+an explicit symmetry control to check nonadjacent teams, actual slot/player
+mapping, all four private audiences, public parity and a real policy action.
+That short control does not claim varied-deck quality or natural completion.
+The source-bound fixture lane separately exercises useful resolved ally benefit
+and useful enemy removal through normal policy, costs and rules. Pregame fixture
+setup remains absent from the shipping command pipe.
+
+For varied team play, run the compiled native test driver with the normal fresh
+profile/runtime/resource arguments and:
+
+```text
+--smoke-ai-campaign --campaign-profile cooperative-smoke
+--smoke-ai-campaign --campaign-profile cooperative-release
+```
+
+The first profile runs two 32-turn/45-second cases; the second requires natural
+typed outcomes in two cases, retaining the existing 160-turn/180-second ceilings.
+Both rotate the four existing versioned campaign decks into different alliances.
+The default `smoke` and explicit `release` profiles keep their free-for-all paths.
+An unknown profile fails rather than silently selecting another format. Use the
+fixture launcher plus `--production-engine-jar` for the existing runtime identity
+checks; an external resources path alone remains unbound to a release package.
+Exact-source CI supplies package/source binding independently of a local run.
+
+Version-2 campaign manifests record source hashes, workshop semantic versions,
+saved assignment tokens, configured teams/bindings and runtime provenance.
+Results add per-deck required mechanic evidence. Offers, accepted commands,
+observed effects, missing evidence and natural outcomes remain distinct. A
+generic board tag from another deck never satisfies a required witness; an
+unobserved branch stays unqualified. `not-instrumented` identifies a defining
+branch whose verifier is not implemented in this slice; `not-observed` means a
+supported verifier received no sufficient evidence. Universal cost/ownership
+integrity failures remain separate from applicable per-deck coverage, and an
+observed failure fails the overall campaign. Preserve the first failure/cutoff and its
+private replay evidence. A cutoff does not score a draw, certify a deck or justify
+increasing the budget. Per-deck mechanical coverage, source/runtime binding,
+natural games and human review are separate gates. Eight candidates, six families
+and future encounter/boss definitions remain targets rather than passed checks.
 
 ## AI release evaluation
 

@@ -28,6 +28,7 @@ internal static class HeadlessEngineSmoke
         var json = new JsonSerializerOptions { WriteIndented = true };
         string? error = null;
         GameSnapshot? lastObserved = null;
+        AiReleaseRuntime? verifiedRuntime = null;
         int preparedUpdates = 0;
         double updateMilliseconds = 0;
         void Check(bool value, string description)
@@ -39,9 +40,9 @@ internal static class HeadlessEngineSmoke
         await using var engine = new ForgeEngine(paths);
         try {
             if (productionJar != null) {
-                var runtime = AiReleaseEvaluation.VerifyRuntime(paths, productionJar, verifyPackage: true,
+                verifiedRuntime = AiReleaseEvaluation.VerifyRuntime(paths, productionJar, verifyPackage: true,
                     sourceRevision: sourceRevision, sourceManifest: sourceManifest);
-                File.WriteAllText(Path.Combine(paths.Profile, "ai-verified-runtime.json"), JsonSerializer.Serialize(runtime, json));
+                File.WriteAllText(Path.Combine(paths.Profile, "ai-verified-runtime.json"), JsonSerializer.Serialize(verifiedRuntime, json));
             }
             await engine.InitializeAsync();
             var deck = await engine.ImportAsync("Headless production composition", "Deck\n99 Forest\nCommander\n1 Rhys the Redeemed");
@@ -335,9 +336,12 @@ internal static class HeadlessEngineSmoke
                 await AiRepeatedCadenceEngineJourney.RunAsync(engine, paths.Profile, Check);
                 await AiReleaseGoldens.RunAsync(engine, paths.Profile, Check);
                 await CooperativeEncounterEngineJourney.RunAsync(engine, paths.Profile, deck.Id, Check);
+                await ConfiguredSimulationEngineJourney.RunAsync(engine, paths.Profile, deck.Id, Check);
             }
             await AiWholeSeatEngineCheck.RunAsync(engine, paths.Profile, Check);
-            await AiEngineCampaign.RunAsync(engine, paths.Profile, new(1, 16, TimeSpan.FromSeconds(35)), Check, paths);
+            await AiEngineCampaign.RunAsync(engine, paths.Profile, new(1, 16, TimeSpan.FromSeconds(35)) {
+                Profile = "cooperative-ci-prefix", Mode = AiCampaignMode.Cooperative }, Check,
+                paths, verifiedRuntime);
 
             GameTime Time() => new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
             PresentationFrame Tick(string stage, ButtonState left = ButtonState.Released)

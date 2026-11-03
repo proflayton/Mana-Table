@@ -12,7 +12,7 @@ internal sealed record AiGoldenResult(string Id, bool Passed, string Detail, int
 
 // The test-only JVM entry point supplies declared pregame permanents. Every
 // seat answer, cost, receipt and continuation uses the normal policy and ports.
-internal static class AiReleaseGoldens
+internal static partial class AiReleaseGoldens
 {
     private sealed record Scenario(string Id, string Commander, string Basic, string[] Extras, string? Partner = null);
     private static readonly Scenario[] Scenarios = [
@@ -30,7 +30,7 @@ internal static class AiReleaseGoldens
         new("tap-cost-funding", "Rhys the Redeemed", "Forest",
             ["Selesnya Evangel", "Birds of Paradise", "Grizzly Bears", "Concordant Crossroads"])
     ];
-    internal static int ExpectedCount => Scenarios.Length;
+    internal static int ExpectedCount => Scenarios.Length + 2;
 
     internal static async Task<ImmutableArray<AiGoldenResult>> RunAsync(ForgeEngine engine, string profile, Action<bool, string> check)
     {
@@ -49,8 +49,10 @@ internal static class AiReleaseGoldens
             File.WriteAllText(Path.Combine(directory, "summary.json"), JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
             if (!result.Passed) break; // Do not reuse a potentially faulted JVM.
         }
+        if (results.Count == Scenarios.Length && results.All(result => result.Passed))
+            results.AddRange(await RunCooperativeGoldensAsync(engine, directory, check));
         var completed = results.ToImmutable();
-        check(completed.Length == Scenarios.Length && completed.All(result => result.Passed),
+        check(completed.Length == ExpectedCount && completed.All(result => result.Passed),
             "Real policy goldens: " + string.Join("; ", completed.Select(result => result.Id + ": " + result.Detail)));
         return completed;
 
@@ -366,6 +368,13 @@ internal static class AiReleaseGoldens
         public ImmutableArray<ManaBillPart>? PaymentBill { get; init; }
         public ReductionEvidence? ManaReduction { get; init; }
         public CostSelectionEvidence? CostSelection { get; init; }
+        public string DecisionId { get; init; } = "";
+        public string ExecutionId { get; init; } = "";
+        public long BoardRevision { get; init; }
+        public string SelectedCardId { get; init; } = "";
+        public int? SelectedControllerId { get; init; }
+        public bool SelectionIsCost { get; init; }
+        public bool ManaAbility { get; init; }
     }
 
     private sealed record CostSelectionEvidence(string SelectedId, int Payer, bool RemainingNominalMana)
@@ -523,6 +532,13 @@ internal static class AiReleaseGoldens
                 (command as UseOfferedAction)?.ManaOutput,
                 command is CompleteSelection && reduction is { CompleteEnabled: true, RemainingManaParts.IsEmpty: true }) {
                 ActivePlayerId = observation.State.ActivePlayerId, OfferedTargetId = targetOffer?.SourceCardId ?? "",
+                DecisionId = observation.State.Decision?.Id ?? "", ExecutionId = observation.State.Decision?.ExecutionId ?? "",
+                BoardRevision = observation.State.BoardRevision, SelectionIsCost = observation.Semantics.SelectionIsCost,
+                ManaAbility = action?.ManaAbility == true,
+                SelectedCardId = command is SelectCard chosenCard ? CardViews.InZones(observation.State)
+                    .Where(item => item.Card.Key == chosenCard.Card).Select(item => CardViews.Identity(item.Card)).SingleOrDefault() ?? "" : "",
+                SelectedControllerId = command is SelectCard targetCard ? CardViews.InZones(observation.State)
+                    .Where(item => item.Card.Key == targetCard.Card).Select(item => (int?)item.PlayerId).SingleOrDefault() : null,
                 PaymentBill = paymentBill, ManaReduction = reduction, CostSelection = costSelection
             });
         }

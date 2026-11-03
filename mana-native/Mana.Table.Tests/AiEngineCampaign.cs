@@ -16,13 +16,18 @@ internal sealed record AiCampaignResult(int Match, string StopReason, string? Me
     public string Profile { get; init; } = "smoke";
     public AiCampaignGoal Goal { get; init; }
     public AiCampaignOutcomeProof? Outcome { get; init; }
+    public string? ConfigurationId { get; init; }
+    public string? ConfigurationSha256 { get; init; }
+    public ConfiguredSimulationSetup? Setup { get; init; }
+    public ImmutableArray<ConfiguredSimulationParticipant> Participants { get; init; } = [];
+    public ImmutableArray<AiCampaignDeckQualification> DeckQualification { get; init; } = [];
 }
 
 // Sequential games reuse the existing JVM lane. Budgets stop tests explicitly;
 // the driver never fabricates a bot response or disguises a test stop as a win.
 internal static class AiEngineCampaign
 {
-    internal static async Task RunStandaloneAsync(ForgePaths paths, AiCampaignLimits? limits = null)
+    internal static async Task RunStandaloneAsync(ForgePaths paths, AiCampaignLimits? limits = null, string? productionJar = null)
     {
         Directory.CreateDirectory(paths.Profile);
         await using var engine = new ForgeEngine(paths);
@@ -31,16 +36,19 @@ internal static class AiEngineCampaign
             engineJar = paths.Jar, engineJarSha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(paths.Jar))),
             paths.Java, paths.Resources
         }, new JsonSerializerOptions { WriteIndented = true }));
+        var provenance = productionJar == null ? null : AiReleaseEvaluation.VerifyRuntime(paths, productionJar);
         await RunAsync(engine, paths.Profile, limits ?? AiCampaignLimits.Smoke, (passed, detail) => {
             File.AppendAllText(Path.Combine(paths.Profile, "campaign-progress.log"), detail + "\n");
             if (!passed) throw new InvalidOperationException(detail);
-        }, paths);
+        }, paths, provenance);
     }
 
-    internal static async Task<ImmutableArray<AiCampaignResult>> RunAsync(ForgeEngine engine, string profile, AiCampaignLimits limits, Action<bool, string> check, ForgePaths? runtime = null)
+    internal static async Task<ImmutableArray<AiCampaignResult>> RunAsync(ForgeEngine engine, string profile, AiCampaignLimits limits, Action<bool, string> check,
+        ForgePaths? runtime = null, AiReleaseRuntime? runtimeEvidence = null)
     {
         if (limits.Matches is < 1 or > 16 || limits.Turns is < 8 or > 160 || limits.MatchTime <= TimeSpan.Zero
-            || !Enum.IsDefined(limits.Goal) || string.IsNullOrWhiteSpace(limits.Profile))
+            || !Enum.IsDefined(limits.Goal) || !Enum.IsDefined(limits.Mode) || string.IsNullOrWhiteSpace(limits.Profile)
+            || limits.Mode == AiCampaignMode.Cooperative && limits.Matches > 2)
             throw new ArgumentOutOfRangeException(nameof(limits));
         string directory = Path.Combine(profile, "ai-campaign"); Directory.CreateDirectory(directory);
         AiCampaignContinuation.CheckRegression(check);
@@ -50,7 +58,10 @@ internal static class AiEngineCampaign
         CheckDisclosureBounds(check);
         foreach (var manifest in AiCampaignDecks.All) manifest.Validate();
         await engine.EnableAutomatedSeatsAsync();
+        if (limits.Mode == AiCampaignMode.Cooperative && !engine.SupportsConfiguredSimulation)
+            throw new NotSupportedException("The cooperative campaign requires explicit simulation team setup.");
         var saved = new List<string>();
+        var bindings = ImmutableArray.CreateBuilder<AiCampaignDeckBinding>();
         foreach (var manifest in AiCampaignDecks.All) {
             try {
                 var imported = await engine.ImportAsync("AI campaign " + manifest.Id, manifest.List);
@@ -59,7 +70,9 @@ internal static class AiEngineCampaign
                     throw new InvalidDataException("Campaign deck " + manifest.Id + " failed engine validation: " + JsonSerializer.Serialize(details.Issues) + details.Problem);
                 var committed = await engine.SaveDeckAsync(details.Id, details.Revision);
                 if (committed.SaveError.Length > 0) throw new InvalidDataException(committed.SaveError);
-                saved.Add("deck:" + details.Id);
+                string handle = "deck:" + committed.Id + ":" + committed.LibraryToken;
+                bindings.Add(await AiCampaignQualification.BindDeckAsync(engine, manifest, committed, handle));
+                saved.Add(handle);
             } catch (Exception error) {
                 File.WriteAllText(Path.Combine(directory, "setup-failure.json"), JsonSerializer.Serialize(new {
                     classification = "mechanical-setup-failure", manifest.Id, manifest.Hash, manifest.List, failure = error.ToString()
@@ -68,19 +81,28 @@ internal static class AiEngineCampaign
             }
         }
         File.WriteAllText(Path.Combine(directory, "manifest.json"), JsonSerializer.Serialize(new {
-            formatVersion = 1, audience = "host-private", deckVersion = AiCampaignDecks.Version, limits,
+            formatVersion = 2, audience = "host-private", deckVersion = AiCampaignDecks.Version, limits,
             timeCutoffScope = "Checked between completed engine steps; engine requests and teardown can extend elapsed wall time.",
             engineRandomnessControlled = false, seedScope = "Policy tie-breaking only. Forge currently uses process-global SecureRandom; these are not seeded engine replays.",
             policy = new CasualCommanderPolicy().Descriptor.Id,
             policyAssemblySha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(typeof(CasualCommanderPolicy).Assembly.Location))),
-            engineJarSha256 = runtime == null ? null : Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(runtime.Jar))),
+            planningAssemblySha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(typeof(Mana.Planning.ManaFundingPlanner).Assembly.Location))),
+            harnessAssemblySha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(typeof(AiEngineCampaign).Assembly.Location))),
+            productionEngineSha256 = runtimeEvidence?.ProductionEngineSha256,
+            launchJarSha256 = runtime == null ? null : Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(runtime.Jar))),
+            runtimeEvidence,
+            runtimeQualification = runtimeEvidence?.ResourceProvenance == "exact-source-release-package-build-metadata"
+                ? "source-package-bound" : "unbound-to-release-package",
+            qualificationScope = "Defining mechanics are attributed to each exact deck version. A bounded prefix, another deck's witness, or a cutoff never qualifies a deck; human review remains pending.",
             decks = AiCampaignDecks.All.Select((deck, index) => new { deck.Id, deck.Hash, deck.Commanders, deck.LandCount,
-                spells = deck.SpellNames.Length, deck.IntendedMechanics, list = deck.List, handle = saved[index] })
+                spells = deck.SpellNames.Length, deck.IntendedMechanics, list = deck.List, binding = bindings[index] })
         }, new JsonSerializerOptions { WriteIndented = true }));
         var results = new List<AiCampaignResult>();
         for (int index = 0; index < limits.Matches; index++) {
             var rotation = Enumerable.Range(0, 4).Select(seat => saved[(seat + index) % 4]).ToImmutableArray();
-            var result = await Match(engine, Path.Combine(directory, "match-" + index), index, rotation, limits);
+            var orderedBindings = Enumerable.Range(0, 4).Select(seat => bindings[(seat + index) % 4]).ToImmutableArray();
+            var specification = limits.Mode == AiCampaignMode.Cooperative ? CooperativeSpecification() : null;
+            var result = await Match(engine, Path.Combine(directory, "match-" + index), index, rotation, limits, orderedBindings, specification);
             results.Add(result);
             if (result.MechanicalFailure != null) {
                 // The shared JVM may be blocked or compromised. Do not turn
@@ -95,6 +117,9 @@ internal static class AiEngineCampaign
         File.WriteAllText(Path.Combine(directory, "summary.json"), JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
         check(results.All(result => result.MechanicalFailure == null), "Diverse AI campaign mechanical results: "
             + string.Join("; ", results.Select(result => $"match {result.Match}: {result.MechanicalFailure ?? result.StopReason}, turn {result.Turns}, {result.Accepted} accepted commands")));
+        check(results.All(result => result.DeckQualification.All(deck => deck.MechanicalIntegrity != "failed"
+                && deck.RequiredWitnesses.All(witness => witness.Status != "failed"))),
+            "Per-deck campaign integrity: an observed wrong consequence fails the run; unobserved or inconclusive required mechanics never become implicit passes.");
         check(results.All(result => result.Continuation.Conclusive), "Diverse AI campaign continuation results: "
             + string.Join("; ", results.Select(result => $"match {result.Match}: {result.Continuation.Classification}, turn {result.Turns}/{limits.Turns}, goal {limits.Goal}"))
             + ". A time cutoff is inconclusive; historical accepted commands do not establish completion or diagnose a policy loop.");
@@ -102,6 +127,10 @@ internal static class AiEngineCampaign
             "Every bounded diverse match develops multiple real battlefields and compares same-revision public projections; absent rare mechanics remain explicit coverage gaps.");
         return results.ToImmutableArray();
     }
+
+    internal static MatchSetupSpecification CooperativeSpecification() => new(MatchRulesets.CooperativeCommander,
+        Enumerable.Range(0, 4).Select(index => new MatchSeatAssignment(index, index < 2 ? 17 : 42,
+            index < 2 ? MatchSeatRole.Party : MatchSeatRole.Opposition)).ToImmutableArray());
 
     internal static void CheckDisclosureBounds(Action<bool, string> check)
     {
@@ -226,11 +255,15 @@ internal static class AiEngineCampaign
     }
 
     private static async Task<AiCampaignResult> Match(ForgeEngine engine, string directory, int index,
-        ImmutableArray<string> decks, AiCampaignLimits limits)
+        ImmutableArray<string> decks, AiCampaignLimits limits, ImmutableArray<AiCampaignDeckBinding> bindings,
+        MatchSetupSpecification? specification)
     {
         Directory.CreateDirectory(directory);
+        string? configurationId = specification == null ? null : "cooperative-campaign-" + index + ".v1";
+        string? configurationHash = specification == null ? null : AiCampaignQualification.DefinitionHash(configurationId!, specification, bindings,
+            new { policy = new CasualCommanderPolicy().Descriptor.Id, policySeed = limits.PolicySeed + index });
         File.WriteAllText(Path.Combine(directory, "match-config.json"), JsonSerializer.Serialize(new {
-            formatVersion = 1, audience = "host-private", match = index, decksInSeatOrder = decks,
+            formatVersion = 2, audience = "host-private", match = index, configurationId, configurationHash, specification, decksInSeatOrder = bindings,
             policySeed = limits.PolicySeed + index, limits.Turns, limits.MatchTime, limits.Profile, limits.Goal, engineRandomnessControlled = false
         }, new JsonSerializerOptions { WriteIndented = true }));
         using var evidence = new AiCampaignDiagnostics(directory);
@@ -247,13 +280,27 @@ internal static class AiEngineCampaign
         Exception? primaryFailure = null;
         var developed = new HashSet<int>();
         AiCampaignOutcomeProof? outcome = null;
+        ConfiguredSimulationStart? configured = null;
+        AiCampaignQualificationTracker? qualification = null;
         try {
-            state = await engine.StartSimulationAsync(decks);
+            if (specification != null) {
+                var setup = new ConfiguredSimulationSetup(specification, decks);
+                configured = await engine.StartConfiguredSimulationAsync(setup);
+                ConfiguredSimulationFacts.ValidateReceipt(configured, setup);
+                ConfiguredSimulationFacts.ValidateState(configured, configured.State);
+                state = configured.State;
+                provider.BindConfigured(configured);
+                qualification = new(bindings, configured, configurationId!, configurationHash!);
+                evidence.BindQualification(qualification);
+                File.WriteAllText(Path.Combine(directory, "configured-start.json"), JsonSerializer.Serialize(configured, new JsonSerializerOptions { WriteIndented = true }));
+            } else state = await engine.StartSimulationAsync(decks);
             while (true) {
+                if (configured != null) ConfiguredSimulationFacts.ValidateState(configured, state);
                 stage = "host-step";
                 await host.StepAsync();
                 stage = "observe-public";
                 state = await engine.ObserveSimulationAsync() ?? throw new InvalidDataException("The campaign lost its public observation.");
+                if (configured != null) ConfiguredSimulationFacts.ValidateState(configured, state);
                 steps++;
                 stage = "validate-public-and-private-observations";
                 if (host.LastFault != null) throw new InvalidOperationException("Host fault: " + JsonSerializer.Serialize(host.LastFault));
@@ -318,7 +365,9 @@ internal static class AiEngineCampaign
         var result = new AiCampaignResult(index, stop, failure, state?.Turn ?? 0, steps, developed.Count,
             evidence.Accepted, evidence.Commands.GetValueOrDefault(nameof(UseOfferedAction)), comparisons, elapsed.Elapsed.TotalMilliseconds, evidence.Summary(),
             AiCampaignContinuation.Assess(stop, limits.Turns, state?.Turn ?? 0, outcome?.VerifiedNaturalOutcome == true, limits.Goal)) {
-                Profile = limits.Profile, Goal = limits.Goal, Outcome = outcome };
+                Profile = limits.Profile, Goal = limits.Goal, Outcome = outcome, ConfigurationId = configurationId,
+                ConfigurationSha256 = configurationHash, Setup = configured?.Setup, Participants = configured?.Participants ?? [],
+                DeckQualification = qualification?.Summary(stop, outcome?.VerifiedNaturalOutcome == true, failure) ?? [] };
         File.WriteAllText(Path.Combine(directory, "result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         return result;
     }

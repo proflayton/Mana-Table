@@ -36,6 +36,11 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "match-header") MatchHeaderInteractionChecks.Run(profile, Check);
                 else if (group == "cooperative-lobby") CooperativeLobbyInteractionChecks.Run(profile, Check);
                 else if (group == "cooperative-opening") CooperativeOpeningChecks.Run(Check);
+                else if (group == "configured-simulation") {
+                    ConfiguredSimulationWireChecks.Run(Check);
+                    AiCampaignQualificationChecks.Run(Check);
+                    ConfiguredSimulationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
+                }
                 else if (group == "encounter-start") {
                     EncounterStartWireChecks.Run(Check);
                     EncounterStartProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
@@ -64,6 +69,9 @@ internal static partial class HeadlessPresentationSmoke
             ExecutionWireChecks.Run(Check);
             MatchOutcomeWireChecks.Run(Check);
             MatchSetupWireChecks.Run(Check);
+            ConfiguredSimulationWireChecks.Run(Check);
+            AiCampaignQualificationChecks.Run(Check);
+            ConfiguredSimulationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             EncounterStartWireChecks.Run(Check);
             EncounterStartProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             CooperativeOpeningChecks.Run(Check);

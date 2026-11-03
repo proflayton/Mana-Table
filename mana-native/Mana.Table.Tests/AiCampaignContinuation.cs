@@ -54,5 +54,19 @@ internal sealed record AiCampaignContinuation(bool Conclusive, string Classifica
                 && AiCampaignLimits.Release is { Matches: 4, Turns: 160, Goal: AiCampaignGoal.NaturalOutcome }
                 && AiCampaignLimits.Release.MatchTime == TimeSpan.FromSeconds(180),
             "The manual four-rotation natural-outcome profile does not enlarge the fixed fast-smoke budget");
+        check(AiCampaignLimits.CooperativeSmoke is { Matches: 2, Turns: 32, Mode: AiCampaignMode.Cooperative }
+                && AiCampaignLimits.CooperativeSmoke.MatchTime == AiCampaignLimits.Smoke.MatchTime
+                && AiCampaignLimits.CooperativeRelease is { Matches: 2, Turns: 160, Goal: AiCampaignGoal.NaturalOutcome, Mode: AiCampaignMode.Cooperative }
+                && AiCampaignLimits.CooperativeRelease.MatchTime == AiCampaignLimits.Release.MatchTime
+                && AiCampaignLimits.ForProfile("cooperative-release") == AiCampaignLimits.CooperativeRelease
+                && AiCampaignLimits.ForProfile(null).Mode == AiCampaignMode.FreeForAll,
+            "Team campaign profiles retain the existing per-game budgets and keep legacy free-for-all explicit");
+        bool invalidProfile = false;
+        try { _ = AiCampaignLimits.ForProfile("cooperative-typo"); } catch (ArgumentException) { invalidProfile = true; }
+        check(invalidProfile, "An unknown campaign profile cannot silently run a different match format");
+        var configured = new Mana.Contracts.ConfiguredSimulationSetup(AiEngineCampaign.CooperativeSpecification(), ["a", "b", "c", "d"]);
+        Mana.Contracts.ConfiguredSimulationFacts.ValidateSetup(configured);
+        check(configured.Specification.Seats.Select(seat => seat.TeamId).SequenceEqual([17, 17, 42, 42]),
+            "The cooperative campaign declares two actual teams without relying on player or seat IDs");
     }
 }

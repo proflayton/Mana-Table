@@ -39,6 +39,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     internal List<string> ReplayCases { get; } = [];
     private readonly List<string> diagnosticErrors = [];
     private bool rawObservationsCaptured;
+    private AiCampaignQualificationTracker? qualification;
 
     internal AiCampaignDiagnostics(string directory)
     {
@@ -47,6 +48,11 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     }
 
     internal IAiPolicy Record(IAiPolicy inner) => new RecordingPolicy(inner, this);
+    internal void BindQualification(AiCampaignQualificationTracker tracker)
+    {
+        if (qualification != null) throw new InvalidOperationException("Campaign qualification is already bound.");
+        qualification = tracker;
+    }
 
     internal void ValidatePublicBatch(ImmutableArray<AutomatedSeatObservation> observations) =>
         ForgePublicProjectionChecks.ValidateBatch(observations, directory);
@@ -158,6 +164,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
 
     internal void Receipt(AutomatedSeatObservation? observation, GameCommand command, bool accepted, string? error)
     {
+        qualification?.Receipt(observation, command, accepted, error);
         decisions.WriteLine(JsonSerializer.Serialize(new { kind = "receipt", seat = observation?.SeatId,
             command.GameId, decision = (command as DecisionCommand)?.DecisionId, accepted, error,
             commandType = command.GetType().Name, command = JsonSerializer.SerializeToElement(command, command.GetType()) }));
@@ -210,6 +217,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
 
     internal void Observe(AutomatedSeatObservation observation)
     {
+        qualification?.ObserveOwned(observation);
         foreach (var investment in numericInvestments.Values) investment.ObserveOwned(observation);
         ReviewNumericInvestments(observation.State.Id);
         var state = observation.State;
@@ -239,6 +247,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
 
     internal void ObservePublic(GameSnapshot state)
     {
+        qualification?.ObservePublic(state);
         foreach (var investment in numericInvestments.Values) investment.ObservePublic(state);
         ReviewNumericInvestments(state.Id);
         foreach (var card in state.Players.SelectMany(player => player.Zone("Battlefield").Cards)) {
@@ -400,12 +409,33 @@ internal sealed class AiCampaignProvider(IAutomatedSeatProvider inner, AiCampaig
     Func<int, GameSnapshot, GameSnapshot, DecisionCommand, string, Task>? staleReplay = null) : IAutomatedSeatProvider
 {
     private readonly AiCampaignStaleAuthority? stale = staleReplay == null ? null : new();
+    private ConfiguredSimulationStart? configured;
+    internal void BindConfigured(ConfiguredSimulationStart start)
+    {
+        if (configured != null) throw new InvalidOperationException("The campaign provider is already bound to a configured game.");
+        ConfiguredSimulationFacts.ValidateState(start, start.State);
+        configured = start;
+    }
     internal ImmutableArray<AutomatedSeatObservation> Last { get; private set; } = [];
     public Task EnableAutomatedSeatsAsync() => inner.EnableAutomatedSeatsAsync();
     public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode) => inner.ReportAutomationFaultAsync(gameId, seatId, reasonCode);
     public async Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync()
     {
         Last = await inner.ObserveAutomatedSeatsAsync();
+        foreach (var observation in Last)
+            if (observation.State.ViewerId != observation.SeatId
+                || !AiCampaignVisibility.PrivateWindowsAreDisclosed(observation.State, observation.Semantics, observation.Domain))
+                throw new InvalidDataException("An automated observation disclosed another player's private hand or library before policy evaluation.");
+        if (configured is { } setup) {
+            if (Last.Length != setup.Participants.Length || Last.Select(item => item.SeatId).Distinct().Count() != Last.Length
+                || !Last.Select(item => item.SeatId).Order().SequenceEqual(setup.Participants.Select(item => item.PlayerId).Order()))
+                throw new InvalidDataException("Configured automated observations changed their actual player mapping.");
+            foreach (var observation in Last) {
+                if (observation.SeatId != observation.State.ViewerId)
+                    throw new InvalidDataException("A configured bot received a different player's observation.");
+                ConfiguredSimulationFacts.ValidateOwnedState(setup, observation.State);
+            }
+        }
         diagnostics.ValidatePublicBatch(Last);
         foreach (var observation in Last) diagnostics.Observe(observation);
         if (stale != null) await stale.ObserveAsync(Last, staleReplay!, diagnostics.RecordStaleProbe);

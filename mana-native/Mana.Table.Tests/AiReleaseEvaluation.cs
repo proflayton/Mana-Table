@@ -109,7 +109,7 @@ internal static class AiReleaseEvaluation
             if (goldens.Length != AiReleaseGoldens.ExpectedCount || goldens.IsEmpty || goldens.Any(result => !result.Passed))
                 throw new InvalidOperationException("A golden journey failed; do not reuse its engine for release games.");
             games = await AiEngineCampaign.RunAsync(engine, launch.Profile, AiCampaignLimits.Release, Check,
-                launch with { Jar = productionJar });
+                launch, runtime);
             Check(games.Length == 4 && games.Select(game => game.Match).Order().SequenceEqual([0, 1, 2, 3])
                     && games.All(game => game.MechanicalFailure == null && game.Continuation.Conclusive
                         && game.Outcome is { CapturedBeforeCleanup: true, VerifiedNaturalOutcome: true } outcome

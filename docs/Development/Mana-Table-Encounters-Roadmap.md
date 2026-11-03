@@ -115,6 +115,14 @@ for observed gaps, varied authoritative games, and observed mixed human/AI play.
 Legal completion, win rate and even target distribution do not establish enjoyable
 opponents. Timeouts remain inconclusive and retain diagnostic evidence.
 
+The first M2 source slice extends the existing campaign with configured 2v2
+rules teams, actual slot/player bindings, private-audience checks and per-deck
+mechanic evidence. Two cases use the four existing versioned campaign lists;
+four LCI precons supply four further candidates across the target families.
+Availability does not qualify any of them, and power bands remain unassessed.
+The configured tests do not count as shipped encounters or bosses. Complete
+the required per-deck/runtime evidence and mixed human/AI review before promotion.
+
 ### M3: Randomized pod circuit
 
 Implement a circuit scheduler over the shared match/result boundary. Cooperative
