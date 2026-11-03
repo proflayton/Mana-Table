@@ -363,6 +363,7 @@ internal sealed partial class TableApplication : IDisposable
         PrepareStudyAttentionArea();
         PrepareMatchPresentation();
         BeginCardReading(frameElapsed);
+        keywordHelpTargets.Clear();
         hits.Begin();
         publicCounterBadges.Clear();
         hovered = null; cardPositions.Clear(); heroPositions.Clear();
@@ -389,6 +390,7 @@ internal sealed partial class TableApplication : IDisposable
         if (updatesOpen && !ActivityOpen && !StartupVisible) DrawAppUpdates();
         if (!ActivityOpen && !preferences.ReducedMotion && sceneRevealAt >= 0 && now - sceneRevealAt < .2)
             canvas.Fill(new(0, 0, 1600, DesignHeight), new Color(12, 18, 26) * (float)(.5 * (1 - (now - sceneRevealAt) / .2)));
+        DrawKeywordHelp();
         EndCardReading();
         var drawing = canvas.Complete();
         IsolateManaReadingInput();

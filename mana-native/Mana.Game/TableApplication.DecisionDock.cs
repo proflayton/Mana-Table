@@ -22,7 +22,7 @@ internal sealed partial class TableApplication
         if (session.NeedsRecovery) return DecisionDockPauseReason.Recovery;
         if (turnPassRequest != null) return DecisionDockPauseReason.Interaction;
         if (commandFailure && error.Length > 0) return DecisionDockPauseReason.CommandFailure;
-        if (readingId != null || CardCollectionOpen || expandedStackWorkload.Length > 0 || HoveredPendingReference() != null) return DecisionDockPauseReason.Inspection;
+        if (readingId != null || KeywordHelpReading || CardCollectionOpen || expandedStackWorkload.Length > 0 || HoveredPendingReference() != null) return DecisionDockPauseReason.Inspection;
         if ((finiteResolutionIntent != null || groupBlockIntent?.IsActive == true || !session.OptionalPaymentPolicies.IsEmpty)
                 && HitAt(pointer) is { Card: { FaceDown: false } } cardHit && CurrentHit(cardHit))
             return DecisionDockPauseReason.Inspection;

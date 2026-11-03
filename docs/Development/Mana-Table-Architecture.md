@@ -111,6 +111,20 @@ card's other face. Missing facts remain unknown. Both live and archival contract
 validate these shapes. The fields are additive within history schema 1; absent
 capability remains explicitly unsupported rather than an empty successful read.
 
+## Keyword explanations
+
+Keyword help is a read-only presentation of existing `Card.States` ability
+descriptors. `CardPresentation.KeywordDescriptions` retains each exact public
+`Id`, title, reminder and qualifier; it supplies no client rules dictionary.
+`SourceActionTextLayout` preserves original UTF-16 offsets through wrapping and
+mana atoms, allowing Rules-face hover regions to match the actual painted runs.
+The help owner composes those regions after current cards and controls, admits
+only exposed source hits, and binds retained reading to the current scope,
+occurrence and descriptor content. Its hit surfaces carry no gameplay intent.
+Inspection pauses local Auto, while the authoritative decision clock continues.
+Absent descriptors, catalog records and alternate faces provide no inferred help.
+This adds no RPC, action permission or persisted preference.
+
 ## Optional payment consent
 
 Legacy affordability checks still borrow from live floating mana inside the

@@ -445,6 +445,46 @@ unselected cards, duplicate printings, full-art cards, disclosure withdrawal and
 an input changing during inspection. Record human review for the exact candidate;
 automated command and geometry checks cannot supply that approval.
 
+## Keyword explanations: 3 November 2026
+
+**Source candidate after 0.2.356; human gameplay review pending.**
+The player wants to hover a keyword and read its meaning. Arena's
+[desktop inspection gesture](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-january-2021-01-21)
+and Magic Online's [hover-inspection design account](https://www.mtgo.com/news/frame-refactor)
+support reading at the source without committing an action. Hearthstone's
+[documented keyword-tooltip alignment](https://news.blizzard.com/en-us/article/21098848/hearthstone-update-october-17-happy-hallow-s-end)
+likewise keeps help attached to the object being read. These sources establish
+the gesture and contextual association, not an exact current Arena geometry or
+a measured universal dwell time. The timing and placement below are our adaptation.
+
+The source is a visible effective keyword: its existing battlefield icon,
+the exact keyword row beside an inspected permanent, or an underlined phrase
+on that card's readable Rules face. Hover for 0.35 seconds to reveal the complete
+engine title and reminder beside the source. Reduced motion displays it immediately.
+Moving into the explanation keeps it readable; leaving it and its source dismisses
+it after a brief transit allowance. Escape dismisses help first. Hover and clicks
+on help never cast, activate, choose a target or answer a required decision.
+Reading pauses local automatic continuation through the existing inspection
+gate; the host's decision clock continues. Loss of disclosure, changed keyword
+facts, dragging, an obscuring modal or focus loss revokes the old help.
+
+The popup measures full text and mana symbols before placement, expanding its
+width for a long reminder rather than shrinking its font or limiting it to four
+lines. Current action controls, payments, portraits and the inspected card retain
+their space. Different Ward costs keep separate descriptions; an icon can refer
+to several qualified instances. Fully occupied layouts still have no universal
+fit guarantee and require visual review at both supported window sizes.
+
+Help uses existing public engine descriptors, including gained abilities and
+parameterized reminders. It does not guess a definition from a card name, the
+legacy combat-keyword hint, an unrelated prose mention or another printed face.
+Catalog cards and alternate-face records currently lack these descriptors.
+Printed artwork has no word hit geometry: use the existing Rules flip or R for
+text hover. Review the whole hover, source-to-popup, dismiss and disclosure-loss
+journey at 1000 x 740 and 1540 x 980, including 130% text, multiple Ward costs,
+missing descriptions, required decisions and reduced motion. Automation and
+agent inspection do not constitute human acceptance.
+
 ## Readable passing controls: 1 November 2026
 
 **Source revision after 0.2.350; human gameplay review pending.**

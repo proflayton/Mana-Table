@@ -168,6 +168,13 @@ F toggles Auto and Ctrl holds priority for the current turn. Wait for action,
 Take control and the readable Pass once action live beside that same portrait.
 Required targets, searches and payment remain at their source/decision surfaces.
 
+Source candidate after 0.2.356: hover a keyword icon or its label beside an
+inspected permanent to read the current engine explanation. On the Rules face
+(Rules or R), known keyword phrases are underlined and offer the same help.
+Escape dismisses help first. Reading pauses Auto while the host's clock runs.
+Missing descriptions and keywords only mentioned in unrelated prose have no
+inferred explanation; printed artwork itself has no word hit regions.
+
 Source candidate: **Auto · Abilities · N** is a visible button beside the
 portrait's timing controls, with a measured label and minimum 40-pixel hit
 height. It remains available for current or retained abilities while Auto runs.

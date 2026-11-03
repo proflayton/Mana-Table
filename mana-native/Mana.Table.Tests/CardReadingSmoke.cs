@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Mana.Contracts;
 using Mana.Renderer;
 using Mana.Magic;
@@ -32,6 +33,14 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
     public string? ExpectedClick => null;
     public bool ClickAccepted { get; set; }
     public MouseState ReadMouse() => mouse;
+
+    private static readonly PublicState ReadingVigilance = new("reading-vigilance", "Vigilance", "ability", 1, null,
+        "Attacking doesn't cause this creature to tap.", "vigilance");
+    private static readonly PublicState ReadingWardTwo = new("reading-ward-two", "Ward {2}", "ability", 1, null,
+        "Whenever this creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays two generic mana.", "ward");
+    private static readonly PublicState ReadingWardThree = new("reading-ward-three", "Ward {3}", "ability", 1, null,
+        "Whenever this creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays three generic mana.", "ward");
+    private static readonly ImmutableArray<PublicState> ReadingKeywordDescriptions = [ReadingVigilance, ReadingWardTwo, ReadingWardThree];
 
     public CardReadingSmoke(TableWindow.Probe view, InteractionScenarioEngine scenario, bool selectionOnly = false, bool statesOnly = false)
     {
@@ -175,7 +184,9 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         Step(0, () => {
             var state = FocusedSeed(PresentationSmoke.Example(), readingOnly: true);
             Publish(state with { Players = state.Players.Select(p => p.Id != 0 ? p : p with { Zones = p.Zones.Select(z => z.Name != "Hand" ? z : z with { Cards = z.Cards.Select(c => c.VisualId != "hand-3" ? c : c with {
-                Name = "No-art readability fixture", ArtName = "No-art readability fixture", Text = "Vigilance\nWhenever this creature attacks, draw a card.\nYou may play an additional land on each of your turns."
+                Name = "No-art readability fixture", ArtName = "No-art readability fixture",
+                Text = "Vigilance\nWard {2}\nWard {3}\nWhenever this creature attacks, draw a card.\nYou may play an additional land on each of your turns.",
+                States = ReadingKeywordDescriptions
             }).ToImmutableArray() }).ToImmutableArray() }).ToImmutableArray() });
             Move(new(0, 0));
         });
@@ -183,8 +194,8 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         StepWhen(() => ReadingReady("hand-3") && view.Art(view.Match!.Viewer!.Zone("Hand").Cards.Single(c => c.VisualId == "hand-3")) == null, 3, () => {
             Check(ReadingReady("hand-3") && view.Art(view.Match!.Viewer!.Zone("Hand").Cards.Single(c => c.VisualId == "hand-3")) == null, "The explicit reader has a readable rules fallback even without card art");
             Capture("02-rules-without-art");
-            MoveReaderFace();
-        }); Click();
+        });
+        QueueKeywordReadingChecks();
         Prepared(() => view.HoverPreview == null, 3, () => MoveCard("seat-2-1"), "The previous reader must close before choosing an opponent permanent"); Click();
         StepWhen(() => ReadingReady("seat-2-1"), 3, () => {
             Check(ReadingReady("seat-2-1") && scenario.Replies.Count == 2, "Clicking an opponent permanent opens a reader without selecting or activating it");
@@ -847,6 +858,90 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         }
         checks.Add(description);
     }
+    private void QueueKeywordReadingChecks()
+    {
+        int replies = -1;
+        string? game = null, decision = null;
+        Step(0, () => {
+            replies = scenario.Replies.Count; game = view.Match?.Id; decision = view.Match?.Decision?.Id;
+            Move(new(10, 70));
+        });
+        Prepared(() => view.Hits.Any(hit => hit.Id == "read-card-rules" && view.CurrentHit(hit)), .6, () => {
+            // A missing artwork fallback is still the artwork side. Enter the
+            // actual Rules face before testing its measured keyword spans.
+            MoveHit("read-card-rules");
+        }, "The current reader's Rules control must be exposed before its physical flip");
+        Click();
+        Prepared(() => ReadingKeywordTarget(ReadingVigilance) != null, .6, () => {
+            Check(view.Match?.Id == game && view.Match?.Decision?.Id == decision && scenario.Replies.Count == replies,
+                "The explicit Rules flip preserves the authored no-art fixture's current decision and command count");
+            Move(new(10, 70));
+        }, "The explicit Rules face must expose its current semantic keyword spans before the hover journey");
+        foreach (var descriptor in ReadingKeywordDescriptions) {
+            string capture = descriptor == ReadingVigilance ? "02a-vigilance-keyword"
+                : descriptor == ReadingWardTwo ? "02b-ward-two-keyword" : "02c-ward-three-keyword";
+            Prepared(() => ReadingKeywordTarget(descriptor) != null, .6, () => MoveHit(ReadingKeywordTarget(descriptor)!.Id),
+                "The authored reader's current measured keyword span must be exposed before its physical hover");
+            Prepared(() => ReadingKeywordPopupText().Contains(descriptor.Detail, StringComparison.Ordinal), 1, () => {
+                var popup = view.Hits.Single(hit => hit.Id == "keyword-help-popup");
+                string explanation = ReadingKeywordPopupText();
+                Check(explanation.Contains(descriptor.Detail, StringComparison.Ordinal)
+                    && ReadingKeywordDescriptions.Where(other => other != descriptor).All(other => !explanation.Contains(other.Detail, StringComparison.Ordinal)),
+                    "Physical Rules-face hover reads only the exact authored " + descriptor.Label + " reminder, including its separate mana qualification");
+                Check(view.Match?.Id == game && view.Match?.Decision?.Id == decision && scenario.Replies.Count == replies
+                    && view.Selections.Count == 0 && ReadingReady("hand-3"),
+                    "Reading the authored " + descriptor.Label + " explanation preserves the pinned card, decision, selections and command count");
+                // Canvas.Panel includes its shadow two pixels right and five
+                // down; visible clearance includes that paint beyond the hit.
+                var popupPaintedBounds = Microsoft.Xna.Framework.Rectangle.Union(popup.Bounds,
+                    new(popup.Bounds.X + 2, popup.Bounds.Y + 5, popup.Bounds.Width, popup.Bounds.Height));
+                var readerControls = view.Hits.Where(hit => hit.Id is "read-card-rules" or "read-card-action").Select(hit => new {
+                    hit.Id, hit.Bounds,
+                    PaintedBounds = Microsoft.Xna.Framework.Rectangle.Union(hit.Bounds,
+                        new(hit.Bounds.X + 2, hit.Bounds.Y + 5, hit.Bounds.Width, hit.Bounds.Height))
+                }).ToArray();
+                Check(readerControls.Any(control => control.Id == "read-card-rules")
+                    && readerControls.All(control => !popupPaintedBounds.Intersects(control.PaintedBounds)),
+                    "The authored " + descriptor.Label + " popup and its shadow leave the current Rules and source-action controls fully visible");
+                Capture(capture);
+                view.CaptureWindow(Path.Combine(view.Profile, capture + "-window.png"));
+                File.WriteAllText(Path.Combine(view.Profile, capture + ".json"), JsonSerializer.Serialize(new {
+                    scope = "Authored public engine-descriptor fixture; actual physical pointer and production Canvas GPU output; no rules simulation or real card artwork claim.",
+                    humanReview = "pending", syntheticInputOnly = true, descriptor, popup.Bounds, popupPaintedBounds, readerControls,
+                    repliesBefore = replies, repliesAfter = scenario.Replies.Count, decision, view.DesignHeight,
+                    viewport = new { view.GraphicsDevice.Viewport.Width, view.GraphicsDevice.Viewport.Height },
+                    surface = capture + ".png", window = capture + "-window.png"
+                }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+                Move(new(10, 70));
+            }, "The current keyword's complete explanation must render after its deliberate hover dwell");
+        }
+        Prepared(() => !view.Hits.Any(hit => hit.Id == "keyword-help-popup"), .6, () => {
+            Check(scenario.Replies.Count == replies && ReadingReady("hand-3"),
+                "Leaving keyword help dismisses the explanation while preserving the original no-art reading journey");
+            MoveReaderFace();
+        }, "The transient keyword explanation must dismiss before the reader's original close gesture");
+        Click();
+    }
+
+    private Mana.Table.Interaction.TableHit? ReadingKeywordTarget(PublicState descriptor)
+    {
+        var reader = view.Frame?.Cards.SingleOrDefault(card => card.Id == "hand-3" && card.Focused)?.Display.Bounds;
+        return reader == null ? null : view.Hits.LastOrDefault(hit => hit.Id.StartsWith("keyword-help:", StringComparison.Ordinal)
+            && hit.Id.Contains(":rules:", StringComparison.Ordinal) && hit.Id.Contains(":" + descriptor.Id + ":", StringComparison.Ordinal)
+            && reader.Value.Contains(hit.Bounds.Center) && SmokePointer.TryPoint(view, hit, hit.Bounds.Center, out _));
+    }
+
+    private string ReadingKeywordPopupText()
+    {
+        if (view.Hits.SingleOrDefault(hit => hit.Id == "keyword-help-popup") is not { } popup || view.Frame == null) return "";
+        var parts = view.Frame.Drawing.Commands.Select(command => command switch {
+            DrawCommand.Text text when popup.Bounds.Contains(new Point(text.X, text.Y)) => text.Value,
+            DrawCommand.CenterText text when popup.Bounds.Intersects(text.Bounds) => text.Value,
+            _ => null
+        }).Where(value => value != null);
+        return Regex.Replace(string.Join(" ", parts), @"\s+", " ").Trim();
+    }
+
     private void Capture(string name)
     {
         var started = diagnosticClock.Elapsed.TotalSeconds;
