@@ -1149,6 +1149,14 @@ test lane or process is introduced. These checks measure virtual-clock
 click-to-dispatch behavior, not JVM callback elapsed time, availability-scan
 cost or a human mixed-table review.
 
+`AdvanceRegression` keeps one `DecisionAdvance` owner while resuming bounded
+batches through duplicate, resolving and stale observations. It checks the
+ordered unique command prefix after every batch and final progress separately.
+A controlled 400 ms first observation exercises the unchanged 350 ms batch yield;
+that scheduling budget is not a delay before passing. Per-batch journals retain
+returned revisions, decision IDs, commands, observations and elapsed time before
+assertions, so a legal early yield cannot masquerade as command replay.
+
 `FiniteCombatStagingTest` issues 100 actual attack toggles and 100 actual block
 toggles with fresh offered authority, checks every staged count, and requires a
 separate final confirmation under its unchanged 180-second limit. Its bounded
