@@ -36,10 +36,12 @@ public class InputPayManaOfCostPayment extends InputPayMana {
                 // legacy check for every inconclusive quote; a partial witness
                 // also does not prove that the full payment is unavailable.
                 List<Mana> refund = new ArrayList<>();
-                try {
-                    mandatory = payer.getManaPool().payManaCostFromPool(new ManaCostBeingPaid(cost), spellAbility, true, refund);
-                } finally {
-                    payer.getManaPool().refundMana(refund);
+                try (var preview = payer.getGame().getExecutions().enterPaymentPreview(true)) {
+                    try {
+                        mandatory = payer.getManaPool().payManaCostFromPool(new ManaCostBeingPaid(cost), spellAbility, true, refund);
+                    } finally {
+                        payer.getManaPool().refundMana(refund);
+                    }
                 }
             }
         }

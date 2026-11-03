@@ -31,11 +31,17 @@ public enum ClientDiagnosticCommand
     IgnorePriorityAbility, RestorePriorityAbility, PassForNow, GrantFiniteStackYield, RevokeFiniteStackYield, UndoAction
 }
 public sealed record ClientDiagnosticManaPart(string Symbol, int Count);
+public sealed record ClientDiagnosticPriorityFacts(bool CanAutoPass, bool QuietYieldOffered,
+    int AvailableAbilityCount, int IgnoredAbilityCount);
 public sealed record ClientDiagnosticFacts(bool HasSnapshot, int? ViewerId, long? Revision,
     ClientDiagnosticDecision Decision, int? DecisionOwnerId, ExecutionStep? ExecutionStep,
     string? DecisionSourceName, int? SelectedTargetCount, bool? TargetCompletionOffered,
     bool? ManaPaymentOffered, ImmutableArray<ClientDiagnosticManaPart> RemainingMana,
-    bool ManaBillUnknownOrTruncated);
+    bool ManaBillUnknownOrTruncated)
+{
+    public int? Turn { get; init; }
+    public ClientDiagnosticPriorityFacts? Priority { get; init; }
+}
 
 /// <summary>Viewer-local operational evidence. Provider returns and accepted
 /// publications never certify that a command applied or its effect resolved.
@@ -129,6 +135,7 @@ internal sealed class ClientCommandDiagnostics(Action<ClientDiagnostic> emit, Fu
             var decision = disclosed ? state.Decision : null;
             var target = decision?.Payload as TargetSelectionPayload;
             var payment = decision?.Payload as PaymentPayload;
+            var priority = decision?.Payload as PriorityPayload;
             string? sourceName = decision?.Context.Source?.Card is { FaceDown: false } source
                 && source.Name is { Length: > 0 and <= 160 } name && !string.IsNullOrWhiteSpace(name) && !name.Any(char.IsControl) ? name : null;
             var parts = ImmutableArray.CreateBuilder<ClientDiagnosticManaPart>();
@@ -148,7 +155,12 @@ internal sealed class ClientCommandDiagnostics(Action<ClientDiagnostic> emit, Fu
             return new(true, state.ViewerId, state.Revision,
                 !disclosed ? ClientDiagnosticDecision.Undisclosed : DecisionKind(decision?.Payload),
                 state.DecisionOwnerId, decision?.ExecutionStep, sourceName, target?.Progress?.SelectedCount,
-                target?.Complete.Enabled, payment?.Pay.Enabled, parts.ToImmutable(), unknown);
+                target?.Complete.Enabled, payment?.Pay.Enabled, parts.ToImmutable(), unknown) {
+                    Turn = disclosed ? state.Turn : null,
+                    Priority = priority == null ? null : new(priority.CanAutoPass,
+                        !string.IsNullOrWhiteSpace(priority.QuietYieldToken), priority.Abilities.Length,
+                        state.IgnoredPriorityAbilities.Length)
+                };
         } catch { return new(true, state.ViewerId, state.Revision, ClientDiagnosticDecision.Undisclosed,
             null, null, null, null, null, null, [], true); }
     }

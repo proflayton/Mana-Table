@@ -83,11 +83,19 @@ public class MandatoryManaQuoteTest {
                 assertEquals(quote.knowledge(), ManaPoolPaymentQuote.Knowledge.UNKNOWN);
                 assertNull(quote.remainingBill(), "The unsupported restriction or hybrid bill has no absence claim");
                 fixture.events.values.clear();
+                var borrowed = new ArrayList<Mana>();
+                try (var preview = fixture.table.game.getExecutions().enterPaymentPreview(true)) {
+                    try {
+                        assertTrue(fixture.payer().getManaPool().payManaCostFromPool(new ManaCostBeingPaid(cost), spell, true, borrowed),
+                                "The actual ordinary rules check can fund this complete bill despite an unsupported detached quote");
+                    } finally { fixture.payer().getManaPool().refundMana(borrowed); }
+                }
+                fixture.assertSameUnits(units);
+                assertTrue(fixture.events.values.isEmpty(), "The explicit ordinary funding control is a hypothetical query");
 
                 try (var input = new ConstructorProbe(fixture.controller, cost, spell, fixture.payer())) {
                     assertTrue(input.isPaymentMandatory(), "Unknown cannot relax a forced payment that ordinary rules can fund");
-                    assertTrue(fixture.events.has(EventValueChangeType.Removed), "The unsupported route still uses the ordinary test-payment check");
-                    assertTrue(fixture.events.has(EventValueChangeType.Added), "The legacy check refunds the exact borrowed units");
+                    assertTrue(fixture.events.values.isEmpty(), "The legacy fallback and its complete refund stay inside the payment-preview boundary");
                     fixture.assertSameUnits(units);
                     assertFalse(cost.isPaid(), "The mandatory check never pays the actual input bill");
                     input.publishPaymentButtons();

@@ -47,13 +47,16 @@ internal sealed partial class TableApplication
 
     // Only the collapsed entry reserves table space. The explicitly opened
     // list owns overlay input; opening it never changes an engine preference.
+    private static string AbilityPassingControlLabel(int count) => $"Auto · Abilities · {count} ›";
+
     private Rectangle AbilityPassingControlBounds()
     {
         var abilities = PriorityAbilityOptions();
         if (match == null || abilities.Length == 0) return Rectangle.Empty;
         var priority = LocalTurnControls.PriorityArea;
-        int width = canvas.TextWidth($"Activation stops · {abilities.Length}", .62f, true) + 40;
-        int height = Math.Max(40, canvas.TextSize("Activation stops", .62f, width - 40, 1, true).Y + 12);
+        string label = AbilityPassingControlLabel(abilities.Length);
+        int width = canvas.TextWidth(label, .76f, true) + 32;
+        int height = Math.Max(40, canvas.TextSize(label, .76f, width - 24, 1, true).Y + 16);
         var area = new Rectangle(priority.Right - width, priority.Top - height - 8, width, height);
         if (TableStudyEnabled && StudyHudObstacles.Any(bounds => bounds.Intersects(area))) {
             var occupied = StudyHudObstacles.Append(PlacePortraitPriorityArea(PortraitPriorityArea())).ToArray();
@@ -68,16 +71,10 @@ internal sealed partial class TableApplication
         if (abilities.Length == 0 || AbilityPassingControlBounds() is not { IsEmpty: false } bounds) return;
         int ignored = abilities.Count(ability => ability.IgnoredUntilNextTurn);
         const string id = "ability-auto-pass-open";
-        bool hover = IsControlHovered(id);
-        canvas.CenterText($"Activation stops · {abilities.Length}", new(bounds.X, bounds.Y, bounds.Width - 26, bounds.Height),
-            hover ? Ink : ignored > 0 ? Blue : Muted, .62f, true);
-        canvas.CenterText("›", new(bounds.Right - 26, bounds.Y, 24, bounds.Height), hover ? Ink : Muted, .85f, true);
-        if (hover) {
-            canvas.Line(new(bounds.Left + 8, bounds.Bottom - 3), new(bounds.Right - 8, bounds.Bottom - 3), Blue);
-            DrawTurnHint($"{ignored} skipping until your next turn · Open activation stops", bounds.Center.ToVector2());
-        }
         var action = new MatchIntent.OpenPriorityPassing();
-        hits.Add(new(id, ScopeFor(action), bounds, action));
+        PriorityAbilityButton(id, AbilityPassingControlLabel(abilities.Length), bounds, action, active: ignored > 0);
+        if (IsControlHovered(id))
+            DrawTurnHint($"Skip an ability until your next turn · {ignored} skipped", bounds.Center.ToVector2());
     }
 
     private void DrawPriorityAbilityList()
@@ -86,28 +83,30 @@ internal sealed partial class TableApplication
         if (abilities.Length == 0) return;
         // Expand the workspace before splitting a large list. Complete names
         // and readable rules keep their size, including with enlarged text.
-        (int Name, string Rules, int Height) Measure(PriorityAbility ability, int width) {
+        (int Name, string Rules, string Status, int Height) Measure(PriorityAbility ability, int width) {
             int name = canvas.TextSize(ability.SourceName, .76f, width - 36, 80, true).Y;
             var pages = canvas.TextPages(ability.Text, .62f, width - 36, 220, 80);
             string rules = pages[0] + (pages.Length > 1 ? "\nRead complete ability ›" : "");
             int body = canvas.TextSize(rules, .62f, width - 36, 80).Y;
-            return (name, rules, name + body + 68);
+            string status = (ability.IgnoredUntilNextTurn ? "Skipping until your next turn" : "Stops Auto") + " · Read ability ›";
+            int statusHeight = canvas.TextSize(status, .62f, width - 36, 80, true).Y;
+            return (name, rules, status, name + body + statusHeight + 96);
         }
         bool wide = abilities.Sum(ability => Measure(ability, 508).Height + 12) > 540;
         int width = wide ? 590 : 508, columns = wide ? 2 : 1;
-        List<List<(PriorityAbility Ability, Rectangle Bounds, int Name, string Rules)>> pages = [[]];
+        List<List<(PriorityAbility Ability, Rectangle Bounds, int Name, string Rules, string Status)>> pages = [[]];
         int column = 0, top = 0;
         foreach (var ability in abilities) {
             var measured = Measure(ability, width);
             if (top > 0 && top + measured.Height > 540) { column++; top = 0; }
             if (column == columns) { pages.Add([]); column = 0; }
-            pages[^1].Add((ability, new(column * (width + 24), top, width, measured.Height), measured.Name, measured.Rules));
+            pages[^1].Add((ability, new(column * (width + 24), top, width, measured.Height), measured.Name, measured.Rules, measured.Status));
             top += measured.Height + 12;
         }
         int page = Math.Clamp(priorityAbilityListPage, 0, pages.Count - 1);
         Rectangle content;
         if (wide) {
-            ModalFrame("Activation stops", new MatchIntent.CloseView(), "Back to table", 750);
+            ModalFrame("Auto · Abilities", new MatchIntent.CloseView(), "Back to table", 750);
             // The modal owns its empty body too, so no hidden table card can
             // receive a click. The backdrop is a deliberate collapse gesture.
             var close = hits.ToArray(); hits.Clear();
@@ -118,23 +117,34 @@ internal sealed partial class TableApplication
             content = new(192, 226, 1204, 540);
         } else {
             int height = Math.Max(280, top + 190);
-            var drawer = SystemDrawer("Activation stops", "ability-list-", new MatchIntent.CloseView(), height, "close-overlay");
+            var drawer = SystemDrawer("Auto · Abilities", "ability-list-", new MatchIntent.CloseView(), height, "close-overlay");
             content = new(drawer.X + 28, drawer.Y + 132, 508, top);
         }
         int ignored = abilities.Count(ability => ability.IgnoredUntilNextTurn);
-        canvas.Text($"{ignored} of {abilities.Length} skipping until your next turn", content.X, content.Y - 45, Blue, .6f, content.Width, 2, true);
+        string mode = !automatic ? "Auto off; skips paused" : held ? "Hold on; skips paused" : "Auto on";
+        canvas.Text($"{mode} · {ignored} of {abilities.Length} skipping until your next turn",
+            content.X, content.Y - 45, !automatic || held ? Gold : Blue, .6f, content.Width, 2, true);
         foreach (var row in pages[page]) {
             var bounds = row.Bounds; bounds.Offset(content.Location);
+            var readingBounds = new Rectangle(bounds.X, bounds.Y, bounds.Width, bounds.Height - 64);
             string id = "ability-read:" + row.Ability.Id;
             bool hover = IsControlHovered(id);
-            if (hover) canvas.Rounded(bounds, new Color(35, 60, 69), 5);
+            if (hover) canvas.Rounded(readingBounds, new Color(35, 60, 69), 5);
             canvas.Text(row.Ability.SourceName, bounds.X + 14, bounds.Y + 9, Ink, .76f, bounds.Width - 36, 80, true);
             canvas.Text(row.Rules, bounds.X + 14, bounds.Y + row.Name + 17, Muted, .62f, bounds.Width - 36, 80);
-            string status = row.Ability.IgnoredUntilNextTurn ? "Skipping · until your next turn" : "Stops Auto";
-            canvas.Text(status + "   ›", bounds.X + 14, bounds.Bottom - 34, row.Ability.IgnoredUntilNextTurn ? Blue : Gold, .58f, bounds.Width - 36, 2, true);
+            int statusHeight = canvas.TextSize(row.Status, .62f, bounds.Width - 36, 80, true).Y;
+            canvas.Text(row.Status, bounds.X + 14, bounds.Bottom - 74 - statusHeight,
+                row.Ability.IgnoredUntilNextTurn ? Blue : Gold, .62f, bounds.Width - 36, 80, true);
             canvas.Line(new(bounds.X + 14, bounds.Bottom), new(bounds.Right - 14, bounds.Bottom), Muted * .25f);
             var read = new MatchIntent.ReadPriorityAbility(row.Ability.Id);
-            hits.Add(new(id, ScopeFor(read), bounds, read));
+            hits.Add(new(id, ScopeFor(read), readingBounds, read));
+            // Reading and changing Auto are separate targets. The preference
+            // uses only this exact entitled ability ID, never its source name.
+            PriorityAbilityButton(row.Ability.IgnoredUntilNextTurn ? "ability-undo:" + row.Ability.Id : "ability-pass:" + row.Ability.Id,
+                row.Ability.IgnoredUntilNextTurn ? "Stop for this ability" : "Skip until next turn",
+                new(bounds.X + 14, bounds.Bottom - 56, bounds.Width - 28, 42),
+                new MatchIntent.SetPriorityAbility(row.Ability.Id, !row.Ability.IgnoredUntilNextTurn),
+                row.Ability.IgnoredUntilNextTurn || !busy, row.Ability.IgnoredUntilNextTurn);
         }
         if (pages.Count > 1) {
             int y = content.Bottom + 12;

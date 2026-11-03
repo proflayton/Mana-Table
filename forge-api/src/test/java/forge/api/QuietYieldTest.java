@@ -1,6 +1,9 @@
 package forge.api;
 
 import com.google.gson.JsonObject;
+import com.google.common.eventbus.Subscribe;
+import forge.card.mana.ManaAtom;
+import forge.game.event.GameEventManaPool;
 import forge.player.PlayerControllerHuman;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
@@ -363,6 +366,236 @@ public class QuietYieldTest {
     }
 
     @DataProvider public Object[][] turnOwners() { return new Object[][] {{false}, {true}}; }
+
+    @Test(timeOut = 90000)
+    public void previewFundingPreservesExactPoolViewsAndAUsableCertifiedUndo() throws Exception {
+        try (var game = new RulesScenario("quiet-yield-preview-undo-purity",
+                Map.of(0, List.of("Wastes", "Sol Ring")), "Forest", "Progenitus")) {
+            var initial = game.until(i -> eligibleOn(i, true) && text(i.state(), "phaseKey").equals("MAIN1"));
+            var purposes = HeadlessPlatform.query(game.table, () -> {
+                var owner = game.table.game.getRegisteredPlayers().get(0);
+                var ring = owner.getCardsIn(forge.game.zone.ZoneType.Battlefield).stream()
+                        .filter(source -> source.getName().equals("Sol Ring")).findFirst().orElseThrow();
+                return List.of("1", "1 U").stream().map(cost -> {
+                    var purpose = forge.game.ability.AbilityFactory.getAbility("AB$ Draw | Cost$ " + cost + " | NumCards$ 1", ring);
+                    purpose.setActivatingPlayer(owner);
+                    return purpose;
+                }).toList();
+            });
+            var active = activateManaSource(game, activateManaSource(game, initial, "Wastes"), "Sol Ring");
+            var offer = active.state().getAsJsonObject("undo").getAsJsonObject("offer");
+            assertNotNull(offer, "The actual Sol Ring activation must first expose certified Undo");
+            var events = new PoolEvents(); game.table.game.subscribeToEvents(events);
+            try {
+                HeadlessPlatform.query(game.table, () -> {
+                    var owner = game.table.game.getRegisteredPlayers().get(0);
+                    var pool = owner.getManaPool();
+                    var units = pool.captureReversibleUnits();
+                    var certificate = game.table.game.getReversibleManaAction().current();
+                    assertNotNull(certificate);
+                    assertEquals(units.size(), 3);
+                    assertNotSame(units.get(0), units.get(1));
+                    try (var preview = game.table.game.getExecutions().enterPaymentPreview(true)) {
+                        var purpose = purposes.get(0);
+                        assertTrue(pool.tryPayCostWithMana(purpose,
+                                new forge.game.mana.ManaCostBeingPaid(purpose.getPayCosts().getCostMana().getMana()), units.get(0), true));
+                        assertEquals(pool.totalMana(), 2);
+                        pool.addMana(units.get(0));
+                        assertEquals(pool.totalMana(), 3);
+                        assertFalse(pool.hasExactReversibleUnits(units),
+                                "The forced distinct Wastes borrow/refund actually changes order before outer restoration");
+                    }
+                    assertTrue(pool.hasExactReversibleUnits(units));
+                    for (int index = 0; index < purposes.size(); index++) {
+                        var purpose = purposes.get(index);
+                        var borrowed = new ArrayList<forge.game.mana.Mana>();
+                        try (var preview = game.table.game.getExecutions().enterPaymentPreview(true)) {
+                            try {
+                                try (var nested = game.table.game.getExecutions().enterPaymentPreview(true);
+                                     var ordinary = game.table.game.getExecutions().enterPaymentPreview(false)) {
+                                    var bill = new forge.game.mana.ManaCostBeingPaid(purpose.getPayCosts().getCostMana().getMana());
+                                    assertEquals(pool.payManaCostFromPool(bill, purpose, true, borrowed), index == 0);
+                                    assertEquals(owner.getView().getMana(ManaAtom.fromName("C")), 3,
+                                            "Neither a complete quote nor an incomplete borrow can publish a hypothetical balance");
+                                }
+                                assertEquals(pool.totalMana(), index == 0 ? 3 : 2,
+                                        "Closing nested true/false helpers cannot restore an incomplete plan before its outer scope");
+                            } finally { pool.refundMana(borrowed); }
+                        }
+                        assertTrue(pool.hasExactReversibleUnits(units), "Preview exit restores the original distinct same-color unit order");
+                        assertEquals(game.table.game.getReversibleManaAction().current(), certificate);
+                        assertTrue(events.values.isEmpty());
+                    }
+                    assertThrows(IllegalStateException.class, () -> {
+                        try (var preview = game.table.game.getExecutions().enterPaymentPreview(true)) {
+                            var borrowed = new ArrayList<forge.game.mana.Mana>();
+                            var purpose = purposes.get(0);
+                            assertTrue(pool.tryPayCostWithColor(ManaAtom.fromName("C"), purpose,
+                                    new forge.game.mana.ManaCostBeingPaid(purpose.getPayCosts().getCostMana().getMana()), borrowed));
+                            assertEquals(pool.totalMana(), 2, "The exception follows a real hypothetical removal");
+                            throw new IllegalStateException("Deliberate test-only failure after hypothetical borrowing");
+                        }
+                    });
+                    assertFalse(game.table.game.getExecutions().paymentIsPreview(), "Exceptional exit closes the preview scope");
+                    assertTrue(pool.hasExactReversibleUnits(units), "An exceptional quote exit cannot strand a borrowed unit");
+                    assertEquals(owner.getView().getMana(ManaAtom.fromName("C")), 3);
+                    assertEquals(game.table.game.getReversibleManaAction().current(), certificate);
+                    assertTrue(events.values.isEmpty());
+                    var detached = new forge.game.mana.ManaPool(owner);
+                    try (var preview = game.table.game.getExecutions().enterPaymentPreview(true)) {
+                        detached.addMana(units.get(0));
+                        assertEquals(detached.totalMana(), 1);
+                    }
+                    assertTrue(detached.isEmpty(), "The checkpoint belongs to the exact mutated pool, even for a second pool of the same owner");
+                    assertTrue(pool.hasExactReversibleUnits(units));
+                    assertEquals(game.table.game.getReversibleManaAction().current(), certificate);
+                    assertTrue(events.values.isEmpty());
+                    return null;
+                });
+                var intact = current(game, 0);
+                assertEquals(intact.state().getAsJsonObject("undo").getAsJsonObject("offer"), offer);
+                assertTrue(game.answer(intact, Map.of("action", "undoCertifiedAction", "expectedTask", "priority",
+                        "offerId", text(offer, "id"), "actionId", text(offer, "actionId"),
+                        "undoBarrierVersion", offer.get("barrierVersion").getAsLong())));
+                var restored = game.until(i -> i.seat() == 0 && priority(i) && !text(i.prompt(), "id").equals(text(intact.prompt(), "id")));
+                assertFalse(card(restored, "Sol Ring").get("tapped").getAsBoolean());
+                assertEquals(viewer(restored.state()).getAsJsonObject("mana").get("C").getAsInt(), 1,
+                        "Undo preserves the earlier Wastes activation and reverses only Sol Ring");
+                var real = activateManaSource(game, restored, "Sol Ring");
+                assertTrue(events.values.stream().anyMatch(event -> event.mode() == forge.game.event.EventValueChangeType.Added),
+                        "A real activation still publishes its committed mana production");
+                HeadlessPlatform.query(game.table, () -> {
+                    var owner = game.table.game.getRegisteredPlayers().get(0);
+                    var unit = owner.getManaPool().captureReversibleUnits().get(0);
+                    assertTrue(owner.getManaPool().removeMana(unit));
+                    assertEquals(owner.getView().getMana(ManaAtom.fromName("C")), 2);
+                    owner.getManaPool().addMana(unit);
+                    assertEquals(owner.getView().getMana(ManaAtom.fromName("C")), 3);
+                    assertNull(game.table.game.getReversibleManaAction().current(), "Real remove/add changes still revoke the later Undo offer");
+                    assertTrue(events.values.stream().anyMatch(event -> event.mode() == forge.game.event.EventValueChangeType.Removed));
+                    return null;
+                });
+                assertEquals(viewer(real.state()).getAsJsonObject("mana").get("C").getAsInt(), 3);
+            } finally { game.table.game.unsubscribeFromEvents(events); }
+        }
+    }
+
+    private static RulesScenario.Input activateManaSource(RulesScenario game, RulesScenario.Input input, String name) throws Exception {
+        var actions = new com.google.gson.Gson().toJsonTree(game.session(0).sourceActions(request(input,
+                Map.of("key", text(card(input, name), "key"))))).getAsJsonObject();
+        var action = actions.getAsJsonArray("actions").get(0).getAsJsonObject();
+        assertTrue(game.answer(input, Map.of("action", "useSourceAction", "expectedTask", "priority",
+                "key", text(actions, "sourceCardKey"), "actionId", text(action, "id"))));
+        return game.until(i -> i.seat() == 0 && priority(i) && !text(i.prompt(), "id").equals(text(input.prompt(), "id")));
+    }
+
+    private static final class PoolEvents {
+        private final List<GameEventManaPool> values = new ArrayList<>();
+        @Subscribe public void observe(GameEventManaPool event) { values.add(event); }
+    }
+
+    @Test(dataProvider = "turnOwners", timeOut = 90000)
+    public void omnathKeepsAlreadyBlackManaAndQuietPermissionAcrossEmptyPhases(boolean duringOwnTurn) throws Exception {
+        try (var game = new RulesScenario("quiet-yield-omnath-black-mana-" + duringOwnTurn,
+                Map.of(0, List.of("Omnath, Locus of All", "Swamp", "Forest", "Arid Mesa", "Moat", "Spellbook"),
+                        1, List.of("Spellbook"), 2, List.of("Spellbook"), 3, List.of("Spellbook")), "Lightning Bolt", "Progenitus")) {
+            int opponent = game.table.game.getPlayers().get(1).getId();
+            // Omnath's separate first-main trigger looks at a card. Explicitly
+            // acknowledge that real reveal before capturing any quiet intent.
+            var reveal = game.until(i -> i.seat() == 0 && text(i.prompt(), "kind").equals("reveal"));
+            String revealedBy = text(reveal.prompt(), "executionId");
+            String omnathSource = text(card(reveal, "Omnath, Locus of All"), "visualId");
+            assertTrue(reveal.state().getAsJsonObject("executions").getAsJsonArray("occurrences").asList().stream()
+                    .map(value -> value.getAsJsonObject()).anyMatch(entry -> text(entry, "id").equals(revealedBy)
+                            && text(entry, "sourceCardId").equals(omnathSource) && text(entry, "kind").equals("trigger")),
+                    "Only the actual initial Omnath trigger's reveal is acknowledged before the baseline");
+            assertTrue(game.answer(reveal, Map.of("action", "ok")));
+            var input = game.until(i -> eligibleOn(i, duringOwnTurn)
+                    && (duringOwnTurn || i.state().get("activePlayerId").getAsInt() == opponent)
+                    && text(i.state(), "phaseKey").equals(duringOwnTurn ? "MAIN1" : "UPKEEP"));
+            String beforeProduction = token(input);
+            assertTrue(game.answer(input, Map.of("action", "card", "key", text(card(input, "Swamp"), "key"))));
+            input = game.until(i -> eligibleOn(i, duringOwnTurn)
+                    && viewer(i.state()).getAsJsonObject("mana").get("B").getAsInt() == 1);
+            String original = token(input), omnath = text(card(input, "Omnath, Locus of All"), "visualId");
+            assertNotEquals(original, beforeProduction, "Actual mana production must revoke the earlier quiet permission");
+            int turn = input.state().get("turn").getAsInt();
+            var previousRules = input.state().getAsJsonObject("executions").getAsJsonArray("occurrences").asList().stream()
+                    .map(value -> text(value.getAsJsonObject(), "id")).toList();
+            var checkpoints = new ArrayList<JsonObject>();
+            try {
+                boolean reachedSecondMain = false;
+                for (int windows = 0; windows < 10; windows++) {
+                    checkpoints.add(input.state().deepCopy());
+                    assertEquals(input.state().get("turn").getAsInt(), turn);
+                    assertEquals(ownTurn(input), duringOwnTurn);
+                    assertTrue(input.state().getAsJsonArray("stack").isEmpty());
+                    assertEquals(viewer(input.state()).getAsJsonObject("mana").get("B").getAsInt(), 1);
+                    assertEquals(viewer(input.state()).getAsJsonObject("mana").entrySet().stream()
+                            .mapToInt(entry -> entry.getValue().getAsInt()).sum(), 1, "The actual retained pool contains exactly one black mana");
+                    assertFalse(input.prompt().get("canAutoPass").getAsBoolean(), "Available Arid Mesa still needs a response under ordinary Auto");
+                    assertEquals(token(input), original,
+                            "Mandatory Omnath processing with unchanged black mana must not revoke quiet permission at " + text(input.state(), "phaseKey"));
+                    if (text(input.state(), "phaseKey").equals("MAIN2")) { reachedSecondMain = true; break; }
+                    assertTrue(game.answer(input, Map.of("action", "passUntilPublicAction", "yieldToken", original)));
+                    input = game.until(i -> {
+                        if (i.seat() == 0) assertTrue(priority(i), "Mandatory unchanged-mana replacement must not ask the viewer a required choice: " + i.prompt());
+                        return i.seat() == 0 && priority(i);
+                    });
+                }
+                assertTrue(reachedSecondMain, "The same permit must cross real empty combat to the second main phase");
+                var replacements = input.state().getAsJsonObject("executions").getAsJsonArray("occurrences").asList().stream()
+                        .map(value -> value.getAsJsonObject()).filter(entry -> !previousRules.contains(text(entry, "id"))
+                                && text(entry, "sourceCardId").equals(omnath) && text(entry, "ruleKind").equals("replacement")
+                                && text(entry, "ruleResult").equals("replaced") && text(entry, "step").equals("complete")
+                                && text(entry, "outcome").equals("resolved")).toList();
+                assertFalse(replacements.isEmpty(), "The rules engine must actually run Omnath's mandatory mana-retention replacement");
+                var replacementIds = replacements.stream().map(entry -> text(entry, "id")).toList();
+                assertFalse(input.state().getAsJsonObject("executions").getAsJsonArray("transitions").asList().stream()
+                        .map(value -> value.getAsJsonObject()).anyMatch(entry -> replacementIds.contains(text(entry, "executionId"))
+                                && text(entry, "step").equals("choice")), "The observed replacement never enters a player-choice step");
+                assertTrue(game.answer(input, Map.of("action", "card", "key", text(card(input, "Forest"), "key"))));
+                var changed = game.until(i -> eligibleOn(i, duringOwnTurn)
+                        && viewer(i.state()).getAsJsonObject("mana").get("G").getAsInt() == 1);
+                checkpoints.add(changed.state().deepCopy());
+                assertNotEquals(token(changed), original, "A real additional resource change still retires the unchanged-mana permit");
+                game.rejected(changed, Map.of("action", "passUntilPublicAction", "yieldToken", original), REVOKED);
+            } finally {
+                Files.writeString(game.evidence.resolve("omnath-empty-phase-boundaries.json"),
+                        new com.google.gson.GsonBuilder().setPrettyPrinting().serializeNulls().create().toJson(checkpoints));
+            }
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void actualOptionalReplacementStillRequiresItsOwnersChoiceAndRevokesQuietPermission() throws Exception {
+        try (var game = new RulesScenario("quiet-yield-optional-abundance",
+                Map.of(0, List.of("Arid Mesa", "Spellbook"), 1, List.of("Abundance", "Spellbook"),
+                        2, List.of("Spellbook"), 3, List.of("Spellbook")), "Lightning Bolt", "Progenitus")) {
+            int opponent = game.table.game.getPlayers().get(1).getId();
+            var input = game.until(i -> eligible(i) && i.state().get("activePlayerId").getAsInt() == opponent
+                    && text(i.state(), "phaseKey").equals("UPKEEP"));
+            String original = token(input);
+            assertTrue(game.answer(input, Map.of("action", "passUntilPublicAction", "yieldToken", original)));
+            var choice = game.until(i -> i.seat() == 1 && !priority(i));
+            var owner = game.state(0);
+            assertEquals(owner.get("decisionOwnerId").getAsInt(), opponent, "The optional replacement remains the opponent's actual unanswered decision");
+            assertFalse(owner.get("actionClass").getAsString().equals("priority"));
+            assertTrue(owner.get("prompt").isJsonNull(), "Waiting for the owner cannot disclose or answer their private choice");
+            String executionId = text(choice.prompt(), "executionId");
+            assertTrue(choice.state().getAsJsonObject("executions").getAsJsonArray("occurrences").asList().stream()
+                    .map(value -> value.getAsJsonObject()).anyMatch(entry -> text(entry, "id").equals(executionId)
+                            && text(entry, "sourceName").equals("Abundance") && text(entry, "ruleKind").equals("replacement")
+                            && text(entry, "step").equals("choice")), "This is the actual optional draw replacement, not an unrelated confirmation");
+            assertTrue(game.answer(choice, Map.of("action", "cancel")), "Only the owner explicitly declines the optional replacement");
+            var after = game.until(i -> i.seat() == 0 && priority(i));
+            assertNotEquals(token(after), original, "Completing a required replacement choice cannot silently renew the old quiet permission");
+            game.rejected(after, Map.of("action", "passUntilPublicAction", "yieldToken", original), REVOKED);
+            Files.writeString(game.evidence.resolve("optional-replacement-boundaries.json"),
+                    new com.google.gson.GsonBuilder().setPrettyPrinting().serializeNulls().create()
+                            .toJson(List.of(input.state(), choice.state(), owner, after.state())));
+        }
+    }
 
     @Test(dataProvider = "turnOwners", timeOut = 90000)
     public void realManaActivationStackAndRequiredSearchReturnControlInsteadOfConsumingAChoice(boolean duringOwnTurn) throws Exception {

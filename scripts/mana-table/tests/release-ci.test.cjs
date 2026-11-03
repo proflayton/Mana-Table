@@ -328,6 +328,7 @@ test('a closed two-suite matrix preserves every controlled and real-engine check
   assert.match(verification, /strategy:\n      fail-fast: false\n      matrix:\n        suite: \[presentation, engine\]/);
   assert.doesNotMatch(verification, /^        (?:include|exclude):/m, 'The matrix cannot add or omit a required suite.');
   assert.doesNotMatch(verification, /\bcontinue-on-error:/, 'A failing suite must fail the required matrix aggregate.');
+  assert.match(verification, /^    timeout-minutes: 20$/m, 'The mixed-lobby journey must stay within the existing verification job budget.');
   assert.match(verification, /^      MANA_RELEASE_VERSION: 0\.2\.\$\{\{ github.run_number \}\}$/m);
   assert.match(verification, /^      MANA_VERIFICATION_SUITE: \$\{\{ matrix.suite \}\}$/m);
   assert.doesNotMatch(verification, /dotnet (?:build|publish)|mvn |package\.ps1 -Release|name: package-source.zip|name: mana-native-tools-/,
@@ -349,6 +350,7 @@ test('a closed two-suite matrix preserves every controlled and real-engine check
   const independent = ['presentation', 'headless-presentation', 'headless-clutter', 'headless-priority-flow'].map(mode => '--smoke-' + mode);
   assert.deepEqual([...verification.matchAll(/--smoke-[\w-]+/g)].map(match => match[0]), [...independent, '--smoke-headless-engine'],
     'Run every existing controlled mode and the complete real-engine journey exactly once.');
+  assert.equal([...verification.matchAll(/--smoke\b(?!-)/g)].length, 1, 'The existing four-client NativeSmoke journey must also run exactly once.');
   const modes = runs[0].match(/foreach \(\$mode in @\(([^)]*)\)\)/);
   assert.ok(modes, 'The presentation suite must execute its complete declared inventory.');
   assert.deepEqual([...modes[1].matchAll(/'([^']+)'/g)].map(match => match[1]), independent);
@@ -360,6 +362,15 @@ test('a closed two-suite matrix preserves every controlled and real-engine check
   assert.match(runs[0], /--engine-resources \(Join-Path \$env:MANA_NATIVE_PACKAGE 'engine'\)/);
   assert.match(runs[0], /--source-revision \$env:GITHUB_SHA --source-manifest dist\/ci-inputs\/ci-engine-manifest.json/);
   assert.match(runs[0], /--profile dist\/headless-engine-checks\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /);
+  assert.match(runs[0], /dotnet \.\/dist\/ci-inputs\/harness\/Mana.Table.Tests.dll --smoke --engine-jar \(Join-Path \$env:MANA_NATIVE_PACKAGE 'engine\/forge-engine.jar'\) --engine-resources \(Join-Path \$env:MANA_NATIVE_PACKAGE 'engine'\) --profile dist\/mixed-lobby-checks\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /,
+    'The four-client TCP/mixed-lobby journey must use the verified production engine, not the fixture launcher, and fail the same required job.');
+  assert.ok(runs[0].indexOf('--profile dist/headless-engine-checks') < runs[0].indexOf('--profile dist/mixed-lobby-checks'),
+    'The existing headless suite remains required before the additional mixed-lobby command.');
+  assert.match(runs[0], /\$prefixPath = 'dist\/mixed-lobby-checks\/mixed-lobby\/prefix-results.json'/);
+  assert.match(runs[0], /\$prefixFile.Length -le 0 -or \$prefixFile.Length -gt 1048576/);
+  assert.match(runs[0], /\$prefix.PSObject.Properties.Name -cnotcontains 'failure' -or \$null -ne \$prefix.failure/);
+  assert.match(runs[0], /\$prefix.continued -isnot \[bool\] -or -not \$prefix.continued/);
+  assert.match(runs[0], /private observations and test hands are CI evidence, not public release assets/);
   assert.match(verification, /if: always\(\)\n        uses: actions\/upload-artifact@/);
   assert.match(verification, /name: mana-native-verification-evidence-\$\{\{ matrix.suite \}\}-\$\{\{ github.run_attempt \}\}/,
     'Both suites must retain distinct evidence even when their sibling fails.');

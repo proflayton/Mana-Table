@@ -4,6 +4,8 @@ import forge.game.card.CardView;
 import forge.game.card.Card;
 import forge.game.event.Event;
 import forge.game.event.GameEvent;
+import forge.game.mana.Mana;
+import forge.game.mana.ManaPool;
 import forge.game.spellability.SpellAbility;
 import forge.game.trigger.WrappedAbility;
 
@@ -54,6 +56,7 @@ public final class ExecutionTracker {
     private long sequence;
     private String paymentOrigin = "unknown";
     private int paymentPreviewDepth;
+    private final Map<ManaPool, List<Mana>> paymentPreviewPools = new LinkedHashMap<>();
 
     ExecutionTracker(Game game) { this.game = game; }
 
@@ -61,16 +64,39 @@ public final class ExecutionTracker {
     public boolean paymentIsPreview() { return paymentPreviewDepth > 0; }
 
     /** Legacy quotes temporarily borrow/refund real pool units. Such a quote
-     * must not become an actual-spending receipt through a nested helper. */
+     * must not become an actual-spending receipt through a nested helper.
+     * Only the outer scope restores units, so partial planning retains its
+     * ordinary borrowing semantics inside nested payment helpers. */
     public PaymentPreview enterPaymentPreview(boolean preview) {
         if (preview) paymentPreviewDepth++;
         return new PaymentPreview(preview);
+    }
+    /** Called before the first hypothetical mutation of an owned pool. */
+    public void checkpointPaymentPreview(ManaPool pool) {
+        if (pool.paymentGame() != game) throw new IllegalArgumentException("Foreign payment preview pool");
+        if (paymentIsPreview()) {
+            paymentPreviewPools.computeIfAbsent(pool, ManaPool::captureReversibleUnits);
+        }
     }
     public final class PaymentPreview implements AutoCloseable {
         private final boolean preview;
         private boolean closed;
         private PaymentPreview(boolean preview) { this.preview = preview; }
-        @Override public void close() { if (!closed) { if (preview) paymentPreviewDepth--; closed = true; } }
+        @Override public void close() {
+            if (closed) return;
+            closed = true;
+            if (!preview) return;
+            if (paymentPreviewDepth > 1) { paymentPreviewDepth--; return; }
+            try {
+                // Keep the preview active while restoring: no production,
+                // payment, public view change or Undo invalidation occurred.
+                for (var entry : paymentPreviewPools.entrySet())
+                    entry.getKey().restoreReversibleUnits(entry.getValue());
+            } finally {
+                paymentPreviewPools.clear();
+                paymentPreviewDepth = 0;
+            }
+        }
     }
 
     /** Gesture provenance only; this neither authorizes nor performs payment. */

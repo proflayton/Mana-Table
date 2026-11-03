@@ -447,13 +447,24 @@ automated command and geometry checks cannot supply that approval.
 
 ## Readable passing controls: 1 November 2026
 
-**Activation-stop list revision after 0.2.311; human gameplay review pending.**
+**Source revision after 0.2.350; human gameplay review pending.**
 Automated validation and exact-candidate CI belong in the pull request record.
 The first named **ACTIVATION STOP** card made the ability
 readable, but the player's Ghost Town screenshot shows that a persistent source
-card obstructs the table. The intended journey is to keep Auto's state visible,
-deliberately expand its activation stops, read one exact ability, then collapse
-the list without changing any passing preference.
+card obstructs the table. Its replacement hid Skip behind an understated entry,
+a list row and a full reader. The player then reported that ignoring abilities
+seemed unavailable and they were repeatedly passing. The intended journey is to
+find the ability controls beside Auto, expand them, then explicitly skip one
+exact activation or read it without changing a preference.
+
+The player's retained logs also showed waiting ending without an intervening
+public action. A real Omnath reproduction found a separate engine cause:
+affordability checks borrowed and refunded floating mana while publishing both
+steps as actual resource changes. The existing payment-preview scope now restores
+the exact pool inventory and order without publishing hypothetical changes. Real
+payments, new effects and required decisions retain their normal interruption
+boundaries. This fixes a reproduced cause of repeated stops; the bounded historic
+logs cannot attribute every reported stop to it.
 
 [Magic Online's gameplay controls](https://www.mtgo.com/getting-started/getting-started-tips-tricks)
 put effect-specific yield and optional-answer choices behind a right-click on
@@ -467,18 +478,25 @@ to tuck them again. These observations support a quiet seat-attached entry and
 deliberate expansion. Neither game documents this exact saved-activation list;
 the counted entry, drawer and desktop gestures below are our Commander adaptation.
 
-The collapsed **Activation stops · N** entry sits beside Auto, with a minimum
-40-pixel hit height. It replaces the persistent first-source card. Its count
+The collapsed **Auto · Abilities · N** button sits beside the portrait's timing
+controls, with a measured label, the existing visible control surface and a
+minimum 40-pixel hit height. It replaces the persistent first-source card. Its count
 includes current activation stops and retained skipped activations; it must not
-imply that every entry is skipped. Clicking opens the `priority-stops` list,
+imply that every entry is skipped. Current unskipped options keep the entry
+available even while ordinary Auto uses no decision dock. Clicking opens the
+`priority-stops` list,
 which separately states how many activations Auto is skipping until the next
 own turn. Reading the list sends no game command.
 
 Each entry retains its complete measured source name, readable ability rules and
 current stop/skip status. Separate abilities from the same source remain separate
 entries with their own exact IDs and rules. A long rules preview ends with
-**Read complete ability**; selecting the entry opens the existing
+**Read complete ability**; selecting the entry's name, rules or reading area opens the existing
 **Auto · This activation** reader with that exact ability's complete rules.
+Each row has a separate visible **Skip until next turn** or **Stop for this
+ability** button. These buttons do not overlap the reading target, so changing a
+preference does not require opening a full reader. Two abilities on the same
+source retain independent buttons and exact engine IDs.
 **Back to list** returns to the same list. **Back to table**, Escape or
 clicking outside dismisses the expanded surface without changing Auto, Hold or
 any saved rule. The small list expands into a wider measured, multi-column
@@ -486,10 +504,12 @@ workspace before using navigation when full-size entries still exceed the
 available space. It does not reduce names to ellipses or turn the table into a
 permanently occupied scrolling settings panel.
 
-**Skip this activation** changes only the current engine-issued ability ID;
+**Skip until next turn** (or **Skip this activation** in the full reader) changes
+only the current engine-issued ability ID;
 **Stop for this ability** restores that exact retained stop. A skipped ability
 remains manually usable, and other available responses still stop Auto. Hold
-or Full Control pauses the preference's automatic effect. Yielding priority,
+or Full Control pauses the preference's automatic effect. The list labels that
+paused state; changing one skip does not enable Auto or release Hold. Yielding priority,
 answering an optional trigger and ignoring an available activation remain
 different permissions with their existing lifetimes.
 

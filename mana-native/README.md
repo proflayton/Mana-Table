@@ -168,12 +168,16 @@ F toggles Auto and Ctrl holds priority for the current turn. Wait for action,
 Take control and the readable Pass once action live beside that same portrait.
 Required targets, searches and payment remain at their source/decision surfaces.
 
-Source candidate: **Activation stops · N** is a compact entry beside Auto, with a
-minimum 40-pixel hit height. It opens a named list instead of reserving a source
-card on the battlefield. The list counts skipped activations separately and
+Source candidate: **Auto · Abilities · N** is a visible button beside the
+portrait's timing controls, with a measured label and minimum 40-pixel hit
+height. It remains available for current or retained abilities while Auto runs.
+It opens a named list instead of reserving a source card on the battlefield.
+The list counts skipped activations separately and
 keeps complete measured source names, readable rules previews and stop/skip
-status. Same-source abilities retain separate entries and exact IDs. A long
-preview offers **Read complete ability**. Selecting an entry reads that exact
+status. Each row has a direct **Skip until next turn** or **Stop for this ability**
+button; the separate name/rules target only reads the ability. Same-source
+abilities retain separate entries and exact IDs. A long preview offers
+**Read complete ability**. Selecting the reading area opens that exact
 ability's complete rules under
 **Auto · This activation**. **Back to list** returns to the entries; **Back to
 table**, Escape or an outside click collapses the view without changing Auto,

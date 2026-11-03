@@ -530,6 +530,15 @@ within the original deadline, never replayed. `mixed-lobby/prefix-results.json`
 is a bounded integration result; private observations stay separately labelled.
 The human connections are scripted and supply no human UX, natural outcome or
 deck-qualification credit.
+The required native verification `engine` case now runs this existing `--smoke`
+route after the headless engine suite, using the verified **production** engine
+JAR and resources. It keeps the four warmed clients and original four-minute
+deadline; it adds no job or deadline extension. CI requires the canonical bounded
+prefix report (at most 1 MiB), no recorded failure, host concession, remote
+ownership checks and subsequent continuation. The engine artifact retains
+`mixed-lobby-checks` JSON/log evidence even on failure. Its per-seat snapshots,
+policy observations and test hands are private CI evidence and must not enter
+public release assets. Source CI execution does not imply human UX acceptance.
 
 ## AI release evaluation
 
@@ -954,19 +963,28 @@ observations do not restart that announcement.
 `PriorityContinuationChecks` runs in the existing headless presentation lane.
 Source candidate: its routine-Auto journey and the existing
 `PriorityAbilitySmoke` journey cover the larger portrait-adjacent
-Take control action and named activation entry. Opening the activation entry
-must send no command or change a preference. Pointer checks must distinguish
-Skip this activation, Stop for this ability and Back to table; preserve a second
-ability's preference; retain manual activation; and close an expired selected
+Take control action and visible **Auto · Abilities · N** button. The headless
+artwork handoff also keeps that button reachable for current unskipped options
+when ordinary Auto has no decision dock, and checks its measured control surface.
+Opening the entry or reading a row must send no command or change a preference.
+Each expanded row has a separate direct **Skip until next turn** or **Stop for
+this ability** button, while its name/rules open the complete noncommitting reader.
+Pointer checks must exercise direct Skip and Stop without entering that reader,
+distinguish its full-reader actions and Back to table, preserve a second
+ability's preference, retain manual activation, and close an expired selected
 ID without retargeting. A source face requires its exact disclosed card handle;
 missing handles retain full name/rules. Reading pauses Auto while the host's
 decision clock remains authoritative. Take control during polling or send holds
 the current turn without replaying or undoing an already submitted pass.
 Use the existing headless and window lanes at 1000 x 740 and 1540 x 980 with
-130% text. The existing `priority-1280` window case is included in the ordinary
+130% text. Expanded-list checks keep all twenty exact abilities reachable with
+complete names/rules and separate nonoverlapping reading/preference hits. The
+required window journey also rejects a stale direct Skip after ability replacement,
+restores a retained ability between prompts, and leaves a required choice manual.
+The existing `priority-1280` window case is included in the ordinary
 four-shard CI partition as well as the extended inventory; no new CLI mode or CI
-lane is introduced. Local headless and window checks passed; exact-head CI and
-human gameplay acceptance remain separate and pending.
+lane is introduced. Checks for this source revision and human gameplay acceptance
+remain separate; see the exact candidate's PR for completed run evidence.
 Actual pointer journeys at 1000x740 and 1540x980 with 130% text cover default
 opponent Auto with an available instant, explicit own/opponent waiting, fresh
 decisions retaining one original permission, cast/trigger interruption, no silent
@@ -987,6 +1005,16 @@ stack rearming after Take control; Hold must not make that consent inaccessible.
 combat and queued required-choice invalidation; `QuietPriorityRegression` checks
 the corresponding immutable native permissions. These cases extend existing lanes
 without a new engine startup or a duplicate broad interaction campaign.
+The Omnath regression retains actual black mana through own-turn combat into
+the second main phase, with an opponent-turn control. Availability checks must
+preserve the quiet permission and publish no hypothetical pool events. Companion
+cases cover exact floating-unit order, nested true/false preview scopes,
+exception restoration, an exact detached pool, a still-usable certified Undo,
+and genuine resource changes that must still interrupt waiting. The mandatory
+quote fallback checks that an inconclusive detached quote still uses the full
+rules check without changing the actual bill or mana inventory. These cases run
+in the existing Maven tests on Java 17 and 21. They establish the bounded pool
+preview contract, not full-world rollback or exhaustive card interactions.
 `ExecutionEngineJourney` adds that independent causal check in the existing
 packaged-engine smoke: it records the successfully submitted real Loch Mare
 stack response and feeds its subsequent authorized native snapshots into the
@@ -2263,6 +2291,12 @@ progress, counted remaining mana and execution step when disclosed. The source
 name is only the current decision's visible portrait; this can be a card the
 local player chose from their hand. Review excerpts before sharing them.
 
+The ability-control follow-up adds disclosed turn, received automatic-pass and
+quiet-permission availability, and available/ignored ability counts. Older logs
+without those fields cannot explain why Auto stopped. No tokens, ability IDs,
+card handles or ability rules are recorded. A permission change is retained even
+if the outer revision and decision ID remain equal; identical polls still coalesce.
+
 The journal does not collect complete zones, raw snapshots, live action handles,
 chat, arbitrary text replies or exception messages. Nothing uploads automatically.
 Unknown or truncated bill evidence remains labelled unknown. Retention is bounded
@@ -2368,7 +2402,8 @@ unchanged `--smoke-presentation`, `--smoke-headless-presentation`,
 `--smoke-headless-clutter` and `--smoke-headless-priority-flow` modes with their
 existing profiles and assertions. `engine` runs the unchanged
 `--smoke-headless-engine` journey against the verified packaged runtime and
-resources. Both restore the source-bound harness; the engine case additionally
+resources, then the existing `--smoke` four-client TCP and mixed-lobby journey
+against the production JAR. Both restore the source-bound harness; the engine case additionally
 requires the bound launcher. Neither rebuilds the application. UI and installer
 jobs proceed alongside them. A failure does not cancel the sibling suite, and
 separate reports, logs and provenance manifests are retained even on failure.
@@ -2399,8 +2434,10 @@ the engine matrix suite supplies the actual gameplay execution evidence.
 The [orchestration fixtures](../../mana-native/ci/test-native-verification.ps1)
 execute the actual PowerShell restore and run blocks
 extracted from the workflow, with controlled command stubs. They verify the four
-presentation invocations and distinct profiles, the engine's complete command
-and launcher requirement, immediate stop on a failed mode, and rejection of
+presentation invocations and distinct profiles, both engine commands and their
+distinct fixture/production JAR requirements, immediate stop on a failed mode,
+and rejection of missing, malformed, failed or non-continuing mixed-lobby prefix
+evidence. They also reject inflated UX/outcome/qualification claims and
 empty, unknown or differently cased suite names before any command runs. They
 do not replace the controlled assertions or real-engine journey in CI.
 
