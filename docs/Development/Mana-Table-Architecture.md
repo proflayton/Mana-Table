@@ -1617,6 +1617,10 @@ flowchart LR
 the exact game/revision/decision stamp. `ReadPresentation` only returns that
 completed frame; it requires an update first. `TableWindow.Draw` reads and replays
 it without reconciling navigation, advancing animation or running interactions.
+Nonpositive rounded/panel bounds have no visible surface and paint nothing.
+The painter checks that boundary before radius arithmetic, including an inset
+that collapses a valid tiny panel. Frame preparation alone cannot certify this
+GPU replay contract; a required GPU primitive suite paints these cases directly.
 Application preparation owns one deferred list
 pairing each lifted card with its painter; it drains in stable layer order before
 frame publication. The card controller owns poses, reading and layers, without a

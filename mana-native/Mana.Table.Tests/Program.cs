@@ -30,6 +30,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-state-clarity") || args.Contains("--smoke-deck-experience");
         testRun |= args.Contains("--smoke-printings");
         testRun |= args.Contains("--smoke-headless-presentation");
+        testRun |= args.Contains("--smoke-canvas-primitives");
         testRun |= args.Contains("--smoke-headless-engine");
         testRun |= args.Contains("--smoke-cooperative-encounter");
         testRun |= args.Contains("--smoke-configured-simulation");
@@ -55,6 +56,13 @@ internal static class Program
         try {
             if (args.Contains("--smoke-advance")) { AdvanceRegression.RunAsync(profile).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-social")) { SocialRegression.Run(profile); return 0; }
+            if (args.Contains("--smoke-canvas-primitives")) {
+                var scenario = new InteractionScenarioEngine();
+                using var test = new TableWindow(TestTableServices.For(scenario), profile, null, null, initialState: scenario.State);
+                test.Window.Position = new Microsoft.Xna.Framework.Point(-32000, -32000);
+                test.Automation = new CanvasPrimitiveChecks.Only(test, profile);
+                test.Run(); return 0;
+            }
             if (args.Contains("--smoke-presentation")) { PresentationSmoke.Run(profile); return 0; }
             if (args.Contains("--smoke-headless-presentation")) { HeadlessPresentationSmoke.Run(profile,
                 args.Contains("--presentation-group") ? Arg("--presentation-group") ?? "" : null); return 0; }

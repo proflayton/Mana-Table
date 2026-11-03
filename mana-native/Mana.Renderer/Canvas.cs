@@ -112,6 +112,9 @@ public sealed class Canvas : IDisposable
     public void Fill(Rectangle bounds, Color color) { if (bounds.Width > 0 && bounds.Height > 0) batch.Draw(pixel, bounds, color); }
     public void Rounded(Rectangle r, Color color, int radius = 10)
     {
+        // Empty or inverted bounds have no surface. Border insets and clipped
+        // layouts can produce them; do not calculate a negative radius limit.
+        if (r.Width <= 0 || r.Height <= 0) return;
         radius = Math.Clamp(radius, 0, Math.Min(r.Width, r.Height) / 2);
         if (radius == 0) { Fill(r, color); return; }
         Fill(new(r.X + radius, r.Y, r.Width - radius * 2, r.Height), color);
@@ -130,6 +133,7 @@ public sealed class Canvas : IDisposable
     }
     public void Panel(Rectangle r, Color fill, Color trim, int radius = 10)
     {
+        if (r.Width <= 0 || r.Height <= 0) return;
         Rounded(new(r.X + 2, r.Y + 5, r.Width, r.Height), Color.Black * .45f, radius);
         Rounded(r, trim, radius); r.Inflate(-1, -1); Rounded(r, fill, Math.Max(0, radius - 1));
     }
