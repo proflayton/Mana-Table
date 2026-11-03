@@ -39,6 +39,31 @@ reduced and ordinary motion, focused views and long names with distinct suffixes
 including actual GPU captures. This entry records the intended journey; it does
 not claim those checks have passed or supply human approval.
 
+## Keep mana payment within its cast: source candidate
+
+**AI mana cadence candidate; mixed human/AI review pending.** The player intent
+is to watch an opponent pay for and announce a cast while keeping real response
+windows readable. Sources remain the engine's current offered mana producers;
+targets and required choices retain their existing authority. This adds no
+control or gesture and changes no payment or casting permission.
+
+Wizards' [January 2021 Arena State of the Game](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-january-2021-01-21)
+describes auto-tapping within casting. Its [Brothers' War State of the Game](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-the-brothers-war)
+describes pausing for strategic mana choices. Treating certified internal payment
+steps as part of that same announced action is our inference and adaptation;
+neither source documents a 2.4-second timer or multiplayer AI cadence.
+
+The candidate avoids restarting that announcement for certified tap-cost
+progress within one `Mana` execution. A true cast, response or side effect keeps
+its existing attention and full public-event guards. An unrelated or
+insufficiently described transition cannot inherit this exception; actual
+offered sources and required choices are still reacquired from the engine.
+
+The authored regression using an engine-shaped tap-cost state failed against
+the baseline cadence. It establishes that controlled hold, not the cause or
+duration of the player's reported slow Auto decisions. Human review of the
+candidate at a mixed table remains pending.
+
 ## Preserve development options before committing mana: source candidate
 
 **AI timing candidate; exact-candidate mixed human/AI review pending.** An

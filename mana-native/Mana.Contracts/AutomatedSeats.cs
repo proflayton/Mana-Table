@@ -6,10 +6,12 @@ namespace Mana.Contracts;
 // or a policy. Each snapshot has exactly the knowledge of that automated seat.
 public interface IAutomatedSeatProvider
 {
-    Task EnableAutomatedSeatsAsync();
-    Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync();
-    Task ExecuteAutomatedAsync(int seatId, GameCommand command);
-    Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode);
+    Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default);
+    Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default);
+    // Cancellation stops the caller's wait; it does not retract an action that
+    // may already have reached the rules engine or authorize replaying it.
+    Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default);
+    Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode, CancellationToken cancellation = default);
 }
 
 public sealed record AutomatedSeatObservation(int SeatId, GameSnapshot State,

@@ -337,6 +337,39 @@ host receipts. Missing strategic capabilities are explicit; these checks do not
 demonstrate a production bot or enjoyable behavior. The assembly dependency check
 keeps AI independent of Forge, rendering and the updater.
 
+The source cancellation candidate extends that same client lane with held
+observation, execution and fault-report operations, plus shutdown during
+background and directly driven observations, and an observation provider that
+blocks synchronously before returning its task. It checks caller cancellation and
+bounded host shutdown against providers that deliberately ignore
+their tokens, late execution remaining an unknown receipt, no replay, and recovery
+only through an independently observed fresh scope. The first baseline failures
+are retained separately from the corrected candidate's passing invocation.
+
+Accepted-input progress regressions cover opening, required payment, selection
+and combat, closed presentation pacing, stale snapshots and regressed offer
+versions. Repeated successful polls stay quiet through 44 virtual seconds and
+fault once at 45, preserving the Accepted receipt without replay. Fresh scope,
+retired input, human waiting, completion and missing seats are separate controls.
+The payment cadence journey includes two separately observed mana activations
+with actual-shaped public tap-cost facts. It keeps payment and a required number
+choice within the initial beat while a real cast gets a new beat. Missing or
+non-cost evidence and the existing mana-side-effect controls retain ordinary
+announcement timing. These authored journeys do not measure the user's session.
+
+`ForgeRequestCancellationProtocolProbe` belongs to the existing
+`configured-simulation` group and full headless lane. Its five real child-process
+cases cover cancellation while queued at the write gate, interrupted large
+writes, one virtual 45-second budget spanning gate and reply, late canceled
+observations, and late command receipts. The shared-budget case spends 30 virtual
+seconds waiting at the gate and 15 awaiting the reply; it cannot pass if a phase
+resets the deadline. Reply cancellation must leave the connection usable and its
+fresh scope intact; partial-write interruption must explicitly fail that owner.
+These protocol cases need no additional CI lane or Java rules run. The optional
+`TimeProvider` seams make the existing deadline deterministic without sleeping
+for 45 seconds or changing production timing. Client/protocol correctness is
+separate from a natural game's progress and mixed human/AI experience approval.
+
 The existing `--smoke-headless-engine` process runs a short scripted AI-framework
 continuation through real starting-player selection, keeping a hand and playing
 an exact offered land route before its normal application journey. It verifies

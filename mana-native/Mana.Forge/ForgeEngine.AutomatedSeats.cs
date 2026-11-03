@@ -29,11 +29,12 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         }
     }
 
-    public async Task EnableAutomatedSeatsAsync()
+    public async Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default)
     {
+        cancellation.ThrowIfCancellationRequested();
         var owner = current ?? throw new IOException("The engine is not running");
         if (!owner.AutomationAvailable) throw new NotSupportedException("Install a matching engine with automated-seat support.");
-        await Request("automatedEnable");
+        await Request("automatedEnable", cancellation: cancellation);
     }
 
     public async Task<GameSnapshot> StartSimulationAsync(ImmutableArray<string> deckIds)
@@ -73,21 +74,27 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         } finally { simulationLifecycle.Release(); }
     }
 
-    public async Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync()
+    public async Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default)
     {
+        cancellation.ThrowIfCancellationRequested();
         var owner = current ?? throw new IOException("The engine is not running");
         if (!owner.AutomationAvailable) throw new NotSupportedException("This engine has no automated-seat port.");
         long generation = simulationGeneration;
         JsonElement raw;
-        try { raw = await Request("automatedState"); }
+        try { raw = await Request("automatedState", cancellation: cancellation); }
         catch (EngineObservationSupersededException) {
             lock (automatedScopes)
                 if (current == owner && owner.Failure == null && simulationGeneration == generation) automatedScopes.Clear();
             throw;
         }
-        lock (automatedScopes) EnsureSimulationOwner(owner, generation);
+        lock (automatedScopes) { cancellation.ThrowIfCancellationRequested(); EnsureSimulationOwner(owner, generation); }
         ImmutableArray<AutomatedSeatObservation> result;
-        try { result = DecodeAutomatedObservations(raw, owner.CertifiedUndoAvailable); }
+        try {
+            cancellation.ThrowIfCancellationRequested();
+            result = DecodeAutomatedObservations(raw, owner.CertifiedUndoAvailable);
+            cancellation.ThrowIfCancellationRequested();
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { throw; }
         catch (Exception error) {
             lock (automatedScopes)
                 if (current == owner && owner.Failure == null && simulationGeneration == generation) automatedScopes.Clear();
@@ -95,6 +102,7 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
             throw;
         }
         lock (automatedScopes) {
+            cancellation.ThrowIfCancellationRequested();
             EnsureSimulationOwner(owner, generation);
             automatedScopes.Clear();
             // Request already returned an owned immutable JSON clone.
@@ -146,8 +154,9 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         }
     }
 
-    public async Task ExecuteAutomatedAsync(int seatId, GameCommand command)
+    public async Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default)
     {
+        cancellation.ThrowIfCancellationRequested();
         Dictionary<string, object?> args;
         lock (automatedScopes) {
             if (command is UndoAction && current?.CertifiedUndoAvailable != true)
@@ -164,7 +173,7 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
                 throw new EngineCommandRejectedException("That mana output was not offered by this current ability.");
             args["seatId"] = seatId;
         }
-        await Request("automatedAction", args);
+        await Request("automatedAction", args, cancellation);
     }
 
     // Friend-test seam: the ordinary public method correctly rejects this at
@@ -188,8 +197,9 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         await Request("automatedAction", args);
     }
 
-    public async Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode)
+    public async Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode, CancellationToken cancellation = default)
     {
+        cancellation.ThrowIfCancellationRequested();
         // Only stable diagnostics cross the host port, never policy exception
         // messages or cards private to a different seat.
         if (string.IsNullOrWhiteSpace(reasonCode) || reasonCode.Length > 96
@@ -200,7 +210,7 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         JsonElement? last;
         lock (automatedScopes) last = lastDecodedAutomatedWire;
         PreserveLastAutomatedObservation(paths.Profile, last, gameId, seatId, reasonCode);
-        await Request("automatedFault", new { sessionId = gameId, seatId, reasonCode });
+        await Request("automatedFault", new { sessionId = gameId, seatId, reasonCode }, cancellation);
     }
 
     internal static void PreserveLastAutomatedObservation(string profile, JsonElement? last, string gameId, int seatId, string reasonCode)

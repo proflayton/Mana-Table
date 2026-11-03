@@ -2,7 +2,7 @@ using System.Collections.Immutable;
 using Mana.AI;
 using Mana.Contracts;
 
-internal static class AiHostRegression
+internal static partial class AiHostRegression
 {
     internal static async Task RunAsync(Action<bool, string> check)
     {
@@ -91,6 +91,8 @@ internal static class AiHostRegression
             "Actual resolution receives its own beat before the next automated action");
         cadence.Observe([]);
         check(!cadence.Ready(announced.GameId, announced.SeatId), "Leaving the match clears its public cadence state");
+        await CancellationAsync(check);
+        await ProgressAsync(check);
     }
 
     private sealed class Clock : TimeProvider
@@ -140,16 +142,16 @@ internal static class AiHostRegression
         internal TaskCompletionSource Faulted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal List<(int Seat, GameCommand Command)> Commands = [];
         internal List<string> Faults = [];
-        public Task EnableAutomatedSeatsAsync() => Task.CompletedTask;
-        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync() => ObserveFailureAfterFirst && observations++ > 0
+        public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) => Task.CompletedTask;
+        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default) => ObserveFailureAfterFirst && observations++ > 0
             ? Task.FromException<ImmutableArray<AutomatedSeatObservation>>(new IOException("observation failed", new InvalidDataException("original provider cause")))
             : Task.FromResult(Observations);
-        public Task ExecuteAutomatedAsync(int seatId, GameCommand command) {
+        public Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default) {
             Commands.Add((seatId, command));
             if (Reject) throw new EngineCommandRejectedException("stale");
             if (Unknown) throw new IOException("receipt lost");
             return Task.CompletedTask;
         }
-        public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode) { Faults.Add(reasonCode); Faulted.TrySetResult(); return Task.CompletedTask; }
+        public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode, CancellationToken cancellation = default) { Faults.Add(reasonCode); Faulted.TrySetResult(); return Task.CompletedTask; }
     }
 }

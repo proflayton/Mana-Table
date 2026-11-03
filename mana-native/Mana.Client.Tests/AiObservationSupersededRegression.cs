@@ -76,20 +76,23 @@ internal static class AiObservationSupersededRegression
         internal int Observations;
         internal List<GameCommand> Commands = [];
         internal List<string> Faults = [];
-        public Task EnableAutomatedSeatsAsync() => Task.CompletedTask;
-        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync()
+        public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) { cancellation.ThrowIfCancellationRequested(); return Task.CompletedTask; }
+        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default)
         {
+            cancellation.ThrowIfCancellationRequested();
             Observations++;
             return ObserveError == null ? Task.FromResult<ImmutableArray<AutomatedSeatObservation>>([Observation])
                 : Task.FromException<ImmutableArray<AutomatedSeatObservation>>(ObserveError);
         }
-        public Task ExecuteAutomatedAsync(int seat, GameCommand command)
+        public Task ExecuteAutomatedAsync(int seat, GameCommand command, CancellationToken cancellation = default)
         {
+            cancellation.ThrowIfCancellationRequested();
             Commands.Add(command);
             return ExecuteError == null ? Task.CompletedTask : Task.FromException(ExecuteError);
         }
-        public Task ReportAutomationFaultAsync(string game, int seat, string reason)
+        public Task ReportAutomationFaultAsync(string game, int seat, string reason, CancellationToken cancellation = default)
         {
+            cancellation.ThrowIfCancellationRequested();
             Faults.Add(reason); return Task.CompletedTask;
         }
     }

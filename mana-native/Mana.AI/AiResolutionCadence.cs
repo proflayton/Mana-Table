@@ -10,7 +10,12 @@ public sealed record AiCadenceMember(string StackId, string ExecutionId, StackAc
     int? ControllerId, StackRepetition? Repetition, ImmutableArray<AiCadenceTarget> Targets);
 public sealed record AiCadenceExecution(string Id, string? ParentId, string RootId, ExecutionKind Kind,
     int? ActorId, string? SourceId, ExecutionStep Step, ExecutionOutcome? Outcome);
-public sealed record AiCadenceEvent(long Id, string ExecutionId);
+public sealed record AiCadenceEvent(long Id, string ExecutionId)
+{
+    // Announcement classification only. The exact event remains in every
+    // cohort/ancestry guard, including a mana ability with other consequences.
+    internal bool ManaTapCost { get; init; }
+}
 public sealed record AiResolutionProgress(string PhaseKey, long ActionVersion, long ChoiceVersion,
     ImmutableArray<AiCadenceMember> Queue, ImmutableArray<AiCadenceExecution> Executions,
     ImmutableArray<AiCadenceEvent> Events)
@@ -28,10 +33,19 @@ public sealed record AiResolutionProgress(string PhaseKey, long ActionVersion, l
             item.Id, item.ParentId != null && publicIds.Contains(item.ParentId) ? item.ParentId : null,
             publicIds.Contains(item.BudgetRootId) ? item.BudgetRootId : item.Id, item.Kind, item.ActorPlayerId,
             item.SourceCardId, item.Step, item.Outcome)).ToImmutableArray();
+        var mana = executions.GroupBy(item => item.Id, StringComparer.Ordinal).Where(group => group.Count() == 1)
+            .Select(group => group.Single()).Where(item => item is { Kind: ExecutionKind.Mana, Step: ExecutionStep.Complete,
+                Outcome: ExecutionOutcome.Resolved, ActorId: not null, SourceId: { Length: > 0 } })
+            .ToDictionary(item => item.Id, StringComparer.Ordinal);
         return new(state.PhaseKey, state.StackActionVersion.Value, state.ResolutionChoiceVersion.Value,
             state.Stack.Select(item => new AiCadenceMember(item.Id, item.ExecutionId, item.Kind, item.ControllerId, item.Repetition,
                 item.Targets.Select(target => new AiCadenceTarget(target.Kind, target.Id, target.PlayerId)).ToImmutableArray())).ToImmutableArray(),
-            executions, state.Activity.Select(item => new AiCadenceEvent(item.Id, item.ExecutionId)).ToImmutableArray());
+            executions, state.Activity.Select(item => new AiCadenceEvent(item.Id, item.ExecutionId) {
+                ManaTapCost = item is { Kind: "tapped", ExecutionStep: ExecutionStep.Cost,
+                    Change: { Kind: "state", Property: "tapped", Before: 0, After: 1 } }
+                    && mana.TryGetValue(item.ExecutionId, out var execution)
+                    && item.PlayerId == execution.ActorId && item.CardId == execution.SourceId
+            }).ToImmutableArray());
     }
 }
 
@@ -135,7 +149,25 @@ internal sealed class AiResolutionCadence
     // bot's own cost input is not another public action to announce. Missing or
     // contradictory typed evidence keeps the conservative ordinary comparison.
     internal static bool AnnouncementChanged(AiResolutionProgress? before, AiResolutionProgress? after)
-        => Valid(before) && Valid(after) ? PublicProgressChanged(before!, after!) : Changed(before, after);
+    {
+        if (!Valid(before) || !Valid(after)) return Changed(before, after);
+        var beforeCosts = ManaTapCosts(before!);
+        var afterCosts = ManaTapCosts(after!);
+        return before!.Queue.Length != after!.Queue.Length || !before.Queue.Zip(after.Queue).All(pair => Same(pair.First, pair.Second))
+            || !before.Executions.Where(item => !beforeCosts.Contains(item.Id)).SequenceEqual(after.Executions.Where(item => !afterCosts.Contains(item.Id)))
+            || !before.Events.Where(item => !beforeCosts.Contains(item.ExecutionId)).SequenceEqual(after.Events.Where(item => !afterCosts.Contains(item.ExecutionId)));
+    }
+
+    private static HashSet<string> ManaTapCosts(AiResolutionProgress progress)
+    {
+        var queued = progress.Queue.Select(item => item.ExecutionId).ToHashSet(StringComparer.Ordinal);
+        // A matching tap is insufficient when the same real mana execution
+        // also deals damage, changes life, or supplies any unclassified fact.
+        // Missing event/actor/source/step evidence never enters this set.
+        return progress.Events.GroupBy(item => item.ExecutionId, StringComparer.Ordinal)
+            .Where(group => group.Key.Length > 0 && !queued.Contains(group.Key) && group.All(item => item.ManaTapCost))
+            .Select(group => group.Key).ToHashSet(StringComparer.Ordinal);
+    }
 
     private static bool PublicProgressChanged(AiResolutionProgress before, AiResolutionProgress after)
         => before.Queue.Length != after.Queue.Length || !before.Queue.Zip(after.Queue).All(pair => Same(pair.First, pair.Second))

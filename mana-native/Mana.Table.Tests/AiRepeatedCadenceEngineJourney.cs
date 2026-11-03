@@ -244,14 +244,16 @@ internal static class AiRepeatedCadenceEngineJourney
         internal HashSet<(int Seat, string Decision)> Decisions { get; } = [];
         internal List<object> Attempts { get; } = [];
         internal List<object> CommandTimes { get; } = [];
-        public Task EnableAutomatedSeatsAsync() => engine.EnableAutomatedSeatsAsync();
-        public async Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync()
+        public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) => engine.EnableAutomatedSeatsAsync(cancellation);
+        public async Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default)
         {
+            cancellation.ThrowIfCancellationRequested();
             // Only the actual host owns private discovery. Client drivers read
             // copied publications, as separate human connection replicas do;
             // they cannot supersede another bot's prepared private scope.
             PrivateObservations++;
-            var observed = await engine.ObserveAutomatedSeatsAsync();
+            var observed = await engine.ObserveAutomatedSeatsAsync(cancellation);
+            cancellation.ThrowIfCancellationRequested();
             TaskCompletionSource previous;
             lock (gate) {
                 published = observed; generation++; previous = publication;
@@ -260,11 +262,12 @@ internal static class AiRepeatedCadenceEngineJourney
             previous.TrySetResult();
             return observed.Where(item => item.SeatId is 2 or 3).ToImmutableArray();
         }
-        public async Task ExecuteAutomatedAsync(int seatId, GameCommand command)
+        public async Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default)
         {
+            cancellation.ThrowIfCancellationRequested();
             if (command is not PassPriority priority) throw new InvalidDataException("A cadence bot attempted more than fresh priority passing.");
             if (Commands == 0) FirstCommandSeconds = time.Elapsed.TotalSeconds;
-            try { await engine.ExecuteAutomatedAsync(seatId, command); }
+            try { await engine.ExecuteAutomatedAsync(seatId, command, cancellation); }
             catch (Exception error) {
                 Attempts.Add(new { seatId, priority.DecisionId, elapsed = time.Elapsed.TotalSeconds, error = error.ToString() });
                 throw;
@@ -272,8 +275,8 @@ internal static class AiRepeatedCadenceEngineJourney
             Commands++; Decisions.Add((seatId, priority.DecisionId));
             CommandTimes.Add(new { seatId, priority.DecisionId, elapsed = time.Elapsed.TotalSeconds });
         }
-        public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode)
-            => engine.ReportAutomationFaultAsync(gameId, seatId, reasonCode);
+        public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode, CancellationToken cancellation = default)
+            => engine.ReportAutomationFaultAsync(gameId, seatId, reasonCode, cancellation);
         internal Task ExecuteClientAsync(int seat, GameCommand command) => engine.ExecuteAutomatedAsync(seat, command);
         internal async Task<GameSnapshot?> ObserveClientAsync(int seat, long minimumPublication)
         {

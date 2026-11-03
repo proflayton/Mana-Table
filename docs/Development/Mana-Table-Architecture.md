@@ -285,6 +285,36 @@ rejection or an uncertain receipt; acceptance never implies effect resolution.
 Unknown execution requires host recovery, not an automatic retry or concession.
 Explicit catalog completeness cannot be inferred from an auto-pass scan.
 
+The source candidate gives all four `IAutomatedSeatProvider` methods optional
+cancellation tokens. `AiTableHost` owns lifetime/caller cancellation and a
+45-second bound around each provider operation, even when an implementation
+blocks before returning a task or ignores its token. Cancellation during execution
+records an unknown receipt; late work cannot publish host acceptance or authorize
+a replay. Shutdown cancels those waits before acquiring the host's gates.
+An accepted command also starts a bounded expectation of fresh authoritative
+observation. The host owns only its elapsed timestamp; `AiSeatSession.Observe`
+owns full revision/offer chronology and admission. Identical or stale polls
+cannot erase that expectation, and presentation pacing cannot mask expiry.
+Expiry reports one fault while retaining the original Accepted receipt. It is
+neither a command retry nor a claim that a new rules outcome occurred.
+`ForgeEngine` forwards the token and uses one unchanged 45-second transport
+deadline across readiness, write-gate acquisition, writing, flushing and reply.
+Before-write cancellation and canceled reply waits preserve a healthy owner;
+pending canceled replies are discarded and observation decoding/scope admission
+checks cancellation again. A partial write or interrupted flush invalidates the
+owner before another queued writer proceeds, then performs failure cleanup after
+releasing the gate. Only that broken framing owner is stopped before closing its
+writer. Typed transport timeouts keep a generic public message and stable private
+operation/phase diagnostics without request arguments or private cards. These are
+connection and authority boundaries, not another game-state model or rules rollback.
+
+Cadence retains all public execution and activity evidence for ancestry/cohort
+guards. A separate announcement comparison can omit a certified mana tap cost
+whose completed Mana occurrence matches its source and actor, has no other known
+consequence, and is absent from the queue. That changes waiting only. Unknown
+evidence and real side effects retain a beat; action offers, required choices and
+rules authority remain owned by their existing boundaries.
+
 Mana Table explicitly enables a per-game `GameAction` state boundary. Rules
 tasks, owned input work and publication acquire it before the table gate; all
 seat and spectator copies of one board revision are produced inside that same
