@@ -35,7 +35,12 @@ public sealed record DecisionDockView(DecisionDockStatus Status, DecisionDockPau
     public DecisionReading Reading { get; init; }
     public ChoiceSelection? Selection { get; init; }
     public DecisionPayload? Payload { get; init; }
+    public AutomaticPassingView AutomaticPassing { get; init; } = new("Auto on", "Auto pass", "Auto on", false);
 }
+
+// Desired Auto and a temporary hold are separate facts. The start gesture
+// resumes a hold; it must not toggle an already-enabled preference off.
+public sealed record AutomaticPassingView(string StateLabel, string StartLabel, string ControlLabel, bool ToggleEnables);
 
 // Describes the current authorized snapshot, never a future resolution or a
 // reason inferred from prompt prose/activity. Labels confer no command permission;
@@ -100,7 +105,12 @@ public static class DecisionDockPresentation
             => new(status, reason ?? pause, headline, caption, instruction, role, actor, Name(state, actor),
                 includeSource ? sourceId : "", includeSource ? source : null,
                 includeSource ? decision?.Context.Source?.ControllerId : null, state.Id, decision?.Id ?? "", action, priority.NextToResolve) {
-                    Surface = Surface(status, role), RequiredSurface = requiredSurface, Reading = reading, Selection = selection, Payload = payload
+                    Surface = Surface(status, role), RequiredSurface = requiredSurface, Reading = reading, Selection = selection, Payload = payload,
+                    AutomaticPassing = new(!controls.Automatic ? "Auto off" : controls.Held ? "Auto paused"
+                        : controls.ResponsePending ? "Auto on · Your response" : "Auto on",
+                        controls.Automatic && (controls.Held || controls.ResponsePending) ? "Resume Auto" : "Auto pass",
+                        !controls.Automatic ? "Auto off" : controls.Held ? "Auto paused" : "Auto on",
+                        controls.Held || !controls.Automatic)
                 };
 
         if (priority.Phase == PriorityPhase.Finished)

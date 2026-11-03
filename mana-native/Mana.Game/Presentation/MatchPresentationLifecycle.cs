@@ -2,6 +2,7 @@ using Mana.Contracts;
 using Mana.Client;
 using Mana.Magic;
 using Mana.Renderer;
+using System.Collections.Immutable;
 
 namespace Mana.Table.Presentation;
 
@@ -29,6 +30,12 @@ internal sealed class MatchPresentationLifecycle
     private readonly List<Departure> departures = [];
     private (string Game, int Viewer)? scope;
     private double finiteBeatUntil;
+    private long presentationGeneration;
+
+    // Presentation-only receipt for one explicit quiet start. No decision,
+    // engine token, command permission or mutable rule state belongs here.
+    internal sealed record QuietStartReading((string Game, int Viewer) Scope, long Generation,
+        ImmutableHashSet<string> Announcements);
 
     internal CardPresentationController Cards { get; } = new();
     internal IReadOnlyList<CardCue> CardCues => effects.Cards;
@@ -40,6 +47,11 @@ internal sealed class MatchPresentationLifecycle
     internal PriorityTransition? PriorityTransition => priority.Latest;
     internal IReadOnlyList<Departure> Departures => departures;
     internal bool Ready(double now) => pacing.Ready(now) && stackArrival.Ready(now);
+    internal QuietStartReading? CaptureQuietStartReading(double now) => scope is { } owner
+        ? new(owner, presentationGeneration, stackArrival.CaptureKnownPrefix(now)) : null;
+    internal bool ReadyForQuietStart(double now, QuietStartReading reading) => Ready(now)
+        || scope == reading.Scope && presentationGeneration == reading.Generation
+            && stackArrival.ReadyForKnownPrefix(now, reading.Announcements);
     internal bool ReadyForStack(double now) => pacing.Ready(now) && stackArrival.ProgressReady(now);
     internal bool ReadyForFinite(double now) => now >= finiteBeatUntil && stackArrival.ProgressReady(now);
     internal void BeginFinite(IEnumerable<(string Execution, string Group)> captured, double now)
@@ -80,9 +92,11 @@ internal sealed class MatchPresentationLifecycle
         var batch = activity.Observe(before, current, execution?.Transitions ?? [], execution?.Baseline ?? false, execution?.Gap ?? false);
         effects.Observe(batch, now); presence.Observe(batch, now);
         actions.Observe(batch, now); changes.Observe(batch, now); impacts.Observe(batch, now);
+        bool newPresentation = before == null || finiteProgress || PresentationPacing.ShouldPresent(before, current);
+        if (newPresentation) presentationGeneration++;
         pacing.Observe(before, current, now); mana.Observe(before, current, now); priority.Observe(before, current, now);
         if (finiteProgress) finiteBeatUntil = Math.Max(finiteBeatUntil, now + .16);
-        else if (before != null && PresentationPacing.ShouldPresent(before, current))
+        else if (before != null && newPresentation)
             finiteBeatUntil = Math.Max(finiteBeatUntil, now + 2.6);
         stackArrival.Observe(before, current, now, batch.Entries, batch.HasHistoryGap,
             batch.Executions, batch.ExecutionBaseline, batch.ExecutionGap);
@@ -105,6 +119,7 @@ internal sealed class MatchPresentationLifecycle
 
     private void ClearTransientFeedback(bool rebase = false)
     {
+        presentationGeneration++;
         activity.Clear(); effects.Clear(); presence.Clear(); pacing.Reset();
         actions.Clear(); changes.Clear(); impacts.Clear(); mana.Clear(); priority.Clear();
         stackArrival.Clear();

@@ -2680,7 +2680,7 @@ Auto and explicit waiting use one bounded executor and one `ClientSession`
 cancellation/acceptance lifecycle. Auto has two distinct authority paths:
 `CanAutoPass` permits `AutoPassPriority`; an original quiet token permits
 `PassForNow` over unchanged empty opponent windows even with a playable instant.
-Explicit Wait for action can use that token on either player's turn. Tokens never
+Explicit Auto pass can use that token on either player's turn. Tokens never
 broaden ordinary `CanAutoPass`, and each path retains its own submitted-prompt
 history. The session still owns submission and reconciliation.
 
@@ -2691,7 +2691,18 @@ acknowledging one displayed response does not acknowledge a new action arriving
 in flight. A new turn establishes a new quiet opportunity. Normal engine-authorized
 Auto may continue when no response is available, with existing readable pacing.
 Reading pauses continuation without answering anything. Take control also holds
-Auto for the current turn; deliberate Wait or enabling Auto can resume it.
+Auto for the current turn; deliberate Resume Auto or enabling Auto can resume it.
+The prepared decision view projects saved Auto and a temporary hold separately,
+so the visible start/resume label and named mode control agree. The HUD owner
+places the priority surface and complete mode target after seat identities and
+reserves both actual bounds. A preferred mode slot cannot displace a player name
+as fixed scene furniture. An admitted explicit
+quiet start enables saved Auto only after first-land confirmation. Its immutable
+presentation receipt covers the current known announcement prefix and presentation
+generation for the first serialized request. New/deferred material, a changed
+presentation generation or scope falls back to ordinary reading readiness.
+Consuming or retiring that one receipt does not alter ordinary Auto pacing,
+engine quiet-token authority or response consent.
 An accepted single `PassPriority` can retain one exact top-stack response receipt:
 the observed game/viewer/revision/decision must match the submitted command and
 its current published permission. This receipt records the stack occurrence,

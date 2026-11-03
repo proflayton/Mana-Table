@@ -61,6 +61,24 @@ internal sealed class StackArrivalPresentation
         foreach (var item in pending.Where(item => !item.AwaitingMetadata)) acknowledged.Add(item.Id);
     }
 
+    internal ImmutableHashSet<string> CaptureKnownPrefix(double now)
+    {
+        Tick(now);
+        var known = ImmutableHashSet.CreateBuilder<string>(StringComparer.Ordinal);
+        foreach (var item in current == null ? pending : new[] { current }.Concat(pending)) {
+            if (item.AwaitingMetadata) break;
+            known.Add(item.Id);
+        }
+        return known.ToImmutable();
+    }
+
+    internal bool ReadyForKnownPrefix(double now, IReadOnlySet<string> known)
+    {
+        Tick(now);
+        return (current == null || !current.AwaitingMetadata && known.Contains(current.Id))
+            && pending.All(item => !item.AwaitingMetadata && known.Contains(item.Id));
+    }
+
     internal void Observe(GameSnapshot? before, GameSnapshot after, double now,
         ImmutableArray<ActivityEntry> events = default, bool historyGap = false,
         ImmutableArray<ExecutionTransition> executions = default, bool executionBaseline = false, bool executionGap = false)

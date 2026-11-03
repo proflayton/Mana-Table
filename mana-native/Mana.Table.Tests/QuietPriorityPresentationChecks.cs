@@ -185,7 +185,7 @@ internal static class QuietPriorityPresentationChecks
             var autoBounds = frame.Hits.Single(hit => hit.Id == "auto").Bounds;
             var holdBounds = frame.Hits.Single(hit => hit.Id == "hold").Bounds;
             void CheckQuietSurface(string description) => check(view.DecisionDock?.Surface == DecisionDockSurface.Portrait
-                    && HasText("Waiting for action") && HasText("Take control") && DecisionDockInteractionChecks.NoTransportLabels(frame)
+                    && HasText("Auto · Stops for new actions") && HasText("Take control") && DecisionDockInteractionChecks.NoTransportLabels(frame)
                     && frame.Hits.Single(hit => hit.Id == "quiet-priority-stop").Bounds == takeControl.Bounds
                     && frame.Hits.Single(hit => hit.Id == "auto").Bounds == autoBounds
                     && frame.Hits.Single(hit => hit.Id == "hold").Bounds == holdBounds, description);

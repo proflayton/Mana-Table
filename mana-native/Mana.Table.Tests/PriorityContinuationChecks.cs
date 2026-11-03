@@ -137,7 +137,7 @@ internal static class PriorityContinuationChecks
     {
         using var run = new Journey(profile, "wait-until-action", viewport, ownTurn);
         check(run.View.Automatic && run.View.Held && run.Has("quiet-priority-arm") && run.Has("confirm")
-                && run.Text.Contains("Wait for action") && (ownTurn || run.Text.Contains("Pass once")),
+                && run.Text.Contains("Resume Auto") && (ownTurn || run.Text.Contains("Pass once")),
             "Own and opponent held priority offer a readable bounded wait and an independent single-pass gesture");
         CheckNoTurnYield(run, check);
         var original = run.Engine.State;

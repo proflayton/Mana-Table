@@ -6,6 +6,56 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Start Auto where priority is waiting: source candidate
+
+**Source candidate; exact-candidate human review pending.** A player reports
+holding priority while searching for Auto, with friends waiting for the pass.
+The intent is to continue through quiet windows from that current response,
+then take control and resume without visiting Settings. The source is the
+player's owned empty-stack priority prompt. The gesture uses **Auto pass**
+beside the ordinary pass action, changes to **Take control** while following,
+and offers **Resume Auto** after the temporary hold. The running heading says
+**Auto · Stops for new actions**. Hovering the start action explains that spells,
+abilities, combat and required choices stop the continuation.
+
+The player's Arena references show the Next action in the same response area
+as turn advancement, with phase stops attached to the portrait. That stable
+action location is the spatial reference. MTGO's documented
+[yields and automatic decisions](https://www.mtgo.com/getting-started/getting-started-tips-tricks)
+separate passing from optional answers. The named start/resume journey is our
+adaptation; those references do not establish Mana Table's four-player layout
+or grant consent to answer future choices.
+
+Starting the current quiet window enables saved Auto only after the engine's
+current permission and any first-land confirmation are admitted. It retains
+the original quiet token and acknowledges only presentation already known at
+the click. New actions, new tokens, deferred reading material, inspection and
+required choices keep their independent fences. Current-stack **Resolve these**
+and per-ability skips remain distinct permissions.
+
+Auto preference and a temporary hold are projected separately. The priority
+heading distinguishes a temporary hold from a new response. The mode control is labelled
+**Auto off**, **Auto on** or **Auto paused** and reserves its full named target
+with the priority actions. Both surfaces are placed after the player identities;
+the preferred Auto slot is not fixed table furniture. The mode normally sits
+just below the actions and can use a nearby free pocket without shrinking cards
+or text. Each actual painted target reserves space for later HUD content. It
+stays visible when a stack response or saved phase
+stop prevents quiet startup. That control and F resume a temporary hold instead
+of turning the already-enabled preference off. The
+start label and visible state come from the prepared decision view; they
+confer no engine permission. Physical-click checks must start from a saved-off
+profile, without aging away the presentation beat, and cover start, takeover,
+resume and interruption at both window sizes. Automation cannot establish
+that a person will discover or understand these controls.
+
+Required choices and payments retain the compact portrait timing control and F.
+The named mode is planned with an actual priority surface. Eagerly planning a
+new mode panel for a source-owned payment sampled the previous reader's obstacle
+bounds and moved a mana-color target after hover. The existing payment gesture
+regression caught that movement; limiting mode planning to priority preserves
+the original source-choice layout and its click target.
+
 ## Start an explicitly chosen resolution queue promptly: source candidate
 
 **Source candidate; exact-candidate mixed-table human review pending.** The

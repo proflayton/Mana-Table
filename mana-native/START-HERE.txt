@@ -523,8 +523,15 @@ Saved stops recur on your own turns until removed. They pause automatic passing
 when you next have legal priority there, rather than answering a required choice.
 The active opponent's portrait shows their actual phase without another set of
 editable controls. Your own controls stay in place when the turn changes.
-Auto and Hold are icons beside your portrait; hover explains their state and
-the F/Ctrl shortcuts. Hold stops automatic passing for the current turn.
+Source candidate: choose Auto pass beside your priority action to enable Auto
+and start the current quiet window. Take control pauses it; Resume Auto starts
+it again. The running heading says Auto stops for new actions. Hover the start
+action to read its complete scope, including required choices.
+The mode control reads Auto off, Auto on or Auto paused. It and F resume
+a temporary hold; otherwise they switch
+between Auto and full control. Ctrl holds priority for the current turn.
+During required choices and payment, the compact portrait Auto icon and F keep
+their mode-only behavior while the source's controls own the decision.
 Click a card to read its full face. Its concrete legal actions appear beside it;
 drag a playable hand card onto the table to begin playing it.
 Two-player games place the opponent above you and use the same card rendering
@@ -561,16 +568,17 @@ choices, real responses and errors still appear when they need attention.
 Spells keep their source, pending effect and recipients together. Match history
 retains the public events.
 The source version names the acting player and shows why Auto is paused.
-In this source candidate, Wait for action and Pass once replace the ambiguous
-Pass for now / Pass turn combination. Wait for action skips only unchanged,
+In this source candidate, Auto pass and Pass once replace the ambiguous
+Pass for now / Pass turn combination. Auto pass skips only unchanged,
 empty-stack windows on the current turn, including your own. New spells,
 abilities, public actions, declared combat, required choices and a new turn end
 that continuation. It still stops for you to choose attackers or blockers.
 It never selects cards, pays costs or enables an uninterruptible end-turn yield.
 Source candidate: routine Auto keeps a larger Take control action beside your
 portrait, including while waiting for an engine reply. It holds Auto for this
-turn; an already submitted pass can finish. Deliberately choosing Wait for action
-starts waiting again. Pass once answers only the current window. Go to combat and other named
+turn; an already submitted pass can finish. Choose Resume Auto to start it
+again. Auto pass also enables the saved Auto preference after any first-land
+confirmation. Pass once answers only the current window. Go to combat and other named
 phase gestures still give the table its ordinary response windows first.
 The controls stay steady while observing other players and pause while reading.
 Reading never passes priority; the table's configured decision clock keeps running.

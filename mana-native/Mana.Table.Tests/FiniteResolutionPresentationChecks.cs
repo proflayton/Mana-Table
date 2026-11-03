@@ -342,6 +342,7 @@ internal static class FiniteResolutionPresentationChecks
     internal static void RunFreshClick(string profile, Action<bool, string> check)
     {
         CheckAcknowledgedAnnouncements(check);
+        CheckQuietStartReading(check);
         foreach (var viewport in new[] { new Point(1000, 740), new Point(1540, 980) })
         foreach (bool reduced in new[] { false, true })
         foreach (string mode in new[] { "repeated-grant", "repeated-pass", "distinct-fallback", "optional-decline" }) {
@@ -475,6 +476,96 @@ internal static class FiniteResolutionPresentationChecks
         check(!lifecycle.ReadyForStack(.01) && !lifecycle.ReadyForFinite(.01) && !lifecycle.Ready(.01)
                 && lifecycle.Announcement(.01)?.ExecutionId == "foreign-execution",
             "A new composed-owner response reinstates ordinary and finite pacing rather than inheriting the previous click's dispatch acknowledgement");
+    }
+
+    private static void CheckQuietStartReading(Action<bool, string> check)
+    {
+        // These are presentation-owner receipts only. A caller still needs its
+        // own current engine permission before any command can be dispatched.
+        var sample = FreshClickProjection("repeated-pass");
+        var state = sample with { Stack = sample.Stack.Take(2).ToImmutableArray(),
+            Executions = sample.Executions! with { LastSequence = 2,
+                Occurrences = sample.Executions.Occurrences.Take(2).ToImmutableArray(),
+                Transitions = sample.Executions.Transitions.Take(2).ToImmutableArray() } };
+        var before = state with { Revision = 1, Stack = [], Executions = new(1, 0, [], []) };
+        MatchPresentationLifecycle Owner()
+        {
+            var owner = new MatchPresentationLifecycle();
+            owner.Observe(null, before, 0, BoardView.Identity);
+            owner.Observe(before, state, 0, BoardView.Identity, new(state.Executions!.Transitions));
+            return owner;
+        }
+        double Drain(MatchPresentationLifecycle owner, double now)
+        {
+            int maximum = owner.AnnouncementCount + 1;
+            for (int step = 0; step < maximum && !owner.Ready(now); step++) {
+                now += StackArrivalPresentation.Duration + .01;
+                _ = owner.Ready(now);
+            }
+            return now;
+        }
+
+        var known = Owner();
+        var receipt = known.CaptureQuietStartReading(0)!;
+        var original = known.Announcement(0);
+        check(known.ReadyForQuietStart(0, receipt) && !known.Ready(0)
+                && known.Announcement(0) == original && known.AnnouncementCount == 2,
+            "A quiet-start reading receipt bypasses only the current known prefix and beat without consuming its announcements or changing ordinary Auto readiness");
+        var refreshed = state with { Revision = state.Revision + 1 };
+        known.Observe(state, refreshed, .01, BoardView.Identity, new([]));
+        check(known.ReadyForQuietStart(.01, receipt) && !known.Ready(.01)
+                && known.Announcement(.01) == original && known.AnnouncementCount == 2,
+            "An unchanged accepted observation does not invalidate the same quiet-start reading receipt merely because its revision or update time advanced");
+
+        var pacing = new MatchPresentationLifecycle();
+        pacing.Observe(null, before, 0, BoardView.Identity);
+        var pacingReceipt = pacing.CaptureQuietStartReading(0)!;
+        bool initialBypass = pacing.ReadyForQuietStart(0, pacingReceipt) && !pacing.Ready(0);
+        var life = before with { Revision = 2, Players = before.Players.SetItem(0, before.Players[0] with { Life = before.Players[0].Life - 1 }) };
+        pacing.Observe(before, life, .1, BoardView.Identity);
+        bool newBeatHeld = !pacing.ReadyForQuietStart(.1, pacingReceipt) && !pacing.Ready(.1);
+        check(initialBypass && newBeatHeld && pacing.Ready(2) && pacing.ReadyForQuietStart(2, pacingReceipt),
+            "A new presentation beat invalidates an old quiet-start bypass even when its deadline fits inside the original beat; only ordinary readiness then releases it");
+
+        var future = Owner();
+        var futureReceipt = future.CaptureQuietStartReading(0)!;
+        var response = Foreign(state, required: false) with { Revision = 3 };
+        future.Observe(state, response, .01, BoardView.Identity, new([response.Executions!.Transitions[^1]]));
+        bool futureHeld = !future.ReadyForQuietStart(.01, futureReceipt) && !future.Ready(.01)
+            && future.Announcement(.01)?.ExecutionId == "foreign-execution";
+        double afterFuture = Drain(future, .01);
+        check(futureHeld && future.Ready(afterFuture) && future.ReadyForQuietStart(afterFuture, futureReceipt),
+            "A newly arriving announcement cannot inherit a quiet-start receipt and the old receipt falls back to the whole ordinary queue's eventual readiness");
+
+        var deferredOwner = Owner();
+        var deferredReceipt = deferredOwner.CaptureQuietStartReading(0)!;
+        var deferredExecution = response.Executions!.Occurrences.Single(item => item.Id == "foreign-execution") with { Kind = ExecutionKind.Trigger };
+        var deferredTransition = response.Executions.Transitions[^1];
+        var deferred = state with { Revision = 3, Executions = state.Executions! with {
+            LastSequence = deferredTransition.Sequence, Occurrences = state.Executions.Occurrences.Add(deferredExecution),
+            Transitions = [deferredTransition] } };
+        // The board and current known head are unchanged. Deferred material
+        // behind them must still block the receipt, independently of pacing.
+        deferredOwner.Observe(state, deferred, .01, BoardView.Identity, new([deferredTransition]));
+        bool deferredHeld = deferredOwner.Announcement(.01) == original && deferredOwner.AnnouncementCount == 3
+            && !deferredOwner.ReadyForQuietStart(.01, deferredReceipt);
+        var enriched = deferred with { Revision = 4,
+            Stack = state.Stack.Add(response.Stack[0] with { Kind = StackActionKind.TriggeredAbility }) };
+        deferredOwner.Observe(deferred, enriched, .02, BoardView.Identity, new([]));
+        bool enrichedHeld = !deferredOwner.ReadyForQuietStart(.02, deferredReceipt) && !deferredOwner.Ready(.02);
+        double afterEnriched = Drain(deferredOwner, .02);
+        check(deferredHeld && enrichedHeld && deferredOwner.Ready(afterEnriched)
+                && deferredOwner.ReadyForQuietStart(afterEnriched, deferredReceipt),
+            "New deferred metadata behind a known prefix is not acknowledged, and enriching that same occurrence cannot release the old quiet-start receipt before ordinary reading completes");
+
+        foreach (string boundary in new[] { "restoration", "viewer", "match" }) {
+            var owner = Owner(); var pending = owner.CaptureQuietStartReading(0)!;
+            var next = state with { Revision = 3, ViewerId = boundary == "viewer" ? 1 : state.ViewerId,
+                Id = boundary == "match" ? "different-presentation-match" : state.Id };
+            owner.Observe(state, next, .01, BoardView.Identity, restored: boundary == "restoration");
+            check(!owner.Ready(.01) && !owner.ReadyForQuietStart(.01, pending),
+                "A " + boundary + " boundary cannot reuse a pending presentation-only quiet-start receipt to bypass its new baseline beat");
+        }
     }
 
     private sealed class FreshClickJourney : IDisposable

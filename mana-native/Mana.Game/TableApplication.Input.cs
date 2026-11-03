@@ -148,7 +148,7 @@ internal sealed partial class TableApplication
         if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.C) && previousKeys.IsKeyUp(Keys.C) && HasCombat && (overlay.Length == 0 || overlay == "combat")) { if (overlay == "combat") overlay = ""; else OpenCombat(); }
         if (!chatKeys && !textFocus && !blockedInput && !OverlayOpen && keys.IsKeyDown(Keys.R) && previousKeys.IsKeyUp(Keys.R)
             && readingId is { } reader) FlipReaderText(reader);
-        if (match != null && !chatKeys && !textFocus && keys.IsKeyDown(Keys.F) && previousKeys.IsKeyUp(Keys.F)) UseAutomaticControl(!automatic);
+        if (match != null && !chatKeys && !textFocus && keys.IsKeyDown(Keys.F) && previousKeys.IsKeyUp(Keys.F)) ToggleAutomaticControl();
         UpdateMatchControlKeys(keys, !blockedInput && !chatKeys && !textFocus && !OverlayOpen && !dragging);
         if (!blockedInput && !chatKeys && !textFocus && keys.IsKeyDown(Keys.F1) && previousKeys.IsKeyUp(Keys.F1)) OpenTableGuide();
         int wheel = mouse.ScrollWheelValue - previousMouse.ScrollWheelValue;

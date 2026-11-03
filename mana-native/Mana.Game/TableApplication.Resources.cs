@@ -319,6 +319,7 @@ internal sealed partial class TableApplication
             var portrait = SeatHero(seat.Id);
             occupied.Add(new((int)portrait.X - 58, (int)portrait.Y - 58, 116, 116));
             occupied.AddRange(seat.Id == match.ViewerId ? LocalTurnControls.Reservations : TurnControlLayout.For(portrait).Reservations);
+            if (seat.Id == match.ViewerId) occupied.Add(AutomaticModeBounds);
         }
         var area = DecisionActionArea(anchor, width, height, reserveBattlefield: true,
             additionalReservations: occupied, minimumWidth: width, boundedWorkspace: true);

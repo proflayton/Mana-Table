@@ -62,10 +62,10 @@ internal sealed partial class TableApplication
         if (match is { } state && tableScene != null) {
             occupied.AddRange(TableViewGeometry.FixedReservations(state, tableScene, includeDecisionDock));
             var turn = LocalTurnControls;
-            var controls = turn.Markers.Append(turn.AutoCenter).Append(turn.HoldCenter).ToArray();
-            int left = (int)controls.Min(point => point.X) - 22, top = (int)controls.Min(point => point.Y) - 22;
-            occupied.Add(new(left, top, (int)controls.Max(point => point.X) + 22 - left,
-                (int)controls.Max(point => point.Y) + 22 - top));
+            occupied.AddRange(turn.PhaseBounds);
+            occupied.Add(turn.HoldBounds); occupied.Add(turn.AlertBounds);
+            occupied.Add(AutomaticModeBounds);
+            if (portraitPriorityPlan != null) occupied.Add(portraitPriorityPlan.Area);
             if (reserveBattlefield) occupied.AddRange(tableScene.BattlefieldDrawOrder.Select(card => {
                 var protectedBounds = matchPresentation.Cards.TryGetPose(card.Id, out var displayed)
                     ? displayed.Bounds : boardView.Apply(card.Pose).Bounds;

@@ -17,6 +17,8 @@ internal sealed partial class CardReadingSmoke
         string game = "", decision = "";
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resumed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resumeRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         void CaptureTurn(string name)
         {
             Capture(name);
@@ -77,33 +79,60 @@ internal sealed partial class CardReadingSmoke
                 Publish(scenario.State with { Decision = scenario.State.Decision! with { Payload = ((PriorityPayload)(scenario.State.Decision!).Payload) with { QuietYieldToken = "portrait-quiet-window" } } });
             }, "An opponent's end step must retain local control ownership before quiet passing");
         Prepared(() => view.Hits.Any(hit => hit.Id == "quiet-priority-arm"), 2, () => {
+            CompleteActionLabelChecks.Run(view.Frame!, "quiet-priority-arm", "Auto pass", Check);
+            CompleteActionLabelChecks.Run(view.Frame!, "auto", "Auto off", Check);
             CaptureTurn("00d-turn-quiet-offered");
             scenario.ReplyOverride = async command => {
-                if (command is not PassForNow) throw new InvalidOperationException("Only the explicitly armed quiet pass belongs to this capture.");
-                Interlocked.Increment(ref quietReplies); started.TrySetResult();
-                await release.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                if (command is not PassForNow { YieldToken: "portrait-quiet-window" })
+                    throw new InvalidOperationException("Only the explicitly armed current quiet token belongs to this capture.");
+                int number = Interlocked.Increment(ref quietReplies);
+                if (number == 1) { started.TrySetResult(); await release.Task.WaitAsync(TimeSpan.FromSeconds(10)); }
+                else if (number == 2) { resumed.TrySetResult(); await resumeRelease.Task.WaitAsync(TimeSpan.FromSeconds(10)); }
+                else throw new InvalidOperationException("The visible Auto journey repeated an unowned priority command.");
             };
             MoveHit("quiet-priority-arm");
         }, "The current opponent-turn token must offer the portrait-side bounded pass"); Click();
         Prepared(() => started.Task.IsCompleted && view.Busy && view.Hits.Any(hit => hit.Id == "quiet-priority-stop"), 3, () => {
-            Check(Volatile.Read(ref quietReplies) == 1 && scenario.Replies.Count == originalReplies,
-                "Arming the actual portrait quiet control submits exactly one scoped pass while the controlled provider is pending");
+            Check(Volatile.Read(ref quietReplies) == 1 && scenario.Replies.Count == originalReplies
+                    && view.Automatic && !view.Held && PlayPreferences.Load(view.Profile).Automatic,
+                "Physical Auto pass enables saved Auto and submits exactly one scoped pass while the controlled provider is pending");
+            CompleteActionLabelChecks.Run(view.Frame!, "auto", "Auto on", Check);
             CaptureTurn("00e-turn-take-control"); MoveHit("quiet-priority-stop");
         }, "The armed quiet state must keep Take control reachable during its in-flight pass"); Click();
         Step(.08, () => {
             Check(view.Hits.All(hit => hit.Id != "quiet-priority-stop"),
                 "Take control cancels the local continuation before the in-flight result returns");
-            CaptureTurn("00f-turn-control-taken"); release.TrySetResult();
+            CaptureTurn("00f-turn-control-taken");
+            // The completed first response returns a new actual prompt before
+            // Resume can answer it; submitted-decision memory must not replay.
+            Publish(scenario.State); release.TrySetResult();
         });
-        Prepared(() => !view.Busy, 3, () => {
+        Prepared(() => !view.Busy && view.Hits.Any(hit => hit.Id == "quiet-priority-arm"), 3, () => {
             Check(Volatile.Read(ref quietReplies) == 1 && scenario.Replies.Count == originalReplies && view.Error.Length == 0,
                 "The submitted quiet pass reconciles once after Take control without choosing a card or submitting another pass");
+            Check(view.Automatic && view.Held && PlayPreferences.Load(view.Profile).Automatic,
+                "Take control leaves the saved Auto mode on and visibly held for this turn");
+            CompleteActionLabelChecks.Run(view.Frame!, "quiet-priority-arm", "Resume Auto", Check);
+            CompleteActionLabelChecks.Run(view.Frame!, "auto", "Auto paused", Check);
+            CaptureTurn("00g-turn-resume-offered"); MoveHit("quiet-priority-arm");
+        }, "The stopped current response must expose the named Resume Auto action"); Click();
+        Prepared(() => resumed.Task.IsCompleted && view.Busy && view.Hits.Any(hit => hit.Id == "quiet-priority-stop"), 3, () => {
+            Check(Volatile.Read(ref quietReplies) == 2 && scenario.Replies.Count == originalReplies
+                    && view.Automatic && !view.Held && PlayPreferences.Load(view.Profile).Automatic,
+                "Physical Resume Auto clears Hold without disabling Auto and submits only one fresh scoped quiet answer");
+            CompleteActionLabelChecks.Run(view.Frame!, "auto", "Auto on", Check);
+            CaptureTurn("00h-turn-resumed"); MoveHit("quiet-priority-stop");
+        }, "Resume Auto must reach the held current-token RPC and keep Take control reachable"); Click();
+        Step(.08, () => { resumeRelease.TrySetResult(); });
+        Prepared(() => !view.Busy, 3, () => {
+            Check(Volatile.Read(ref quietReplies) == 2 && view.Automatic && view.Held && view.Error.Length == 0,
+                "Taking control after Resume reconciles the second answer without replaying either response");
             scenario.ReplyOverride = previousReply; MoveHit("phase-stop:END_OF_TURN");
         }, "The controlled quiet reply must reconcile before restoring the original card-state journey"); Click();
         Prepared(() => !view.TurnProgress!.Markers.Single(marker => marker.Key == "END_OF_TURN").Stop, 2, () => {
             Check(PlayPreferences.Load(view.Profile).Stops.SetEquals(preferences!.Stops),
                 "The capture journey removes only its added stop before the remaining card-state checks");
-            release.TrySetResult(); scenario.ReplyOverride = previousReply;
+            release.TrySetResult(); resumeRelease.TrySetResult(); scenario.ReplyOverride = previousReply;
             Publish(previous!); view.SetAutomatic(automatic); view.SetHeld(held); view.SetTableStudy(study);
             preferences!.Save(view.Profile); Move(new(10, 70));
         }, "Removing the authored end stop must restore its original preference set");

@@ -51,6 +51,11 @@ internal static partial class HeadlessPresentationSmoke
                 }
                 else if (group == "play-access") CheckPlayAccess(profile, Check, trace, performance);
                 else if (group == "attachment-stack") AttachmentStackChecks.Run(profile, Check);
+                else if (group == "visible-auto") {
+                    VisibleAutoPriorityChecks.Run(profile, Check);
+                    QuietPriorityPresentationChecks.Run(profile, Check);
+                    PriorityContinuationChecks.Run(profile, Check);
+                }
                 else if (group == "pending-effects") {
                     FiniteResolutionPresentationChecks.RunFreshClick(profile, Check);
                     PendingEffectPresentationChecks.Run(profile, Check);
@@ -128,6 +133,7 @@ internal static partial class HeadlessPresentationSmoke
             DisclosedSourceInteractionChecks.Run(profile, Check);
             LinkedSourceInteractionChecks.Run(profile, Check);
             QuietPriorityPresentationChecks.Run(profile, Check);
+            VisibleAutoPriorityChecks.Run(profile, Check);
             PriorityContinuationChecks.Run(profile, Check);
             MatchHeaderInteractionChecks.Run(profile, Check);
             TableSurfaceProjectionChecks.Run(Check);

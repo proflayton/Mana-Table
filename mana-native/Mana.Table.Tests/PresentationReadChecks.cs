@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Mana.Client;
 using Mana.Contracts;
 using Mana.Renderer;
 using Mana.Table.Interaction;
@@ -120,41 +121,129 @@ internal static class PresentationReadChecks
         engine.Present(example with { Id = "presentation-quiet-lifetime", PriorityPlayerId = example.ViewerId,
             DecisionOwnerId = example.ViewerId, ActionClass = "priority",
             Decision = example.Decision! with { Payload = ((PriorityPayload)(example.Decision!).Payload) with { QuietYieldToken = "original-quiet-token" } } });
-        using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var dispatched = new System.Collections.Concurrent.ConcurrentQueue<PassForNow>();
+        var diagnostics = new System.Collections.Concurrent.ConcurrentQueue<ClientDiagnostic>();
+        GameSnapshot? expected = null;
+        int inFlight = 0, returned = 0;
+        // ExecuteAsync validates its actual engine state before this override.
+        // The override owns its command count: it bypasses Replies.Add/Publish.
+        engine.ReplyOverride = async command => {
+            if (expected is not { } current || command is not PassForNow pass
+                || pass.GameId != current.Id || pass.DecisionId != current.Decision!.Id
+                || pass.YieldToken != "replacement-quiet-token" || !GameCommandPermissions.Allows(current, pass))
+                throw new InvalidOperationException("The quiet lifetime fixture received a stale scope, token or unexpected command.");
+            if (Interlocked.Increment(ref inFlight) != 1)
+                throw new InvalidOperationException("The quiet lifetime fixture received overlapping commands.");
+            try {
+                dispatched.Enqueue(pass); started.TrySetResult();
+                await release.Task;
+                Interlocked.Increment(ref returned);
+            } finally { Interlocked.Decrement(ref inFlight); }
+        };
+        var services = TestTableServices.For(engine) with { Diagnostics = diagnostic => {
+            diagnostics.Enqueue(diagnostic);
+            while (diagnostics.Count > 32) diagnostics.TryDequeue(out _);
+        } };
+        using var app = new TableApplication(services, directory, initialState: engine.State) { Automated = true };
         app.Initialize();
         var view = app.TestPort;
         view.PresentLobby(new("local", "Quiet lifetime", null, false, null, true, "", null, [], []), pausePolling: true);
         double seconds = 0;
         PresentationFrame Tick()
         {
-            // Stay inside the normal opening presentation beat so arming can be
-            // tested without starting an automatic worker or external service.
+            // The explicit held reply, rather than an animation deadline,
+            // controls the lifetime of the actual dispatched worker below.
             seconds += .001;
             app.Update(new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.001)),
                 new MouseState(20, 60, 0, default, default, default, default, default), new(), new(1600, 900));
             return app.ReadPresentation();
         }
-        var frame = Tick();
-        var oldArm = frame.Hits.Single(hit => hit.Id == "quiet-priority-arm");
-        var refreshed = view.Match! with { Revision = view.Match!.Revision + 1,
-            Decision = view.Match.Decision! with { Id = "refreshed-quiet-arm", Payload = ((PriorityPayload)(view.Match.Decision!).Payload) with { QuietYieldToken = "replacement-quiet-token" } } };
-        view.Accept(refreshed);
-        check(!view.CurrentHit(oldArm) && !view.Activate(oldArm) && ReferenceEquals(view.Frame, frame)
-            && engine.Replies.Count == 0 && engine.Observations == 0,
-            "A refreshed priority decision revokes the preceding Pass for now arm before another frame can replace its token authority");
+        object Actual() => new {
+            dispatched = dispatched.Count, inFlight = Volatile.Read(ref inFlight), returned = Volatile.Read(ref returned),
+            defaultReplies = engine.Replies.Count, observations = engine.Observations,
+            view.Busy, view.Polling, view.Held, view.Automatic, view.Error,
+            currentGame = view.Match?.Id, currentDecision = view.Match?.Decision?.Id,
+            providerGame = engine.State.Id, providerDecision = engine.State.Decision?.Id,
+            submittedDecision = expected?.Decision?.Id,
+            controls = view.Frame?.Hits.Where(hit => hit.Id is "quiet-priority-arm" or "quiet-priority-stop" or "confirm" or "auto" or "hold")
+                .Select(hit => hit.Id).Take(8).ToArray(),
+            diagnostics = diagnostics.ToArray().Select(item => new {
+                item.AttemptId, item.Origin, item.Stage, item.Command, item.Failure,
+                item.Facts.HasSnapshot, item.Facts.ViewerId, item.Facts.Revision
+            })
+        };
+        string ActualText() => System.Text.Json.JsonSerializer.Serialize(Actual());
+        void Capture(string stage) => File.WriteAllText(Path.Combine(directory, stage + ".json"), ActualText());
+        void Until(Func<bool> ready, string description)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (!ready() && DateTime.UtcNow < deadline) { Tick(); Thread.Yield(); }
+            if (!ready()) {
+                Capture("timeout");
+                throw new InvalidOperationException(description + "; " + ActualText());
+            }
+        }
+        try {
+            var frame = Tick();
+            var oldArm = frame.Hits.Single(hit => hit.Id == "quiet-priority-arm");
+            engine.Present(view.Match! with { Revision = view.Match!.Revision + 1,
+                Decision = view.Match.Decision! with { Payload = ((PriorityPayload)view.Match.Decision.Payload) with {
+                    QuietYieldToken = "replacement-quiet-token" } } });
+            var refreshed = engine.State;
+            expected = refreshed;
+            view.Accept(refreshed);
+            check(!view.CurrentHit(oldArm) && !view.Activate(oldArm) && ReferenceEquals(view.Frame, frame)
+                && dispatched.IsEmpty && engine.Replies.Count == 0 && engine.Observations == 0,
+                "A refreshed priority decision revokes the preceding Auto pass arm before another frame can replace its token authority");
 
-        frame = Tick();
-        check(view.Activate(frame.Hits.Single(hit => hit.Id == "quiet-priority-arm")),
-            "The replacement decision exposes its own current Pass for now intent");
-        frame = Tick();
-        var stop = frame.Hits.Single(hit => hit.Id == "quiet-priority-stop");
-        view.Accept(refreshed with { Revision = refreshed.Revision + 1,
-            Decision = refreshed.Decision! with { Id = "refreshed-quiet-stop" } });
-        check(view.CurrentHit(stop) && view.Activate(stop) && engine.Replies.Count == 0 && engine.Observations == 0,
-            "Take control retains its match lifetime across a refreshed decision and cancels the existing policy without a command");
-        frame = Tick();
-        check(!frame.Hits.Any(hit => hit.Id == "quiet-priority-stop") && frame.Hits.Any(hit => hit.Id == "quiet-priority-arm")
-            && engine.Replies.Count == 0 && engine.Observations == 0 && !view.Busy && !view.Polling,
-            "Cancelling quiet passing exposes the current arm again without starting engine work");
+            frame = Tick();
+            check(view.Activate(frame.Hits.Single(hit => hit.Id == "quiet-priority-arm")),
+                "The replacement decision exposes its own current Auto pass intent");
+            Until(() => started.Task.IsCompleted, "The current quiet pass did not reach its controlled provider gate");
+            frame = Tick();
+            Capture("first-dispatch");
+            check(dispatched is { Count: 1 } && dispatched.Single() is { } pass
+                    && pass.GameId == refreshed.Id && pass.DecisionId == refreshed.Decision!.Id
+                    && pass.YieldToken == "replacement-quiet-token" && view.Busy
+                    && Volatile.Read(ref inFlight) == 1 && Volatile.Read(ref returned) == 0
+                    && engine.Replies.Count == 0 && engine.Observations == 0,
+                "The actual first quiet command uses only the replacement scope and original armed token while its provider reply remains in flight");
+            var stop = frame.Hits.Single(hit => hit.Id == "quiet-priority-stop");
+            engine.Present(refreshed with { Revision = refreshed.Revision + 1 });
+            view.Accept(engine.State);
+            check(view.CurrentHit(stop) && view.Activate(stop) && dispatched.Count == 1
+                    && view.Busy && view.Held && engine.Observations == 0 && Volatile.Read(ref returned) == 0,
+                "Take control retains its match lifetime across a refreshed decision and stops further quiet work before the already dispatched reply returns");
+            frame = Tick();
+            Capture("stopped-in-flight");
+            check(!frame.Hits.Any(hit => hit.Id == "quiet-priority-stop") && view.Automatic && view.Held
+                    && dispatched.Count == 1 && view.Busy && !view.Polling && engine.Observations == 0,
+                "Stopping quiet passing immediately retires its active control while retaining the one in-flight command for reconciliation");
+
+            release.TrySetResult();
+            Until(() => !view.Busy && !view.Polling, "The released quiet reply and normal post-completion poll did not settle");
+            for (int update = 0; update < 12; update++) frame = Tick();
+            Capture("after-reconciliation");
+            var commandTrace = diagnostics.ToArray().Where(item => item.Origin == ClientDiagnosticOrigin.Quiet
+                && item.Command == ClientDiagnosticCommand.PassForNow && item.AttemptId != null).ToArray();
+            int providerReturn = Array.FindIndex(commandTrace, item => item.Stage == ClientDiagnosticStage.ProviderReturned);
+            int observedReturn = Array.FindIndex(commandTrace, item => item.Stage == ClientDiagnosticStage.ProviderObservationReturned);
+            check(dispatched.Count == 1 && Volatile.Read(ref returned) == 1 && Volatile.Read(ref inFlight) == 0
+                    && engine.Replies.Count == 0 && commandTrace.Count(item => item.Stage == ClientDiagnosticStage.DispatchStarted) == 1,
+                "The one actual quiet Execute returns without replay or a second pass. " + ActualText());
+            check(commandTrace.Select(item => item.AttemptId).Distinct().Count() == 1
+                    && providerReturn >= 0 && observedReturn > providerReturn
+                    && commandTrace.Count(item => item.Stage == ClientDiagnosticStage.ProviderReturned) == 1
+                    && commandTrace.Count(item => item.Stage == ClientDiagnosticStage.ProviderObservationReturned
+                        && item.Failure == ClientDiagnosticFailure.None && item.Facts.HasSnapshot
+                        && item.Facts.ViewerId == refreshed.ViewerId && item.Facts.Revision == engine.State.Revision) == 1
+                    && !view.Busy && !view.Polling && view.Held && view.Automatic
+                    && view.Match?.Id == engine.State.Id
+                    && view.Match?.Decision?.Id == engine.State.Decision?.Id
+                    && !frame.Hits.Any(hit => hit.Id == "quiet-priority-stop") && frame.Hits.Any(hit => hit.Id == "quiet-priority-arm"),
+                "The returned quiet attempt receives its own observation receipt and settles at current manual control independently of ordinary polling counts. " + ActualText());
+        } finally { release.TrySetResult(); }
     }
 }

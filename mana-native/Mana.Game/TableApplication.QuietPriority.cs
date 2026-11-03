@@ -10,6 +10,7 @@ internal sealed partial class TableApplication
     private int quietYieldTurn;
     private int? quietYieldActivePlayer;
     private long quietYieldActivity;
+    private MatchPresentationLifecycle.QuietStartReading? quietStartReading;
     private readonly PriorityAttention priorityAttention = new();
     private bool QuietPriorityArmed => quietYieldToken.Length > 0;
     private bool CanOfferQuietPriority => !ExperienceLabOpen && fixture == null && !session.NeedsRecovery
@@ -26,15 +27,17 @@ internal sealed partial class TableApplication
             turnPassRequest = new(command, state.ViewerId, state.Turn, state.PhaseKey);
             session.CancelAdvance(); return;
         }
-        StopStackResolution();
-        session.CancelAdvance();
-        held = false; priorityAttention.Resume();
+        // Confirmation precedes saved-mode changes. This gesture starts only
+        // this current empty-window permission; enabling Auto by itself does not.
+        UseAutomaticControl(true);
         CaptureQuietPriority(state);
+        quietStartReading = matchPresentation.CaptureQuietStartReading(now);
         error = ""; commandFailure = false;
     }
 
     private void CaptureQuietPriority(GameSnapshot state)
     {
+        quietStartReading = null;
         quietYieldGame = state.Id; quietYieldTurn = state.Turn; quietYieldActivePlayer = state.ActivePlayerId;
         quietYieldToken = ((PriorityPayload)state.Decision!.Payload).QuietYieldToken;
         quietYieldActivity = state.Activity.Select(entry => entry.Id).DefaultIfEmpty().Max();
@@ -59,6 +62,7 @@ internal sealed partial class TableApplication
 
     private void StopQuietPriority()
     {
+        quietStartReading = null;
         if (!QuietPriorityArmed) return;
         quietYieldGame = quietYieldToken = "";
         quietYieldActivity = 0; session.CancelAdvance();
@@ -79,7 +83,9 @@ internal sealed partial class TableApplication
             StopQuietPriority(); return false;
         }
         if (interactionBlocked) { session.CancelAdvance(); return true; }
-        if (busy || polling || !matchPresentation.Ready(now)) return true;
+        bool ready = quietStartReading is { } reading
+            ? matchPresentation.ReadyForQuietStart(now, reading) : matchPresentation.Ready(now);
+        if (busy || polling || !ready) return true;
         if (QuietPriorityPolicy.CanPass(state, quietYieldToken)) {
             // Capture the baseline, never replace it with a subsequently issued token.
             string token = quietYieldToken, game = quietYieldGame;
@@ -88,8 +94,12 @@ internal sealed partial class TableApplication
             bool Continue(GameSnapshot next) => !(next.ActivePlayerId == next.ViewerId && stops.Contains(next.PhaseKey))
                 && QuietPriorityPolicy.CanWait(next, game, turn, active, token)
                 && !QuietPriorityPolicy.HasInterruption(next, activity);
-            if (session.AdvanceQuietly(token, Continue, Mana.Magic.PresentationPacing.ShouldPresent))
+            if (session.AdvanceQuietly(token, Continue, Mana.Magic.PresentationPacing.ShouldPresent)) {
+                // Consume this startup-only allowance when the serialized
+                // advance is admitted. Later batches retain ordinary pacing.
+                quietStartReading = null;
                 pendingActionLabel = "Passing quiet priority windows.";
+            }
         }
         return true;
     }
