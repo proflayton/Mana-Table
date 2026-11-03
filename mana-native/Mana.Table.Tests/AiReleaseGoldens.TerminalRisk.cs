@@ -10,6 +10,7 @@ namespace Mana.Table;
 internal static partial class AiReleaseGoldens
 {
     private sealed record TerminalAcceptedFrame(AutomatedSeatObservation Observation, UseOfferedAction Command);
+    private sealed record TerminalAcceptedPass(AutomatedSeatObservation Observation, PassPriority Command);
     private sealed record TerminalRouteFunding(string Name, string SourceId, string ActionId,
         ActionAffordability PublishedAffordability, SemanticKnowledge PublishedManaCostKnowledge,
         bool RequiresScheduledLoss, bool ScheduledActorLoss, AiManaPlan NominalFunding);
@@ -21,6 +22,7 @@ internal static partial class AiReleaseGoldens
     {
         internal AutomatedSeatObservation? FirstOwnMain { get; private set; }
         internal TerminalAcceptedFrame? SafeCast { get; private set; }
+        internal TerminalAcceptedPass? PostSafePass { get; private set; }
         internal List<TerminalAcceptedFrame> UnsafeCasts { get; } = [];
         public Task EnableAutomatedSeatsAsync() => inner.EnableAutomatedSeatsAsync();
         public Task ReportAutomationFaultAsync(string game, int seat, string reason) => inner.ReportAutomationFaultAsync(game, seat, reason);
@@ -36,6 +38,13 @@ internal static partial class AiReleaseGoldens
             var route = command is UseOfferedAction offered ? source!.Actions.Single(item => item.Id == offered.ActionId) : null;
             var face = source == null ? null : CardViews.FindActionSource(observation.State, source.SourceCardKey)?.Card;
             await inner.ExecuteAutomatedAsync(seat, command);
+            if (seat == 0 && command is PassPriority pass && SafeCast is { } safe
+                && observation.State.ActivePlayerId == 0 && observation.State.PhaseKey == "MAIN1"
+                && observation.State.Decision?.Payload is PriorityPayload && observation.State.Stack.IsEmpty) {
+                string safeId = safe.Observation.Domain.Sources.Single(set => set.SourceCardKey == safe.Command.Card).SourceCardId;
+                if (observation.State.Viewer!.Zone("Battlefield").Cards.Any(card => CardViews.Identity(card) == safeId))
+                    PostSafePass ??= new(observation, pass);
+            }
             if (seat != 0 || route?.Kind != "cast" || command is not UseOfferedAction cast) return;
             var accepted = new TerminalAcceptedFrame(observation, cast);
             if (face?.Name is "Final Fortune" or "Glorious End") UnsafeCasts.Add(accepted);
@@ -60,6 +69,8 @@ internal static partial class AiReleaseGoldens
         int steps = 0, comparisons = 0;
         bool passed = false, stackSeen = false, resolved = false, currentOffers = false, openingVerified = false;
         ImmutableArray<TerminalRouteFunding> nominalFunding = [];
+        ImmutableArray<TerminalRouteFunding> postSafeNominalFunding = [];
+        bool postSafePassVerified = false;
         Exception? failure = null;
         var captureErrors = new List<string>();
         try {
@@ -76,7 +87,7 @@ internal static partial class AiReleaseGoldens
                 || actor.Zone("Battlefield").Cards.Any(card => card.Name != "Mountain"))
                 throw new InvalidDataException("Terminal-risk fixture did not publish its declared four pregame Mountains.");
             while (true) {
-                if (clock.Elapsed >= TimeSpan.FromSeconds(30)) { stop = "inconclusive-time-cutoff"; detail = "The first-main safe consequence was not observed within the existing golden budget."; break; }
+                if (clock.Elapsed >= TimeSpan.FromSeconds(30)) { stop = "inconclusive-time-cutoff"; detail = "The first-main safe consequence and subsequent risk-declining pass were not observed within the existing golden budget."; break; }
                 await host.StepAsync(); steps++;
                 state = await engine.ObserveSimulationAsync() ?? throw new InvalidDataException("Terminal-risk public observation disappeared.");
                 if (host.LastFault != null) throw new InvalidOperationException(JsonSerializer.Serialize(host.LastFault));
@@ -127,9 +138,24 @@ internal static partial class AiReleaseGoldens
                     }
                     bool onBattlefield = state.Players.Single(player => player.Id == 0).Zone("Battlefield").Cards
                         .Any(card => CardViews.Identity(card) == safeId && card.Name == "Sol Ring");
-                    if (openingVerified && currentOffers && stackSeen && resolved && onBattlefield && comparisons > 0) {
-                        passed = true; stop = "observed-safe-consequence";
-                        detail = "Both nominally funded real terminal-risk spells remained offered; the ordinary policy instead cast and resolved the same Sol Ring occurrence without initiating either self-defeat route.";
+                    if (captured.PostSafePass is { } pass) {
+                        if (postSafeNominalFunding.IsEmpty) postSafeNominalFunding = new[] {
+                            TerminalOffer(pass.Observation, "Final Fortune", true),
+                            TerminalOffer(pass.Observation, "Glorious End", true)
+                        }.OfType<TerminalRouteFunding>().ToImmutableArray();
+                        postSafePassVerified = pass.Observation.State.Stack.IsEmpty
+                            && pass.Observation.State.ActivePlayerId == 0 && pass.Observation.State.PhaseKey == "MAIN1"
+                            && pass.Observation.State.Turn == frame.State.Turn
+                            && postSafeNominalFunding.Length == 2 && postSafeNominalFunding.All(route =>
+                                route.PublishedAffordability != ActionAffordability.Unavailable
+                                && route.NominalFunding.Status == AiManaPlanStatus.Funded && route.ScheduledActorLoss
+                                && nominalFunding.Any(initial => initial.Name == route.Name && initial.SourceId == route.SourceId));
+                        if (!postSafePassVerified)
+                            throw new InvalidDataException("The accepted empty-stack post-resolution pass did not retain both exact terminal-risk occurrences as nominally funded current cast offers.");
+                    }
+                    if (openingVerified && currentOffers && stackSeen && resolved && onBattlefield && postSafePassVerified && comparisons > 0) {
+                        passed = true; stop = "observed-safe-consequence-and-risk-decline";
+                        detail = "The policy cast and resolved the same Sol Ring occurrence, then accepted an empty-stack first-main pass while both exact terminal-risk spells remained nominally funded current offers; neither self-defeat route was initiated.";
                         break;
                     }
                 }
@@ -150,7 +176,7 @@ internal static partial class AiReleaseGoldens
         if (!summary.DiagnosticErrors.IsEmpty) { captureErrors.AddRange(summary.DiagnosticErrors); passed = false; }
         var evidence = JsonSerializer.SerializeToElement(new { audience = "host-private targeted fixture", openingVerified,
             currentOffers, safeId, castExecution, stackSeen, resolved, firstOwnMain = captured.FirstOwnMain,
-            nominalFunding,
+            nominalFunding, postSafePassVerified, postSafeNominalFunding, actualAcceptedPostSafePass = captured.PostSafePass,
             actualAcceptedSafeInput = captured.SafeCast, unsafeAccepted = captured.UnsafeCasts, commands = receipts.Accepted,
             diagnostics = summary, failure = failure?.ToString(), captureErrors,
             campaignDeckQualificationCredit = false, naturalGameCompletionCredit = false, humanReview = "pending",

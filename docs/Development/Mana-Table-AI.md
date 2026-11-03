@@ -45,7 +45,8 @@ native policy lanes. They distinguish actual Forge card recipes from authored
 policy fixtures. An additional golden reuses the warmed real-engine gate with a
 declared eight-card test-only library: both nominally funded delayed-loss spells must
 remain offered while the ordinary policy instead casts and resolves the same
-Sol Ring occurrence. It verifies the current decoded input and accepted real
+Sol Ring occurrence, then passes with both exact risky spells still offered and
+nominally funded on an empty stack in that same main phase. It verifies the current decoded input and accepted real
 consequence, not a natural game or Commander-deck qualification. None of these
 checks substitutes for observing a complete human/AI game.
 Mana-bearing cast offers intentionally retain unknown affordability. The golden
