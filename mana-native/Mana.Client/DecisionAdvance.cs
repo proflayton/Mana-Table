@@ -38,6 +38,7 @@ public sealed class DecisionAdvance
         ArgumentNullException.ThrowIfNull(intent);
         var clock = Stopwatch.StartNew();
         var state = initial;
+        var audience = new ObservationAudience(initial);
         int passes = 0;
         try {
             while (!cancellation.IsCancellationRequested) {
@@ -56,8 +57,8 @@ public sealed class DecisionAdvance
                 }
                 // Cancellation never hides the result of a pass already sent.
                 var next = diagnostics == null ? await connection.ObserveAsync() : await diagnostics.ObserveAsync(connection, attempt);
+                audience.Validate(next);
                 if (next == null) { intent.Stop(); return null; }
-                if (next.Id != state.Id) { intent.Stop(); observed?.Invoke(next); return next; }
                 if (next.Revision >= state.Revision) {
                     UndoFacts.ValidateProgress(state, next);
                     bool changed = next.Revision > state.Revision || next.ViewerId != state.ViewerId || next.Decision?.Id != state.Decision?.Id;
@@ -84,6 +85,7 @@ public sealed class DecisionAdvance
     {
         var clock = Stopwatch.StartNew();
         var state = initial;
+        var audience = new ObservationAudience(initial);
         int passes = 0;
         long activity = quietToken == null ? 0 : initial.Activity.Select(entry => entry.Id).DefaultIfEmpty().Max();
         while (!cancellation.IsCancellationRequested) {
@@ -112,8 +114,8 @@ public sealed class DecisionAdvance
             }
             // Always reconcile an already submitted command, even if Hold was pressed in flight.
             var next = diagnostics == null ? await connection.ObserveAsync() : await diagnostics.ObserveAsync(connection, attempt);
+            audience.Validate(next);
             if (next == null) return null;
-            if (next.Id != state.Id) return next;
             if (next.Revision >= state.Revision) { UndoFacts.ValidateProgress(state, next); state = next; }
             // Yield periodically to present progress and avoid owning the connection indefinitely.
             if (clock.ElapsedMilliseconds >= 350 || passes >= 32) return state;

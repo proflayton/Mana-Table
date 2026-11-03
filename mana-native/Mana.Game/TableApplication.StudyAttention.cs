@@ -19,9 +19,8 @@ internal sealed partial class TableApplication
 
     private Rectangle? TryPlaceStudyHud(Rectangle preferred, IReadOnlyList<Rectangle> reserved, Rectangle viewport)
     {
-        _ = StudyHudObstacles;
         var paint = HudPaint(preferred);
-        var hard = studyFixedHudObstacles.Concat(studyRequiredObjects).Concat(reserved).Where(bounds => !bounds.IsEmpty).ToArray();
+        var hard = studyHudReservations.Fixed.Concat(studyRequiredObjects).Concat(reserved).Where(bounds => !bounds.IsEmpty).ToArray();
         var soft = StudyAttentionObstacles.Concat(hard).ToArray();
         // First leave every physical card visible. On a busy table, temporary
         // context may cover unrelated cards, but owner facts and current actions
@@ -40,7 +39,7 @@ internal sealed partial class TableApplication
         // late paint/input order remains authoritative. Regression journeys
         // assert that the supported arrangements never enter this outcome.
         studyHudConstrained = true;
-        var hard = studyFixedHudObstacles.Concat(studyRequiredObjects).Concat(reserved).Where(bounds => !bounds.IsEmpty).ToArray();
+        var hard = studyHudReservations.Fixed.Concat(studyRequiredObjects).Concat(reserved).Where(bounds => !bounds.IsEmpty).ToArray();
         return DecisionWorkspaceLayout.Place(new(preferred.Center.X, preferred.Center.Y, 1, 1), preferred.Width, preferred.Height,
             StudyAttentionObstacles, bounded: true, minimumWidth: preferred.Width, minimumHeight: preferred.Height, protectedObjects: hard);
     }

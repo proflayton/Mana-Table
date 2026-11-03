@@ -153,9 +153,14 @@ internal static class AdvanceRegression
         var watch = System.Diagnostics.Stopwatch.StartNew();
         await new DecisionAdvance(wire).RunAsync(initial, CanPass, PresentationPacing.ShouldPresent);
         Check(wire.Replies.Count == 1 && watch.Elapsed.TotalSeconds < 2, "Waiting on another seat is bounded and never passes for that seat");
-        wire = new(initial, Next(1) with { Id = "other-game" });
-        result = await new DecisionAdvance(wire).RunAsync(initial, CanPass, PresentationPacing.ShouldPresent);
-        Check(result?.Id == "other-game" && wire.Replies.Count == 1, "An advance cannot cross into another match");
+        foreach (var foreign in new[] { Next(1) with { Id = "other-game" }, Next(1) with { ViewerId = initial.ViewerId + 1 } }) {
+            wire = new(initial, foreign);
+            IOException? rejected = null;
+            try { await new DecisionAdvance(wire).RunAsync(initial, CanPass, PresentationPacing.ShouldPresent); }
+            catch (IOException error) { rejected = error; }
+            Check(rejected != null && wire.Replies.Count == 1 && wire.Observations.Count == 1,
+                "An advance rejects a foreign game or viewer receipt after one command without returning it as an accepted lifecycle handoff");
+        }
 
         wire = new(initial, Next(1), Next(2), response);
         var session = new ClientSession(wire); session.Accept(initial);

@@ -91,6 +91,7 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
                 app.ReadPresentation(); driver.Advance(); Thread.Yield();
             }
             foreach (string description in driver.checks) check(true, description);
+            CheckResponsePaymentChild(directory, check);
             CheckCountedBills(directory, check);
             CheckCountedSourceOutputs(directory, check);
             var child = ManaPaymentScenario.Snapshot(9);
@@ -104,6 +105,95 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
                 && !GameCommandPermissions.Allows(child, new CancelPayment(child.Id, child.Decision.Id)),
                 "A child's read-only original bill grants neither payment nor cancellation authority");
         } catch (Exception error) { driver.Save(error.ToString()); throw; }
+    }
+
+    private static void CheckResponsePaymentChild(string profile, Action<bool, string> check)
+    {
+        foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) }) {
+            string directory = Path.Combine(profile, "response-child-" + size.X);
+            Prepare(directory);
+            var lab = new ExperienceLabSession(ManaPaymentScenario.Id); lab.Replay(8);
+            var engine = new ExperienceLabEngine(lab);
+            var response = new ResponsePaymentPort(engine);
+            using var run = new PresentationRun(TestTableServices.For(engine) with { Match = response, SourceActions = response },
+                directory, response.State, size);
+            run.EnableLiveTableStudy();
+            var view = run.View;
+            Point pointer = new(20, 60);
+            void Tick(ButtonState left = ButtonState.Released, bool frozen = false) {
+                var physical = Mana.Renderer.RenderViewport.Fit(size, view.DesignHeight).ToPhysical(pointer.ToVector2());
+                run.Tick(frozen ? TimeSpan.Zero : TimeSpan.FromSeconds(1d / 60),
+                    new((int)MathF.Ceiling(physical.X), (int)MathF.Ceiling(physical.Y), 0,
+                        left, default, default, default, default));
+            }
+            void Until(Func<bool> ready, string step) {
+                var deadline = Stopwatch.StartNew();
+                while (!ready() && deadline.Elapsed < TimeSpan.FromSeconds(5)) { Tick(); Thread.Yield(); }
+                if (!ready()) throw new InvalidOperationException("Stack-response payment stopped at " + step + ": " + view.Error);
+            }
+            void Click(Point target) { pointer = target; Tick(ButtonState.Pressed); Tick(); }
+            try {
+                Tick(); Tick();
+                Until(() => view.ManaJourney != null && !view.Busy && view.Frame!.Cards.Any(card => card.Id == ManaPaymentScenario.Temple), "parent bill");
+                Click(view.DisplayedPose(ManaPaymentScenario.Temple)!.Value.Bounds.Center);
+                Until(() => view.Hits.Any(hit => hit.Id == "read-card-action"), "current source action");
+                Click(view.Hits.Single(hit => hit.Id == "read-card-action").Bounds.Center);
+                Until(() => lab.StageIndex == 9 && !view.Busy && view.ManaColors.Count == 2
+                    && view.Frame!.Cards.Any(card => card.Id == ManaPaymentScenario.Temple && !card.Focused
+                        && Vector2.Distance(card.Display.Size, card.Rest.Size) < 1), "settled child choice");
+                var first = view.Hits.Single(hit => hit.Id == "mana-color:11");
+                long revision = view.Match!.Revision;
+                var at = run.Elapsed;
+                pointer = first.Bounds.Center;
+                Tick(frozen: true); Tick(frozen: true);
+                var hovered = view.Hits.Single(hit => hit.Id == first.Id);
+                check(view.Match.Revision == revision && hovered.Scope == first.Scope && run.Elapsed == at
+                        && hovered.Bounds == first.Bounds && view.HitAt(first.Bounds.Center)?.Id == first.Id
+                        && lab.ManaPaymentReplies is [UseOfferedAction],
+                    "A source-owned child choice above an opponent's pending spell keeps its first exposed target through same-time hover without submitting, moving or reacquiring it at " + size);
+                // Keep the first exposed position through press and release.
+                Tick(ButtonState.Pressed, frozen: true); Tick(frozen: true);
+                Until(() => lab.StageIndex == 10 && !view.Busy, "exact red choice");
+                check(lab.ManaPaymentReplies is [UseOfferedAction, ChooseOptions { Choices: [11] }]
+                        && view.Match.Stack is [{ Id: "response-opponent-spell" }]
+                        && !view.Activate(first),
+                    "The original child target submits exactly offered red index11, preserves the unrelated stack occurrence and retires its old capability at " + size);
+            } finally {
+                File.WriteAllText(Path.Combine(directory, "response-child.json"), JsonSerializer.Serialize(new {
+                    lab.StageIndex, elapsedTicks = run.ElapsedTicks, view.ManaJourney, colors = view.ManaColors,
+                    replies = lab.ManaPaymentReplies.Select(reply => reply.GetType().Name), frame = view.Frame?.Observe(),
+                    scope = "Authored instant-response payment through production source query, pointer and child-choice paths; not rules or human acceptance evidence"
+                }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+            }
+        }
+    }
+
+    private sealed class ResponsePaymentPort(ExperienceLabEngine engine) : IMatchConnection, ISourceActions
+    {
+        internal GameSnapshot State {
+            get {
+                var current = engine.Session.State;
+                Card Face(Card card) => card.VisualId != ManaPaymentScenario.ColorSpell ? card : card with {
+                    Name = "Izzet Charm", ArtName = "Izzet Charm", Type = "Instant", Power = null, Toughness = null,
+                    Text = "Counter target noncreature spell unless its controller pays {2}."
+                };
+                DecisionSource? Source(DecisionSource? source) => source == null ? null
+                    : source with { Card = source.Card is { } card ? Face(card) : null };
+                var decision = current.Decision! with { Context = current.Decision!.Context with { Source = Source(current.Decision.Context.Source) } };
+                if (decision.Payload is OptionsPayload { ManaPaymentContext: { } payment } options)
+                    decision = decision with { Payload = options with { ManaPaymentContext = payment with { Source = Source(payment.Source) } } };
+                var opposing = new Card { VisualId = "response-opponent-card", Name = "Shock", ArtName = "Shock", Type = "Instant",
+                    ManaCost = "{R}", Text = "Shock deals 2 damage to any target." };
+                return current with { ActivePlayerId = 1, DecisionOwnerId = 0, PriorityPlayerId = 0,
+                    Decision = decision, Stack = [new("Shock", opposing.Text, StackActionKind.Spell, opposing) {
+                        Id = "response-opponent-spell", ControllerId = 1 }] };
+            }
+        }
+        public Task<GameSnapshot?> ObserveAsync() => Task.FromResult<GameSnapshot?>(State);
+        public Task ExecuteAsync(GameCommand command) => engine.ExecuteAsync(command);
+        public Task ConcedeAsync(string gameId) => throw new NotSupportedException();
+        public Task<SourceActionSet> SourceActionsAsync(string gameId, string decisionId, string sourceCardKey)
+            => engine.SourceActionsAsync(gameId, decisionId, sourceCardKey);
     }
 
     private static void CheckCountedBills(string profile, Action<bool, string> check)
@@ -750,6 +840,11 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             Check(lab.StageIndex == 9 && lab.ManaPaymentReplies.Count == beforeColorChoiceReplies
                 && view.ManaColors.Select(choice => choice.Mana).SequenceEqual(["{U}", "{R}"]),
                 "Hovering a current mana-color orb previews its exact offered symbol without selecting it or spending mana");
+            var hoveredChoice = view.Hits.Single(hit => hit.Id == "mana-color:11");
+            Check(previousManaColor != null && hoveredChoice.Scope == previousManaColor.Scope
+                && hoveredChoice.Bounds == previousManaColor.Bounds
+                && view.HitAt(previousManaColor.Bounds.Center)?.Id == previousManaColor.Id,
+                "The first exposed child mana-color target keeps its exact bounds and owns its original pointer position across hover, without reacquiring the target before clicking");
             Capture("10-hover-red-choice");
         }); Click();
         Wait(() => lab.StageIndex == 10 && !view.Busy && view.ManaJourney?.Symbols.SequenceEqual(["{U}"]) == true, () => {

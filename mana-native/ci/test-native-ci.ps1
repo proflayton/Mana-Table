@@ -111,8 +111,8 @@ try {
     Assert-ManaCanvasPrimitives $inventory
     $criticalNames = @('canvas-primitives','startup','loading','analysis-1000','clutter-1000','audio-settings-1000',
         'deck-experience-1000','equipment-1000','card-states-1000','printings-1000','audio-settings-1540',
-        'lobby-ai-1000','card-reading-1000','mana-payment-1000','lobby-three-1000','full-battlefield-1000','priority-1280')
-    if ($inventory.Count -ne 17 -or @($inventory.name | Sort-Object -Unique).Count -ne 17 -or @($inventory.shard | Sort-Object -Unique).Count -ne 4 -or
+        'lobby-ai-1000','card-reading-1000','mana-payment-1000','lobby-three-1000','full-battlefield-1000','priority-1280','card-states-1540')
+    if ($inventory.Count -ne 18 -or @($inventory.name | Sort-Object -Unique).Count -ne 18 -or @($inventory.shard | Sort-Object -Unique).Count -ne 4 -or
         @(Compare-Object $criticalNames $inventory.name -CaseSensitive).Count -ne 0 -or
         @($inventory | Where-Object name -eq 'card-reading-1000').Count -ne 1 -or
         @($inventory | Where-Object name -eq 'full-battlefield-1000').Count -ne 1 -or
@@ -121,6 +121,12 @@ try {
         @($inventory | Where-Object { $_.name -eq 'audio-settings-1000' -and $_.shard -eq 1 }).Count -ne 1 -or
         @($inventory | Where-Object { $_.name -eq 'audio-settings-1540' -and $_.shard -eq 2 }).Count -ne 1) { throw 'Critical native suite discovery is incomplete or duplicated.' }
     $checks++
+    foreach ($size in @('1000x740','1540x980')) {
+        if (@($inventory | Where-Object { $_.mode -ceq '--smoke-card-states' -and $_.size -ceq $size -and $_.result -ceq 'card-states-results.json' }).Count -ne 1) {
+            throw 'The ordinary native release gate must exercise card states at both supported window sizes exactly once.'
+        }
+        $checks++
+    }
     [object[]]$inventory = & (Join-Path $PSScriptRoot 'native-ui.ps1') -ListOnly -Extended | ConvertFrom-Json
     Assert-ManaFixtureArt $inventory
     Assert-ManaCanvasPrimitives $inventory

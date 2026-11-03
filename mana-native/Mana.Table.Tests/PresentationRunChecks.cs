@@ -59,6 +59,18 @@ internal static class PresentationRunChecks
         check(ReferenceEquals(frame, run.ReadFrame()) && run.Elapsed == time && accepted.Count == 3
                 && connection.Observations == 0 && connection.Commands == 0 && engine.Replies.Count == 0,
             "Idle/inactive stepping and repeated frame reads cannot poll a provider, submit commands or manufacture accepted observations");
+        var previousControls = frame.Hits.Select(hit => (hit.Id, hit.Scope, hit.Bounds)).ToArray();
+        var recomposed = run.Tick(TimeSpan.Zero, neutral);
+        check(!ReferenceEquals(frame, recomposed) && run.Elapsed == time
+                && recomposed.Stamp.GameId == frame.Stamp.GameId && recomposed.Stamp.Revision == frame.Stamp.Revision
+                && recomposed.Stamp.DecisionId == frame.Stamp.DecisionId && recomposed.Stamp.Scope == frame.Stamp.Scope
+                && recomposed.Stamp.Time == frame.Stamp.Time
+                && previousControls.SequenceEqual(recomposed.Hits.Select(hit => (hit.Id, hit.Scope, hit.Bounds)))
+                && accepted.Count == 3 && connection.Observations == 0 && connection.Commands == 0 && engine.Replies.Count == 0,
+            "A new composition at the same snapshot, decision scope and frozen time keeps its current targets without borrowing another observation or command");
+        check(previousControls.SequenceEqual(frame.Hits.Select(hit => (hit.Id, hit.Scope, hit.Bounds))),
+            "Recomposing an unchanged snapshot leaves the previously published interaction frame intact");
+        frame = recomposed;
         check(Rejected(() => run.UpdateAt(time - TimeSpan.FromTicks(1), neutral))
                 && run.Elapsed == time && ReferenceEquals(frame, run.ReadFrame()) && accepted.Count == 3,
             "A backwards clock request fails before changing presentation time, frame or accepted publications");

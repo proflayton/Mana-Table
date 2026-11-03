@@ -23,6 +23,63 @@ internal static class FiniteYieldLifecycleRegression
         await MatchOperationReset(check);
         await ContradictoryAcknowledgement(check);
         await RevocationAudienceAndRevision(check);
+        await AudienceHandoffCleanup(check);
+        await RejectedHandoffPreservesConsent(check);
+    }
+
+    private static async Task AudienceHandoffCleanup(Action<bool, string> check)
+    {
+        foreach (bool replaceGame in new[] { false, true }) {
+            var port = new Port(3, automatic: false) { HoldGrant = true, HoldRevoke = true };
+            var session = new ClientSession(port); var before = port.State; session.Accept(before);
+            var intent = FiniteResolutionRegression.Arm(before)!;
+            check(session.AdvanceFinite(intent, (_, _) => false),
+                "A finite handoff check begins one captured grant on its existing audience connection");
+            await port.GrantStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var handed = before with { Id = replaceGame ? "replacement-finite-game" : before.Id,
+                ViewerId = replaceGame ? before.ViewerId : 1, Revision = 10 };
+            check(!session.Accept(handed) && session.State == before && session.Busy && !intent.IsActive
+                    && !session.NeedsRecovery && port.Commands is [GrantFiniteStackYield],
+                "A requested " + (replaceGame ? "game replacement" : "viewer handoff")
+                    + " waits for the old prospective grant's negative acknowledgement instead of moving its cleanup to the new audience");
+            port.ReleaseGrant.TrySetResult();
+            await PumpUntil(session, () => port.RevokeStarted.Task.IsCompleted);
+            check(!session.Accept(handed) && session.State?.ViewerId == before.ViewerId && session.State.Id == before.Id
+                    && port.Commands is [GrantFiniteStackYield, RevokeFiniteStackYield] && port.MaximumConcurrentCommands == 1,
+                "An in-flight old-audience revocation keeps replacement pending without another grant, pass or transport lane");
+            port.ReleaseRevoke.TrySetResult();
+            await PumpUntil(session, () => !session.Busy && session.State?.FiniteStackYield?.Status == FiniteStackYieldStatus.Revoked);
+            check(session.Accept(handed) && session.State == handed && !session.NeedsRecovery,
+                "An explicit replacement retry succeeds only after the old connection publishes its exact revoke acknowledgement");
+            session.Pump();
+            check(session.State == handed && !session.NeedsRecovery && port.Commands.Count == 2,
+                "Completed old-audience cleanup cannot fault or republish over the replacement audience");
+            session.Close();
+        }
+    }
+
+    private static async Task RejectedHandoffPreservesConsent(Action<bool, string> check)
+    {
+        var port = new Port(3, automatic: false) { HoldGrant = true };
+        var before = port.State;
+        var retired = before with { Id = "retired-finite-game" };
+        var session = new ClientSession(port); session.Accept(retired); session.Accept(before);
+        var intent = FiniteResolutionRegression.Arm(before)!;
+        check(session.AdvanceFinite(intent, (_, _) => false),
+            "A retired-handoff check owns one current finite grant before rejected replacement evidence arrives");
+        await port.GrantStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        foreach (var denied in new[] { retired with { Revision = 999 }, before with { ViewerId = 1, Revision = 0 } }) {
+            check(!session.Accept(denied) && session.State == before && intent.IsActive && session.IsAdvancing
+                    && !session.NeedsRecovery && port.Commands is [GrantFiniteStackYield],
+                "A retired-game or stale-viewer replacement is rejected before withdrawing current finite consent or cancelling its in-flight lane");
+        }
+        intent.Pause(); session.CancelAdvance(); port.ReleaseGrant.TrySetResult();
+        await Pump(session);
+        check(session.State?.Id == before.Id && session.State.ViewerId == before.ViewerId
+                && session.State.FiniteStackYield?.Status == FiniteStackYieldStatus.Revoked
+                && port.Commands is [GrantFiniteStackYield, RevokeFiniteStackYield] && !session.NeedsRecovery,
+            "Only the deliberate current-owner cancellation withdraws the retained grant after rejected handoffs");
+        session.Close();
     }
 
     private static void ProposedGrantCancellation(Action<bool, string> check)
@@ -394,6 +451,14 @@ internal static class FiniteYieldLifecycleRegression
         if (session.Busy) throw new TimeoutException("Finite grant/revocation did not release its serial lane.");
     }
 
+    private static async Task PumpUntil(ClientSession session, Func<bool> complete)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (!complete() && DateTime.UtcNow < deadline) { session.Pump(); await Task.Delay(1); }
+        session.Pump();
+        if (!complete()) throw new TimeoutException("Finite handoff did not reach its controlled owner acknowledgement.");
+    }
+
     private sealed class Port(int count, bool automatic) : IMatchConnection
     {
         private readonly object gate = new();
@@ -403,7 +468,7 @@ internal static class FiniteYieldLifecycleRegression
         internal List<string> Trace { get; } = [];
         internal int AutomaticPasses, MaximumConcurrentCommands;
         private int concurrent, grants;
-        internal bool HoldGrant, FailGrant, FailRevoke, FailRevokeBeforeCommit, MalformedRevoke, ReplaceGrantOnRevoke, DisallowCommands,
+        internal bool HoldGrant, HoldRevoke, FailGrant, FailRevoke, FailRevokeBeforeCommit, MalformedRevoke, ReplaceGrantOnRevoke, DisallowCommands,
             ForeignRevokeReceipt, StaleRevokeReceipt;
         private bool uncertainRevoke;
         internal TaskCompletionSource CloseObservation { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -412,6 +477,8 @@ internal static class FiniteYieldLifecycleRegression
         internal TaskCompletionSource GrantObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource SecondGrantObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource RevokeObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource RevokeStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource ReleaseRevoke { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal void OfferAuto()
         {
             lock (gate) state = state with { Decision = state.Decision! with {
@@ -429,6 +496,8 @@ internal static class FiniteYieldLifecycleRegression
                     if (HoldGrant) await ReleaseGrant.Task;
                     if (FailGrant) { FailGrant = false; throw new IOException("Lost grant acknowledgement"); }
                 } else if (command is RevokeFiniteStackYield revoke) {
+                    RevokeStarted.TrySetResult();
+                    if (HoldRevoke) await ReleaseRevoke.Task;
                     if (FailRevokeBeforeCommit) { FailRevokeBeforeCommit = false; uncertainRevoke = true; throw new IOException("Lost before revoke commit"); }
                     lock (gate) {
                         if (state.FiniteStackYield!.GrantId != revoke.GrantId) throw new EngineCommandRejectedException("Different grant");

@@ -184,8 +184,7 @@ public sealed partial class ClientSession
         try { lock (observationGate) {
             previous = State;
             diagnosticAudience = previous == null || state == null || state.Id == previous.Id && state.ViewerId == previous.ViewerId;
-            if (Closed || ingress != null && !ingress.Active || epoch != replica.Epoch
-                || state != null && previous != null && state.Id == previous.Id && state.Revision < previous.Revision) return false;
+            if (Closed || ingress != null && !ingress.Active || !replica.CanAccept(state, epoch)) return false;
             UndoFacts.ValidateProgress(previous, state);
             restored = state != null && UndoFacts.RestoredSince(previous, state);
             if (restored && state!.FiniteStackYield is { Status: FiniteStackYieldStatus.Active } restoringGrant
@@ -194,17 +193,29 @@ public sealed partial class ClientSession
             executions.Validate(state);
             if (state != null) { FiniteResolutionFacts.Validate(state); FiniteStackYieldFacts.Validate(state); }
             ValidateFiniteAcknowledgement(state);
+            bool audienceChanged = state != null && previous != null && (state.Id != previous.Id || state.ViewerId != previous.ViewerId);
+            // An explicit audience handoff retires work admitted for the old
+            // viewer. Capture its negative consent before replacing the replica.
+            if (audienceChanged) {
+                StopFiniteIntent(); advancing?.Cancel();
+                // Cleanup still belongs to the existing connection/audience.
+                // The owner must retry handoff after its exact negative ACK;
+                // neither replacement state nor a different port proves it.
+                if (finiteRevocations.Count > 0) return false;
+            }
             if (!replica.Accept(state, epoch)) return false;
             RestorationChanged = restored;
-            if (RestorationChanged) {
-                // Restore is a new authoritative publication in this same game.
-                // Revoke old work before Changed, without retiring its identity.
+            if (RestorationChanged || audienceChanged) {
+                // Restoration and audience handoff both replace current action
+                // ownership before Changed, without retiring this game's identity.
                 finiteIntent?.Stop(); finiteIntent = null;
                 advancing?.Cancel(); SourceActions.Clear(); pendingSettings.Clear(); activeSetting = null;
                 ClearAllOptionalPaymentPolicies(); optionalSubmissions.Clear(); optionalPaymentsPaused = false;
-                foreach (var item in finiteRevocations.Where(item => item.Key.Game == state!.Id
-                    && item.Value.ViewerId == state.ViewerId).ToArray()) {
-                    finiteRevocations.Remove(item.Key);
+                if (RestorationChanged) {
+                    foreach (var item in finiteRevocations.Where(item => item.Key.Game == state!.Id
+                        && item.Value.ViewerId == state.ViewerId).ToArray()) {
+                        finiteRevocations.Remove(item.Key);
+                    }
                 }
                 BeginCommand();
             }
@@ -279,11 +290,14 @@ public sealed partial class ClientSession
         if (ObservationDelivery == ObservationDeliveryMode.External || Busy || Polling || Closed) return;
         Polling = true; long epoch = replica.Epoch;
         var lobbyOwner = lobbyReplica;
+        ObservationAudience? audience = State is { } current ? new(current) : null;
         _ = Task.Run(async () => {
             try {
                 var lobby = withLobby ? await (setup ?? throw new InvalidOperationException("No lobby connection")).LobbyAsync() : null;
                 var state = !withLobby || lobby?.MatchActive == true ? await connection.ObserveAsync() : null;
                 Exception? admissionFailure = null;
+                try { audience?.Validate(state); }
+                    catch (IOException error) { admissionFailure = error; }
                 if (lobby != null) try { EncounterStartFacts.ValidateMatch(lobby, state); }
                     catch (InvalidOperationException error) { admissionFailure = new IOException("The table did not publish its admitted encounter's rules frame.", error); }
                 Post(() => {
@@ -317,6 +331,7 @@ public sealed partial class ClientSession
             var attempt = diagnostics.Begin(initial, command, ClientDiagnosticOrigin.Direct, epoch);
             await diagnostics.ExecuteAsync(connection, command, attempt);
             var state = await diagnostics.ObserveAsync(connection, attempt);
+            new ObservationAudience(initial).Validate(state);
             Post(() => Accept(state, epoch, commandObservation: true));
         });
         return true;

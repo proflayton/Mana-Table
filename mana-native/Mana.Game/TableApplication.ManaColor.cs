@@ -29,6 +29,12 @@ internal sealed partial class TableApplication
         var reservations = matchPresentation.Cards.Cards.Where(entry => producer == null || entry.Display.Bounds != anchor)
             .Select(entry => entry.Display.Bounds).ToList();
         if (manaJourneyPaint is { } bill) reservations.Add(bill.Bounds);
+        // These surfaces have been measured by their current composition's
+        // owners. The scene/HUD plan cannot cache a parent reader or payment
+        // surface and move this child target on the next pointer-only frame.
+        if (!sourceReaderActionsBounds.IsEmpty) reservations.Add(sourceReaderActionsBounds);
+        if (!battlefieldReaderStateBounds.IsEmpty) reservations.Add(battlefieldReaderStateBounds);
+        reservations.AddRange(ReaderControlReservations);
         Rectangle? aligned = null;
         if (TableStudyEnabled && producer != null && choices.Length > 0) {
             var preferred = new Rectangle(anchor.Center.X - width / 2, anchor.Top - height - 16, width, height);

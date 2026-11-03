@@ -383,6 +383,10 @@ test('native verification dispatch fixtures remain wired into the required nativ
   const fixtures = fs.readFileSync(path.join(directory, 'test-native-ci.ps1'), 'utf8').replace(/\r\n/g, '\n');
   assert.ok(fixtures.includes("& (Join-Path $PSScriptRoot 'test-native-verification.ps1') -TestDirectory (Join-Path $TestDirectory 'verification')"),
     'Native CI fixtures must execute the actual workflow-block dispatch checks.');
+  assert.match(fixtures, /foreach \(\$size in @\('1000x740','1540x980'\)\)/,
+    'The actual native inventory fixture must require both card-state window sizes.');
+  assert.match(fixtures, /\$_\.mode -ceq '--smoke-card-states' -and \$_\.size -ceq \$size -and \$_\.result -ceq 'card-states-results\.json'/,
+    'Window coverage must bind to the actual card-state mode and receipt, not names alone.');
   assert.ok(fs.statSync(path.join(directory, 'test-native-verification.ps1')).isFile());
 });
 test('full SDK fixture verification starts from tools while product migration retains its exact package', () => {
