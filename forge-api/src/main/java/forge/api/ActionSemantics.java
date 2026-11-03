@@ -82,7 +82,9 @@ final class ActionSemantics {
         result.put("manaAmount", produced);
         result.put("targeted", ability.usesTargeting());
         var restrictions = ability.getRestrictions();
-        result.put("phaseRestricted", ability.isLandAbility() || restrictions.isSorcerySpeed()
+        // Sub-abilities can lack their own route restriction object. They do
+        // not inherit a certified unrestricted timing fact from an absent one.
+        result.put("phaseRestricted", restrictions == null ? null : ability.isLandAbility() || restrictions.isSorcerySpeed()
                 || restrictions.isPlayerTurn() || restrictions.isOpponentTurn()
                 || !restrictions.getPhases().isEmpty() || restrictions.getFirstCombatOnly()
                 || restrictions.getAfterBlockersOnly());
