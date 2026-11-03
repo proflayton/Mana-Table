@@ -10,6 +10,9 @@ namespace Mana.Table;
 internal static partial class AiReleaseGoldens
 {
     private sealed record TerminalAcceptedFrame(AutomatedSeatObservation Observation, UseOfferedAction Command);
+    private sealed record TerminalRouteFunding(string Name, string SourceId, string ActionId,
+        ActionAffordability PublishedAffordability, SemanticKnowledge PublishedManaCostKnowledge,
+        bool RequiresScheduledLoss, bool ScheduledActorLoss, AiManaPlan NominalFunding);
 
     // Capture the actual current input used by the ordinary policy, then retain
     // it only after the ordinary provider accepts the command. No fixture reply
@@ -56,6 +59,7 @@ internal static partial class AiReleaseGoldens
         string safeId = "", castExecution = "", stop = "not-started", detail = "";
         int steps = 0, comparisons = 0;
         bool passed = false, stackSeen = false, resolved = false, currentOffers = false, openingVerified = false;
+        ImmutableArray<TerminalRouteFunding> nominalFunding = [];
         Exception? failure = null;
         var captureErrors = new List<string>();
         try {
@@ -100,13 +104,19 @@ internal static partial class AiReleaseGoldens
                     var frame = safe.Observation;
                     var set = frame.Domain.Sources.Single(item => item.SourceCardKey == safe.Command.Card);
                     safeId = set.SourceCardId;
+                    if (nominalFunding.IsEmpty) nominalFunding = new[] {
+                        TerminalOffer(frame, "Final Fortune", true), TerminalOffer(frame, "Glorious End", true),
+                        TerminalOffer(frame, "Sol Ring", false)
+                    }.OfType<TerminalRouteFunding>().ToImmutableArray();
                     currentOffers = frame.State.ActivePlayerId == 0 && frame.State.PhaseKey == "MAIN1"
                         && frame.State.Decision?.Payload is PriorityPayload
-                        && TerminalOffer(frame, "Final Fortune", true) && TerminalOffer(frame, "Glorious End", true)
-                        && TerminalOffer(frame, "Sol Ring", false)
+                        && nominalFunding.Length == 3 && nominalFunding.All(route =>
+                            route.PublishedAffordability != ActionAffordability.Unavailable
+                            && route.NominalFunding.Status == AiManaPlanStatus.Funded
+                            && (!route.RequiresScheduledLoss || route.ScheduledActorLoss))
                         && set.Actions.Any(action => action.Id == safe.Command.ActionId && action.Kind == "cast");
                     if (!currentOffers)
-                        throw new InvalidDataException("The accepted safe action did not share its exact current input with two payable decoded terminal-risk routes.");
+                        throw new InvalidDataException("The accepted safe action did not share its exact current input with two decoded terminal-risk routes and three nominally funded cast offers.");
                     stackSeen |= state.Stack.Any(item => item.Kind == StackActionKind.Spell && item.ControllerId == 0
                         && item.Card is { } card && CardViews.Identity(card) == safeId);
                     foreach (var entry in receipts.Last.Where(item => item.SeatId == 0).SelectMany(item => item.State.Activity).Concat(state.Activity)) {
@@ -119,7 +129,7 @@ internal static partial class AiReleaseGoldens
                         .Any(card => CardViews.Identity(card) == safeId && card.Name == "Sol Ring");
                     if (openingVerified && currentOffers && stackSeen && resolved && onBattlefield && comparisons > 0) {
                         passed = true; stop = "observed-safe-consequence";
-                        detail = "Both payable real terminal-risk spells remained offered; the ordinary policy instead cast and resolved the same Sol Ring occurrence without initiating either self-defeat route.";
+                        detail = "Both nominally funded real terminal-risk spells remained offered; the ordinary policy instead cast and resolved the same Sol Ring occurrence without initiating either self-defeat route.";
                         break;
                     }
                 }
@@ -140,24 +150,32 @@ internal static partial class AiReleaseGoldens
         if (!summary.DiagnosticErrors.IsEmpty) { captureErrors.AddRange(summary.DiagnosticErrors); passed = false; }
         var evidence = JsonSerializer.SerializeToElement(new { audience = "host-private targeted fixture", openingVerified,
             currentOffers, safeId, castExecution, stackSeen, resolved, firstOwnMain = captured.FirstOwnMain,
+            nominalFunding,
             actualAcceptedSafeInput = captured.SafeCast, unsafeAccepted = captured.UnsafeCasts, commands = receipts.Accepted,
             diagnostics = summary, failure = failure?.ToString(), captureErrors,
             campaignDeckQualificationCredit = false, naturalGameCompletionCredit = false, humanReview = "pending",
-            scope = "Declared eight-card pregame override; actual current JVM facts, decoder, policy and accepted safe consequence. No future-win or protection exception is certified." });
+            scope = "Declared eight-card pregame override; actual current JVM facts, decoder, policy and accepted safe consequence. Per-route published affordability remains explicit; separate read-only nominal funding assessments do not establish an adjusted future bill, submit commands or consume the policy's own work allowance. No future-win or protection exception is certified." });
         var result = new AiGoldenResult("terminal-risk-current-routes", passed && failure == null && captureErrors.Count == 0,
             detail, comparisons, receipts.Accepted.Count, steps, clock.Elapsed.TotalMilliseconds, stop, evidence);
         File.WriteAllText(Path.Combine(directory, "result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         return result;
     }
 
-    private static bool TerminalOffer(AutomatedSeatObservation frame, string name, bool requiresLoss)
+    private static TerminalRouteFunding? TerminalOffer(AutomatedSeatObservation frame, string name, bool requiresLoss)
     {
         var card = frame.State.Viewer!.Zone("Hand").Cards.SingleOrDefault(card => card.Name == name);
-        if (card == null) return false;
+        if (card == null) return null;
         var set = frame.Domain.Sources.SingleOrDefault(source => source.SourceCardId == CardViews.Identity(card));
-        return set != null && set.Actions.Where(action => action.Kind == "cast").Any(route => frame.Domain.Actions.Any(action =>
-            action.ActionId == route.Id && action.Affordability == ActionAffordability.Payable
-            && (!requiresLoss || HasScheduledActorLoss(action.OperationGraph, frame.SeatId))));
+        var route = set?.Actions.SingleOrDefault(action => action.Kind == "cast");
+        if (set == null || route == null) return null;
+        var action = frame.Domain.Actions.Single(item => item.ActionId == route.Id);
+        // The provider deliberately leaves mana-bearing casts Unknown. Use the
+        // existing offline planner with its own bounded work to prove only a
+        // nominal resource assignment on this exact already-recorded input.
+        var funding = AiManaPlanner.EvaluateAction(new AiDecisionFrame(frame.State, domain: frame.Domain, semantics: frame.Semantics),
+            action, workLimit: 2048);
+        return new(name, set.SourceCardId, route.Id, action.Affordability, action.ManaCostKnowledge,
+            requiresLoss, HasScheduledActorLoss(action.OperationGraph, frame.SeatId), funding);
     }
 
     private static bool HasScheduledActorLoss(ActionOperationGraph graph, int actor)

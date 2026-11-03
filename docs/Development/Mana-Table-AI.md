@@ -43,11 +43,16 @@ clause. Scheduled effects are excluded from immediate effect valuation.
 The regressions belong to the existing warmed Java projection and graphics-free
 native policy lanes. They distinguish actual Forge card recipes from authored
 policy fixtures. An additional golden reuses the warmed real-engine gate with a
-declared eight-card test-only library: both affordable delayed-loss spells must
+declared eight-card test-only library: both nominally funded delayed-loss spells must
 remain offered while the ordinary policy instead casts and resolves the same
 Sol Ring occurrence. It verifies the current decoded input and accepted real
 consequence, not a natural game or Commander-deck qualification. None of these
 checks substitutes for observing a complete human/AI game.
+Mana-bearing cast offers intentionally retain unknown affordability. The golden
+preserves that provider fact and separately requires the existing planner's
+nominal funding witness for each current route; it does not relabel a base-cost
+plan as an authoritative adjusted payment. Accepted-action, stack, resolution
+and public-state comparisons establish the safe actual consequence separately.
 Human strategic review remains pending. Deck qualification and M1/M2 completion
 are unchanged.
 
