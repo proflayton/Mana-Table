@@ -145,7 +145,7 @@ internal sealed partial class CardReadingSmoke
             }, "The deliberate Pass once must reconcile its one scoped response");
             return;
         }
-        Prepared(InFlightReady, StackArrivalPresentation.Duration + .6, () => {
+        Prepared(InFlightReady, .6, () => {
             Check(view.FiniteResolution!.CapturedStackIds.SequenceEqual([StackCombatHudScenario.Trigger, StackCombatHudScenario.OlderSpell])
                 && received.Task.Result is PassPriority pass && pass.GameId == game && pass.DecisionId == decision
                 && scenario.Replies.Count == replies,

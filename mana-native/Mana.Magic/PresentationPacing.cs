@@ -9,6 +9,8 @@ public sealed class PresentationPacing
     private double until;
     public bool Ready(double now) => now >= until;
     public void Reset() => until = 0;
+    // A deliberate action acknowledges the current beat, never future observations.
+    public void Acknowledge(double now) => until = Math.Min(until, now);
     public void Observe(GameSnapshot? before, GameSnapshot after, double now)
     {
         double beat = Beat(before, after);

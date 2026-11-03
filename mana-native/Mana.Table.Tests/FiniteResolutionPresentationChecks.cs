@@ -19,6 +19,7 @@ internal static class FiniteResolutionPresentationChecks
 {
     internal static void Run(string profile, Action<bool, string> check)
     {
+        RunFreshClick(profile, check);
         CheckGroupedAnnouncements(check);
         foreach (var viewport in new[] { new Point(1000, 740), new Point(1540, 980) }) {
             CheckServerGrant(profile, viewport, check);
@@ -37,8 +38,8 @@ internal static class FiniteResolutionPresentationChecks
                 run.Capture("armed");
                 check(run.View.FiniteResolution is { IsActive: true, DeclinesOptionalPayments: true }
                         && run.Has("stack-resolution-stop") && run.Text.Contains("0 / 55 completed")
-                        && run.Text.Contains("Panther Idol") && run.Port.Commands.IsEmpty,
-                    "The deliberate negative batch retains its source, initial count and immediate Take control before any cost is declined at " + viewport);
+                        && run.Text.Contains("Panther Idol"),
+                    "The deliberate negative batch retains its source, initially accepted count and immediate Take control when armed at " + viewport);
                 run.Move(new(20, 60));
                 run.Until(() => !run.View.Busy && run.View.FiniteResolution == null, "all 55 terminal receipts");
                 run.Capture("completed");
@@ -84,13 +85,15 @@ internal static class FiniteResolutionPresentationChecks
 
             using (var run = new Journey(profile, "reading-stop-" + viewport.X, viewport, holdFirst: true)) {
                 run.Click("finite-resolution-decline");
+                run.Move(new(20, 60));
+                run.Until(() => run.Port.Started.Task.IsCompleted, "first in-flight decline before reading");
                 var source = run.Run.Frame.Hits.Last(hit => hit.Card?.VisualId == "idol");
                 run.Move(source.Bounds.Center);
                 for (int i = 0; i < 180; i++) run.Tick();
                 check(run.View.FiniteResolution is { IsActive: true, IsPaused: true }
-                        && run.Port.Commands.IsEmpty && run.Has("stack-resolution-stop"),
-                    "Hovering the actual source pauses the finite continuation for reading while Take control remains reachable at " + viewport);
-                run.Move(new(20, 60)); run.Until(() => run.Port.Started.Task.IsCompleted, "first in-flight decline");
+                        && run.View.Busy && run.Port.Commands.Count == 1 && run.Has("stack-resolution-stop"),
+                    "Hovering the actual source pauses further finite work while preserving its one already sent answer and reachable Take control at " + viewport);
+                run.Move(new(20, 60));
                 check(run.Has("stack-resolution-stop") && run.View.Busy,
                     "Take control remains a current local gesture while an already sent optional answer is in flight at " + viewport);
                 run.Click("stack-resolution-stop");
@@ -162,8 +165,8 @@ internal static class FiniteResolutionPresentationChecks
             Tick(); Tick();
             pointer = run.Frame.Hits.Single(hit => hit.Id == "stack-resolution-arm").Bounds.Center;
             Tick(ButtonState.Pressed); Tick(); pointer = new(20, 60);
-            check(port.Commands.IsEmpty && run.View.FiniteResolution?.Progress.CapturedCount == 55,
-                "A server-capable source queue still presents its initial readable beat before sending any finite yield grant at " + viewport + "; manual=" + manual);
+            check(run.View.FiniteResolution?.Progress.CapturedCount == 55,
+                "A deliberate server-capable source gesture captures exactly its current 55 occurrences at " + viewport + "; manual=" + manual);
             if (delayedPublication) {
                 Until(() => port.StopPublicationReady.Task.IsCompleted, "provider's held terminal observation");
                 var intent = run.View.FiniteResolution!;
@@ -331,6 +334,281 @@ internal static class FiniteResolutionPresentationChecks
         check(announcements.Current(.3)?.ExecutionId == "foreign-execution" && announcements.PendingCount == 2,
             "A new real spell is promoted immediately ahead of the grouped captured beat and keeps its own announcement");
         announcements.EndFinite();
+    }
+
+    // A click is already the player's consent to this exact observed queue.
+    // Keep presentation time frozen: sleeping only yields to the real session
+    // worker, and cannot accidentally age away the announcement under test.
+    internal static void RunFreshClick(string profile, Action<bool, string> check)
+    {
+        CheckAcknowledgedAnnouncements(check);
+        foreach (var viewport in new[] { new Point(1000, 740), new Point(1540, 980) })
+        foreach (bool reduced in new[] { false, true })
+        foreach (string mode in new[] { "repeated-grant", "repeated-pass", "distinct-fallback", "optional-decline" }) {
+            using var run = new FreshClickJourney(profile, mode, viewport, reduced);
+            string context = viewport + "; reduced=" + reduced;
+            string action = mode == "optional-decline" ? "finite-resolution-decline" : "stack-resolution-arm";
+            check(run.View.AnnouncementId != null && run.Run.Elapsed == TimeSpan.Zero
+                    && run.Has(action) && run.Port.Commands.IsEmpty,
+                "A newly accepted " + mode + " queue exposes its explicit batch action with a genuinely unaged announcement at " + context);
+            var original = run.View.Match!;
+            var captured = original.Stack.Select(item => item.Id).ToArray();
+            run.Click(action);
+            run.Move(new(20, 60));
+            bool started = run.PumpFrozen(() => run.Port.Started.Task.IsCompleted);
+            run.Capture("first-dispatch");
+            check(started && run.Run.Elapsed == TimeSpan.Zero && run.View.Busy
+                    && run.View.ResolvingCapturedStack && run.Port.Commands.Count == 1
+                    && run.Port.Commands.Single() is DecisionCommand command
+                    && command.GameId == original.Id && command.DecisionId == original.Decision!.Id
+                    && (mode == "repeated-grant" ? command is GrantFiniteStackYield grant
+                        && grant.ExecutionIds.SequenceEqual(original.Stack.Select(item => item.ExecutionId))
+                        : mode == "optional-decline" ? command is CancelPayment : command is PassPriority)
+                    && (mode == "distinct-fallback" ? run.View.FiniteResolution == null
+                        && run.View.StackResolutionRemaining == captured.Length
+                        : run.View.FiniteResolution?.CapturedStackIds.SequenceEqual(captured) == true),
+                "The explicit batch gesture dispatches its first current " + mode + " answer without waiting for a new reading beat at " + context);
+
+            for (int frame = 0; frame < 30; frame++) run.Tick();
+            check(run.View.Busy && run.Port.Commands.Count == 1 && run.Port.ActiveRequests == 1
+                    && run.Port.MaximumConcurrentRequests == 1 && run.Has("stack-resolution-stop"),
+                "The first held " + mode + " request remains the only command operation while Take control stays visible at " + context);
+
+            // This is a new provider response AFTER the explicit capture, not
+            // another member of the already consented simultaneous burst.
+            var response = run.Port.PublishResponse();
+            run.Run.QueueObservation(response);
+            bool interrupted = run.PumpFrozen(() => run.View.Match?.Revision == response.Revision
+                && (run.View.FiniteResolution is not { IsActive: true })
+                && (mode != "distinct-fallback" || !run.View.ResolvingCapturedStack));
+            run.Capture("new-arrival-in-flight");
+            check(interrupted && run.View.Busy && run.Port.Commands.Count == 1
+                    && run.Port.MaximumConcurrentRequests == 1
+                    && run.View.AnnouncementId?.Contains("foreign-execution", StringComparison.Ordinal) == true,
+                "A newly arriving response interrupts the captured " + mode + " intent, keeps its own ordinary announcement and cannot open a second command lane at " + context);
+
+            run.Port.Release.TrySetResult();
+            bool reconciled = run.PumpFrozen(() => !run.View.Busy && !run.View.ResolvingCapturedStack);
+            // Less than one ordinary announcement beat; no deadline is aged
+            // out to make the first-dispatch assertion pass.
+            run.Tick(elapsed: TimeSpan.FromSeconds(.1));
+            for (int frame = 0; frame < 12; frame++) run.Tick();
+            run.Capture("new-arrival-reconciled");
+            check(reconciled && run.View.Match?.Stack[0].Id == "foreign-response"
+                    && run.View.AnnouncementId?.Contains("foreign-execution", StringComparison.Ordinal) == true
+                    && run.Port.Commands.Count(item => item is PassPriority or GrantFiniteStackYield or CancelPayment) == 1
+                    && run.Port.Commands.All(item => item is PassPriority or GrantFiniteStackYield or CancelPayment or RevokeFiniteStackYield)
+                    && run.Port.MaximumConcurrentRequests == 1,
+                "Reconciling the one already sent " + mode + " answer neither replays it nor yields the new response, which retains its reading beat at " + context);
+        }
+    }
+
+    private static void CheckAcknowledgedAnnouncements(Action<bool, string> check)
+    {
+        var state = FreshClickProjection("repeated-pass");
+        var before = state with { Revision = 1, Stack = [], Executions = new(1, 0, [], []) };
+        var arrivals = state.Executions!.Transitions;
+        var announcements = new StackArrivalPresentation();
+        announcements.Observe(before, state, 0, executions: arrivals);
+        var original = announcements.Current(0);
+        int count = announcements.PendingCount;
+        float strength = announcements.Strength(original!.StackId!, 0);
+        announcements.AcknowledgeCurrent(0);
+        check(announcements.ProgressReady(0) && !announcements.Ready(0)
+                && announcements.Current(0) == original && announcements.PendingCount == count
+                && count == state.Stack.Length && announcements.Strength(original.StackId!, 0) == strength,
+            "Acknowledging exact ready announcements releases explicit finite progress without dismissing, aging, reordering or weakening the ordinary visual queue");
+        announcements.EndFinite();
+        check(!announcements.ProgressReady(0) && announcements.Current(0) == original && announcements.PendingCount == count,
+            "Ending finite consent revokes its acknowledgement while retaining the same still-unread visual queue");
+
+        // Once an old beat has actually elapsed, ProgressReady's independent
+        // presented flag is true. A later urgent response must reset that flag
+        // as well as avoid inheriting the old IDs' explicit acknowledgement.
+        announcements.AcknowledgeCurrent(0);
+        double oldBeat = StackArrivalPresentation.Duration + .01;
+        check(announcements.ProgressReady(oldBeat) && announcements.PendingCount == count - 1,
+            "The urgent-response control starts with a real previously presented beat and more acknowledged arrivals still queued");
+        var foreign = Foreign(state, required: false) with { Revision = 3 };
+        var foreignTransition = foreign.Executions!.Transitions[^1];
+        announcements.Observe(state, foreign, oldBeat + .01, executions: [foreignTransition]);
+        check(announcements.Current(oldBeat + .01)?.ExecutionId == "foreign-execution"
+                && !announcements.ProgressReady(oldBeat + .01) && !announcements.Ready(oldBeat + .01),
+            "A future urgent response takes the front of the queue and receives its own unread beat despite prior acknowledgement and earlier presented work");
+
+        var deferred = foreign with { Stack = [], Executions = foreign.Executions with {
+            Occurrences = [foreign.Executions.Occurrences.Single(item => item.Id == "foreign-execution")],
+            Transitions = [foreignTransition] } };
+        var awaiting = new StackArrivalPresentation();
+        awaiting.Observe(before, deferred, 0, executions: [foreignTransition]);
+        awaiting.AcknowledgeCurrent(0);
+        check(awaiting.PendingCount == 1 && awaiting.Current(0) == null && !awaiting.ProgressReady(0),
+            "Acknowledgement cannot authorize an announcement whose source text has not arrived yet");
+        var enriched = deferred with { Revision = 4, Stack = [foreign.Stack[0]] };
+        awaiting.Observe(deferred, enriched, oldBeat, executions: []);
+        check(awaiting.Current(oldBeat) is { ExecutionId: "foreign-execution", AwaitingMetadata: false }
+                && awaiting.Current(oldBeat)?.Text == foreign.Stack[0].Text
+                && !awaiting.ProgressReady(oldBeat) && !awaiting.Ready(oldBeat),
+            "Deferred metadata retains its occurrence identity but exposes newly supplied rules with a fresh unacknowledged reading beat");
+        awaiting.AcknowledgeCurrent(oldBeat);
+        check(awaiting.ProgressReady(oldBeat) && !awaiting.Ready(oldBeat),
+            "Only a new explicit acknowledgement of enriched reading material releases finite progress without consuming its visible announcement");
+        awaiting.Clear();
+        awaiting.Observe(before, enriched, oldBeat, executions: [foreignTransition]);
+        check(!awaiting.ProgressReady(oldBeat),
+            "A cleared presentation cannot carry acknowledged IDs into another occurrence baseline");
+
+        var lifecycle = new MatchPresentationLifecycle();
+        lifecycle.Observe(null, before, 0, BoardView.Identity);
+        lifecycle.Observe(before, state, 0, BoardView.Identity, new(arrivals));
+        lifecycle.BeginFinite(state.Stack.Select(item => (item.ExecutionId, item.Repetition!.GroupKey)), 0);
+        var grouped = lifecycle.Announcement(0);
+        int groupedCount = lifecycle.AnnouncementCount;
+        check(!lifecycle.ReadyForStack(0) && !lifecycle.ReadyForFinite(0) && !lifecycle.Ready(0),
+            "The unacknowledged composed owner starts with its ordinary and finite reading deadlines intact");
+        lifecycle.AcknowledgeCurrentStack(0);
+        check(lifecycle.ReadyForStack(0) && lifecycle.ReadyForFinite(0) && !lifecycle.Ready(0)
+                && lifecycle.Announcement(0) == grouped && lifecycle.AnnouncementCount == groupedCount
+                && grouped is { CapturedCount: 55 },
+            "Composed explicit consent clears only the current dispatch wait while ordinary Auto still waits and the grouped announcement remains visible");
+        lifecycle.Observe(state, foreign, .01, BoardView.Identity, new([foreignTransition]));
+        check(!lifecycle.ReadyForStack(.01) && !lifecycle.ReadyForFinite(.01) && !lifecycle.Ready(.01)
+                && lifecycle.Announcement(.01)?.ExecutionId == "foreign-execution",
+            "A new composed-owner response reinstates ordinary and finite pacing rather than inheriting the previous click's dispatch acknowledgement");
+    }
+
+    private sealed class FreshClickJourney : IDisposable
+    {
+        internal PresentationRun Run { get; }
+        internal TableApplication.Probe View => Run.View;
+        internal FreshClickPort Port { get; }
+        private Point pointer = new(20, 60);
+        internal FreshClickJourney(string profile, string mode, Point viewport, bool reduced)
+        {
+            string path = Path.Combine(profile, "finite-fresh-click-" + mode + "-" + viewport.X + (reduced ? "-reduced" : "-motion"));
+            Directory.CreateDirectory(path);
+            new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = reduced, TextScale = 1.3f }.Save(path);
+            var state = FreshClickProjection(mode);
+            Port = new(state);
+            var initial = state with { Revision = 1, BoardRevision = 1, Stack = [], Activity = [],
+                Executions = new(1, 0, [], []), Decision = null, DecisionOwnerId = null,
+                PriorityPlayerId = null, ActionClass = "resolving", FiniteStackYield = null };
+            var setup = new InteractionScenarioEngine();
+            Run = new(new(setup, setup, Port, () => Task.CompletedTask), path, initial, viewport);
+            Tick(); Tick();
+            Run.QueueObservation(state);
+            if (!PumpFrozen(() => View.Match?.Revision == state.Revision))
+                throw new InvalidOperationException("The fresh stack arrival did not reach the presentation.");
+        }
+        internal bool Has(string id) => Run.Frame.Hits.Any(hit => hit.Id == id);
+        internal void Move(Point logical) { pointer = logical; Tick(); }
+        internal void Click(string id)
+        {
+            var hit = Run.Frame.Hits.Single(item => item.Id == id);
+            pointer = hit.Bounds.Center;
+            Tick(ButtonState.Pressed); Tick();
+        }
+        internal void Tick(ButtonState left = ButtonState.Released, TimeSpan elapsed = default)
+        {
+            var point = RenderViewport.Fit(Run.Viewport, View.DesignHeight).ToPhysical(pointer.ToVector2());
+            Run.Tick(elapsed, new((int)MathF.Ceiling(point.X), (int)MathF.Ceiling(point.Y), 0,
+                left, default, default, default, default));
+        }
+        internal bool PumpFrozen(Func<bool> ready)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(2);
+            while (!ready() && DateTime.UtcNow < deadline) { Tick(); Thread.Sleep(1); }
+            return ready();
+        }
+        internal void Capture(string name) => File.WriteAllText(Path.Combine(View.Profile, name + ".json"),
+            JsonSerializer.Serialize(new { elapsedTicks = Run.ElapsedTicks, frame = Run.Frame.Observe(),
+                announcement = View.AnnouncementId, busy = View.Busy, resolving = View.ResolvingCapturedStack,
+                finiteActive = View.FiniteResolution?.IsActive, finiteStop = View.FiniteResolution?.StopReason,
+                captured = View.FiniteResolution?.CapturedStackIds, remaining = View.StackResolutionRemaining,
+                commands = Port.Commands.Select(command => command.GetType().Name),
+                activeRequests = Port.ActiveRequests, maximumConcurrentRequests = Port.MaximumConcurrentRequests },
+                new JsonSerializerOptions { WriteIndented = true }), System.Text.Encoding.UTF8);
+        public void Dispose() { Port.Release.TrySetResult(); Run.Dispose(); }
+    }
+
+    private sealed class FreshClickPort(GameSnapshot initial) : IMatchConnection
+    {
+        private readonly object gate = new();
+        private GameSnapshot state = initial;
+        private int active, maximum;
+        internal int ActiveRequests => Volatile.Read(ref active);
+        internal int MaximumConcurrentRequests => Volatile.Read(ref maximum);
+        internal ConcurrentQueue<GameCommand> Commands { get; } = new();
+        internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public async Task ExecuteAsync(GameCommand command)
+        {
+            bool first;
+            lock (gate) {
+                if (!GameCommandPermissions.Allows(state, command)
+                    || command is not (PassPriority or GrantFiniteStackYield or CancelPayment or RevokeFiniteStackYield))
+                    throw new InvalidOperationException("The fresh-click transport received a stale or unexpected command.");
+                first = Commands.IsEmpty;
+                Commands.Enqueue(command);
+                int count = Interlocked.Increment(ref active);
+                maximum = Math.Max(maximum, count);
+                if (command is GrantFiniteStackYield grant)
+                    state = state with { FiniteStackYield = new(grant.GrantId, FiniteStackYieldStatus.Active,
+                        grant.ExecutionIds, grant.ExecutionIds, grant.StackActionVersion, grant.ResolutionChoiceVersion) };
+                else if (command is RevokeFiniteStackYield)
+                    state = state with { FiniteStackYield = state.FiniteStackYield! with { Status = FiniteStackYieldStatus.Revoked } };
+                else if (command is CancelPayment) {
+                    // The authored provider accepts the current decline before
+                    // holding its acknowledgement; no subsequent answer is
+                    // authorized until that one RPC has been reconciled.
+                    var completed = Projection(55, completed: 1, paying: false, revision: state.Revision + 1);
+                    long sequence = state.Executions!.LastSequence + 1;
+                    state = completed with { Executions = completed.Executions! with { LastSequence = sequence,
+                        Transitions = state.Executions.Transitions.Add(new(sequence, "idol-execution-0", ExecutionStep.Complete) {
+                            Outcome = ExecutionOutcome.Resolved }) } };
+                }
+            }
+            try {
+                if (first) { Started.TrySetResult(); await Release.Task; }
+            } finally { Interlocked.Decrement(ref active); }
+        }
+        internal GameSnapshot PublishResponse()
+        {
+            lock (gate) {
+                state = Foreign(state, required: false) with { Revision = state.Revision + 1,
+                    BoardRevision = state.BoardRevision + 1 };
+                if (state.FiniteStackYield is { Status: FiniteStackYieldStatus.Active } grant)
+                    state = state with { FiniteStackYield = grant with { Status = FiniteStackYieldStatus.Revoked,
+                        ReasonCode = "outside-action" } };
+                return state;
+            }
+        }
+        public Task<GameSnapshot?> ObserveAsync() { lock (gate) return Task.FromResult<GameSnapshot?>(state); }
+        public Task ConcedeAsync(string gameId) => throw new NotSupportedException();
+    }
+
+    private static GameSnapshot FreshClickProjection(string mode)
+    {
+        var state = mode == "optional-decline" ? Projection(55, paying: true, revision: 2) : ServerProjection(0, 2, null);
+        if (mode != "repeated-grant") state = state with { FiniteStackYield = null };
+        if (mode == "distinct-fallback") {
+            // Missing certification selects the ordinary captured-stack path;
+            // distinct disclosed sources must not acquire repetition consent.
+            var cards = Enumerable.Range(0, 3).Select(index => new Card {
+                Key = "distinct-key-" + index, VisualId = "distinct-source-" + index,
+                Name = "Distinct public spell " + index, Type = "Instant", Text = "Draw a card."
+            }).ToArray();
+            state = state with { StackActionVersion = null, ResolutionChoiceVersion = null,
+                Stack = cards.Select((card, index) => new StackItem(card.Name, card.Text, StackActionKind.Spell, card) {
+                    Id = "distinct-stack-" + index, ExecutionId = "distinct-execution-" + index, ControllerId = 1
+                }).ToImmutableArray(),
+                Executions = new(1, 0, cards.Select((card, index) => new ExecutionOccurrence("distinct-execution-" + index,
+                    "distinct-execution-" + index, ExecutionKind.Spell, ExecutionStep.Stack) {
+                    ActorPlayerId = 1, SourceCardId = card.VisualId, SourceName = card.Name }).ToImmutableArray(), []) };
+        }
+        var transitions = state.Executions!.Occurrences.Where(item => item.Step == ExecutionStep.Stack).Select((item, index) =>
+            new ExecutionTransition(index + 1, item.Id, ExecutionStep.Stack)).ToImmutableArray();
+        return state with { Executions = state.Executions with { LastSequence = transitions.Length, Transitions = transitions } };
     }
 
     private sealed class Journey : IDisposable

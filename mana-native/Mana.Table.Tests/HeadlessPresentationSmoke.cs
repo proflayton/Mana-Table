@@ -52,6 +52,7 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "play-access") CheckPlayAccess(profile, Check, trace, performance);
                 else if (group == "attachment-stack") AttachmentStackChecks.Run(profile, Check);
                 else if (group == "pending-effects") {
+                    FiniteResolutionPresentationChecks.RunFreshClick(profile, Check);
                     PendingEffectPresentationChecks.Run(profile, Check);
                     StackCombatLayoutChecks.Run(profile, Check);
                 }

@@ -2751,6 +2751,17 @@ captured optional costs pause it; only the exact negative completion can resume
 it. A new response, unsupported choice or transport-generation change revokes it.
 Legacy providers keep the bounded client executor without claiming fewer RPCs.
 
+Explicit Resolve these and the existing captured optional-decline gesture
+acknowledge the current presentation through `MatchPresentationLifecycle`.
+That owner releases only the current `PresentationPacing` deadline and known
+`StackArrivalPresentation` announcement prefix; grouping does not restart an
+existing animation. New arrivals and announcements awaiting reading metadata
+are not acknowledged. The finite/legacy continuation may therefore dispatch its
+first current command without another reading delay, while ordinary Auto's
+`Ready` gate still waits for the ordinary queue. This local acknowledgment is
+not an engine receipt, a progress outcome or consent for future effects. It
+changes no command, protocol, Java rules or AI policy.
+
 `ClientSession` owns the single command lane, queued revocations, recovery and
 immutable observation delivery. Reading/Take control withdraw server consent;
 an already sent operation is reconciled. Reset and close cannot resurrect an old

@@ -6,6 +6,41 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Start an explicitly chosen resolution queue promptly: source candidate
+
+**Source candidate; exact-candidate mixed-table human review pending.** The
+player reports that Resolve these sits before it begins passing. The intent is
+to proceed through the current queue after choosing that existing control. Its
+source is the disclosed current stack, and its target is the exact captured
+occurrences. Resolve these still sends the current finite-yield grant or fenced
+priority pass; the existing Decline 55 gesture retains its separately certified
+negative-answer scope. The engine still validates every command and supplies
+all actual progress and results.
+
+MTGO's September 2025 [Through the Omenpaths update](https://www.mtgo.com/news/through-the-omenpaths)
+describes yielding the current trigger group while requiring another gesture
+for new triggers. That observed bounded consent is the reference. Promptly
+dispatching our explicit gesture is our adaptation; the source does not specify
+MTGO's internal timing or promise instant rules resolution.
+
+Previously, capturing the queue restarted its announcement timer and imposed a
+new presentation delay before the first dispatch. The candidate acknowledges
+only the current known announcement prefix and current pacing deadline for
+that explicit gesture. Regrouping keeps the existing animation age. Later
+arrivals and deferred reading material retain their own reading beat, and
+ordinary Auto still waits for its ordinary announcement queue. Reading, Take
+control and required-choice interruptions keep their existing behavior.
+
+The frozen-time physical pointer regression failed on the baseline and the
+focused candidate run passed. It checks first dispatch without advancing the
+presentation clock, including a held first receipt and a new response while it
+is in flight. The full headless lane and rendered click journeys at both window
+sizes passed, with the rendered first-request allowance reduced to 0.6 seconds.
+This measures client
+dispatch, not engine callback time or end-to-end resolution speed. Rules
+availability scans remain a separate profiling question, and automated checks
+do not supply human approval.
+
 ## Read the pending effect and keep the response clear: source candidate
 
 **Source candidate; exact-candidate human review pending.** A reported combat

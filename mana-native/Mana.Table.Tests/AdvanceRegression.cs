@@ -70,9 +70,73 @@ internal static class AdvanceRegression
         pacing.Observe(checkpoints["cast"], checkpoints["cast"], 11);
         Check(!pacing.Ready(11.2) && pacing.Ready(11.3), "Visible casts retain their readable beat; duplicate polls do not extend it");
 
-        wire = new(initial, initial, Next(1) with { Decision = null }, initial with { Revision = 9 }, Next(2), Next(2), response);
-        result = await new DecisionAdvance(wire).RunAsync(initial, CanPass, PresentationPacing.ShouldPresent);
-        Check(result == response && wire.Replies.Count == 2, "Resolving, duplicate and stale observations never repeat a submitted decision");
+        foreach (bool lateObservation in new[] { false, true }) {
+            wire = new(initial, initial, Next(1) with { Decision = null }, initial with { Revision = 9 }, Next(2), Next(2), response);
+            if (lateObservation) {
+                bool delayed = false;
+                wire.BeforeObserve = async () => {
+                    if (delayed) return;
+                    delayed = true;
+                    // A valid late I/O completion can exhaust the unchanged
+                    // 350ms batch allowance before this sequence has drained.
+                    await Task.Delay(400);
+                };
+            }
+            var observedWatch = System.Diagnostics.Stopwatch.StartNew();
+            var observationRunner = new DecisionAdvance(wire);
+            var continuation = initial;
+            var batches = new List<object>();
+            string[] expectedDecisions = [initial.Decision!.Id, Next(2).Decision!.Id];
+            string journal = "advance-observation-prefix" + (lateObservation ? "-late" : "");
+            for (int batch = 0; batch < 8; batch++) {
+                double batchStarted = observedWatch.Elapsed.TotalMilliseconds;
+                result = await observationRunner.RunAsync(continuation, CanPass, PresentationPacing.ShouldPresent);
+                var replyIds = wire.Replies.OfType<AutoPassPriority>().Select(reply => reply.DecisionId).ToArray();
+                bool exactPrefix = wire.Replies.All(reply => reply is AutoPassPriority pass && pass.GameId == initial.Id)
+                    && replyIds.Length <= expectedDecisions.Length && replyIds.SequenceEqual(expectedDecisions.Take(replyIds.Length))
+                    && replyIds.Distinct(StringComparer.Ordinal).Count() == replyIds.Length;
+                var batchEvidence = new {
+                    scenario = "duplicate-and-stale-observations", lateObservation, batch = batch + 1,
+                    elapsedMilliseconds = observedWatch.Elapsed.TotalMilliseconds,
+                    batchMilliseconds = observedWatch.Elapsed.TotalMilliseconds - batchStarted,
+                    startedRevision = continuation.Revision, startedDecision = continuation.Decision?.Id,
+                    returnedRevision = result?.Revision, returnedDecision = result?.Decision?.Id,
+                    finalResponse = result == response, exactPrefix,
+                    expectedDecisions,
+                    replies = wire.Replies.OfType<DecisionCommand>().Select(reply => new {
+                        kind = reply.GetType().Name, reply.GameId, reply.DecisionId }).ToArray(),
+                    observations = wire.Observations.ToArray()
+                };
+                batches.Add(batchEvidence);
+                string batchFacts = JsonSerializer.Serialize(batchEvidence, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(Path.Combine(profile, journal + "-batch-" + (batch + 1) + ".json"), batchFacts);
+                Check(exactPrefix && result != null && result.Id == initial.Id && result.ViewerId == initial.ViewerId
+                        && result.Revision >= continuation.Revision,
+                    "Every bounded batch retains the exact ordered unique AutoPass prefix through resolving, duplicate and stale observations; " + batchFacts);
+                if (lateObservation && batch == 0)
+                    Check(result == initial && wire.Replies.Count == 1 && wire.Observations.Count == 1,
+                        "A late first observation legitimately yields the current prefix after one pass without replay or a larger batch deadline; " + batchFacts);
+                if (result == response) break;
+                // Retain the runner's submitted-decision memory and resume only
+                // its returned authoritative prefix, never the original input.
+                continuation = result!;
+            }
+            observedWatch.Stop();
+            var evidence = new {
+                scenario = "duplicate-and-stale-observations", lateObservation,
+                elapsedMilliseconds = observedWatch.Elapsed.TotalMilliseconds,
+                returnedRevision = result?.Revision, returnedDecision = result?.Decision?.Id,
+                finalResponse = result == response, expectedDecisions, batches,
+                replies = wire.Replies.OfType<DecisionCommand>().Select(reply => new {
+                    kind = reply.GetType().Name, reply.GameId, reply.DecisionId }).ToArray(),
+                observations = wire.Observations.ToArray()
+            };
+            string facts = JsonSerializer.Serialize(evidence, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(Path.Combine(profile, journal + ".json"), facts);
+            Check(result == response, "Bounded continuations reach the next playable response instead of requiring one batch to drain the whole sequence; " + facts);
+            Check(wire.Replies.OfType<AutoPassPriority>().Select(reply => reply.DecisionId).SequenceEqual(expectedDecisions),
+                "The completed sequence submitted exactly its two authorized AutoPass decisions; " + facts);
+        }
         using (var cancellation = new CancellationTokenSource()) {
             wire = new(initial, response); var runner = new DecisionAdvance(wire); cancellation.Cancel();
             await runner.RunAsync(initial, CanPass, PresentationPacing.ShouldPresent, cancellation.Token);
@@ -122,11 +186,13 @@ internal static class AdvanceRegression
         private readonly Queue<GameSnapshot> snapshots = new(observations);
         private GameSnapshot state = initial;
         public readonly List<GameCommand> Replies = [];
+        public readonly List<object> Observations = [];
         public Action? OnReply;
         public Func<Task>? BeforeObserve;
         public async Task<GameSnapshot?> ObserveAsync() {
             if (BeforeObserve != null) await BeforeObserve();
             if (snapshots.TryDequeue(out var next)) state = next;
+            Observations.Add(new { state.Revision, decisionId = state.Decision?.Id });
             return state;
         }
         public Task ExecuteAsync(GameCommand reply) { Replies.Add(reply); OnReply?.Invoke(); return Task.CompletedTask; }
