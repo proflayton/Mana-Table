@@ -10,6 +10,7 @@ public static class PublicActivityFacts
         if (state.Activity.IsDefault || state.Activity.Any(entry => entry == null)) throw Invalid();
         var players = state.Players.Select(player => player.Id).ToHashSet();
         foreach (var entry in state.Activity) {
+            ValidateEntry(entry);
             if (entry.Impact is not { } impact) continue;
             if (impact.SourceControllerId is { } source && !players.Contains(source)
                 || impact.RecipientControllerId is { } recipient && !players.Contains(recipient)) throw Invalid();
@@ -18,6 +19,19 @@ public static class PublicActivityFacts
                     || impact.FromZone == impact.ToZone) throw Invalid();
             }
             else if (impact.Kind == "zone") throw Invalid();
+        }
+    }
+
+    // Shared by live publications and archived history. This validates the
+    // reported shape only; an execution ancestry consumer proves causality.
+    public static void ValidateEntry(ActivityEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        if (entry.HistoricSpell.HasValue && entry.Kind != "cast") throw Invalid();
+        if (entry.Kind == "tapped" || entry.Change is { Kind: "state", Property: "tapped" }) {
+            if (entry.Kind != "tapped" || entry.Change is not { Kind: "state", Property: "tapped" } change
+                || change.Before is not (0 or 1) || change.After is not (0 or 1)
+                || change.Before == change.After) throw Invalid();
         }
     }
 

@@ -6,14 +6,20 @@ import forge.game.spellability.SpellAbilityView;
 import forge.game.spellability.StackItemView;
 import forge.game.spellability.TargetChoices;
 
-public record GameEventSpellAbilityCast(SpellAbilityView sa, StackItemView si, int stackIndex, String targetDescription, boolean copied) implements GameEvent {
+public record GameEventSpellAbilityCast(SpellAbilityView sa, StackItemView si, int stackIndex, String targetDescription,
+                                       boolean copied, Boolean historicSpell) implements GameEvent {
+
+    public GameEventSpellAbilityCast(SpellAbilityView sa, StackItemView si, int stackIndex, String targetDescription, boolean copied) {
+        this(sa, si, stackIndex, targetDescription, copied, null);
+    }
 
     public GameEventSpellAbilityCast(SpellAbilityView sa, StackItemView si, int stackIndex, String targetDescription) {
         this(sa, si, stackIndex, targetDescription, false);
     }
 
     public GameEventSpellAbilityCast(SpellAbility sa, SpellAbilityStackInstance si, int stackIndex) {
-        this(SpellAbilityView.get(sa), StackItemView.get(si), stackIndex, computeTargetDescription(sa), sa.isCopied());
+        this(SpellAbilityView.get(sa), StackItemView.get(si), stackIndex, computeTargetDescription(sa), sa.isCopied(),
+                sa.isSpell() && !sa.isCopied() && sa.getHostCard() != null ? sa.getHostCard().isHistoric() : null);
     }
 
     private static String computeTargetDescription(SpellAbility sa) {

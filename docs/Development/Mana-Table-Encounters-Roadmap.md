@@ -123,6 +123,13 @@ Availability does not qualify any of them, and power bands remain unassessed.
 The configured tests do not count as shipped encounters or bosses. Complete
 the required per-deck/runtime evidence and mixed human/AI review before promotion.
 
+The resource-evidence slice instruments actual historic-cast untaps and explicit
+colorless consumption through the shared execution/history ledger. Its focused
+rules fixtures establish those mechanisms, not a natural strategy result or a
+qualified list. Mixed-lobby automation can establish ownership and progression;
+observed human play remains a separate gate. There are still zero qualified
+lists, no assessed power bands, and no completed M1 or M2 claim.
+
 ### M3: Randomized pod circuit
 
 Implement a circuit scheduler over the shared match/result boundary. Cooperative

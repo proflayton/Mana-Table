@@ -40,6 +40,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     private readonly List<string> diagnosticErrors = [];
     private bool rawObservationsCaptured;
     private AiCampaignQualificationTracker? qualification;
+    internal AiCausalMechanicEvidence? QualificationEvidence => qualification?.CausalEvidence;
 
     internal AiCampaignDiagnostics(string directory)
     {
@@ -410,6 +411,7 @@ internal sealed class AiCampaignProvider(IAutomatedSeatProvider inner, AiCampaig
 {
     private readonly AiCampaignStaleAuthority? stale = staleReplay == null ? null : new();
     private ConfiguredSimulationStart? configured;
+    private readonly AiCausalHistoryReader history = new();
     internal void BindConfigured(ConfiguredSimulationStart start)
     {
         if (configured != null) throw new InvalidOperationException("The campaign provider is already bound to a configured game.");
@@ -438,6 +440,7 @@ internal sealed class AiCampaignProvider(IAutomatedSeatProvider inner, AiCampaig
         }
         diagnostics.ValidatePublicBatch(Last);
         foreach (var observation in Last) diagnostics.Observe(observation);
+        await history.DrainAsync(inner, Last, diagnostics.QualificationEvidence);
         if (stale != null) await stale.ObserveAsync(Last, staleReplay!, diagnostics.RecordStaleProbe);
         return Last;
     }
@@ -447,6 +450,8 @@ internal sealed class AiCampaignProvider(IAutomatedSeatProvider inner, AiCampaig
         try { await inner.ExecuteAutomatedAsync(seatId, command); }
         catch (Exception error) { diagnostics.Receipt(observation, command, false, error.GetType().Name); throw; }
         diagnostics.Receipt(observation, command, true, null);
+        if (observation != null)
+            await history.DrainAsync(inner, [observation], diagnostics.QualificationEvidence, force: true);
         if (observation != null) stale?.Remember(observation, command);
     }
 }

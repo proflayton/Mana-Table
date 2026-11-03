@@ -21,6 +21,18 @@ public final class AiReleaseFixtureEngine {
 
     static void configure(List<RegisteredPlayer> players) {
         String name = players.get(0).getDeck().getName();
+        if (name.equals("Resource qualification Traxos")) {
+            // Explicit controlled runtime, not a shipping Commander list or
+            // campaign deck qualification: opening seven plus the actual first
+            // draw reaches both witnesses before any empty-library draw.
+            var main = players.get(0).getDeck().getMain();
+            main.clear();
+            for (String card : List.of("Mind Stone", "Spatial Contortion",
+                    "Wastes", "Wastes", "Wastes", "Wastes", "Wastes", "Wastes"))
+                main.add(StaticData.instance().getCommonCards().getCard(card));
+            addExtras(players.get(0), Collections.nCopies(8, "Wastes"));
+            return;
+        }
         if (name.equals("AI cooperative ally-benefit") || name.equals("AI cooperative enemy-removal")) {
             if (players.size() != 4) throw new IllegalArgumentException("The cooperative tactical fixture requires four registered players");
             if (name.equals("AI cooperative ally-benefit")) {

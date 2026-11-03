@@ -81,13 +81,18 @@ public class PlaytestObservationsTest {
             player.drawCards(2);
             assertEquals(activity.observations().get("cardsDrawn"), Integer.valueOf(2), "An empty library cannot manufacture another successful draw");
             var shock = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Shock"), player);
+            player.getZone(ZoneType.Hand).add(shock, null, null);
             var spell = shock.getSpellAbilities().get(0);
             spell.setActivatingPlayer(player);
             var stack = new SpellAbilityStackInstance(spell);
-            activity.onGameEvent(new GameEventSpellAbilityCast(spell.getView(), stack.getView(), 0, "", true));
+            activity.onGameEvent(new GameEventSpellAbilityCast(spell.getView(), stack.getView(), 0, "", true, true));
             assertEquals(activity.observations().get("spellsCast"), Integer.valueOf(0), "A copied spell is not cast");
+            assertNull(activity.snapshot().get(activity.snapshot().size() - 1).historicSpell(),
+                    "A copy cannot claim historic-cast credit even if a supplied descriptor says historic");
             activity.onGameEvent(new GameEventSpellAbilityCast(spell.getView(), stack.getView(), 0, "", false));
             assertEquals(activity.observations().get("spellsCast"), Integer.valueOf(1));
+            assertNull(activity.snapshot().get(activity.snapshot().size() - 1).historicSpell(),
+                    "A legacy view-only event cannot invent the actual cast route");
             assertFalse(activity.observations().toString().contains("Forest"));
         }
     }

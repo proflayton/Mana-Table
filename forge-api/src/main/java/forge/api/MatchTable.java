@@ -152,6 +152,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
 
     /** Private child-process host access. These are never network seat capabilities. */
     List<MatchSession> automatedSeats() { return List.copyOf(automated.values()); }
+    boolean retired() { synchronized (gate) { return closed && !faulted; } }
     boolean libraryInspectionActive() { return seats.values().stream().anyMatch(MatchSession::libraryInspectionActive); }
 
     MatchSession automatedSeat(int playerId) {

@@ -20,6 +20,8 @@ internal sealed record AiCampaignWitnessOccurrence(string GameId, int SlotIndex,
 {
     public ImmutableArray<string> CausalExecutionIds { get; init; } = [];
     public int? ObservedCounterDelta { get; init; }
+    public ImmutableArray<long> HistorySequences { get; init; } = [];
+    public ImmutableArray<AiCausalPaymentEvidence> Payments { get; init; } = [];
 }
 internal sealed record AiCampaignDeckWitness(string Id, string Status, string Detail,
     ImmutableArray<AiCampaignWitnessOccurrence> Evidence);
@@ -39,7 +41,8 @@ internal static class AiCampaignQualification
     internal static ImmutableHashSet<string> SupportedWitnessIds { get; } = ImmutableHashSet.Create(StringComparer.Ordinal,
         "rhys-paid-tokens", "owned-equipment-attachment", "dual-commander-casts",
         "useful-opponent-removal", "source-cost-ownership",
-        "loch-mare-counter-cost-draw", "pir-toothy-draw-counters");
+        "loch-mare-counter-cost-draw", "pir-toothy-draw-counters",
+        "historic-traxos-untap", "required-colorless-payment");
     internal static async Task<AiCampaignDeckBinding> BindDeckAsync(IDeckWorkshop workshop, AiCampaignDeck manifest,
         DeckDetails committed, string handle)
     {
@@ -90,7 +93,7 @@ internal sealed class AiCampaignQualificationTracker
     private readonly Dictionary<(int Slot, string Witness), List<AiCampaignWitnessOccurrence>> observed = [];
     private readonly Dictionary<int, List<AiCampaignWitnessOccurrence>> wrongSourceCosts = [];
     private readonly AiCausalMechanicEvidence causal = new();
-    private int importedCausalWitnesses;
+    internal AiCausalMechanicEvidence CausalEvidence => causal;
     private readonly Dictionary<int, Dictionary<string, AiCampaignWitnessOccurrence>> commanderCasts = [];
     private const int MaximumActions = 512, MaximumWitnesses = 8;
 
@@ -165,6 +168,16 @@ internal sealed class AiCampaignQualificationTracker
         }
     }
 
+    internal long HistoryCursor(string gameId, int playerId) => causal.HistoryCursor(gameId, playerId);
+    internal void HistoryUnavailable(string gameId, int playerId) => causal.HistoryUnavailable(gameId, playerId);
+    internal void ObserveHistory(HistoryBatch batch)
+    {
+        if (batch.GameId != accepted.State.Id || !slots.ContainsKey(batch.ViewerId))
+            throw new InvalidDataException("Qualification history changed its accepted game or owned audience.");
+        causal.ObserveHistory(batch);
+        ImportCausalWitnesses();
+    }
+
     internal void ObservePublic(GameSnapshot state)
     {
         ConfiguredSimulationFacts.ValidateState(accepted, state);
@@ -207,18 +220,22 @@ internal sealed class AiCampaignQualificationTracker
     }
 
     internal ImmutableArray<AiCampaignDeckQualification> Summary(string stopReason, bool verifiedNaturalOutcome, string? mechanicalFailure)
-        => accepted.Participants.OrderBy(item => item.Index).Select(participant => {
+    {
+        ImportCausalWitnesses();
+        return accepted.Participants.OrderBy(item => item.Index).Select(participant => {
             bool incomplete = mechanicalFailure != null || stopReason is "time-budget" or "mechanical-failure"
                 || causal.IsIncomplete(accepted.State.Id, participant.PlayerId);
             var witnesses = decks[participant.Index].RequiredWitnessIds.Select(id => {
                 var proof = observed.GetValueOrDefault((participant.Index, id))?.ToImmutableArray() ?? [];
                 bool failed = id == "source-cost-ownership" && wrongSourceCosts.TryGetValue(participant.PlayerId, out var errors) && errors.Count > 0;
                 bool implemented = AiCampaignQualification.SupportedWitnessIds.Contains(id);
+                bool unavailable = id == "required-colorless-payment" && causal.IsHistoryUnavailable(accepted.State.Id, participant.PlayerId);
                 return new AiCampaignDeckWitness(id, failed ? "failed" : !proof.IsEmpty ? "observed"
-                        : !implemented ? "not-instrumented" : incomplete ? "inconclusive" : "not-observed",
+                        : !implemented ? "not-instrumented" : incomplete || unavailable ? "inconclusive" : "not-observed",
                     failed ? "An accepted from-source cost selected a different actual occurrence."
                         : !proof.IsEmpty ? "Accepted command and authoritative attributed consequence recorded for this exact deck/player."
                         : !implemented ? "This defining-mechanic verifier is not implemented in this slice. It remains an explicit coverage gap, regardless of sampled game completion."
+                        : unavailable ? "This provider does not expose owned automated payment history; no actual explicit-colorless payment proof can be claimed."
                         : "This defining branch was not proven. Offers, selected routes, source resolution alone and another deck's effects do not count.",
                     failed ? wrongSourceCosts[participant.PlayerId].ToImmutableArray() : proof);
             }).ToImmutableArray();
@@ -230,6 +247,7 @@ internal sealed class AiCampaignQualificationTracker
                     IntegrityFailures = wrongSourceCosts.GetValueOrDefault(participant.PlayerId)?.ToImmutableArray() ?? []
                 };
         }).ToImmutableArray();
+    }
 
     private void Validate(AutomatedSeatObservation observation)
     {
@@ -239,12 +257,19 @@ internal sealed class AiCampaignQualificationTracker
     }
     private void ImportCausalWitnesses()
     {
+        // A later authoritative payment-restoration record can revoke this
+        // particular payment witness. Reconcile bounded current evidence rather
+        // than letting an append-only import retain invalidated credit.
+        foreach (var key in observed.Keys.Where(key => key.Witness is "source-cost-ownership"
+            or "loch-mare-counter-cost-draw" or "pir-toothy-draw-counters"
+            or "historic-traxos-untap" or "required-colorless-payment").ToArray()) observed.Remove(key);
+        wrongSourceCosts.Clear();
         var records = causal.Witnesses;
-        while (importedCausalWitnesses < records.Length) {
-            var record = records[importedCausalWitnesses++];
+        foreach (var record in records) {
             var proof = Occurrence(record.Before, record.Command, record.SourceCardId, record.SourceName,
                 record.ExecutionId, record.AfterBoardRevision, record.ActivityIds, record.Consequence) with {
-                    CausalExecutionIds = record.CausalExecutionIds, ObservedCounterDelta = record.ObservedCounterDelta
+                    CausalExecutionIds = record.CausalExecutionIds, ObservedCounterDelta = record.ObservedCounterDelta,
+                    HistorySequences = record.HistorySequences, Payments = record.Payments
                 };
             if (record.IntegrityFailure) {
                 if (!wrongSourceCosts.TryGetValue(record.Before.SeatId, out var failures))

@@ -359,6 +359,10 @@ public sealed record ActivityEntry(long Id, int Turn, string PhaseKey, string Ki
     // Exact public stack occurrence, when supplied by its cast/resolution event.
     // Historical correlation only; never a current action handle.
     public string? StackId { get; init; }
+    // Actual spell characteristics captured at cast time, not the card's
+    // earlier physical face. Missing/hidden/synthetic facts remain unknown.
+    // Historical evidence only; this does not authorize another cast.
+    public bool? HistoricSpell { get; init; }
     // Older engines omit this field and remain conservatively interrupting.
     public bool InterruptsQuietYield { get; init; } = true;
     public string Detail { get; init; } = "";

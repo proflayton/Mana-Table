@@ -15,6 +15,20 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
     private readonly Dictionary<(string Game, int Seat), (ForgeCommandScope Scope, DecisionActionDomain Domain)> automatedScopes = [];
     private JsonElement? lastDecodedAutomatedWire;
 
+    // Commit provider-owned table replacement while receiving its successful
+    // receipt, before asynchronous request continuations can finish out of order.
+    // A concession or pending-start cancellation does not replace the table.
+    private void CommitAutomatedWorldReplacement(EngineProcess owner, string method)
+    {
+        if (method is not ("matchStart" or "workshopStartTest" or "multiplayerHost" or "multiplayerJoin"
+            or "multiplayerStart" or "startEncounter" or "retryEncounterStart" or "multiplayerReturn" or "multiplayerClose")) return;
+        lock (automatedScopes) {
+            if (current != owner || owner.Failure != null) return;
+            Interlocked.Increment(ref simulationGeneration);
+            automatedScopes.Clear();
+        }
+    }
+
     public async Task EnableAutomatedSeatsAsync()
     {
         var owner = current ?? throw new IOException("The engine is not running");

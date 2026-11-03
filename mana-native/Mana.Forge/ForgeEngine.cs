@@ -30,6 +30,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         public bool ConfiguredSimulationAvailable { get; set; }
         public bool CertifiedUndoAvailable { get; set; }
         public bool HistoryAvailable { get; set; }
+        public bool AutomatedHistoryAvailable { get; set; }
         public bool MatchSetupAvailable { get; set; }
         public bool EncounterStartAvailable { get; set; }
         public ForgeCommandScope Commands { get; } = new();
@@ -75,6 +76,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                             owner.ConfiguredSimulationAvailable = capabilities.Contains("simulation-match-setup");
                             owner.CertifiedUndoAvailable = capabilities.Contains("certified-one-step-undo");
                             owner.HistoryAvailable = capabilities.Contains("match-history");
+                            owner.AutomatedHistoryAvailable = capabilities.Contains("automated-match-history");
                             owner.MatchSetupAvailable = capabilities.Contains("match-setup");
                             owner.EncounterStartAvailable = capabilities.Contains("durable-encounter-admission");
                             owner.Ready.TrySetResult();
@@ -82,7 +84,10 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
                     } else if (message.TryGetProperty("id", out var id) && pending.TryRemove(id.GetInt64(), out var reply)) {
                         if (message.TryGetProperty("error", out _)) reply.Completion.TrySetException(RequestFailure(reply.Method, message));
-                        else reply.Completion.TrySetResult(message.GetProperty("result").Clone());
+                        else {
+                            CommitAutomatedWorldReplacement(owner, reply.Method);
+                            reply.Completion.TrySetResult(message.GetProperty("result").Clone());
+                        }
                     }
                 }
                 if (!disposed) throw new IOException("The rules engine closed. See engine.log in your profile.");
@@ -131,7 +136,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         // discarding a batch; identical prose on any other failure stays fatal.
         if (method == "automatedState" && Text(message, "errorCode") == "observation-superseded")
             return new EngineObservationSupersededException();
-        if (method == "matchHistory" && Text(message, "errorCode") == "history-unavailable")
+        if (method is "matchHistory" or "automatedMatchHistory" && Text(message, "errorCode") == "history-unavailable")
             return new NotSupportedException("This table does not expose match history.");
         return new EngineCommandRejectedException(Text(message, "error") is { Length: > 0 } error
             ? error : "The rules engine rejected this request.");

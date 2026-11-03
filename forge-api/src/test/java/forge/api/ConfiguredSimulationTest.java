@@ -189,7 +189,7 @@ public class ConfiguredSimulationTest {
         }
     }
 
-    private static final class Fixture implements AutoCloseable {
+    static final class Fixture implements AutoCloseable {
         final Path profile = ApiTestWorkspace.profile("configured-simulation"), evidence = ApiTestWorkspace.evidence("configured-simulation");
         final DesktopEngine engine; final List<String> decks = new ArrayList<>();
         final AtomicReference<MatchTable> created = new AtomicReference<>();

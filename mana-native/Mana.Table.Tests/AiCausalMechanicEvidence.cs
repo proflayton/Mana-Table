@@ -9,22 +9,28 @@ internal sealed record AiCausalMechanicWitness(string WitnessId, AutomatedSeatOb
 {
     public ImmutableArray<string> CausalExecutionIds { get; init; } = [];
     public int? ObservedCounterDelta { get; init; }
+    public ImmutableArray<long> HistorySequences { get; init; } = [];
+    public ImmutableArray<AiCausalPaymentEvidence> Payments { get; init; } = [];
     public string Coverage => "Positive committed-event ancestry, not exhaustive event history. Activity has no exported lower-retention watermark; sparse IDs cannot establish its completeness.";
 }
 
 // Host-private, bounded historical evidence. Neither command receipts, a budget
 // root nor nearby card changes prove that one rules occurrence caused another.
 // The campaign and actual-engine journey deliberately consume this same reader.
-internal sealed class AiCausalMechanicEvidence(int maximumAttempts = 64, int maximumOccurrences = 512,
+internal sealed partial class AiCausalMechanicEvidence(int maximumAttempts = 64, int maximumOccurrences = 512,
     int maximumActivities = 1024)
 {
     private sealed class Ledger
     {
         internal readonly Dictionary<string, ExecutionOccurrence> Executions = new(StringComparer.Ordinal);
         internal readonly Dictionary<long, ActivityEntry> Activities = [];
+        internal readonly Dictionary<string, long> Preparations = new(StringComparer.Ordinal);
+        internal readonly Dictionary<string, (ExecutionOutcome Outcome, long Board)> OwnedTerminal = new(StringComparer.Ordinal);
+        internal readonly Dictionary<long, HistoryRecord> History = [];
         internal long Sequence, Board;
-        internal int Epoch;
-        internal bool HasFrame;
+        internal long HistoryCursor, HistoryBytes;
+        internal int Epoch, HistoryEpoch;
+        internal bool HasFrame, HasHistory, HistoryBacklog;
     }
     private sealed class Attempt(AutomatedSeatObservation before, GameCommand command, ActionCost cost,
         string sourceId, string sourceName, string selectedId, string executionId, int epoch, bool drawRoute)
@@ -46,7 +52,9 @@ internal sealed class AiCausalMechanicEvidence(int maximumAttempts = 64, int max
     private readonly HashSet<(string Game, int Player)> incomplete = [];
     private const int MaximumAudiences = 16, MaximumWitnessesPerKind = 8;
 
-    internal ImmutableArray<AiCausalMechanicWitness> Witnesses => witnesses.ToImmutableArray();
+    internal ImmutableArray<AiCausalMechanicWitness> Witnesses => witnesses.Where(item =>
+        item.WitnessId != "required-colorless-payment"
+        || !restoredPayments.Contains((item.Before.State.Id, item.Before.SeatId, item.ExecutionId))).ToImmutableArray();
     internal bool IsIncomplete(string gameId, int playerId) => incomplete.Contains((gameId, playerId));
 
     internal void Receipt(AutomatedSeatObservation before, GameCommand command, bool accepted)
@@ -73,6 +81,8 @@ internal sealed class AiCausalMechanicEvidence(int maximumAttempts = 64, int max
             var physical = CardViews.InZones(before.State).FirstOrDefault(item => item.PlayerId == before.SeatId
                 && CardViews.Identity(item.Card) == source.SourceCardId).Card;
             if (physical == null) return;
+            if (source.Actions.Single(item => item.Id == offered.ActionId).Kind == "cast")
+                AnchorCast(before, command, source.SourceCardId, physical.Name, ledger);
             // An accepted initiation with no disclosed occurrence must not
             // borrow a later accepted activation on the same physical source.
             foreach (var older in attempts.Where(item => Same(item, before.State.Id, before.SeatId)
@@ -117,6 +127,7 @@ internal sealed class AiCausalMechanicEvidence(int maximumAttempts = 64, int max
     {
         var ledger = Read(observation);
         if (ledger == null) return;
+        ObserveCastOwned(observation, ledger);
         foreach (var attempt in attempts.Where(item => Same(item, observation.State.Id, observation.SeatId)).ToArray()) {
             if (attempt.Epoch != ledger.Epoch || attempt.Ambiguous) continue;
             if (attempt.ExecutionId.Length == 0) {
@@ -155,6 +166,7 @@ internal sealed class AiCausalMechanicEvidence(int maximumAttempts = 64, int max
 
     internal void ObservePublic(GameSnapshot state)
     {
+        ObserveCastPublic(state);
         foreach (var attempt in attempts.Where(item => item.Before.State.Id == state.Id).ToArray()) {
             if (attempt.Ambiguous || !attempt.CostRecorded || attempt.SelectedId != attempt.SourceId
                 || !ledgers.TryGetValue((state.Id, attempt.Before.SeatId), out var ledger)
@@ -229,11 +241,15 @@ internal sealed class AiCausalMechanicEvidence(int maximumAttempts = 64, int max
         if (frame != null && frame.LastSequence < ledger.Sequence) return ledger;
         if (frame != null && ledger.HasFrame && frame.FirstSequence > ledger.Sequence + 1) {
             ledger.Epoch++;
-            ledger.Executions.Clear(); ledger.Activities.Clear();
+            ledger.Executions.Clear(); ledger.Activities.Clear(); ledger.Preparations.Clear(); ledger.OwnedTerminal.Clear();
             incomplete.Add(key);
         }
         if (frame != null) {
+            foreach (var transition in frame.Transitions.Where(item => item.Step == ExecutionStep.Preparation))
+                ledger.Preparations.TryAdd(transition.ExecutionId, transition.Sequence);
             foreach (var execution in frame.Occurrences) {
+                if (execution is { Step: ExecutionStep.Complete, Outcome: { } outcome })
+                    ledger.OwnedTerminal[execution.Id] = (outcome, state.BoardRevision);
                 if (ledger.Executions.TryGetValue(execution.Id, out var prior)) {
                     // Retain a once-admitted historical source binding when a
                     // paid/sacrificed source subsequently becomes anonymous.
@@ -250,7 +266,7 @@ internal sealed class AiCausalMechanicEvidence(int maximumAttempts = 64, int max
         ledger.Board = Math.Max(ledger.Board, state.BoardRevision);
         if (ledger.Executions.Count > maximumOccurrences || ledger.Activities.Count > maximumActivities) {
             ledger.Epoch++;
-            ledger.Executions.Clear(); ledger.Activities.Clear();
+            ledger.Executions.Clear(); ledger.Activities.Clear(); ledger.Preparations.Clear(); ledger.OwnedTerminal.Clear();
             incomplete.Add(key);
         }
         return ledger;
@@ -258,16 +274,20 @@ internal sealed class AiCausalMechanicEvidence(int maximumAttempts = 64, int max
 
     private void Emit(Attempt attempt, string id, long board, ImmutableArray<long> events, string consequence,
         bool integrityFailure = false, ImmutableArray<string> executionIds = default, int? counterDelta = null)
-    {
-        if (witnesses.Count(item => item.Before.State.Id == attempt.Before.State.Id && item.Before.SeatId == attempt.Before.SeatId
-            && item.WitnessId == id && item.IntegrityFailure == integrityFailure) >= MaximumWitnessesPerKind
-            || witnesses.Any(item => item.Before.State.Id == attempt.Before.State.Id && item.Before.SeatId == attempt.Before.SeatId
-                && item.WitnessId == id && item.ExecutionId == attempt.ExecutionId && item.ActivityIds.SequenceEqual(events))) return;
-        witnesses.Add(new(id, attempt.Before, attempt.Command, attempt.SourceId, attempt.SourceName, attempt.ExecutionId,
+        => EmitWitness(new(id, attempt.Before, attempt.Command, attempt.SourceId, attempt.SourceName, attempt.ExecutionId,
             board, events, consequence, integrityFailure) {
                 CausalExecutionIds = executionIds.IsDefault ? [attempt.ExecutionId] : executionIds,
                 ObservedCounterDelta = counterDelta
             });
+
+    private void EmitWitness(AiCausalMechanicWitness witness)
+    {
+        if (witnesses.Count(item => item.Before.State.Id == witness.Before.State.Id && item.Before.SeatId == witness.Before.SeatId
+            && item.WitnessId == witness.WitnessId && item.IntegrityFailure == witness.IntegrityFailure) >= MaximumWitnessesPerKind
+            || witnesses.Any(item => item.Before.State.Id == witness.Before.State.Id && item.Before.SeatId == witness.Before.SeatId
+                && item.WitnessId == witness.WitnessId && item.ExecutionId == witness.ExecutionId
+                && item.ActivityIds.SequenceEqual(witness.ActivityIds))) return;
+        witnesses.Add(witness);
     }
     private static bool SupportedCost(ActionCost cost) => cost.FromSource
         && (cost.Kind == ActionCostKind.Sacrifice || cost.Kind == ActionCostKind.RemoveCounters && cost.Amount is > 0);
