@@ -27,6 +27,107 @@ import static org.testng.Assert.*;
 /** Real script graphs and rules target queries, without playing a scripted AI game. */
 public class ActionOperationProjectionTest {
     @Test(timeOut = 90000)
+    public void delayedLossRecipesRemainTypedUnknownAndDoNotExecuteWhileReadingActualRoutes() throws Exception {
+        try (var fixture = new Fixture()) {
+            var fortune = fixture.ability("Final Fortune", ApiType.AddTurn);
+            var end = fixture.ability("Glorious End", ApiType.EndTurn);
+            var pact = fixture.ability("Pact of Negation", ApiType.Counter);
+            var warp = fixture.ability("Time Warp", ApiType.AddTurn);
+            var gambit = fixture.ability("Alchemist's Gambit", ApiType.AddTurn);
+            var cleave = gambit.getHostCard().getSpellAbilities().stream()
+                    .filter(ability -> ability.getApi() == ApiType.AddTurn && ability != gambit).findFirst().orElseThrow();
+            cleave.setActivatingPlayer(fixture.actor());
+            var oracle = fixture.add("Thassa's Oracle", ZoneType.Battlefield, 0);
+            var win = AbilityFactory.getAbility(oracle.getSVar("DBWin"), oracle); win.setActivatingPlayer(fixture.actor());
+            long timestamp = fixture.table.game.getTimestamp(), executions = fixture.table.game.getExecutions().lastSequence();
+            int life = fixture.actor().getLife();
+            boolean quiet = fixture.table.game.getTriggerHandler().reversibleManaIsQuiescent();
+            var before = List.of(fortune, end, pact, warp, gambit, cleave).stream()
+                    .map(ability -> Map.copyOf(ability.getSVars())).toList();
+            for (var ability : List.of(fortune, end, pact, gambit)) {
+                var graph = fixture.graph(ability);
+                assertEquals(graph.get("knowledge"), "Unknown", "A future recipe is not a promised resolved consequence");
+                var losses = nodes(graph).stream().filter(node -> node.get("effect").equals("LoseGame")).toList();
+                assertEquals(losses.size(), 1, ability.getHostCard().getName());
+                var loss = losses.get(0);
+                assertEquals(loss.get("knowledge"), "Unknown");
+                assertTrue(scheduledPath(graph, (Integer) loss.get("id")), "The loss is reached through an explicit Scheduled edge");
+                assertEquals(recipients(loss).get("binding"), ability == end ? "Unknown" : "Actor");
+                if (ability != end) assertEquals(list(recipients(loss).get("entities")).get(0).get("playerId"), fixture.actor().getId());
+                assertEquals(loss.get("conditional"), ability == pact, "The Pact's unpaid future cost remains a condition, not an immediate payment");
+                assertTrue(list(loss.get("costs")).isEmpty());
+                var committed = fixture.committed(ability);
+                assertTrue(nodes(committed).stream().anyMatch(node -> node.get("effect").equals("LoseGame")),
+                        "Public committed stack graphs retain recipes without claiming that their future loss occurred");
+            }
+            for (var safe : List.of(warp, cleave)) {
+                assertTrue(nodes(fixture.graph(safe)).stream().noneMatch(node -> node.get("effect").equals("LoseGame")),
+                        "The actual safe route never inherits a different route's or physical card face's loss recipe");
+            }
+            assertEquals(ActionSemantics.effect(win), "WinGame", "Terminal wins are distinct typed effects, not an inferred exception to delayed loss");
+            assertEquals(List.of(fortune, end, pact, warp, gambit, cleave).stream().map(ability -> Map.copyOf(ability.getSVars())).toList(), before);
+            assertEquals(fixture.table.game.getTimestamp(), timestamp);
+            assertEquals(fixture.table.game.getExecutions().lastSequence(), executions);
+            assertEquals(fixture.table.game.getTriggerHandler().reversibleManaIsQuiescent(), quiet);
+            assertEquals(fixture.actor().getLife(), life);
+            assertEquals(fixture.actor().getManaPool().totalMana(), 0);
+            assertTrue(fixture.table.game.getStack().isEmpty());
+            assertFalse(fixture.actor().hasLost());
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void scheduledRecipeBoundsCyclesAndMissingDefinitionsNeverBecomeKnownSafeGraphs() throws Exception {
+        try (var fixture = new Fixture()) {
+            var route = fixture.ability("Final Fortune", ApiType.AddTurn);
+            long executions = fixture.table.game.getExecutions().lastSequence();
+            for (String name : List.of("MissingRecipe", "MalformedRecipe")) {
+                route.setSVar("MalformedRecipe", "This is not a rules operation");
+                route.putParam("ExtraTurnDelayedTriggerExecute", name);
+                var unknown = fixture.graph(route);
+                assertEquals(unknown.get("knowledge"), "Unknown");
+                assertTrue(nodes(unknown).stream().flatMap(node -> list(node.get("links")).stream())
+                        .anyMatch(link -> link.get("kind").equals("Scheduled")));
+                assertTrue(nodes(unknown).stream().anyMatch(node -> node.get("effect").equals("Unknown") && node.get("knowledge").equals("Unknown")));
+            }
+            route.setSVar("CycleEffect", "DB$ Effect | Triggers$ CycleTrigger");
+            route.setSVar("CycleTrigger", "Mode$ Phase | Phase$ End of Turn | Execute$ CycleEffect");
+            route.putParam("ExtraTurnDelayedTriggerExecute", "CycleEffect");
+            var cyclic = fixture.graph(route);
+            assertEquals(cyclic.get("knowledge"), "Unsupported"); assertTrue(nodes(cyclic).isEmpty());
+            route.setSVar("ManyEffects", "DB$ Effect | Triggers$ " + java.util.stream.IntStream.range(0, 130)
+                    .mapToObj(index -> "FutureTrigger" + index).collect(java.util.stream.Collectors.joining(",")));
+            route.putParam("ExtraTurnDelayedTriggerExecute", "ManyEffects");
+            var oversized = fixture.graph(route);
+            assertEquals(oversized.get("knowledge"), "Unsupported"); assertTrue(nodes(oversized).isEmpty());
+            var dense = fixture.ability("Divination", ApiType.Draw);
+            var layers = new ArrayList<SpellAbility>(); layers.add(dense);
+            for (int index = 1; index < 34; index++) layers.add(AbilityFactory.getAbility("DB$ Draw | NumCards$ 1", dense.getHostCard()));
+            for (int from = 0; from < layers.size(); from++) for (int to = from + 1; to < layers.size(); to++)
+                layers.get(from).getAdditionalAbilities().put("Forward" + to, layers.get(to));
+            var edgeOverflow = fixture.graph(dense);
+            assertEquals(edgeOverflow.get("knowledge"), "Unsupported", "Acyclic shared references obey the same finite edge budget as ordinary graphs");
+            assertTrue(nodes(edgeOverflow).isEmpty());
+            assertTrue(fixture.table.game.getTriggerHandler().reversibleManaIsQuiescent(), "Reading recipes installs no trigger");
+            assertEquals(fixture.table.game.getExecutions().lastSequence(), executions);
+            assertFalse(fixture.actor().hasLost());
+        }
+    }
+
+    private static boolean scheduledPath(Map<String, Object> graph, int target) {
+        var pending = new java.util.ArrayDeque<int[]>(); pending.add(new int[] {(Integer) graph.get("rootId"), 0});
+        var seen = new java.util.HashSet<String>();
+        while (!pending.isEmpty()) {
+            var current = pending.remove();
+            if (!seen.add(current[0] + ":" + current[1])) continue;
+            if (current[0] == target && current[1] == 1) return true;
+            for (var link : list(nodes(graph).get(current[0]).get("links"))) pending.add(new int[] {
+                    (Integer) link.get("operationId"), current[1] == 1 || link.get("kind").equals("Scheduled") ? 1 : 0 });
+        }
+        return false;
+    }
+
+    @Test(timeOut = 90000)
     public void committedModesExcludeUnusedRecipesAndUnresolvedOrConcealedBindingsStayUnknown() throws Exception {
         try (var fixture = new Fixture()) {
             var confluence = fixture.ability("Mystic Confluence", ApiType.Charm);

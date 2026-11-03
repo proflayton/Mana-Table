@@ -14,10 +14,10 @@ public class FiniteYieldConnectionTest {
         try (var server = new SyncTransport.Server((seat, method, args) -> commands.incrementAndGet(), () -> 1,
                 seat -> { assertEquals(seat, 1); boundaries.incrementAndGet(); });
              var first = new Peer(server.listen())) {
-            var hello = first.exchange("{\"version\":3}");
+            var hello = first.exchange("{\"version\":4}");
             assertEquals(boundaries.get(), 1);
             try (var next = new Peer(server.listen())) {
-                next.exchange("{\"version\":3,\"resume\":\"" + hello.get("resume").getAsString() + "\"}");
+                next.exchange("{\"version\":4,\"resume\":\"" + hello.get("resume").getAsString() + "\"}");
                 assertEquals(boundaries.get(), 2, "Reattachment clears old consent before accepting commands");
                 first.send("{\"sequence\":1,\"method\":\"old\",\"arguments\":{}}");
                 assertNull(first.input.readLine(), "The replaced connection cannot retain command authority");

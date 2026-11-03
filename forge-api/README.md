@@ -50,10 +50,13 @@ omitted/null (leave unchanged) from an explicit empty array (clear).
 The records contain values rather than live engine objects. The desktop serializes
 them through its private transport. Explicit multiplayer hosting starts the seat
 synchronization listener; the desktop command API remains on private stdin/stdout pipes.
-The ready message advertises `protocolVersion: 2` and the `seat-sync`, `snapshots`,
+The ready message advertises `protocolVersion: 3` and the `seat-sync`, `snapshots`,
 `command-receipts`, `resume`, `table-social`, `deck-workshop`, `deck-analysis`, and
 `semantic-priority-actions` and `explicit-deck-setup` capabilities. All connected players
-need this build; the seat synchronization handshake now uses version 3.
+need this build; the seat synchronization handshake now uses version 4.
+The version checks reject older or newer peers before closed operation-graph
+enum values can reach their decoders. Install the complete matching build;
+saved decks and retained-data formats require no migration.
 
 The optional `automated-seats` capability is confined to the private desktop
 process pipe. `automatedEnable` selects external policy controllers before table
@@ -87,6 +90,17 @@ original faces. An unrelated ordinary face-down permanent does not erase known
 commander-color alternatives or an available nominal tap resource.
 Graphs are finite and audience-filtered; candidate references never grant action
 handles. Unmodeled conditions and resource coupling remain explicit.
+`LoseGame` and `WinGame` identify rules-level terminal recipes, separately from
+life changes. `Scheduled` links identify future trigger/extra-turn/generated
+effect continuations of the actual route. Their graph remains unknown: future
+conditions, payments, recipients and successful resolution are not promised.
+These bounded read-only recipes do not install triggers or execute rules.
+They use the same node budget, visibility filtering and graph-local identities.
+They must not be priced as effects executing immediately. Native policy checks
+known self-loss before exploratory cast valuation; it does not infer protection
+or a guaranteed winning line from display text. These new closed enum values
+require coordinated provider/client builds and the updated IPC/sync handshake;
+they are not backward-compatible merely because graph fields were additive.
 Source additions also put `operationGraph` on each pending stack entry, using
 the same grammar rather than reconstructing outcomes from its displayed text.
 These are committed operations: chosen Charm modes follow the actual sequence,
@@ -622,7 +636,8 @@ preparation at 30 seconds of waiting time, then starts the budget even without a
 acknowledgement. Disconnects therefore cannot freeze a timed match indefinitely.
 A monotonic host scheduler enforces expiry independently of polling; clients only
 interpolate the displayed countdown and never dispatch a timeout themselves.
-This retains IPC 2, seat synchronization 3 and all saved-data versions.
+The current build uses IPC 3 and seat synchronization 4; all saved-data versions
+remain unchanged.
 
 ### Deck commands
 
@@ -1089,7 +1104,7 @@ undo and practice attachment; switching uses the existing save-failure guard.
 Omitting `deckId` retains the legacy selected-document read. Editing and starting
 still validate their supplied document/revision and never select an unrelated
 target. Setup responses report the actual selected ID rather than echoing a
-requested association. This additive IPC-2 capability changes no saved-data or
+requested association. This additive IPC-3 capability changes no saved-data or
 multiplayer synchronization format.
 
 A concession receipt does not wait for surviving players to acknowledge loss
@@ -1609,7 +1624,7 @@ another viewer. Unlike an action, reading does not require a current decision or
 its revision/token. `afterSequence` is a nonnegative exact integer no greater
 than the current tail. `limit` defaults to 128 and ranges from 1 through 128.
 
-Synchronization version 3 retains additive handshake capabilities. New hosts
+Synchronization version 4 retains additive handshake capabilities. New hosts
 advertise `match-history`; a legacy hello without capabilities means an empty
 feature set. The desktop API emits typed `history-unavailable` only when that
 negotiated seat feature is absent. Invalid cursors, malformed batches and

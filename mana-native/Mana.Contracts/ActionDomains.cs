@@ -11,7 +11,8 @@ public enum ActionEffectKind
     Unknown, Permanent, Land, Mana, Draw, Damage, Destroy, Exile, Bounce,
     CounterSpell, AddCounters, RemoveCounters, LifeGain, LifeLoss, Token,
     Tap, Untap, Search, Discard, Mill, ChangeControl,
-    Scry, Proliferate, MultiplyCounters, Choose, Conditional, Repeat, Cleanup, MoveCard, Amass
+    Scry, Proliferate, MultiplyCounters, Choose, Conditional, Repeat, Cleanup, MoveCard, Amass,
+    LoseGame, WinGame
 }
 public enum ActionCostKind
 {

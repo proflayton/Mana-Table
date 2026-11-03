@@ -42,6 +42,58 @@ internal static class PendingOperationsWireChecks
                 && state.Stack[0].OperationGraph.Operations[0].Targets!.Candidates[0].PlayerId == 0
                 && state.Decision == null && !GameCommandPermissions.Allows(state, new SelectPlayer(state.Id, "invented", 0)),
             "The shipping adapter retains actual pending damage and its chosen recipient without granting a target or response command");
+
+        JsonNode TerminalWire(string effect) {
+            var changed = wire.DeepClone();
+            changed["stack"]![0]!["operationGraph"] = JsonNode.Parse("""
+                {"knowledge":"Known","rootId":0,"operations":[
+                  {"id":0,"effect":"LoseGame","knowledge":"Known","actorPlayerId":1,
+                   "sources":{"knowledge":"Known","binding":"Source","entities":[
+                     {"id":"source","kind":"Card","cardId":"spell-face","controllerId":1,"ownerId":1}]},
+                   "recipients":{"knowledge":"Known","binding":"Actor","entities":[
+                     {"id":"acting-player","kind":"Player","playerId":1}]}}]}
+                """);
+            changed["stack"]![0]!["operationGraph"]!["operations"]![0]!["effect"] = effect;
+            return changed;
+        }
+        foreach (var outcome in new[] { (Name: "LoseGame", Effect: ActionEffectKind.LoseGame), (Name: "WinGame", Effect: ActionEffectKind.WinGame) }) {
+            var terminal = Decode(TerminalWire(outcome.Name));
+            var operation = terminal.Stack[0].OperationGraph.Operations.Single();
+            check(operation.Effect == outcome.Effect && operation.ActorPlayerId == 1 && operation.Amount == null
+                && operation.Sources.Entities.Single().CardId == "spell-face"
+                && operation.Recipients is { Knowledge: SemanticKnowledge.Known, Binding: EffectRecipientBinding.Actor, Entities.Length: 1 }
+                && operation.Recipients.Entities[0].PlayerId == 1
+                && terminal.Players.Single(participant => participant.Id == 0).Life == 3 && terminal.Players.Single(participant => participant.Id == 1).Life == 40
+                && terminal.Status == "playing" && terminal.Decision == null,
+                "An ordinary human stack snapshot retains literal " + outcome.Name + " and its exact actor without converting the pending outcome to a life change or completed result");
+        }
+        var scheduledWire = TerminalWire("Draw");
+        var scheduledGraph = scheduledWire["stack"]![0]!["operationGraph"]!;
+        scheduledGraph["knowledge"] = "Unknown";
+        var scheduledRoot = scheduledGraph["operations"]![0]!;
+        scheduledRoot["amount"] = 1; scheduledRoot["amountKnowledge"] = "Known";
+        scheduledRoot["links"] = JsonNode.Parse("""[{"operationId":1,"kind":"Scheduled"}]""");
+        ((JsonArray)scheduledGraph["operations"]!).Add(JsonNode.Parse("""
+            {"id":1,"effect":"LoseGame","knowledge":"Unknown","actorPlayerId":1,"conditional":true,
+             "sources":{"knowledge":"Unknown","binding":"Unknown","entities":[]},
+             "recipients":{"knowledge":"Unknown","binding":"Unknown","entities":[]}}
+            """));
+        var scheduled = Decode(scheduledWire).Stack[0].OperationGraph;
+        check(scheduled.Knowledge == SemanticKnowledge.Unknown
+            && scheduled.Operations[0].Links.Single() is { Kind: OperationLinkKind.Scheduled, OperationId: 1 }
+            && scheduled.Operations[1] is { Effect: ActionEffectKind.LoseGame, Knowledge: SemanticKnowledge.Unknown, ActorPlayerId: 1, Conditional: true, Amount: null }
+            && scheduled.Operations[1].Sources is { Knowledge: SemanticKnowledge.Unknown, Binding: EffectRecipientBinding.Unknown, Entities.Length: 0 }
+            && scheduled.Operations[1].Recipients is { Knowledge: SemanticKnowledge.Unknown, Binding: EffectRecipientBinding.Unknown, Entities.Length: 0 },
+            "The real human snapshot decoder keeps a scheduled defeat recipe distinct from immediate sequence effects and preserves unknown future source and recipient bindings");
+        foreach (string invalid in new[] { "effect-string", "effect-integer", "link-string", "link-integer" }) {
+            var changed = scheduledWire.DeepClone();
+            var operation = changed["stack"]![0]!["operationGraph"]!["operations"]![0]!;
+            if (invalid == "effect-string") operation["effect"] = "FutureTerminalOutcome";
+            if (invalid == "effect-integer") operation["effect"] = (int)ActionEffectKind.WinGame;
+            if (invalid == "link-string") operation["links"]![0]!["kind"] = "FutureScheduledRelation";
+            if (invalid == "link-integer") operation["links"]![0]!["kind"] = (int)OperationLinkKind.Scheduled;
+            check(Reject(changed), "Pending terminal wire still rejects undeclared enum strings and integer enum encodings: " + invalid);
+        }
         foreach (var invalid in new[] {
             graph with { RootId = 77 }, graph with { Operations = [node, node] },
             graph with { Operations = [node with { Links = [new(0, OperationLinkKind.Sequence)] }] },

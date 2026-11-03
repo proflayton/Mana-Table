@@ -25,6 +25,7 @@ internal static class AiPolicyRegression
         await CombatAndAllocation(check);
         await TacticalExchangesAndResourceCosts(check);
         await OperationGraphs(check);
+        await TerminalRisks(check);
         await BoundedGraphOptimization(check);
         await BoundedCombatOptimization(check);
         await CausalEpisodes(check);
@@ -1008,6 +1009,154 @@ internal static class AiPolicyRegression
                     ? node with { Links = node.Links.Reverse().ToImmutableArray() } : node).ToImmutableArray() }, 256).Value == 6,
             "Graph recipient and mode estimates survive renamed prose, player/card enumeration changes, node reordering and reordered choice links");
     }
+    private static async Task TerminalRisks(Action<bool, string> check)
+    {
+        var state = State(new PriorityPayload(Yes));
+        state = state with { Players = state.Players.Select(player => player.Id != 0 ? player : player with {
+            Mana = ImmutableDictionary<string, int>.Empty.Add("C", 8)
+        }).ToImmutableArray() };
+        var actor = new EffectRecipients(SemanticKnowledge.Known, EffectRecipientBinding.Actor, null, [PlayerEntity(0)]);
+        var opponent = new EffectRecipients(SemanticKnowledge.Known, EffectRecipientBinding.Explicit, null, [PlayerEntity(1)]);
+        var futureLoss = Graph(Known(0, ActionEffectKind.Unknown, actor) with {
+            Knowledge = SemanticKnowledge.Unknown, Links = [new(1, OperationLinkKind.Scheduled)] },
+            Known(1, ActionEffectKind.LoseGame, actor)) with { Knowledge = SemanticKnowledge.Unknown };
+        var route = new SourceAction("risky-route", "cast", "An ordinary offered action");
+        var metadata = Semantic(route.Id, ActionEffectKind.Unknown) with {
+            Costs = [new(ActionCostKind.Mana, 1, false, "")], OperationGraph = futureLoss
+        };
+        async Task<DecisionCommand?> Answer(ActionOperationGraph graph, SourceAction? action = null)
+            => (await Evaluate(Frame(state, Domain(state, ("hand-spell", action ?? route,
+                metadata with { ActionId = (action ?? route).Id, StableId = (action ?? route).Id, OperationGraph = graph }))))).Command;
+
+        check(await Answer(futureLoss) is PassPriority,
+            "An affordable cast with an unknown immediate effect and a scheduled actor defeat is declined before incomplete-cast exploration can promote it");
+        check(await Answer(Graph(Known(0, ActionEffectKind.LoseGame, actor))) is PassPriority
+                && await Answer(futureLoss, route with { Kind = "activate" }) is PassPriority,
+            "The same terminal-risk boundary protects both immediate self-defeat and a voluntary activated route with future self-defeat");
+        var conditionalLoss = futureLoss with { Operations = [futureLoss.Operations[0], futureLoss.Operations[1] with {
+            Conditional = true, Knowledge = SemanticKnowledge.Unknown }] };
+        check(await Answer(conditionalLoss) is PassPriority,
+            "A conditional future defeat is still a commitment risk; an unmodeled future payment or condition is not assumed to prevent it");
+        var unknownRecipient = futureLoss with { Operations = [futureLoss.Operations[0], futureLoss.Operations[1] with {
+            Recipients = EffectRecipients.Unknown }] };
+        check(await Answer(unknownRecipient) is PassPriority,
+            "An unresolved defeat recipient cannot establish that the acting player is excluded from a voluntary terminal risk");
+        var opponentLoss = futureLoss with { Operations = [futureLoss.Operations[0], futureLoss.Operations[1] with {
+            Recipients = opponent }] };
+        check(await Answer(opponentLoss) is UseOfferedAction { ActionId: "risky-route" },
+            "An explicitly opponent-only future defeat is not mistaken for actor self-defeat; its incomplete cast retains ordinary exploration");
+        var mixed = futureLoss with { Operations = [futureLoss.Operations[0] with {
+            Links = [new(2, OperationLinkKind.Sequence), new(1, OperationLinkKind.Scheduled)] }, futureLoss.Operations[1],
+            Known(2, ActionEffectKind.Unknown, actor) with { Knowledge = SemanticKnowledge.Unknown }] };
+        check(await Answer(mixed) is PassPriority,
+            "An unknown sibling effect cannot erase an independently disclosed future actor defeat from the initiation safety check");
+        var distantLoss = new ActionOperationGraph(SemanticKnowledge.Unknown, 0,
+            Enumerable.Range(0, 96).Select(index => index == 95 ? Known(index, ActionEffectKind.LoseGame, actor)
+                : Known(index, ActionEffectKind.Unknown, actor) with { Knowledge = SemanticKnowledge.Unknown,
+                    Links = [new(index + 1, index == 94 ? OperationLinkKind.Scheduled : OperationLinkKind.Sequence)] }).ToImmutableArray());
+        check(await Answer(distantLoss) is PassPriority,
+            "A future defeat beyond the evaluator's ordinary effect-count allowance cannot escape a bounded conservative initiation check through unsupported-graph exploration");
+        var winThenLoss = futureLoss with { Operations = [futureLoss.Operations[0] with {
+            Effect = ActionEffectKind.WinGame, Knowledge = SemanticKnowledge.Known }, futureLoss.Operations[1]] };
+        check(await Answer(winThenLoss) is PassPriority,
+            "A win headline alone is not a supported winning-line or protection witness that can waive a scheduled self-defeat risk");
+        var futureWin = futureLoss with { Operations = [Known(0, ActionEffectKind.Draw, actor, 1) with {
+            Links = [new(1, OperationLinkKind.Scheduled)] }, Known(1, ActionEffectKind.WinGame, actor)] };
+        check(CasualActionAssessment.Evaluate(state, futureWin, 256) is { Status: CasualAssessmentStatus.Incomplete, Value: <= 0 },
+            "A scheduled winning recipe is not assessed as a current resolved victory or an immediate positive effect");
+
+        var safe = Graph(Known(0, ActionEffectKind.Draw, actor, 2));
+        var alternate = new SourceAction("safe-alternate", "cast", "Same physical card, different route");
+        check((await Evaluate(Frame(state, Domain(state, ("hand-spell", route, metadata),
+            ("hand-spell", alternate, metadata with { ActionId = alternate.Id, StableId = alternate.Id, OperationGraph = safe }))))).Command
+                is UseOfferedAction { ActionId: "safe-alternate" },
+            "A safe current alternative on the same source remains usable instead of inheriting another offered route's future loss");
+        var ordinaryUnknown = Graph(Known(0, ActionEffectKind.Unknown, actor) with {
+            Knowledge = SemanticKnowledge.Unknown }) with { Knowledge = SemanticKnowledge.Unknown };
+        check(await Answer(ordinaryUnknown, route with { Text = "You lose the game at the next end step." }) is UseOfferedAction,
+            "Ordinary incomplete cast exploration remains available, and threatening display prose is not parsed as terminal-risk authority");
+
+        var choose = Known(0, ActionEffectKind.Choose, actor) with { MinChoices = 1, MaxChoices = 2,
+            Links = [new(1, OperationLinkKind.Choice), new(2, OperationLinkKind.Choice)] };
+        var modes = Graph(choose, Known(1, ActionEffectKind.Draw, actor, 2),
+            Known(2, ActionEffectKind.Unknown, actor) with { Knowledge = SemanticKnowledge.Unknown,
+                Links = [new(3, OperationLinkKind.Scheduled)] }, Known(3, ActionEffectKind.LoseGame, actor)) with {
+            Knowledge = SemanticKnowledge.Unknown };
+        check(await Answer(modes) is UseOfferedAction,
+            "A modal initiation remains available when its published minimum can be met entirely by a safe selectable branch");
+        var bothRequired = modes with { Operations = modes.Operations.Select(node => node.Id == 0 ? node with {
+            MinChoices = 2 } : node).ToImmutableArray() };
+        check(await Answer(bothRequired) is PassPriority,
+            "A nonrepeating two-mode minimum cannot evade future self-defeat when only one of the two available modes is safe");
+        var repeatSafe = bothRequired with { Operations = bothRequired.Operations.Select(node => node.Id == 0 ? node with {
+            MayRepeatChoices = true } : node).ToImmutableArray() };
+        check(await Answer(repeatSafe) is UseOfferedAction,
+            "A published repeatable safe mode can satisfy a two-choice minimum without forcing the dangerous alternative");
+        var unknownChooser = modes with { Operations = modes.Operations.Select(node => node.Id == 0 ? node with {
+            Knowledge = SemanticKnowledge.Unknown } : node).ToImmutableArray() };
+        check(await Answer(unknownChooser) is PassPriority,
+            "The activating player's identity does not certify control of a mode choice whose chooser remains unresolved");
+        var futureChoice = Graph(Known(0, ActionEffectKind.Unknown, actor) with { Knowledge = SemanticKnowledge.Unknown,
+                Links = [new(1, OperationLinkKind.Scheduled)] },
+            choose with { Id = 1, Links = [new(2, OperationLinkKind.Choice), new(3, OperationLinkKind.Choice)] },
+            Known(2, ActionEffectKind.Draw, actor, 2), Known(3, ActionEffectKind.LoseGame, actor)) with {
+            Knowledge = SemanticKnowledge.Unknown };
+        check(await Answer(futureChoice) is PassPriority,
+            "A safe-looking mode available only inside a future scheduled recipe is not a current choice plan that justifies taking the defeat risk");
+
+        var payment = State(new PaymentPayload(No, Yes));
+        var producerSource = new EffectRecipients(SemanticKnowledge.Known, EffectRecipientBinding.Source, null, [CardEntity("own-land", 0)]);
+        var producerRisk = futureLoss with { Operations = futureLoss.Operations.Select(node => node with {
+            Sources = producerSource }).ToImmutableArray() };
+        var producer = Semantic("terminal-producer", ActionEffectKind.Mana) with { ManaAbility = true,
+            ManaColors = ["C"], PaymentManaColors = ["C"], ManaAmount = 1,
+            Costs = [new(ActionCostKind.Tap, 1, true, "")], OperationGraph = producerRisk,
+            Production = new(SemanticKnowledge.Known, [new(ImmutableDictionary<string, int>.Empty.Add("C", 1))]) };
+        var producerRoute = new SourceAction(producer.ActionId, "activate", "An available mana source");
+        var bill = new DecisionSemantics { UnpaidMana = ["{C}"] };
+        AiDecisionFrame PaymentFrame(ActionSemantics action) => Frame(payment,
+            Domain(payment, ("own-land", producerRoute with { Id = action.ActionId }, action)), bill);
+        async Task<AiManaPlan?> Funding(AiDecisionFrame frame)
+        {
+            var probe = new TerminalFundingProbe();
+            using var session = new AiSeatSession(frame.State.Id, frame.State.ViewerId, probe, 17,
+                new(TimeSpan.FromSeconds(5), 1024));
+            session.Observe(frame); await session.EvaluateAsync();
+            return probe.Plan;
+        }
+        var plannedRisk = PaymentFrame(producer);
+        check(await Funding(plannedRisk) is { Status: AiManaPlanStatus.Funded, Steps: [AiManaStep.Source] }
+                && (await Evaluate(plannedRisk)).Command is CancelPayment,
+            "A nominally funded producer is still declined during payment when its exact offered activation carries scheduled actor defeat");
+        var fallbackRisk = PaymentFrame(producer with { Production = ManaProduction.Unknown });
+        check(await Funding(fallbackRisk) is { Status: AiManaPlanStatus.Unknown }
+                && (await Evaluate(fallbackRisk)).Command is CancelPayment,
+            "Unknown production cannot bypass terminal-risk checks through the current offered-mana exploration fallback");
+        var safeProducer = producer with { OperationGraph = Graph(Known(0, ActionEffectKind.Mana, actor, 1) with {
+            Sources = producerSource }) };
+        check((await Evaluate(PaymentFrame(safeProducer))).Command is UseOfferedAction { ActionId: "terminal-producer" }
+                && (await Evaluate(PaymentFrame(safeProducer with { Production = ManaProduction.Unknown }))).Command
+                    is UseOfferedAction { ActionId: "terminal-producer" },
+            "Both nominally planned and unknown-production mana sources remain actionable when the same current route has no disclosed self-defeat risk");
+
+        foreach (long seed in new long[] { 0, 17, 91 })
+        foreach (bool reverse in new[] { false, true }) {
+            var renamed = state with { Players = state.Players.Reverse().Select(player => player with {
+                Name = "Different seat name", Zones = player.Zones.Select(zone => zone with {
+                    Cards = zone.Cards.Select(card => card with { Name = "Unfamiliar card", Text = "Translated unrelated prose" }).ToImmutableArray()
+                }).ToImmutableArray() }).ToImmutableArray() };
+            var graph = mixed with { Operations = mixed.Operations.Select(node => node with {
+                Links = reverse ? node.Links.Reverse().ToImmutableArray() : node.Links }).ToImmutableArray() };
+            if (reverse) graph = graph with { Operations = graph.Operations.Reverse().ToImmutableArray() };
+            var offers = new[] { ("hand-spell", route, metadata with { OperationGraph = graph }),
+                ("hand-spell", alternate, metadata with { ActionId = alternate.Id, StableId = alternate.Id, OperationGraph = safe }) };
+            if (reverse) Array.Reverse(offers);
+            check((await Evaluate(Frame(renamed, Domain(renamed, offers)), seed)).Command
+                    is UseOfferedAction { ActionId: "safe-alternate" },
+                $"Terminal-risk filtering preserves the safe route across renamed cards/prose, seat/node/link/offer order and seed {seed} (reversed {reverse})");
+        }
+    }
+
     private static SemanticEntity PlayerEntity(int id) => new("player:" + id, SemanticEntityKind.Player, PlayerId: id, ControllerId: id);
     private static SemanticEntity CardEntity(string id, int controller) => new(id, SemanticEntityKind.Card, id, ControllerId: controller, OwnerId: controller);
     private static ActionOperation Known(int id, ActionEffectKind effect, EffectRecipients recipients, int? amount = null)
@@ -1147,6 +1296,18 @@ internal static class AiPolicyRegression
         check(blocksReady && distinct && used.Count == 40 && blockAssignments.All(item => item.BlockerIds.Length == 1)
                 && completed.Status == AiSeatStatus.Ready && blocking.TakeCommand()?.Command is CompleteBlockers,
             "Forty successive required block assignments and completion share 1024 work units without an optional comparison search starving the remaining legal commands");
+    }
+
+    private sealed class TerminalFundingProbe : IAiPolicy
+    {
+        public AiPolicyDescriptor Descriptor { get; } = new("terminal-funding-probe", AiTasks.All);
+        internal AiManaPlan? Plan;
+        public Task<AiProposal> EvaluateAsync(AiDecisionRequest request, CancellationToken cancellation)
+        {
+            Plan = AiManaPlanner.ForPayment(request, cancellation);
+            return Task.FromResult<AiProposal>(new AiProposal.Answer(
+                new CancelPayment(request.Frame.State.Id, request.Frame.Stamp.DecisionId), "funding-proof-only"));
+        }
     }
 
     private sealed class GraphBudgetProbe(ActionOperationGraph graph) : IAiPolicy

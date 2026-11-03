@@ -106,7 +106,7 @@ public static class CasualActionAssessment
         if (!nodes.ContainsKey(graph.RootId) || state.Viewer == null) return Unsupported("operation-root");
         if (graph.Operations.Any(node => node.Knowledge != SemanticKnowledge.Known || node.Conditional
                 || node.Id != graph.RootId && !node.Costs.IsEmpty
-                || node.Links.Any(link => link.Kind is OperationLinkKind.IfTrue or OperationLinkKind.IfFalse or OperationLinkKind.Repeat or OperationLinkKind.Additional)))
+                || node.Links.Any(link => link.Kind is OperationLinkKind.IfTrue or OperationLinkKind.IfFalse or OperationLinkKind.Repeat or OperationLinkKind.Additional or OperationLinkKind.Scheduled)))
             return Incomplete("conditional-or-coupled-operation");
         var targets = graph.Operations.Where(node => node.Targets != null).OrderBy(node => node.Id).ToArray();
         if (fixedOperation is { } selected && !targets.Any(node => node.Id == selected)) return Incomplete("current-target-operation");

@@ -2,6 +2,7 @@ package forge.api;
 
 import forge.game.GameObject;
 import forge.game.ability.AbilityUtils;
+import forge.game.ability.AbilityFactory;
 import forge.game.ability.ApiType;
 import forge.game.card.Card;
 import forge.game.card.CardCollectionView;
@@ -14,19 +15,27 @@ import forge.game.zone.ZoneType;
 
 import java.util.*;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /** Finite rules-operation graph. Unknown data is retained, never estimated as a resolved effect. */
 final class ActionOperationProjection {
     private static final int MAX_OPERATIONS = 128;
+    private static final int MAX_LINKS = 512;
     private static final Set<String> DISTRIBUTED_AMOUNTS = Set.of("DivideEvenly", "DividerOnResolution", "DividedAsYouChoose", "DividedRandomly");
     private static final Set<String> UNMODELED_RECIPIENTS = Set.of("Radiance", "CardChoices", "PlayerChoices", "RelativeTarget", "ExcessDamage");
     private final Player viewer;
     private final Function<CardView, String> identity;
     private final boolean committed;
-    private final List<SpellAbility> abilities = new ArrayList<>();
+    private sealed interface GraphNode { }
+    private record LiveNode(SpellAbility ability) implements GraphNode { }
+    private record RecipeNode(ScheduledOperationRecipe recipe) implements GraphNode { }
+    private record RecipeKey(String name, boolean trigger, String executeOverride, boolean actorKnown, boolean textChanges) { }
+    private final List<GraphNode> operations = new ArrayList<>();
     private final IdentityHashMap<SpellAbility, Integer> ids = new IdentityHashMap<>();
+    private final IdentityHashMap<SpellAbility, Map<RecipeKey, Integer>> recipeIds = new IdentityHashMap<>();
     private final List<List<Map<String, Object>>> links = new ArrayList<>();
     private boolean truncated;
+    private int linkCount;
 
     static Map<String, Object> describe(SpellAbility ability, Player viewer, Function<CardView, String> identity) {
         if (ability == null) return unknown();
@@ -70,29 +79,46 @@ final class ActionOperationProjection {
 
     private Map<String, Object> graph(SpellAbility root) {
         add(root);
-        for (int index = 0; index < abilities.size(); index++) {
-            SpellAbility ability = abilities.get(index);
+        for (int index = 0; index < operations.size(); index++) {
+            if (operations.get(index) instanceof RecipeNode recipe) {
+                expandRecipe(index, recipe.recipe());
+                continue;
+            }
+            SpellAbility ability = live(index);
             link(index, ability.getSubAbility(), "Sequence");
-            for (var entry : new TreeMap<>(ability.getAdditionalAbilities()).entrySet())
+            for (var entry : new TreeMap<>(ability.getAdditionalAbilities()).entrySet()) {
+                if (entry.getKey().equals("Execute") && (ability.getApi() == ApiType.DelayedTrigger || ability.getApi() == ApiType.ImmediateTrigger)) {
+                    var child = entry.getValue();
+                    boolean knownActor = !ability.hasParam("TriggerController");
+                    recipeLink(index, child, new RecipeKey("", false, "", knownActor, false),
+                            () -> ScheduledOperationRecipe.copied(child, knownActor), "Scheduled");
+                    continue;
+                }
                 link(index, entry.getValue(), switch (entry.getKey()) {
                     case "TrueSubAbility" -> "IfTrue";
                     case "FalseSubAbility" -> "IfFalse";
                     case "RepeatSubAbility" -> "Repeat";
                     default -> "Additional";
                 });
+            }
             for (var entry : new TreeMap<>(ability.getAdditionalAbilityLists()).entrySet()) {
                 // CharmEffect has already copied chosen modes into the linear
                 // subability chain. Choices still contains every unused recipe.
                 if (committed && entry.getKey().equals("Choices")) continue;
                 for (SpellAbility child : entry.getValue()) link(index, child, entry.getKey().equals("Choices") ? "Choice" : "Additional");
             }
+            if ((ability.getApi() == ApiType.DelayedTrigger || ability.getApi() == ApiType.ImmediateTrigger)
+                    && ability.hasParam("Execute") && !ability.hasAdditionalAbility("Execute"))
+                recipeLink(index, ability, ability.getParam("Execute"), false, "", !ability.hasParam("TriggerController"), true, "Scheduled");
+            expandScheduled(index, ability, parameters(ability), ability.getApi(), true);
         }
         if (truncated || !acyclic(0, new HashSet<>(), new HashSet<>()))
             return map("knowledge", "Unsupported", "rootId", 0, "operations", List.of());
         var nodes = new ArrayList<Map<String, Object>>();
-        for (int index = 0; index < abilities.size(); index++) nodes.add(operation(index, abilities.get(index)));
+        for (int index = 0; index < operations.size(); index++) nodes.add(operations.get(index) instanceof RecipeNode recipe
+                ? recipeOperation(index, recipe.recipe()) : operation(index, live(index)));
         boolean known = !truncated && nodes.stream().allMatch(node -> node.get("knowledge").equals("Known"))
-                && links.stream().flatMap(Collection::stream).noneMatch(edge -> edge.get("kind").equals("Additional"));
+                && links.stream().flatMap(Collection::stream).noneMatch(edge -> Set.of("Additional", "Scheduled").contains(edge.get("kind")));
         return map("knowledge", known ? "Known" : "Unknown", "rootId", 0, "operations", List.copyOf(nodes));
     }
 
@@ -106,14 +132,95 @@ final class ActionOperationProjection {
 
     private Integer add(SpellAbility ability) {
         if (ids.containsKey(ability)) return ids.get(ability);
-        if (abilities.size() == MAX_OPERATIONS) { truncated = true; return null; }
-        int index = abilities.size(); ids.put(ability, index); abilities.add(ability); links.add(new ArrayList<>());
+        if (operations.size() == MAX_OPERATIONS) { truncated = true; return null; }
+        int index = operations.size(); ids.put(ability, index); operations.add(new LiveNode(ability)); links.add(new ArrayList<>());
         return index;
     }
     private void link(int from, SpellAbility child, String kind) {
         if (child == null) return;
         Integer to = add(child);
-        if (to != null) links.get(from).add(map("operationId", to, "kind", kind));
+        if (to != null) appendLink(from, to, kind);
+    }
+
+    private void appendLink(int from, int to, String kind) {
+        var edge = map("operationId", to, "kind", kind);
+        if (links.get(from).contains(edge)) return;
+        if (linkCount == MAX_LINKS) { truncated = true; return; }
+        links.get(from).add(edge); linkCount++;
+    }
+
+    private SpellAbility live(int index) { return ((LiveNode) operations.get(index)).ability(); }
+
+    private void recipeLink(int from, SpellAbility context, RecipeKey key, Supplier<ScheduledOperationRecipe> read, String kind) {
+        var scoped = recipeIds.computeIfAbsent(context, ignored -> new HashMap<>());
+        Integer to = scoped.get(key);
+        if (to == null) {
+            if (operations.size() == MAX_OPERATIONS) { truncated = true; return; }
+            to = operations.size(); scoped.put(key, to);
+            operations.add(new RecipeNode(read.get())); links.add(new ArrayList<>());
+        }
+        appendLink(from, to, kind);
+    }
+
+    private void recipeLink(int from, SpellAbility context, String name, boolean trigger, String executeOverride,
+                            boolean actorKnown, boolean textChanges, String kind) {
+        recipeLink(from, context, new RecipeKey(name, trigger, executeOverride, actorKnown, textChanges),
+                () -> ScheduledOperationRecipe.read(context, name, trigger, executeOverride, actorKnown, textChanges), kind);
+    }
+
+    private void expandScheduled(int index, SpellAbility context, Map<String, String> params, ApiType api, boolean actorKnown) {
+        if (api == ApiType.AddTurn && (params.containsKey("ExtraTurnDelayedTrigger") || params.containsKey("ExtraTurnDelayedTriggerExecute")))
+            recipeLink(index, context, params.getOrDefault("ExtraTurnDelayedTrigger", ""), true,
+                    params.getOrDefault("ExtraTurnDelayedTriggerExecute", ""), actorKnown, false, "Scheduled");
+        if (api == ApiType.Effect && params.containsKey("Triggers")) {
+            boolean knownOwner = actorKnown && (!params.containsKey("EffectOwner") || params.get("EffectOwner").equals("You"));
+            for (String trigger : params.get("Triggers").split(",", MAX_OPERATIONS + 1))
+                recipeLink(index, context, trigger.trim(), true, "", knownOwner, true, "Scheduled");
+        }
+    }
+
+    private void expandRecipe(int index, ScheduledOperationRecipe recipe) {
+        var params = recipe.parameters();
+        var api = recipe.api();
+        if (recipe.trigger()) {
+            String execute = recipe.executeOverride().isEmpty() ? params.getOrDefault("Execute", "") : recipe.executeOverride();
+            boolean knownActor = recipe.actorKnown() && !params.containsKey("TriggerController");
+            // A missing Execute is an explicit unknown future recipe, never a
+            // certified empty effect. No trigger is instantiated or installed.
+            recipeLink(index, recipe.context(), execute, false, "", knownActor, true, "Scheduled");
+            return;
+        }
+        if (params.containsKey("SubAbility"))
+            recipeLink(index, recipe.context(), params.get("SubAbility"), false, "", recipe.actorKnown(), true, "Sequence");
+        for (String key : AbilityFactory.additionalAbilityKeys) if (params.containsKey(key)) {
+            String kind = switch (key) {
+                case "TrueSubAbility" -> "IfTrue";
+                case "FalseSubAbility" -> "IfFalse";
+                case "RepeatSubAbility" -> "Repeat";
+                case "Execute" -> api == ApiType.DelayedTrigger || api == ApiType.ImmediateTrigger ? "Scheduled" : "Additional";
+                default -> "Additional";
+            };
+            recipeLink(index, recipe.context(), params.get(key), false, "", recipe.actorKnown() && !params.containsKey("TriggerController"), true, kind);
+        }
+        if (params.containsKey("Choices")) for (String choice : params.get("Choices").split(",", MAX_OPERATIONS + 1))
+            recipeLink(index, recipe.context(), choice.trim(), false, "", recipe.actorKnown(), true, "Choice");
+        expandScheduled(index, recipe.context(), params, api, recipe.actorKnown());
+    }
+
+    private Map<String, Object> recipeOperation(int index, ScheduledOperationRecipe recipe) {
+        var params = recipe.parameters();
+        var actor = recipe.actorKnown() ? recipe.context().getActivatingPlayer() : null;
+        // SourceController/remembered/future targets remain unknown. A present
+        // controller must not substitute for a future recipient binding.
+        var recipients = params.getOrDefault("Defined", "").equals("You") && actor != null
+                ? binding(index, "Actor", null, List.of(entity(index, actor))) : unknownRecipients();
+        var targets = params.containsKey("ValidTgts")
+                ? map("knowledge", "Unknown", "min", null, "max", null, "candidates", List.of()) : null;
+        return map("id", index, "effect", ActionSemantics.effect(recipe.api()), "knowledge", "Unknown",
+                "actorPlayerId", actor == null ? null : actor.getId(), "amount", null, "amountKnowledge", "Unknown",
+                "counterType", params.getOrDefault("CounterType", ""), "conditional", recipe.conditional(),
+                "originZone", "", "destinationZone", "", "sources", unknownRecipients(), "recipients", recipients,
+                "targets", targets, "costs", List.of(), "links", List.copyOf(links.get(index)));
     }
 
     private Map<String, Object> operation(int index, SpellAbility ability) {
@@ -168,7 +275,8 @@ final class ActionOperationProjection {
 
     private boolean containsTarget(int id, Set<Integer> seen) {
         if (!seen.add(id)) return false;
-        return abilities.get(id).usesTargeting() || links.get(id).stream()
+        return (operations.get(id) instanceof LiveNode live ? live.ability().usesTargeting()
+                : ((RecipeNode) operations.get(id)).recipe().parameters().containsKey("ValidTgts")) || links.get(id).stream()
                 .anyMatch(edge -> containsTarget((Integer)edge.get("operationId"), seen));
     }
 
@@ -177,7 +285,7 @@ final class ActionOperationProjection {
             String defined = ability.getParam("DamageSource");
             Integer target = targetBinding(ability, defined);
             if (Set.of("Targeted", "ThisTargeted").contains(defined))
-                return target == null ? unknownRecipients() : selectedBinding(index, target, abilities.get(target));
+                return target == null ? unknownRecipients() : selectedBinding(index, target, live(target));
             if (!defined.equals("Self")) return unknownRecipients();
         }
         var source = entity(index, ability.getHostCard());
@@ -234,12 +342,12 @@ final class ActionOperationProjection {
         boolean definedFirst = ability.getApi() == ApiType.Token || ability.getApi() == ApiType.Mana;
         if (ability.usesTargeting() && (!definedFirst || !ability.hasParam(parameter)))
             return selectedBinding(index, index, ability);
-        boolean playerOperation = Set.of("Draw", "LifeGain", "LifeLoss", "Token", "Mill", "Scry", "Mana").contains(effect);
+        boolean playerOperation = Set.of("Draw", "LifeGain", "LifeLoss", "LoseGame", "WinGame", "Token", "Mill", "Scry", "Mana").contains(effect);
         String defined = ability.getParamOrDefault(parameter, playerOperation ? "You" : "Self");
         if (effect.equals("Search") && !ability.hasParam(parameter)) return unknownRecipients();
         Integer target = targetBinding(ability, defined);
         if (Set.of("Targeted", "ThisTargeted", "ParentTarget").contains(defined))
-            return target == null ? unknownRecipients() : selectedBinding(index, target, abilities.get(target));
+            return target == null ? unknownRecipients() : selectedBinding(index, target, live(target));
         if (Set.of("TargetedController", "ThisTargetedController", "TargetedOwner", "ThisTargetedOwner").contains(defined))
             return target == null ? unknownRecipients() : binding(index, defined.endsWith("Owner") ? "TargetOwners" : "TargetControllers", target, List.of());
         if (defined.equals("You") && ability.getActivatingPlayer() != null)

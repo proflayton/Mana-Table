@@ -19,14 +19,22 @@ internal static class ForgeCommandBoundaryChecks
     internal static void Run(Action<bool, string> check)
     {
         LobbyPublicDeckIdentity(check);
-        var legacyReady = JsonSerializer.SerializeToElement(new { protocolVersion = 2,
+        var legacyReady = JsonSerializer.SerializeToElement(new { protocolVersion = ForgeProtocol.Version,
             capabilities = ForgeProtocol.RequiredCapabilities.Where(capability => capability != "explicit-deck-setup") });
         bool legacyRejected = false;
         try { ForgeProtocol.ReadyCapabilities(legacyReady); } catch (IOException) { legacyRejected = true; }
         check(legacyRejected, "The production ready validator rejects an adapter missing explicit deck setup");
-        var currentReady = JsonSerializer.SerializeToElement(new { protocolVersion = 2,
+        var currentReady = JsonSerializer.SerializeToElement(new { protocolVersion = ForgeProtocol.Version,
             capabilities = ForgeProtocol.RequiredCapabilities.Add("source-actions") });
         check(ForgeProtocol.ReadyCapabilities(currentReady).Contains("source-actions"), "Ready retains optional provider capabilities");
+        foreach (int incompatibleVersion in new[] { 2, 4 }) {
+            var incompatibleReady = JsonSerializer.SerializeToElement(new { protocolVersion = incompatibleVersion,
+                capabilities = ForgeProtocol.RequiredCapabilities });
+            bool rejected = false;
+            try { ForgeProtocol.ReadyCapabilities(incompatibleReady); } catch (IOException) { rejected = true; }
+            check(rejected, "The ready handshake rejects incompatible IPC version " + incompatibleVersion
+                + " before accepting closed operation-graph enums");
+        }
         ObservationCompletionOrder(check).GetAwaiter().GetResult();
 
         var selectionWire = Prompt("""
