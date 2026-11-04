@@ -1,7 +1,6 @@
 package forge.api;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonObject;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
 import forge.gamemodes.match.input.InputPassPriority;

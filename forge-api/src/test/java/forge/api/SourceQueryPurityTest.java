@@ -2,11 +2,8 @@ package forge.api;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
-import forge.game.card.Card;
-import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
-import forge.player.PlayerControllerHuman;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
