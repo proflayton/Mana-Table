@@ -50,6 +50,11 @@ public interface ITableSeatSetup
     Task<Lobby> ConfigureSeatsAsync(string tableId, int players);
     Task<Lobby> SetSeatAsync(string tableId, int seat, string type, string? opponentId = null);
 }
+/// <summary>One connection's rules commands and audience observations. Providers
+/// must bound transport waits. A timeout or lost reply leaves a dispatched
+/// command uncertain; it does not prove rejection or authorize replay. Retiring
+/// a client replica does not cancel committed rules work or create another
+/// command lane on this connection.</summary>
 public interface IMatchConnection
 {
     Task<GameSnapshot?> ObserveAsync();

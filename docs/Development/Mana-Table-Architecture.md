@@ -18,6 +18,17 @@ reservations are captured explicitly before placement; source readers and mana
 choices consume their current owners' measured geometry afterwards, without a
 lazy cache of the preceding composition's painter output.
 
+Resilience belongs to the owner of each capability. A mana color choice must
+retain its current dialog and captured payment parent; a matching prompt ID alone
+is not authority. An executing producer owns its input's busy lifetime; restoring
+the parent's display cannot end that operation. Read sessions use generations,
+including when a viewer leaves and returns to identical context values.
+Client retirement fences results without
+canceling rules work already sent. Providers bound transport waits; losing a
+command reply remains uncertainty until a fresh observation reconciles it.
+The boundary audit maps these contracts to ordinary CI journeys and separates
+stale-authority refusal from resource refunds and live-game recovery.
+
 Java CI isolates API tests in two process-owned workspaces while keeping methods
 and upstream modules serial. Its opt-in Maven profile and shared accounting
 checker bind current compiled inputs, process owners, reports and invocation
