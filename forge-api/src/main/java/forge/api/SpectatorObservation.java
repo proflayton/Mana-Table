@@ -116,7 +116,8 @@ final class SpectatorObservation {
         String kind = hidden ? "card" : card.isEmblem() ? "emblem" : card.isImmutable() ? "effect" : card.isToken() ? "token" : "card";
         var result = map("key", "", "visualId", id(table, card), "combatId", id(table, card),
                 "name", hidden ? "Face-down card" : face.getName(), "type", publicStats ? face.getType().toString() : "",
-                "gamePieceType", kind, "manaCost", hidden ? "" : face.getManaCost().toString(), "text", hidden ? "" : CardRulesText.of(card),
+                "gamePieceType", kind, "manaCost", hidden ? "" : face.getManaCost().toString(),
+                "commanderTax", MatchSession.commanderTax(card, hidden), "text", hidden ? "" : CardRulesText.of(card),
                 "power", publicStats ? face.getPower() : null, "toughness", publicStats ? face.getToughness() : null,
                 "tapped", card.isTapped(), "phasedOut", card.isPhasedOut(), "sick", card.isSick(), "damage", card.getDamage(),
                 "attacking", card.isAttacking(), "blocking", card.isBlocking(), "faceDown", hidden, "selectable", false, "highlighted", false,

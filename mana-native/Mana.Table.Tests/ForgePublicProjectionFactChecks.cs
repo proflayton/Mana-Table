@@ -19,6 +19,9 @@ internal static class ForgePublicProjectionFactChecks
             ("stack order", value => value with { Stack = value.Stack.Reverse().ToImmutableArray() }),
             ("stack occurrence", value => value with { Stack = value.Stack.SetItem(0, value.Stack[0] with { Id = "replacement-trigger" }) }),
             ("stack execution", value => value with { Stack = value.Stack.SetItem(0, value.Stack[0] with { ExecutionId = "replacement-execution" }) }),
+            ("contradictory admitted stack execution", value => ReidentifyExecution(value, "execution-trigger", "other-admitted-execution")),
+            ("unrecognized admitted execution kind", value => ChangeExecution(value, "execution-trigger", occurrence => occurrence with { Kind = (ExecutionKind)int.MaxValue })),
+            ("invalid historical source identifier", value => ChangeExecution(value, "execution-trigger", occurrence => occurrence with { SourceCardId = " " })),
             ("stack controller", value => value with { Stack = value.Stack.SetItem(0, value.Stack[0] with { ControllerId = 3 }) }),
             ("spell versus ability", value => value with { Stack = value.Stack.SetItem(0, value.Stack[0] with { Kind = StackActionKind.Spell }) }),
             ("public card target", value => value with { Stack = value.Stack.SetItem(0, value.Stack[0] with {
@@ -65,6 +68,64 @@ internal static class ForgePublicProjectionFactChecks
             "The same public game tolerates other viewers' private hand/library/face-down disclosures, opaque keys, priority and decision permissions, localized prose and table ordering");
         check(AiWholeSeatEngineCheck.ComparePublicProjection(perspective, state, directory),
             "Public agreement is symmetric when neither audience is a spectator and each retains different private knowledge");
+        var spectator = state with { ViewerId = -1, Executions = null,
+            Stack = state.Stack.Select(item => item with { ExecutionId = "" }).ToImmutableArray() };
+        check(AiWholeSeatEngineCheck.ComparePublicProjection(spectator, state, directory)
+                && AiWholeSeatEngineCheck.ComparePublicProjection(state, spectator, directory),
+            "A spectator's absent execution ledger and stack references agree with locally admitted seat correlations without weakening public stack facts");
+        var privateHistory = perspective with { Executions = perspective.Executions! with {
+            Occurrences = perspective.Executions.Occurrences.Add(new("private-execution", "private-execution", ExecutionKind.Spell, ExecutionStep.Preparation) {
+                ActorPlayerId = 1, SourceCardId = "PRIVATE_NOT_A_PUBLIC_FACT", SourceName = "PRIVATE_NOT_A_PUBLIC_FACT"
+            })
+        } };
+        check(AiWholeSeatEngineCheck.ComparePublicProjection(spectator, privateHistory, directory)
+                && !ForgePublicProjectionFacts.Capture(privateHistory).Contains("PRIVATE_NOT_A_PUBLIC_FACT", StringComparison.Ordinal),
+            "Unreferenced private execution ancestry stays local and is never copied into public comparison evidence");
+        var optionalDescriptors = ChangeExecution(state, "execution-trigger", occurrence => occurrence with {
+            ActorPlayerId = null, SourceCardId = null, SourceName = null
+        });
+        check(AiWholeSeatEngineCheck.ComparePublicProjection(spectator, optionalDescriptors, directory),
+            "An admitted correlation may omit optional actor and source descriptors instead of inventing them from a historical portrait");
+        var changedActor = ChangeExecution(state, "execution-trigger", occurrence => occurrence with { ActorPlayerId = 2 });
+        check(AiWholeSeatEngineCheck.ComparePublicProjection(spectator, changedActor, directory),
+            "An execution's initiating actor need not equal the current controller of a stack occurrence");
+        var classifiedHistory = ChangeExecution(state, "execution-trigger", occurrence => occurrence with { Kind = ExecutionKind.Mana });
+        check(AiWholeSeatEngineCheck.ComparePublicProjection(spectator, classifiedHistory, directory),
+            "An admitted execution's historical kind does not redefine the stack occurrence's public spell-versus-ability fact");
+        var historical = state with { Stack = state.Stack.SetItem(0, state.Stack[0] with {
+            Card = state.Stack[0].Card! with { VisualId = "", CombatId = "historical-source-alias" }
+        }) };
+        check(AiWholeSeatEngineCheck.ComparePublicProjection(spectator, historical, directory),
+            "A historical source portrait without a current disclosed visual anchor cannot contradict an event-time execution source generation");
+        var redisclosed = state with { Stack = state.Stack.SetItem(0, state.Stack[0] with {
+            Card = state.Stack[0].Card! with { VisualId = "new-public-source-generation", CombatId = "new-public-source-generation" }
+        }) };
+        check(AiWholeSeatEngineCheck.ComparePublicProjection(spectator, redisclosed, directory),
+            "A source revealed again under a new visual generation does not rewrite its earlier event-time execution source anchor");
+        var badMapping = state with { Stack = state.Stack.SetItem(0, state.Stack[0] with { ExecutionId = "missing-admitted-occurrence" }) };
+        check(!AiWholeSeatEngineCheck.ComparePublicProjection(badMapping, badMapping, directory),
+            "Two audiences repeating the same dangling supplied execution reference still fail local admitted-frame validation");
+        var admitted = ForgePublicProjectionFacts.CaptureExecutionCorrelations(state);
+        var absent = ForgePublicProjectionFacts.CaptureExecutionCorrelations(spectator);
+        var retained = ForgePublicProjectionFacts.MergeExecutionCorrelations(absent, admitted);
+        retained = retained == null ? null : ForgePublicProjectionFacts.MergeExecutionCorrelations(retained, absent);
+        var contradiction = ForgePublicProjectionFacts.CaptureExecutionCorrelations(ReidentifyExecution(state, "execution-trigger", "other-admitted-execution"));
+        check(retained is { Valid: true, StackExecutionIds.Count: 2 }
+                && !ForgePublicProjectionFacts.ExecutionCorrelationsAgree(retained, contradiction)
+                && ForgePublicProjectionFacts.MergeExecutionCorrelations(retained, contradiction) == null,
+            "A bounded cohort retains admitted stack mappings through an absent spectator frame and rejects a later contradictory admitted identity");
+        AutomatedSeatObservation Audience(GameSnapshot snapshot, int viewer) => new(viewer,
+            snapshot with { ViewerId = viewer }, DecisionActionDomain.None, new());
+        var missingFirst = Audience(spectator, 0);
+        var mappingA = Audience(state, 1);
+        var mappingB = Audience(ReidentifyExecution(state, "execution-trigger", "other-admitted-execution"), 2);
+        check(ForgePublicProjectionChecks.ValidateBatch([missingFirst, mappingA, Audience(spectator, 2)], directory) == 2,
+            "A whole audience batch keeps a later admitted stack mapping even when its first and last observations omit correlation metadata");
+        bool conflictingBatch = false;
+        try { ForgePublicProjectionChecks.ValidateBatch([missingFirst, mappingA, mappingB], directory); }
+        catch (InvalidDataException) { conflictingBatch = true; }
+        check(conflictingBatch,
+            "An absent first audience cannot hide contradictory admitted stack mappings supplied by later audiences in the same batch");
 
         bool Refuses(GameSnapshot other) {
             try { AiWholeSeatEngineCheck.ComparePublicProjection(state, other, directory); return false; }
@@ -107,7 +168,14 @@ internal static class ForgePublicProjectionFactChecks
             ], new([
                 new("a", 1, ["b"], ["b"]) { Blocked = true, Defender = new("player", "1", 1, "Player 1") },
                 new("c", 1, [], []) { Defender = new("card", "walker", 1, "Walker") }
-            ], [], null) { DeclarationId = "viewer-0-declaration" }, null) { BoardRevision = 42, Revision = 100 };
+            ], [], null) { DeclarationId = "viewer-0-declaration" }, null) { BoardRevision = 42, Revision = 100,
+                Executions = new(1, 2, [
+                    new("execution-trigger", "execution-trigger", ExecutionKind.Trigger, ExecutionStep.Stack) {
+                        ActorPlayerId = 0, SourceCardId = "departed-portrait", SourceName = "Historical source" },
+                    new("execution-spell", "execution-spell", ExecutionKind.Spell, ExecutionStep.Stack) {
+                        ActorPlayerId = 2, SourceCardId = "spell-portrait", SourceName = "Public spell" }
+                ], [new(1, "execution-trigger", ExecutionStep.Stack), new(2, "execution-spell", ExecutionStep.Stack)])
+            };
         state = ChangeZone(state, 0, "Battlefield", zone => zone with { Count = 3, Cards = [
             Face("a", "Attacker") with { Attacking = true, Attachments = [new("equipment", "Equipment", "Artifact")] },
             Face("equipment", "Equipment", "Artifact Equipment") with { AttachedTo = new("a", "Attacker", "Creature") },
@@ -157,6 +225,18 @@ internal static class ForgePublicProjectionFactChecks
 
     private static GameSnapshot ChangePlayer(GameSnapshot state, int id, Func<Player, Player> change) => state with {
         Players = state.Players.Select(player => player.Id == id ? change(player) : player).ToImmutableArray()
+    };
+    private static GameSnapshot ChangeExecution(GameSnapshot state, string id, Func<ExecutionOccurrence, ExecutionOccurrence> change) => state with {
+        Executions = state.Executions! with { Occurrences = state.Executions.Occurrences.Select(occurrence => occurrence.Id == id ? change(occurrence) : occurrence).ToImmutableArray() }
+    };
+    private static GameSnapshot ReidentifyExecution(GameSnapshot state, string oldId, string nextId) => state with {
+        Stack = state.Stack.Select(item => item.ExecutionId == oldId ? item with { ExecutionId = nextId } : item).ToImmutableArray(),
+        Executions = state.Executions! with {
+            Occurrences = state.Executions.Occurrences.Select(occurrence => occurrence.Id == oldId
+                ? occurrence with { Id = nextId, BudgetRootId = nextId } : occurrence).ToImmutableArray(),
+            Transitions = state.Executions.Transitions.Select(transition => transition.ExecutionId == oldId
+                ? transition with { ExecutionId = nextId } : transition).ToImmutableArray()
+        }
     };
     private static GameSnapshot ChangeZone(GameSnapshot state, int id, string name, Func<Zone, Zone> change) => ChangePlayer(state, id,
         player => player with { Zones = player.Zones.Select(zone => zone.Name == name ? change(zone) : zone).ToImmutableArray() });

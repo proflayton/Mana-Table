@@ -118,6 +118,17 @@ internal static class AiIntentPolicyRegression
 
     private static async Task PreserveDefense(Action<bool, string> check)
     {
+        var maskedFrame = Attack();
+        var maskedState = maskedFrame.State with { Players = maskedFrame.State.Players.Select(player => player with {
+            Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Select(card => card.VisualId == "sole-defender"
+                ? card with { Name = "Face-down card", VisualId = "", FaceDown = true, Power = 2, Toughness = 2 }
+                : card).ToImmutableArray() }).ToImmutableArray()
+        }).ToImmutableArray() };
+        var masked = await Evaluate(new(maskedState, domain: DecisionActionDomain.None));
+        check(masked.Status == AiSeatStatus.Ready && masked.Proposal is CompleteAttackers
+                && masked.Evidence?.ProposedPlanTransition?.Next is { Purpose: AiPlanPurpose.Defend } maskedPlan
+                && maskedPlan.RetainedBlockerIds.Contains("sole-defender") && maskedState.ActionSources.IsEmpty,
+            "A public own face-down 2/2 remains a real defensive resource without private printed-face knowledge or an invalid combat plan");
         var vulnerable = await Evaluate(Attack());
         check(vulnerable.Proposal is CompleteAttackers
                 && vulnerable.Evidence?.ProposedPlanTransition?.Next is { Purpose: AiPlanPurpose.Defend } plan

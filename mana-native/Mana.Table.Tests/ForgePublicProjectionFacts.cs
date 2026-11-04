@@ -10,6 +10,34 @@ namespace Mana.Table;
 // face are not public facts, even when an owner has a private disclosure.
 internal static class ForgePublicProjectionFacts
 {
+    // Retained cohort evidence contains public stack IDs and admitted historical
+    // correlation IDs only, never a private hand, source face or action handle.
+    internal sealed record ExecutionCorrelation(string GameId, long BoardRevision, bool Valid,
+        ImmutableDictionary<string, string> StackExecutionIds);
+
+    internal static ExecutionCorrelation CaptureExecutionCorrelations(GameSnapshot state)
+    {
+        var ids = ImmutableDictionary.CreateBuilder<string, string>(StringComparer.Ordinal);
+        ExecutionCorrelation Invalid() => new(state.Id, state.BoardRevision, false, ImmutableDictionary<string, string>.Empty);
+        try { ExecutionFrames.Validate(state); }
+        catch (ArgumentException) { return Invalid(); }
+        foreach (var item in state.Stack) {
+            if (item.ExecutionId.Length == 0) continue;
+            if (ExecutionFrames.Find(state, item.ExecutionId) == null || item.Id.Length == 0 || ids.ContainsKey(item.Id)) return Invalid();
+            // Actor, historical source generation and execution kind need not
+            // equal current stack control, visibility or wrapper classification.
+            ids.Add(item.Id, item.ExecutionId);
+        }
+        return new(state.Id, state.BoardRevision, true, ids.ToImmutable());
+    }
+
+    internal static bool ExecutionCorrelationsAgree(ExecutionCorrelation first, ExecutionCorrelation second)
+        => first.Valid && second.Valid && first.GameId == second.GameId && first.BoardRevision == second.BoardRevision
+            && first.StackExecutionIds.All(pair => !second.StackExecutionIds.TryGetValue(pair.Key, out string? other) || other == pair.Value);
+
+    internal static ExecutionCorrelation? MergeExecutionCorrelations(ExecutionCorrelation first, ExecutionCorrelation second)
+        => ExecutionCorrelationsAgree(first, second) ? first with { StackExecutionIds = first.StackExecutionIds.SetItems(second.StackExecutionIds) } : null;
+
     internal static string Capture(GameSnapshot state)
     {
         var publicCards = state.Players.SelectMany(player => player.Zones
@@ -47,7 +75,7 @@ internal static class ForgePublicProjectionFacts
             // Forge's finer Kind/effect/operation projections depend on source
             // disclosure. Do not compare those or infer a source by its name.
             stack = state.Stack.Select(item => new {
-                item.Id, item.ExecutionId, item.ControllerId, item.Ability,
+                item.Id, item.ControllerId, item.Ability,
                 targets = item.Targets.Where(target => target.Kind != "card" || publicIds.Contains(target.Id))
                     .OrderBy(target => target.Kind, StringComparer.Ordinal)
                     .ThenBy(target => target.Id, StringComparer.Ordinal).ThenBy(target => target.PlayerId)

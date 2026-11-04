@@ -302,7 +302,11 @@ public sealed partial class ClientSession
         _ = Task.Run(async () => {
             try {
                 var lobby = withLobby ? await (setup ?? throw new InvalidOperationException("No lobby connection")).LobbyAsync() : null;
-                var state = !withLobby || lobby?.MatchActive == true ? await connection.ObserveAsync() : null;
+                GameSnapshot? state;
+                try { state = !withLobby || lobby?.MatchActive == true ? await connection.ObserveAsync() : null; }
+                // Discovery produced no observation or command receipt. Keep the
+                // current replica and let the next ordinary poll read afresh.
+                catch (EngineObservationSupersededException) { return; }
                 Exception? admissionFailure = null;
                 try { audience?.Validate(state); }
                     catch (IOException error) { admissionFailure = error; }

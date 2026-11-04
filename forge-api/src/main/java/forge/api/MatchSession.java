@@ -2538,7 +2538,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return source != null && SourceActions.hasLinkedAction(prompt.input, source, this::visibleActionHost);
     }
 
-    private static int commanderTax(CardView card, boolean hidden) {
+    static int commanderTax(CardView card, boolean hidden) {
         return hidden || !card.isCommander() || card.getOwner() == null ? 0 : 2 * card.getOwner().getCommanderCast(card);
     }
 

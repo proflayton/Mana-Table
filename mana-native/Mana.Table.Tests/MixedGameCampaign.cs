@@ -70,7 +70,8 @@ internal static class MixedGameCampaign
         using var guest = new ConnectedPlayerDriver(engines[1], evidence, limits.PolicySeed + match + 100);
         await using var trace = new StreamWriter(new GZipStream(File.Create(Path.Combine(paths.Profile, "public-facts.jsonl.gz")), CompressionLevel.Fastest));
         var elapsed = Stopwatch.StartNew();
-        var cohorts = new Dictionary<(string Game, long Board), (string Facts, HashSet<int> Viewers)>();
+        var cohorts = new Dictionary<(string Game, long Board), (string Facts,
+            ForgePublicProjectionFacts.ExecutionCorrelation Correlations, HashSet<int> Viewers)>();
         var completeCohorts = new HashSet<(string Game, long Board)>();
         var developed = new HashSet<int>();
         var identities = new HashSet<int>();
@@ -170,13 +171,18 @@ internal static class MixedGameCampaign
                     foreach (var player in frame.Players)
                         if (player.Zone("Battlefield").Cards.Any(card => card.Type.Contains("Land", StringComparison.Ordinal))) developed.Add(player.Id);
                     string facts = ForgePublicProjectionFacts.Capture(frame);
+                    var correlations = ForgePublicProjectionFacts.CaptureExecutionCorrelations(frame);
+                    if (!correlations.Valid) throw new InvalidDataException("An audience published invalid execution references.");
                     var key = (frame.Id, frame.BoardRevision);
                     if (cohorts.TryGetValue(key, out var prior)) {
                         if (prior.Facts != facts) throw new InvalidDataException("The same published board disagreed across observations; see private-final-observations.json.");
+                        var merged = ForgePublicProjectionFacts.MergeExecutionCorrelations(prior.Correlations, correlations)
+                            ?? throw new InvalidDataException("Audiences disclosed contradictory references for the same stack occurrence.");
+                        cohorts[key] = (prior.Facts, merged, prior.Viewers);
                         if (prior.Viewers.Add(item.SeatId)) comparisons++;
                         if (prior.Viewers.Count == 4) completeCohorts.Add(key);
                     } else {
-                        cohorts.Add(key, (facts, [item.SeatId]));
+                        cohorts.Add(key, (facts, correlations, [item.SeatId]));
                         await trace.WriteLineAsync(JsonSerializer.Serialize(new { steps, elapsedMilliseconds = elapsed.Elapsed.TotalMilliseconds, facts = JsonSerializer.Deserialize<JsonElement>(facts) }));
                     }
                 }
@@ -214,7 +220,8 @@ internal static class MixedGameCampaign
             }
             await SaveAsync(Path.Combine(paths.Profile, "private-player-receipts.json"), new {
                 host = new { host.ClientAdmissions, host.ProviderAcceptances, host.History },
-                guest = new { guest.ClientAdmissions, guest.ProviderAcceptances, guest.History }
+                guest = new { guest.ClientAdmissions, guest.ProviderAcceptances, guest.History },
+                automated = new { histories = bots.Histories, fault = bots.LastFault }
             });
             // All outcome/evidence is captured before lifecycle teardown. This
             // runner never concedes, substitutes a seat or declares a cutoff a win.

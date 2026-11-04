@@ -517,10 +517,23 @@ including turn/phase, identities and attachments, graveyard/exile contents,
 stack order/controllers/targets, and combat assignments. Hidden hand/library
 contents, private offers, prose and source portraits are excluded. A bounded
 cohort cache also catches contradictions between repeated observations of one
-audience. Full snapshots, decisions, receipts and policy replay cases stay in
+audience. Stack execution references are optional audience-admitted correlation,
+not universal public fields: each supplied reference must join a structurally
+valid local admitted frame. Historical actor, source-generation and execution-kind
+metadata do not redefine current stack control, visibility or spell-wrapper facts.
+References exposed by both audiences must agree; an absent spectator reference
+does not erase a previously admitted cohort mapping. Full snapshots, decisions, receipts and policy replay cases stay in
 explicitly private artifacts. Typed natural outcomes must be present and agree
 across all four audiences before lifecycle teardown. No forced concession,
 cutoff, passive-prefix completion or unrun rotation counts as a successful game.
+
+Printed name/type/mana on a current stack spell's portrait are not an independent
+comparison gate yet: the existing stack source field can also describe historical
+ability sources, and current-spell provenance has not been established for every
+producer. Stack occurrence, controller, spell/ability status and public targets
+remain strict; this portrait-identity gap is unproven coverage, not a reason to
+infer identity from card names.
+
 The collector pins the actual ready lobby's selection identities and exact saved
 semantic deck versions, derives physical slot/player mapping from each owned
 initial command zone, and reuses the existing bounded causal-mechanic collector.
@@ -2050,6 +2063,13 @@ dotnet $driver --smoke-headless-engine --engine-resources '<package>/engine' --e
 
 `--smoke-headless-engine` operates a real Commander opening, a land play, a paid
 command-zone cast and concession through production input without a GPU. Its
+observation producer uses the existing external ingress and waits for a pointer
+command's normal readback to retire before sampling again. Frames still enter
+through the production update pump and audience/epoch/revision fences; a second
+background polling owner cannot race these deliberate samples. Separate client
+regressions cover ordinary polling, including superseded discovery and uncertain
+command readback. This journey does not substitute for default-polling timing or
+human playtesting. Its
 same opening now takes two Commander mulligans: the first returns directly to
 Keep with seven cards, and the second projects exactly one required bottom card.
 It verifies that reading a

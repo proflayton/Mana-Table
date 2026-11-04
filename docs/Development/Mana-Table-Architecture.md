@@ -965,6 +965,13 @@ recoverable. A stale signal during execution remains an unknown receipt and
 fails closed. This preserves the distinction between superseded observations,
 rejected commands, lost receipts and fatal provider defects.
 
+An ordinary `ClientSession` background poll makes the same narrow distinction:
+typed supersession from its discovery read publishes nothing and retires that
+poll. The current replica and its synchronization timestamp remain unchanged;
+the next ordinary poll can discover fresh authority. A command or post-command
+readback still uses the normal uncertain-receipt failure path. Catching a safe
+read at this owner must not turn a possibly executed command into a retry.
+
 `IOwnedDecisionObservations` is the corresponding narrow on-demand read port for
 an ordinary connection. The provider chooses its bound audience; the caller
 cannot name a player. Java shares the immutable fenced publication builder with

@@ -22,9 +22,14 @@ internal static class ForgePublicProjectionChecks
         int comparisons = 0;
         foreach (var group in observations.GroupBy(item => (item.State.Id, item.State.BoardRevision))) {
             var first = group.First().State;
+            var correlations = ForgePublicProjectionFacts.CaptureExecutionCorrelations(first);
+            if (!correlations.Valid) throw new InvalidDataException("Forge published invalid local stack execution references.");
             foreach (var item in group.Skip(1)) {
                 if (!AiWholeSeatEngineCheck.ComparePublicProjection(first, item.State, profile))
                     throw new InvalidDataException("Forge published inconsistent same-revision public occurrences across its automated audiences.");
+                correlations = ForgePublicProjectionFacts.MergeExecutionCorrelations(correlations,
+                    ForgePublicProjectionFacts.CaptureExecutionCorrelations(item.State))
+                    ?? throw new InvalidDataException("Forge audiences disclosed contradictory references for the same stack occurrence.");
                 comparisons++;
             }
         }

@@ -181,8 +181,10 @@ internal static class AiTurnPlanner
     {
         if (proposal is not AiProposal.Answer answer || request.PlanVersion == long.MaxValue) return proposal;
         var state = request.Frame.State;
+        var held = (blockers.IsDefault ? request.Plan?.RetainedBlockerIds ?? [] : blockers)
+            .Where(id => AiPlanValidation.CanRetainBlocker(state, id)).ToImmutableArray();
         var next = new AiTurnPlan(state.Id, state.ViewerId, state.Turn, request.PlanVersion + 1,
-            purpose, reservation == null ? [] : [reservation], blockers.IsDefault ? request.Plan?.RetainedBlockerIds ?? [] : blockers) {
+            purpose, reservation == null ? [] : [reservation], held) {
             CreatedFrom = request.Frame.Stamp
         };
         return answer with { PlanTransition = new(request.PlanVersion, next) };

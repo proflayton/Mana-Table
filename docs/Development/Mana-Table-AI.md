@@ -971,6 +971,16 @@ control, tapped witnesses, depleted pool or a new turn. An invalidated in-flight
 proposal cannot return through a late receipt. Replay and private decision evidence
 include both the input plan and proposed transition.
 
+Memory validation distinguishes the resource's role. A retained blocker needs
+the current owned physical creature, untapped, unphased, not attacking and with
+no explicit zero blocking capacity. A masked creature can meet those public
+conditions without a grant to read its printed face. A reserved response or
+funding source retains its stricter known-face requirements. The planner filters
+retained blockers through the same predicate before proposing new memory, so a
+legal answer cannot fault the seat by carrying an unavailable annotation. This
+does not authorize a block or activation; the current engine decision still
+owns those permissions.
+
 The first planner reserves one known offered instant interaction route. When no
 response is held, a chosen cast can instead preserve one other positively valued,
 known cast as a same-turn follow-up. Both goals use the same reservation construction,
