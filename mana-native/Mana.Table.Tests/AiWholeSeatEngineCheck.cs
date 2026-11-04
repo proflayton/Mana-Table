@@ -187,21 +187,9 @@ internal static class AiWholeSeatEngineCheck
 
     internal static bool ComparePublicProjection(GameSnapshot spectator, GameSnapshot seat, string profile)
     {
-        string PublicFacts(GameSnapshot state) => JsonSerializer.Serialize(new {
-            outcome = state.Outcome is not { } outcome ? null : new {
-                outcome.GameId, outcome.Kind, outcome.RuleReason,
-                winningPlayerIds = outcome.WinningPlayerIds.Order().ToArray(),
-                winningTeamIds = outcome.WinningTeamIds.Order().ToArray()
-            },
-            players = state.Players.OrderBy(player => player.Id).Select(player => new {
-            player.Id, player.TeamId, player.Life, player.Eliminated,
-            mana = player.Mana.OrderBy(entry => entry.Key).Select(entry => new { entry.Key, entry.Value }),
-            zones = player.Zones.OrderBy(zone => zone.Name).Select(zone => new { zone.Name, zone.Count }),
-            battlefield = player.Zone("Battlefield").Cards.OrderBy(card => card.CombatId.Length > 0 ? card.CombatId : card.VisualId)
-                .Select(card => new { id = card.CombatId.Length > 0 ? card.CombatId : card.VisualId, card.Power, card.Toughness,
-                    card.Damage, card.Tapped, card.PhasedOut, card.BlockingCapacity, counters = card.Counters.OrderBy(entry => entry.Key).Select(entry => new { entry.Key, entry.Value }) })
-        }) });
-        string expected = PublicFacts(spectator), actual = PublicFacts(seat);
+        if (string.IsNullOrEmpty(spectator.Id) || spectator.Id != seat.Id || spectator.BoardRevision != seat.BoardRevision)
+            throw new ArgumentException("Compare only observations from the same actual game and public board publication.");
+        string expected = ForgePublicProjectionFacts.Capture(spectator), actual = ForgePublicProjectionFacts.Capture(seat);
         if (expected != actual) {
             string path = Path.Combine(profile, "whole-seat-ai-projection-mismatch.json");
             if (!File.Exists(path)) File.WriteAllText(path, JsonSerializer.Serialize(new {

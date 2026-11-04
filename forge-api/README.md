@@ -1344,6 +1344,41 @@ prose. The same message without the typed code, or that code on an action
 request, remains an ordinary failure. Other protocol/decoding/strategy failures
 still stop automation and preserve diagnostics.
 
+The optional `owned-decision-observation` capability adds
+`matchDecisionObservation` (desktop) / `decisionObservation` (synchronization).
+It takes no seat selector: the connection's bound human/local audience owns the
+returned `{state, domain, semantics}`. The envelope uses the same fenced,
+immutable decision publication as an automated row, without that row's `seatId`
+wrapper. It exposes no foreign hand, bot observation or new command route.
+Consumers answer through ordinary `matchAction` with current offers. Ordinary
+`matchState` polling remains independent of expensive action discovery.
+
+No active match returns `null`. Starting, finished, eliminated, or currently
+unowned decisions retain their actual state with a `NotApplicable` empty domain
+and default semantics. An older host without this endpoint returns the optional
+`unsupported-capability` failure; clients must not substitute another audience
+or invent a successful empty match. Superseded discovery returns the exact
+`observation-superseded` read code. Those codes grant no action retry permission.
+The native adapter retires only the captured still-current authority after a
+malformed/superseded read; a delayed response cannot clear a newer audience or
+restore a previous table. These are additive optional capabilities under the
+existing IPC/synchronization versions; no persisted-data migration is required.
+
+`private-action-faces` is a separately negotiated optional projection. New
+clients request `privateActionFaces: true` on `matchState` / `observe` or the
+owned-decision read. Unopted reads keep the legacy Stack/Sideboard-only source
+rows; a connection to an older host does not request the new projection. This
+matters because released decoders reject unfamiliar source zones.
+
+An opted-in current owner may receive a Battlefield action-source row with an
+optional `knownFace`. Its `card` remains the exact masked physical permanent,
+including its opaque key/CombatId, face-down state and live characteristics.
+`knownFace` is an authorized read-only printed face with no action key, physical
+identity or selection flags. It never changes the public battlefield or grants
+an opponent permission to inspect the hidden card. Queries and commands still
+use the current physical source and actual rules offers. The source grant is
+decision-bound; it is not an independent out-of-priority reading capability.
+
 Visible cards also have an opaque `visualId` for animation correlation. These
 handles are discarded on hidden-zone transitions and omitted for face-down or
 hidden cards. They cannot authorize actions: use the current prompt's `key`.

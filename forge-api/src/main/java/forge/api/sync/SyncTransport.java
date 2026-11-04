@@ -19,6 +19,17 @@ public final class SyncTransport {
         default Set<String> capabilities() { return Set.of(); }
         @Override void close();
     }
+    /** Optional machine-readable failure identity; it grants no retry authority. */
+    public static class CodedFailure extends IllegalArgumentException {
+        private final String code;
+        public CodedFailure(String code, String message) {
+            super(message);
+            if (code == null || !code.matches("[a-z][a-z0-9-]{0,63}"))
+                throw new IllegalArgumentException("Invalid synchronization failure code");
+            this.code = code;
+        }
+        public String code() { return code; }
+    }
     private SyncTransport() { }
 
     public static final class Server implements AutoCloseable {
@@ -86,7 +97,10 @@ public final class SyncTransport {
                 if (sequence != lastSequence + 1) throw new IllegalArgumentException("Synchronization sequence changed; reconnect and resnapshot");
                 var receipt = new JsonObject(); receipt.addProperty("sequence", sequence);
                 try { receipt.add("result", JSON.toJsonTree(handler.apply(seat, request.get("method").getAsString(), request.getAsJsonObject("arguments")))); }
-                catch (Exception failure) { receipt.addProperty("error", Objects.requireNonNullElse(failure.getMessage(), failure.getClass().getSimpleName())); }
+                catch (Exception failure) {
+                    receipt.addProperty("error", Objects.requireNonNullElse(failure.getMessage(), failure.getClass().getSimpleName()));
+                    if (failure instanceof CodedFailure coded) receipt.addProperty("errorCode", coded.code());
+                }
                 lastSequence = sequence; lastRequest = request.deepCopy(); lastReceipt = receipt.deepCopy();
                 return receipt;
             }
@@ -215,7 +229,10 @@ public final class SyncTransport {
     }
     private static Object result(JsonObject receipt, long sequence) {
         if (receipt.get("sequence").getAsLong() != sequence) throw new IllegalStateException("Unexpected synchronization receipt");
-        if (receipt.has("error")) throw new IllegalArgumentException(receipt.get("error").getAsString());
+        if (receipt.has("error")) {
+            if (receipt.has("errorCode")) throw new CodedFailure(receipt.get("errorCode").getAsString(), receipt.get("error").getAsString());
+            throw new IllegalArgumentException(receipt.get("error").getAsString());
+        }
         return JSON.fromJson(receipt.get("result"), Object.class);
     }
     private static BufferedReader reader(Socket socket) throws IOException { return new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8)); }

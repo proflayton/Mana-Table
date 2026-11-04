@@ -38,6 +38,9 @@ internal static partial class HeadlessPresentationSmoke
         void CheckReaderControls(string label) {
             trace.Add(new { scenario = "reader-controls-current-source", label, facts = ManaPaymentSmoke.ReaderControlFacts(run.View, run.Engine.Replies.Count) });
             var geometry = ManaPaymentSmoke.ReaderControlGeometry(run.View);
+            var readouts = ManaPaymentSmoke.ReaderSeatReadoutGeometry(run.View);
+            check(readouts.Clear && readouts.CoveredTargetsRetired && readouts.UncoveredVisible,
+                "The public source reader's artwork, current state and controls remain clear of visible seat readouts and hidden seat targets");
             check(geometry.Clear, "The source reader's complete Rules/Artwork control stays clear of its current live-state actions, cards, bill and phase arc");
             check(geometry.FooterOwnsCenter && geometry.PhaseOwnCenters
                 && run.Frame.Cards.Any(card => card.Id == actual.Id && card.Card.Key == pinnedKey && card.Focused)

@@ -41,7 +41,6 @@ internal static class ForgeSnapshotDecoder
                 || decision != null && wire.DecisionOwnerId is { } chooser && chooser != wire.ViewerId
                 || decision?.Payload is PriorityPayload && wire.PriorityPlayerId is { } responder && responder != wire.ViewerId) throw Invalid();
             if (wire.States.IsDefault || wire.Activity.IsDefault || wire.Notices.IsDefault || wire.IgnoredPriorityAbilities.IsDefault) throw Invalid();
-            ValidateActionSources(wire, decision, spectator);
             if (spectator && (!wire.PlayAccesses.IsEmpty || !wire.Activity.IsEmpty || !wire.Notices.IsEmpty
                 || wire.Players.Any(player => player.Zones.Any(zone => zone.Name is "Hand" or "Library"
                     && (!zone.Cards.IsEmpty || zone.TopCard != null)))
@@ -64,6 +63,7 @@ internal static class ForgeSnapshotDecoder
                 Encounter = wire.PartyId == null && wire.EncounterId == null ? null
                     : new EncounterIdentity(wire.PartyId ?? "", wire.EncounterId ?? "")
             };
+            ValidateActionSources(snapshot, spectator);
             EncounterFacts.Validate(snapshot);
             MatchOutcomeFacts.Validate(snapshot);
             UndoFacts.Validate(snapshot);
@@ -110,32 +110,19 @@ internal static class ForgeSnapshotDecoder
         return found;
     }
 
-    private static void ValidateActionSources(Snapshot wire, Decision? decision, bool spectator)
+    private static void ValidateActionSources(GameSnapshot wire, bool spectator)
     {
         if (wire.ActionSources.IsDefault || wire.ActionSources.Any(source => source == null)) throw Invalid();
         if (wire.ActionSources.IsEmpty) return;
-        if (spectator || wire.Status != "playing" || decision?.Payload is not (PriorityPayload or PaymentPayload)) throw Invalid();
-        var keys = wire.Players.SelectMany(player => player.Zones)
-            .SelectMany(zone => zone.Cards.Append(zone.TopCard).OfType<Card>()).Where(card => card.Key.Length > 0)
-            .Select(card => card.Key).ToHashSet(StringComparer.Ordinal);
-        var identities = wire.Players.SelectMany(player => player.Zones)
-            .SelectMany(zone => zone.Cards.Append(zone.TopCard).OfType<Card>()).Select(CardViews.Identity).Where(id => id.Length > 0)
-            .ToHashSet(StringComparer.Ordinal);
+        if (spectator || wire.Status != "playing" || wire.Decision?.Payload is not (PriorityPayload or PaymentPayload)
+            || wire.ActionSources.Select(source => source.Card?.Key).Distinct(StringComparer.Ordinal).Count() != wire.ActionSources.Length) throw Invalid();
+        var identities = new HashSet<string>(StringComparer.Ordinal);
         foreach (var source in wire.ActionSources) {
             var card = source.Card;
-            if (source.DecisionId != decision.Id || source.Zone is not ("Stack" or "Sideboard")
-                || !wire.Players.Any(player => player.Id == source.PlayerId)
-                || source.Zone == "Sideboard" && source.PlayerId != wire.ViewerId
-                || card == null || string.IsNullOrWhiteSpace(card.Key) || !keys.Add(card.Key)
-                || string.IsNullOrWhiteSpace(card.VisualId) && string.IsNullOrWhiteSpace(card.CombatId)
-                || !identities.Add(CardViews.Identity(card)) || card.Selectable || card.Highlighted
+            if (!CardViews.IsCurrentActionSource(wire, source) || !identities.Add(CardViews.Identity(card))
                 || card.FaceDown && (card.Text.Length > 0 || card.ManaCost.Length > 0 || card.ArtName.Length > 0
                     || card.ArtSet.Length > 0 || card.CollectorNumber.Length > 0 || card.OtherFace != null
                     || card.Name is not ("Face-down card" or "Face-down or hidden card"))) throw Invalid();
-            // A current spell occurrence corroborates Stack authority. An
-            // activated/triggered item's historical source face does not.
-            if (source.Zone == "Stack" && !wire.Stack.Any(item => !item.Ability && item.Card is { } stacked
-                    && CardViews.Identity(stacked) == CardViews.Identity(card))) throw Invalid();
         }
     }
 

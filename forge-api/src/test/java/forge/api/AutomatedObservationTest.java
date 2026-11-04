@@ -240,7 +240,7 @@ public class AutomatedObservationTest {
 
     /** One-shot timing hook on an existing zone read; card membership and all
      * ordinary input operations use their actual production implementations. */
-    private static final class DuringDiscovery implements AutoCloseable {
+    static final class DuringDiscovery implements AutoCloseable {
         private final Map<ZoneType, PlayerZone> zones;
         private final PlayerZone original;
         private final ZoneType zone;

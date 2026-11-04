@@ -13,6 +13,7 @@ internal static class Program
             if (args.Contains(ConfiguredSimulationProtocolProbe.Marker)) return ConfiguredSimulationProtocolProbe.Serve(args);
             if (args.Contains(AutomatedHistoryProtocolProbe.Marker)) return AutomatedHistoryProtocolProbe.Serve(args);
             if (args.Contains(ForgeRequestCancellationProtocolProbe.Marker)) return ForgeRequestCancellationProtocolProbe.Serve(args);
+            if (args.Contains(OwnedDecisionObservationProtocolProbe.Marker)) return OwnedDecisionObservationProtocolProbe.Serve(args);
         } catch (Exception error) {
             Console.Error.WriteLine(error);
             return 1;
@@ -45,6 +46,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-ai-repeated-cadence");
         testRun |= args.Contains("--smoke-ai-campaign");
         testRun |= args.Contains("--evaluate-ai-release");
+        testRun |= args.Contains("--qualify-mixed-game");
         testRun |= args.Contains("--smoke-mana-payment");
         testRun |= args.Contains("--smoke-draw-triggers");
         testRun |= args.Contains("--smoke-cluttered-changes") || args.Contains("--smoke-headless-clutter");
@@ -196,6 +198,8 @@ internal static class Program
             if (args.Contains("--smoke-whole-seat-ai")) { AiWholeSeatEngineCheck.RunStandaloneAsync(paths, args.Contains("--ai-complete")).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-ai-campaign")) { AiEngineCampaign.RunStandaloneAsync(paths,
                 AiCampaignLimits.ForProfile(Arg("--campaign-profile")), Arg("--production-engine-jar")).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--qualify-mixed-game")) { MixedGameCampaign.RunAsync(paths,
+                Arg("--campaign-profile") ?? "release").GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--evaluate-ai-release")) { AiReleaseEvaluation.RunAsync(paths,
                 Arg("--production-engine-jar") ?? throw new ArgumentException("Release evaluation requires --production-engine-jar for exact production provenance."),
                 Arg("--source-revision") ?? throw new ArgumentException("Release evaluation requires --source-revision for the exact tested source."),

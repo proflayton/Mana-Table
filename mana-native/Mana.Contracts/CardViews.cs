@@ -47,15 +47,48 @@ public static class CardViews
     public static bool IsCurrentActionSource(GameSnapshot state, ActionSourceOccurrence? source)
     {
         if (source == null || state.Status != "playing" || state.Decision is not { Payload: PriorityPayload or PaymentPayload } decision
-            || source.DecisionId != decision.Id || source.Zone is not ("Stack" or "Sideboard")
+            || source.DecisionId != decision.Id || source.Zone is not ("Stack" or "Sideboard" or "Battlefield")
             || source.Card is not { } card || string.IsNullOrWhiteSpace(card.Key)
             || string.IsNullOrWhiteSpace(card.VisualId) && string.IsNullOrWhiteSpace(card.CombatId)
-            || card.Selectable || card.Highlighted || !state.Players.Any(player => player.Id == source.PlayerId)
+            || !state.Players.Any(player => player.Id == source.PlayerId)) return false;
+        if (source.Zone == "Battlefield") {
+            if (source.PlayerId != state.ViewerId || state.DecisionOwnerId is { } owner && owner != state.ViewerId
+                || decision.Payload is PriorityPayload && state.PriorityPlayerId is { } responder && responder != state.ViewerId
+                || !card.FaceDown || card.VisualId.Length > 0 || card.CombatId.Length == 0
+                || source.KnownFace is not { FaceDown: false, Selectable: false, Highlighted: false,
+                    Key.Length: 0, VisualId.Length: 0, CombatId.Length: 0, Name.Length: > 0, Type.Length: > 0,
+                    AttachedTo: null, Attachments.IsEmpty: true, DefenderId: null, Defender: null }) return false;
+            var physical = InZones(state).Where(zoned => zoned.PlayerId == state.ViewerId && zoned.Zone == "Battlefield"
+                && zoned.Card.Key == card.Key && zoned.Card.CombatId == card.CombatId).ToArray();
+            return physical.Length == 1 && SamePhysical(card, physical[0].Card);
+        }
+        if (source.KnownFace != null || card.Selectable || card.Highlighted
             || source.Zone == "Sideboard" && source.PlayerId != state.ViewerId
             || InZones(state).Any(zoned => zoned.Card.Key == card.Key || Identity(zoned.Card) == Identity(card))) return false;
         return source.Zone != "Stack" || state.Stack.Any(item => item.Kind == StackActionKind.Spell
             && item.Card is { } stacked && Identity(stacked) == Identity(card));
     }
+
+    public static Card? KnownActionFace(GameSnapshot state, Card physical)
+    {
+        if (!physical.FaceDown || physical.Key.Length == 0 || physical.CombatId.Length == 0 || state.ActionSources.IsDefault) return null;
+        var sources = state.ActionSources.Where(source => source?.Zone == "Battlefield" && source.Card.Key == physical.Key
+            && source.Card.CombatId == physical.CombatId).ToArray();
+        return sources.Length == 1 && IsCurrentActionSource(state, sources[0]) ? sources[0].KnownFace : null;
+    }
+
+    public static bool CanReadActionSource(GameSnapshot state, string key)
+        => FindActionSource(state, key) is { } source && (!source.Card.FaceDown || KnownActionFace(state, source.Card) != null);
+
+    private static bool SamePhysical(Card left, Card right)
+        => !left.Attachments.IsDefault && !right.Attachments.IsDefault && left.Attachments.SequenceEqual(right.Attachments)
+            && !left.CombatKeywords.IsDefault && !right.CombatKeywords.IsDefault && left.CombatKeywords.SequenceEqual(right.CombatKeywords)
+            && left.States.HasValue == right.States.HasValue
+            && (left.States == null || !left.States.Value.IsDefault && !right.States!.Value.IsDefault
+                && left.States.Value.SequenceEqual(right.States.Value))
+            && left.Counters.Count == right.Counters.Count && left.Counters.All(pair => right.Counters.TryGetValue(pair.Key, out int value) && value == pair.Value)
+            && left with { Attachments = right.Attachments, CombatKeywords = right.CombatKeywords,
+                States = right.States, Counters = right.Counters } == right;
 
     // Reconcile display only. Original choices, action handles and constraints
     // stay on their interaction objects. A masked current face replaces an old

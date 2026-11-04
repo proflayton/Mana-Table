@@ -38,13 +38,17 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "match-header") MatchHeaderInteractionChecks.Run(profile, Check);
                 else if (group == "cooperative-lobby") CooperativeLobbyInteractionChecks.Run(profile, Check);
                 else if (group == "cooperative-opening") CooperativeOpeningChecks.Run(Check);
+                else if (group == "public-projection") ForgePublicProjectionChecks.Run(profile, Check);
+                else if (group == "known-action-faces") CheckKnownActionFaces(profile, Check, trace, performance);
                 else if (group == "configured-simulation") {
                     ConfiguredSimulationWireChecks.Run(Check);
                     AiCampaignQualificationChecks.Run(Check);
+                    MixedGameQualificationChecks.Run(Check);
                     ResourceEvidenceWireChecks.Run(Check);
                     ConfiguredSimulationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                     AutomatedHistoryProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                     ForgeRequestCancellationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
+                    OwnedDecisionObservationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                 }
                 else if (group == "encounter-start") {
                     EncounterStartWireChecks.Run(Check);
@@ -86,10 +90,12 @@ internal static partial class HeadlessPresentationSmoke
             MatchSetupWireChecks.Run(Check);
             ConfiguredSimulationWireChecks.Run(Check);
             AiCampaignQualificationChecks.Run(Check);
+            MixedGameQualificationChecks.Run(Check);
             ResourceEvidenceWireChecks.Run(Check);
             ConfiguredSimulationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             AutomatedHistoryProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             ForgeRequestCancellationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
+            OwnedDecisionObservationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             EncounterStartWireChecks.Run(Check);
             EncounterStartProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             CooperativeOpeningChecks.Run(Check);
@@ -107,6 +113,7 @@ internal static partial class HeadlessPresentationSmoke
             AiReleaseGoldens.CheckReceiptEvidence(Check);
             AiEngineCampaign.CheckDisclosureBounds(Check);
             ForgePublicProjectionChecks.Run(profile, Check);
+            CheckKnownActionFaces(profile, Check, trace, performance);
             PregameFlowChecks.Run(profile, Check);
             CooperativeLobbyInteractionChecks.Run(profile, Check);
             DeckLibraryPresentationChecks.Run(profile, Check);

@@ -222,7 +222,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             String name = opponent.name() + " · AI" + (opponents.size() > 1 ? " " + seats.size() : "");
             seats.add(automated ? MatchTable.automated(opponent.deck(), format, name) : MatchTable.ai(opponent.deck(), format, name));
         }
-        var table = new MatchTable(format, seats, resources, profile);
+        var table = new MatchTable(format, seats, resources, profile, MatchTable.CompletionPolicy.STOP_AFTER_LAST_HUMAN);
         table.start();
         return table.seat(0);
     }
@@ -316,14 +316,27 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     @Override
     public IGuiGame gui() { return gui; }
     public Map<String, Object> state() {
+        return state(false);
+    }
+
+    public Map<String, Object> state(boolean privateActionFaces) {
         synchronized (gate) {
             // The board, activity and executions share one committed publication.
             // Event subscribers collect the next frame without changing a read.
-            if (!table.tempo.enabled()) return latest;
-            var timed = new LinkedHashMap<>(latest);
+            var projected = privateActionFaces ? latest : legacyProjection(latest);
+            if (!table.tempo.enabled()) return projected;
+            var timed = new LinkedHashMap<>(projected);
             timed.put("tempo", table.tempo.view(!finished()));
             return Collections.unmodifiableMap(timed);
         }
+    }
+
+    private static Map<String, Object> legacyProjection(Map<String, Object> snapshot) {
+        if (!(snapshot.get("actionSources") instanceof List<?> sources) || sources.isEmpty()) return snapshot;
+        var legacy = new LinkedHashMap<>(snapshot);
+        legacy.put("actionSources", sources.stream().filter(source -> !(source instanceof Map<?, ?> row)
+                || !Objects.equals(row.get("zone"), "Battlefield")).toList());
+        return Collections.unmodifiableMap(legacy);
     }
     public boolean finished() { return closed || error != null || game.isGameOver(); }
 
@@ -638,9 +651,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 long version = sourceActionVersion.get();
                 var observedCatalog = current.sourceActions.get(key);
                 var catalog = observedCatalog;
-                if (view.isFaceDown() || catalog == null || !catalog.matches(source, version)) {
-                    catalog = view.isFaceDown() ? SourceActions.empty(source, key, version)
-                            : SourceActions.describe(current.input, source, key, version, this::visibleActionHost);
+                if (view.isFaceDown() && !view.canFaceDownBeShownTo(viewer) || catalog == null || !catalog.matches(source, version)) {
+                    catalog = view.isFaceDown() && !view.canFaceDownBeShownTo(viewer) ? SourceActions.empty(source, key, version)
+                            : SourceActions.describe(current.input, source, key, version, this::actionHostVisible);
                     if (!sourceInputCurrent(current) || sourceActionVersion.get() != version)
                         throw new IllegalArgumentException("The source actions changed. Read the current card again.");
                 }
@@ -675,16 +688,33 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             return description;
         }).toList();
         var result = map("gameId", id, "decisionId", current.id, "sourceCardKey", catalog.key(),
-                "sourceCardId", catalog.source().isFaceDown() && human.isExternallyAutomated()
+                "sourceCardId", catalog.source().isFaceDown()
                         ? combatIds.id(catalog.source().getView()) : activity.visualId(catalog.source().getView()), "actions", actions);
         if (readOnlyFacts) result.put("revision", revision);
         return result;
     }
 
-    // Only the process owner calls this. No network seat can enumerate bot
-    // observations, source catalogs, or unpublished input choices.
+    // Only the process owner calls this. Network seats cannot enumerate bot
+    // observations or acquire another seat's catalogs and input choices.
     Map<String, Object> automatedObservation() {
         if (!human.isExternallyAutomated()) throw new IllegalArgumentException("This is not an automated seat");
+        var observation = decisionObservationValues(false);
+        var result = new LinkedHashMap<>(observation);
+        result.put("seatId", viewer.getId());
+        return Collections.unmodifiableMap(result);
+    }
+
+    /** This endpoint is already bound to one seat; callers cannot choose an audience. */
+    @Override
+    public Map<String, Object> decisionObservation() {
+        return decisionObservation(false);
+    }
+
+    public Map<String, Object> decisionObservation(boolean privateActionFaces) {
+        return PublishedDecisionFacts.freezeWire(decisionObservationValues(privateActionFaces));
+    }
+
+    private Map<String, Object> decisionObservationValues(boolean privateActionFaces) {
         return game.getAction().readState(() -> {
             synchronized (gate) {
                 Pending current = pending;
@@ -753,7 +783,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         discovered = true;
                     }
                 }
-                var snapshot = state();
+                var snapshot = state(privateActionFaces);
                 long observedRevision = revision;
                 var semantics = automatedSemantics(current, captured);
                 boolean catalogsChanged = false;
@@ -791,15 +821,19 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     current.sourceActions.putAll(catalogs);
                     domain = sourceValues.domain();
                 }
-                return map("seatId", viewer.getId(), "state", automatedState(snapshot, sourceValues), "domain", domain, "semantics", semantics);
+                return map("state", decisionState(snapshot, sourceValues), "domain", domain, "semantics", semantics);
             }
         });
     }
 
-    private Map<String, Object> automatedState(Map<String, Object> snapshot, SourceQueryValues sourceValues) {
+    private Map<String, Object> decisionState(Map<String, Object> snapshot, SourceQueryValues sourceValues) {
         if (sourceValues == null || sourceValues.additionalSources().isEmpty() || snapshot.get("prompt") == null) return snapshot;
         var enriched = new LinkedHashMap<>(snapshot);
-        enriched.put("actionSources", sourceValues.additionalSources());
+        if (snapshot.get("actionSources") instanceof List<?> existing && !existing.isEmpty()) {
+            var sources = new ArrayList<Object>(existing);
+            sources.addAll(sourceValues.additionalSources());
+            enriched.put("actionSources", List.copyOf(sources));
+        } else enriched.put("actionSources", sourceValues.additionalSources());
         return Collections.unmodifiableMap(enriched);
     }
 
@@ -950,9 +984,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 && isVisibleInZone(card.getView(), card.getZone().getZoneType(), viewer);
     }
     private boolean actionHostVisible(Card card) {
-        return human.isExternallyAutomated() ? card != null && card.getZone() != null
+        return card != null && card.getZone() != null
                 && isVisibleInZone(card.getView(), card.getZone().getZoneType(), viewer)
-                && (!card.isFaceDown() || card.getView().canFaceDownBeShownTo(viewer)) : visibleActionHost(card);
+                && (!card.isFaceDown() || card.getView().canFaceDownBeShownTo(viewer));
     }
 
     private boolean sourceActionCurrent(Pending current, SourceActions.Catalog catalog, SourceActions.Action action) {
@@ -970,7 +1004,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return action(request, true);
     }
     private Map<String, Object> action(JsonObject request, boolean playerDriven) {
-        return game.getAction().readState(() -> actionInState(request, playerDriven));
+        return legacyProjection(game.getAction().readState(() -> actionInState(request, playerDriven)));
     }
     private Map<String, Object> actionInState(JsonObject request, boolean playerDriven) {
         synchronized (gate) {
@@ -1583,7 +1617,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     public Map<String, Object> concede(JsonObject request) {
-        return game.getAction().readState(() -> concedeInState(request));
+        return legacyProjection(game.getAction().readState(() -> concedeInState(request)));
     }
     private Map<String, Object> concedeInState(JsonObject request) {
         synchronized (gate) {
@@ -1639,6 +1673,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (consumed != null) { consumed.publishedDecision = null; consumed.poolManaColors.clear(); }
         var next = new LinkedHashMap<>(latest);
         next.put("revision", ++revision); next.put("prompt", null); next.put("status", "resolving");
+        next.put("actionSources", List.of());
         next.put("undo", undoProjection(null));
         next.put("players", resolvingPlayers(consumed));
         next.put("playAccesses", PlayAccessProjection.withoutCurrentOffers(next.get("playAccesses")));
@@ -2247,6 +2282,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "priorityPlayerId", allPlayers.stream().filter(p -> !p.getHasLost() && p.getHasPriority()).map(PlayerView::getId).findFirst().orElse(null),
                 "decisionOwnerId", null, "actionClass", "resolving",
                 "stack", stack, "combat", combatState(prompt), "prompt", projectedPrompt,
+                "actionSources", privateBattlefieldSources(prompt),
                 "undo", undoProjection(prompt),
                 "states", PublicStates.of(forge.game.PublicTableStates.snapshot(game)),
                 "playAccesses", playAccess.project(human.getPlayer(), allPlayers,
@@ -2432,6 +2468,36 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return prompt.cardKeys.computeIfAbsent(card.getId(), ignored -> prompt.id + ":c" + prompt.nextCardKey++);
     }
 
+    /** Private reading material is separate from the masked physical occurrence.
+     * Publication uses existing view values only; polling never discovers rules
+     * actions to learn the face, and the reading card has no action identity. */
+    private List<Map<String, Object>> privateBattlefieldSources(Pending prompt) {
+        if (prompt == null || !sourceInputCurrent(prompt)) return List.of();
+        var sources = new ArrayList<Map<String, Object>>();
+        var battlefield = viewer.getCards(ZoneType.Battlefield);
+        if (battlefield == null) return List.of();
+        for (CardView card : battlefield) {
+            if (!card.isFaceDown() || !viewer.equals(card.getController()) || !card.canFaceDownBeShownTo(viewer)
+                    || !isVisibleInZone(card, ZoneType.Battlefield, viewer)) continue;
+            String key = prompt.cardKeys.get(card.getId());
+            var face = card.getAlternateState();
+            if (key == null || prompt.cards.get(key) != card || face == null) continue;
+            var physical = cardState(card, prompt);
+            var known = map("key", "", "visualId", "", "combatId", "", "name", face.getName(),
+                    "type", face.getType().toString(), "manaCost", face.getManaCost().toString(), "text", CardRulesText.of(face),
+                    "power", face.getPower(), "toughness", face.getToughness(), "faceDown", false,
+                    "selectable", false, "highlighted", false, "artName", face.getName(), "artFace", "front");
+            var printing = forge.util.ImageUtil.getPaperCardFromImageKey(face.getTrackableImageKey());
+            if (printing != null) {
+                known.put("artSet", CardCatalog.artSet(printing)); known.put("edition", printing.getEdition());
+                known.put("collectorNumber", printing.getCollectorNumber());
+            }
+            sources.add(map("decisionId", prompt.id, "zone", "Battlefield", "playerId", viewer.getId(),
+                    "card", physical, "knownFace", known));
+        }
+        return List.copyOf(sources);
+    }
+
     private Map<String, Object> cardState(CardView card, Pending prompt) {
         boolean hidden = card.isFaceDown();
         var face = card.getCurrentState();
@@ -2559,6 +2625,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             pending = null;
             var next = new LinkedHashMap<>(latest);
             next.put("revision", ++revision); next.put("status", "error"); next.put("error", failure); next.put("prompt", null);
+            next.put("actionSources", List.of());
             next.put("undo", MatchUndo.faultFrame(latest.get("undo"), game.getReversibleManaAction().barrierVersion()));
             next.put("result", null);
             next.put("outcome", null);

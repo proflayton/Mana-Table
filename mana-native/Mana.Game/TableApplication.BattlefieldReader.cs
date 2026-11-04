@@ -16,29 +16,30 @@ internal sealed partial class TableApplication
     private string battlefieldReaderStateBinding = "";
 
     private bool IsStudyBattlefieldReader(PresentedCard entry) => TableStudyEnabled && entry.Zone == "Battlefield"
-        && entry.Focused && entry.ChoiceSlot < 0 && !entry.Card.FaceDown && entry.Display.Size.X >= 300
+        && entry.Focused && entry.ChoiceSlot < 0 && CardContext.ReadingFace(entry) is { FaceDown: false } && entry.Display.Size.X >= 300
         && CardContext.CanRetainPinned(entry);
 
     private static string BattlefieldReaderBinding(PresentedCard entry) => entry.Id + "\n" + entry.Zone;
 
     private void PaintStudyBattlefieldReader(Card card, PresentedCard entry)
     {
-        PaintCard(card, entry.Display, false, IsCardActionable(card), true);
-        if (CardPresentation.HasCombatStats(card)) {
+        var physical = CardContext.CurrentOccurrence(entry) ?? entry.Card;
+        PaintCard(card, entry.Display, false, IsCardActionable(physical), true);
+        if (CardPresentation.HasCombatStats(physical)) {
             // Cover the printed stat box, keeping the complete art and rules.
             // Current P/T is supplied by the engine; counters are not added here.
             var statPose = entry.Display with { Center = entry.Display.Point(.87f, .9195f),
                 Size = entry.Display.Size * new Vector2(.176f, .069f) };
             var bounds = statPose.Bounds;
-            string stats = CurrentStats(card);
+            string stats = CurrentStats(physical);
             float size = 1.05f;
             while (size > .4f && canvas.TextWidth(stats, size, true) > bounds.Width - 10) size -= .025f;
             canvas.Surface(null, statPose, new(16, 36, 36));
             canvas.CardFrame(statPose, new(172, 209, 193), 1);
             canvas.CenterText(stats, bounds, Ink, size, true);
         }
-        PaintBattlefieldReaderState(card, entry);
-        PaintPreparedMarker(card, entry.Display, entry.Request.Owner ?? -1);
+        PaintBattlefieldReaderState(physical, entry);
+        PaintPreparedMarker(physical, entry.Display, entry.Request.Owner ?? -1);
     }
 
     private void PaintBattlefieldReaderState(Card card, PresentedCard entry)
@@ -47,6 +48,7 @@ internal sealed partial class TableApplication
         battlefieldReaderStateScrollMax = 0;
         var chips = CardPresentation.Counters(card).Select(counter => new BattlefieldReaderChip(
             counter.Value + " " + counter.Key + (counter.Value == 1 ? " counter" : " counters"), new(154, 224, 203))).ToList();
+        if (card.FaceDown) chips.Add(new("Face down", Gold));
         if (card.Damage > 0) chips.Add(new(card.Damage + " damage marked", Red));
         if (card.PhasedOut) chips.Add(new("Phased out", AbilityColor("phased out")));
         var abilityLabels = CardPresentation.AbilityLabels(card);

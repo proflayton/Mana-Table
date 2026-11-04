@@ -423,7 +423,8 @@ public sealed partial class ClientSession
         // Embedded decision/choice faces can describe history. Only a currently
         // disclosed physical occurrence can carry authority to act on a source.
         var card = CardViews.FindActionSource(state, key)?.Card;
-        return card is not { FaceDown: false } ? null : new(state.Id, decision.Id, state.Revision, state.ViewerId, card.Key, CardViews.Identity(card));
+        return card == null || !CardViews.CanReadActionSource(state, key) ? null
+            : new(state.Id, decision.Id, state.Revision, state.ViewerId, card.Key, CardViews.Identity(card));
     }
     private void StopFiniteIntent() { QueueFiniteRevocation(); finiteIntent?.Stop(); finiteIntent = null; }
     public void Close()

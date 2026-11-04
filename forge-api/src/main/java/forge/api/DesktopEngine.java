@@ -68,7 +68,7 @@ public final class DesktopEngine implements AutoCloseable {
         var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]), simulationTables);
         engine.resources = Path.of(args[0]);
         engine.documents.loadAnalysisFormats(engine.resources);
-        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", PROTOCOL_VERSION, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo", "automated-seats", "certified-one-step-undo", "match-history", "match-setup", "durable-encounter-admission", "simulation-match-setup", "automated-match-history"))));
+        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", PROTOCOL_VERSION, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo", "automated-seats", "certified-one-step-undo", "match-history", "match-setup", "durable-encounter-admission", "simulation-match-setup", "automated-match-history", "owned-decision-observation", "private-action-faces"))));
         try (engine; var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = input.readLine()) != null) {
@@ -95,9 +95,11 @@ public final class DesktopEngine implements AutoCloseable {
         var reply = new JsonObject();
         if (request != null) reply.add("id", request.get("id"));
         reply.addProperty("error", error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage());
-        if (error instanceof StaleObservationException && request != null && request.has("method")
-                && request.get("method").isJsonPrimitive() && request.get("method").getAsString().equals("automatedState"))
-            reply.addProperty("errorCode", StaleObservationException.CODE);
+        if (error instanceof forge.api.sync.SyncTransport.CodedFailure coded && request != null && request.has("method")
+                && request.get("method").isJsonPrimitive()
+                && (request.get("method").getAsString().equals("matchDecisionObservation")
+                    || request.get("method").getAsString().equals("automatedState") && coded.code().equals(StaleObservationException.CODE)))
+            reply.addProperty("errorCode", coded.code());
         if (error instanceof HistoryUnavailableException && request != null && request.has("method")
                 && request.get("method").isJsonPrimitive()
                 && Set.of("matchHistory", "automatedMatchHistory").contains(request.get("method").getAsString()))
@@ -149,7 +151,8 @@ public final class DesktopEngine implements AutoCloseable {
                 case "multiplayerTempo" -> seat.configureTempo(p);
                 case "multiplayerReturn" -> seat.returnToLobby();
                 case "multiplayerClose" -> seat.close();
-                case "matchState" -> seat.match().state();
+                case "matchState" -> seat.match().state(MatchEndpoint.privateActionFaces(p));
+                case "matchDecisionObservation" -> seat.match().decisionObservation(MatchEndpoint.privateActionFaces(p));
                 case "matchAction" -> seat.match().action(p);
                 case "matchSourceActions" -> seat.match().sourceActions(p);
                 case "matchHistory" -> seat.match().history(p);
@@ -334,9 +337,13 @@ public final class DesktopEngine implements AutoCloseable {
             }
             case "matchState" -> {
                 if (multiplayer != null && multiplayer.connected()) {
-                    yield multiplayer.match().state();
+                    yield multiplayer.match().state(MatchEndpoint.privateActionFaces(p));
                 }
-                yield match == null ? null : match.state();
+                yield match == null ? null : match.state(MatchEndpoint.privateActionFaces(p));
+            }
+            case "matchDecisionObservation" -> {
+                if (multiplayer != null && multiplayer.connected()) yield multiplayer.match().decisionObservation(MatchEndpoint.privateActionFaces(p));
+                yield match == null ? null : match.decisionObservation(MatchEndpoint.privateActionFaces(p));
             }
             case "matchAction" -> {
                 if (multiplayer != null && multiplayer.connected()) {

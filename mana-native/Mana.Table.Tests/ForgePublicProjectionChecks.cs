@@ -5,8 +5,8 @@ namespace Mana.Table;
 
 // Forge publishes one shared public occurrence generation to every audience.
 // This is an adapter publication invariant, not a requirement that unrelated
-// providers share card IDs. Compare current public zones only: historical stack
-// portraits never establish current occurrences by matching printed names.
+// providers share card IDs. Historical stack portraits never establish current
+// occurrences by matching printed names; stack occurrences compare separately.
 internal static class ForgePublicProjectionChecks
 {
     internal static int ValidateBatch(ImmutableArray<AutomatedSeatObservation> observations, string profile)
@@ -33,6 +33,7 @@ internal static class ForgePublicProjectionChecks
 
     internal static void Run(string profile, Action<bool, string> check)
     {
+        ForgePublicProjectionFactChecks.Run(profile, check);
         string directory = Path.Combine(profile, "expected-public-projection-rejections");
         Directory.CreateDirectory(directory);
         AutomatedSeatObservation Audience(int seat, long board = 20) {
@@ -87,7 +88,8 @@ internal static class ForgePublicProjectionChecks
             StackActionKind.TriggeredAbility, new Card { Name = "Same printed creature", VisualId = "departed-read-only-portrait" }) {
             Id = "historical-trigger"
         }] } };
-        check(ValidateBatch([first, historical], directory) == 1,
+        var historicalFirst = first with { State = first.State with { Stack = historical.State.Stack } };
+        check(ValidateBatch([historicalFirst, historical], directory) == 1 && Diverges(first, historical),
             "Historical stack portraits are not joined to current public permanents by matching printed names");
         AutomatedSeatObservation MissingIdentity(AutomatedSeatObservation observation, string status, bool eliminated, bool selectable = false) {
             var owner = observation.State.Players[0];

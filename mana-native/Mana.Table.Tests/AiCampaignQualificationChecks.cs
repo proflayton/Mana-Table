@@ -15,6 +15,7 @@ internal static class AiCampaignQualificationChecks
         var decks = AiCampaignDecks.All.Select((deck, index) => new AiCampaignDeckBinding(deck.Id, deck.Hash,
             new string((char)('a' + index), 64), "saved-" + index, 1, "deck:saved-" + index + ":bytes", deck.Family,
             deck.IntendedMechanics, deck.RequiredWitnessIds)).ToImmutableArray();
+        MixedBindings(decks, check);
         var decoded = ForgeEngine.DecodeConfiguredSimulation(JsonSerializer.SerializeToElement(ConfiguredSimulationWireChecks.Receipt()),
             ConfiguredSimulationWireChecks.Setup());
         var start = decoded with { Setup = decoded.Setup with { Decks = decks.Select(deck => deck.Handle).ToImmutableArray() } };
@@ -173,6 +174,65 @@ internal static class AiCampaignQualificationChecks
             check(blocked && policy.Evaluations == 0 && inner.Executions == 0,
                 "An unauthorized ally-hand disclosure is rejected before any policy evaluation or command in " + (configured ? "configured" : "legacy") + " campaigns");
         }
+    }
+
+    private static void MixedBindings(ImmutableArray<AiCampaignDeckBinding> decks, Action<bool, string> check)
+    {
+        // Authored boundary fixtures only: the real mixed-TCP campaign supplies
+        // the accepted selection receipts and connection-owned rows at runtime.
+        var seed = ForgeEngine.DecodeConfiguredSimulation(JsonSerializer.SerializeToElement(ConfiguredSimulationWireChecks.Receipt()),
+            ConfiguredSimulationWireChecks.Setup()).State;
+        int[] ids = [29, 83, 47, 12];
+        var commanders = decks.Select(deck => AiCampaignDecks.All.Single(candidate => candidate.Id == deck.CandidateId)
+            .Commanders.Select(name => new Card { Name = name, Type = "Legendary Creature" }).ToImmutableArray()).ToImmutableArray();
+        var players = seed.Players.Select((player, index) => player with {
+            Id = ids[index], TeamId = index, Zones = [new("Command", commanders[index].Length, commanders[index], null)]
+        }).ToImmutableArray();
+        var selections = Enumerable.Range(0, 4).Select(index => "accepted-selection-" + index).ToImmutableArray();
+        var seats = Enumerable.Range(0, 4).Select(index => new Seat(index, "Seat " + index,
+            index == 0 ? "LOCAL" : index == 1 ? "REMOTE" : "AI", "Deck " + index, true, index == 0) {
+                ParticipantId = "actual-participant-" + index,
+                DeckPreview = new(selections[index], "Deck " + index, commanders[index], null),
+                OpponentId = index >= 2 ? decks[index].Handle : null
+            }).ToImmutableArray();
+        var lobby = new Lobby("hosting", "Connected", "", true, null, false, "disabled", null, [], seats, "mixed-accepted-table");
+        var rows = ids.Select(id => new OwnedDecisionObservation(seed with { Id = "mixed-accepted-game", ViewerId = id, Players = players },
+            DecisionActionDomain.None, new())).ToImmutableArray();
+        AiCampaignQualificationTracker Bind(Lobby? accepted = null, ImmutableArray<OwnedDecisionObservation>? owned = null,
+            ImmutableArray<string>? pins = null) => AiCampaignQualificationTracker.ForMixedTable(decks, accepted ?? lobby,
+                owned ?? rows, pins ?? selections, "mixed-boundary-case", new string('a', 64));
+        bool Reject(Action action) { try { action(); return false; } catch (InvalidDataException) { return true; } }
+        var tracker = Bind(owned: [rows[2], rows[0], rows[3], rows[1]]);
+        check(tracker.Participants.Select(participant => participant.PlayerId).SequenceEqual(ids)
+                && tracker.Participants.Select(participant => participant.TeamId).SequenceEqual([0, 1, 2, 3])
+                && tracker.Summary("turn-budget", false, null).Select(deck => deck.Deck.Handle).SequenceEqual(decks.Select(deck => deck.Handle)),
+            "Mixed qualification binds distinct accepted commander/selection identities to actual player IDs independently of owned-row order, without a fabricated simulation receipt");
+        foreach (var row in rows) tracker.ObserveOwned(new(row.State.ViewerId, row.State, row.Domain, row.Semantics));
+        tracker.ObservePublic(rows[0].State);
+        check(Reject(() => Bind(pins: selections.SetItem(1, "replaced-selection")))
+                && Reject(() => Bind(accepted: lobby with { Error = "Actual lobby failure" }))
+                && Reject(() => Bind(accepted: lobby with { Seats = seats.SetItem(1, seats[1] with {
+                    DeckPreview = seats[1].DeckPreview! with { SelectionId = "replaced-selection" }
+                }) }))
+                && Reject(() => Bind(accepted: lobby with { Seats = seats.SetItem(2, seats[2] with { OpponentId = decks[3].Handle }) }))
+                && Reject(() => Bind(accepted: lobby with { Seats = seats.SetItem(1, seats[1] with { Ready = false }) })),
+            "A replaced human selection with the same commander, changed AI deck handle or unaccepted ready state cannot borrow pinned mixed deck qualification");
+        var missingCommand = rows[1] with { State = rows[1].State with {
+            Players = players.SetItem(1, players[1] with { Zones = [new("Command", 0, [], null)] })
+        } };
+        var foreignTeam = rows[2] with { State = rows[2].State with { Players = players.SetItem(2, players[2] with { TeamId = 9 }) } };
+        check(Reject(() => Bind(owned: rows.SetItem(1, missingCommand)))
+                && Reject(() => Bind(owned: rows.SetItem(2, foreignTeam)))
+                && Reject(() => Bind(owned: rows.SetItem(1, rows[1] with { State = rows[1].State with { ViewerId = 999 } })))
+                && Reject(() => Bind(owned: rows.SetItem(1, rows[1] with { State = rows[1].State with { Id = "foreign-game" } })))
+                && Reject(() => Bind(owned: rows.RemoveAt(1))),
+            "Missing initial own commanders, foreign game/viewer/team or an incomplete quartet fail before mixed causal attribution begins");
+        bool foreignRejected = false;
+        try { tracker.ObserveOwned(new(ids[0], rows[0].State with { Players = players.SetItem(0, players[0] with { TeamId = 9 }) },
+            DecisionActionDomain.None, new())); } catch (InvalidDataException) { foreignRejected = true; }
+        check(foreignRejected && tracker.Summary("time-budget", false, null).All(deck => deck.SampledNaturalGame == "inconclusive"
+                && deck.RequiredWitnesses.All(witness => witness.Status != "observed")),
+            "Later mixed observations retain the accepted player/team map, and binding/progression alone never credits a defining mechanic or natural outcome");
     }
 
     private sealed class PublishedProvider(ImmutableArray<AutomatedSeatObservation> before,

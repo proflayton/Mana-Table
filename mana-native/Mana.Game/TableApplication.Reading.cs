@@ -33,7 +33,8 @@ internal sealed partial class TableApplication
     private Rectangle? hoverPreview => matchPresentation.Cards.ReaderBounds;
     internal bool InteractivePointer => !dragging && HitAt(pointer) is { } hit
         && hit.ShowPointer
-        && (hit.Card is not { } card || !card.FaceDown || IsCardActionable(card));
+        && (hit.Card is not { } card || !card.FaceDown || IsCardActionable(card)
+            || match is { } state && CardViews.KnownActionFace(state, card) != null);
 
     private void ExtendCardHit(Card card, Rectangle bounds) => hits.ExtendCanonical(
         "card:" + card.Key + ":" + card.VisualId, Scope, bounds);
@@ -152,6 +153,18 @@ internal sealed partial class TableApplication
         int firstAction = hits.Count();
         DrawReaderActions(entry, target);
         DrawRulesReaderControl(entry, target, hits.Skip(firstAction).Select(hit => ReaderControlPaintBounds(hit.Bounds)).ToArray());
+    }
+
+    private IEnumerable<Rectangle> CurrentReaderOcclusions()
+    {
+        if (matchPresentation.Cards.Pinned is not { Focused: true } entry || !CardContext.CanRetainPinned(entry)) yield break;
+        var body = new CardPaintGeometry(entry.Display);
+        yield return body.Backing.Bounds;
+        yield return body.Shadow.Bounds;
+        if (!battlefieldReaderStateBounds.IsEmpty) yield return battlefieldReaderStateBounds;
+        if (!sourceReaderActionsBounds.IsEmpty) yield return ReaderControlPaintBounds(sourceReaderActionsBounds);
+        foreach (var hit in hits.Where(hit => hit.Id == "read-card-rules"))
+            yield return ReaderControlPaintBounds(hit.Bounds);
     }
 
     private void DrawReaderActions(PresentedCard entry, Rectangle target)

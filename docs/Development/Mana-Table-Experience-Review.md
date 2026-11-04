@@ -6,6 +6,30 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Read a permitted hidden face without turning it up: source candidate
+
+**Source candidate; exact-candidate human review pending.** A full mixed-table
+run found that an ordinary owner could not use the action catalog for their own
+face-down creature, although the automated-seat path had that permission.
+The intent is to read that particular card and deliberately choose an offered
+turn-face-up action. Hover/click uses the existing full-card reader; inspecting
+never commits the action. The source remains the same masked battlefield
+occurrence, with its current characteristics. Only the accepted rules action
+changes its face on the table.
+
+The supplied MTGA inspection references, recorded under
+[one physical card grammar](#one-physical-card-grammar-across-the-battlefield-27-october-2026),
+show a complete printing alongside live state. We adapt that existing reading
+gesture to a face the engine explicitly permits this viewer to know. Wizards'
+[manifest explanation](https://magic.wizards.com/en/news/feature/duskmourn-house-of-horror-mechanics)
+separates the face-down creature from its later revealed characteristics and
+preserves the same permanent through that change. This supports keeping reading
+material separate from physical state; it is not evidence for Arena's exact
+face-down inspection controls. Opponents retain the concealed face. Current
+priority/payment grants do not establish a general out-of-priority reading
+lifetime; that remains a separate coverage limit. Agent captures and passing
+automation do not supply human approval of this journey.
+
 ## Start Auto where priority is waiting: source candidate
 
 **Source candidate; exact-candidate human review pending.** A player reports

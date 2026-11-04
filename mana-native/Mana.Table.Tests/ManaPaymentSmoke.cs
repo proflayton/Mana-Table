@@ -1007,6 +1007,21 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
         && new[] { "Flash", "Flying" }.All(value => frame.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Text>()
             .Any(text => text.Value == value && reader.Display.Bounds.Contains(text.X, text.Y)));
 
+    internal static (bool Clear, bool CoveredTargetsRetired, int CoveredPlans, bool UncoveredVisible) ReaderSeatReadoutGeometry(TableApplication.Probe view)
+    {
+        if (view.Frame is not { } frame || frame.Cards.SingleOrDefault(card => card.Focused) is not { } reader)
+            return (false, false, 0, false);
+        var surfaces = frame.Hits.Where(hit => hit.Id is "battlefield-reader-state" or "source-actions-surface" or "read-card-rules")
+            .Select(hit => hit.Id == "battlefield-reader-state" ? hit.Bounds : Microsoft.Xna.Framework.Rectangle.Union(hit.Bounds,
+                new(hit.Bounds.X + 2, hit.Bounds.Y + 5, hit.Bounds.Width, hit.Bounds.Height))).Append(reader.Display.Bounds).ToArray();
+        var covered = view.ReadoutPlans.Values.Where(plan => plan.Pieces.Any(piece => surfaces.Any(piece.Intersects))).ToArray();
+        bool retired = covered.All(plan => frame.Hits.All(hit => hit.Id != "focus:" + plan.PlayerId
+            && hit.Id != "player-counters:" + plan.PlayerId && !hit.Id.StartsWith("player-state:" + plan.PlayerId + ":", StringComparison.Ordinal)
+            && hit.Id != "player-state-more:" + plan.PlayerId));
+        bool uncoveredVisible = view.ReadoutPlans.Values.Except(covered).Any(plan => plan.Pieces.Any(view.SeatReadouts.Contains));
+        return (view.SeatReadouts.All(bounds => surfaces.All(surface => !surface.Intersects(bounds))), retired, covered.Length, uncoveredVisible);
+    }
+
     internal static object ReaderControlFacts(TableApplication.Probe view, int replies, string artworkSource = "none")
     {
         var frame = view.Frame;

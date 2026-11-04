@@ -17,13 +17,13 @@ public sealed partial class ForgeEngine : IAutomatedMatchHistory
         if (owner is not { AutomationAvailable: true, AutomatedHistoryAvailable: true, Failure: null })
             throw new NotSupportedException("This provider does not expose automated-seat history.");
         long generation;
-        lock (automatedScopes) {
-            generation = simulationGeneration;
+        lock (worldScopeGate) {
+            generation = worldGeneration;
             RequireAudience();
         }
         var raw = await Request("automatedMatchHistory", new { gameId, seatId, afterSequence, limit });
         var batch = DecodeAutomatedHistory(raw, gameId, seatId, afterSequence, limit);
-        lock (automatedScopes) RequireAudience();
+        lock (worldScopeGate) RequireAudience();
         return batch;
 
         void RequireAudience()

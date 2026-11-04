@@ -12,6 +12,44 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.testng.Assert.*;
 
 public class SyncTransportTest {
+    @Test(timeOut = 10000) public void privateFaceProjectionIsExplicitAndForwardedOnlyToAnAdvertisingHost() throws Exception {
+        for (boolean supported : List.of(false, true)) {
+            Set<String> capabilities = supported ? Set.of("owned-decision-observation", "private-action-faces")
+                    : Set.of("owned-decision-observation");
+            try (var server = new SyncTransport.Server((seat, method, args) -> Map.of("opted", MatchEndpoint.privateActionFaces(args)),
+                    () -> 1, ignored -> { }, capabilities);
+                 var remote = new SeatConnection(new SyncTransport.Remote("127.0.0.1:" + server.listen()))) {
+                assertEquals(remote.state().get("opted"), false);
+                assertEquals(remote.decisionObservation().get("opted"), false);
+                assertEquals(remote.state(true).get("opted"), supported);
+                assertEquals(remote.decisionObservation(true).get("opted"), supported);
+            }
+        }
+        assertFalse(MatchEndpoint.privateActionFaces(new JsonObject()));
+        var invalid = new JsonObject(); invalid.addProperty("privateActionFaces", "true");
+        assertThrows(IllegalArgumentException.class, () -> MatchEndpoint.privateActionFaces(invalid));
+    }
+
+    @Test(timeOut = 10000) public void codedFailuresKeepTheirIdentityAcrossTcpAndDoNotAuthorizeReplay() throws Exception {
+        var applied = new AtomicInteger();
+        try (var server = new SyncTransport.Server((seat, method, args) -> {
+            applied.incrementAndGet();
+            if (method.equals("coded")) throw new SyncTransport.CodedFailure("observation-superseded", "Changed owned input");
+            throw new IllegalArgumentException("Legacy failure");
+        }, () -> 1); var remote = new SyncTransport.Remote("127.0.0.1:" + server.listen())) {
+            try { remote.request("coded", new JsonObject()); fail("The coded failure must be returned"); }
+            catch (SyncTransport.CodedFailure rejected) { assertEquals(rejected.code(), "observation-superseded"); }
+            assertEquals(applied.get(), 1, "The transport never retries a coded failure");
+            try { remote.request("legacy", new JsonObject()); fail("The ordinary failure must be returned"); }
+            catch (IllegalArgumentException rejected) {
+                assertFalse(rejected instanceof SyncTransport.CodedFailure);
+                assertEquals(rejected.getMessage(), "Legacy failure");
+            }
+            assertEquals(applied.get(), 2);
+        }
+        assertThrows(IllegalArgumentException.class, () -> new SyncTransport.CodedFailure("Invalid code", "No"));
+    }
+
     @Test(timeOut = 10000) public void optionalCapabilitiesAreNegotiatedWithoutChangingVersionOrCommandAuthority() throws Exception {
         try (var server = new SyncTransport.Server((seat, method, args) -> Map.of("seat", seat), () -> 1,
                 ignored -> { }, Set.of("match-history")); var local = server.local(0);

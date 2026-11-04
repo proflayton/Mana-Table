@@ -15,7 +15,8 @@ internal sealed partial class TableApplication
             || decision.Payload is not (PriorityPayload or PaymentPayload)) return null;
         var current = ReleasedPlaySource() ?? (matchPresentation.Cards.Pinned is { ChoiceSlot: < 0, Zone: not "Stack" } entry && CardContext.CanRetainPinned(entry)
             ? CardContext.CurrentOccurrence(entry) : dragging && dragSource != null ? CurrentDragCard(dragSource) : HoverManaSource());
-        return current is { FaceDown: false, Key.Length: > 0 } ? current : null;
+        return current is { Key.Length: > 0 } && match is { } state
+            && CardViews.CanReadActionSource(state, current.Key) ? current : null;
     }
 
     private SourceActionContext? ReaderActionContext(Card card) => match is not { Decision: { } decision } state ? null

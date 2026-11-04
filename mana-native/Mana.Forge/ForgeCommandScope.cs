@@ -13,18 +13,24 @@ internal sealed class ForgeCommandScope
 {
     private readonly object observationGate = new();
     private GameSnapshot? observed;
+    private long audienceGeneration;
+    internal long AudienceGeneration { get { lock (observationGate) return audienceGeneration; } }
     internal string ObservedGameId => Volatile.Read(ref observed)?.Id ?? "";
     internal GameSnapshot? ObservedState => Volatile.Read(ref observed);
-    internal void Observe(GameSnapshot? state)
+    internal bool Observe(GameSnapshot? state, long? expectedAudience = null)
     {
         lock (observationGate) {
+            if (expectedAudience is { } expected && expected != audienceGeneration) return false;
             // Response continuations can finish out of order. The client's
             // replica rejects older revisions; command authority must not move
             // backward either and revive a prompt it has already replaced.
             if (state != null && observed is { } previous && state.Id == previous.Id
-                && state.Revision < previous.Revision) return;
+                && state.Revision < previous.Revision) return false;
             UndoFacts.ValidateProgress(observed, state);
+            if (state == null || observed == null || state.Id != observed.Id || state.ViewerId != observed.ViewerId
+                || UndoFacts.RestoredSince(observed, state)) audienceGeneration++;
             Volatile.Write(ref observed, state);
+            return true;
         }
     }
     internal GameSnapshot? ObserveRaw(JsonElement raw, bool certifiedUndo = false)
@@ -38,7 +44,13 @@ internal sealed class ForgeCommandScope
             throw;
         }
     }
-    internal void Clear() => Observe(null);
+    internal bool Clear(long? expectedAudience = null) => Observe(null, expectedAudience);
+    internal bool ClearIfCurrent(GameSnapshot? anchor, long expectedAudience)
+    {
+        lock (observationGate) {
+            return ReferenceEquals(observed, anchor) && Clear(expectedAudience);
+        }
+    }
     internal bool CanReadSource(string gameId, string decisionId, string key)
     {
         var state = Volatile.Read(ref observed);
@@ -46,7 +58,7 @@ internal sealed class ForgeCommandScope
             && state.Id == gameId && decision.Id == decisionId
             && (state.DecisionOwnerId == null || state.DecisionOwnerId == state.ViewerId)
             && (decision.Payload is not PriorityPayload || state.PriorityPlayerId == null || state.PriorityPlayerId == state.ViewerId)
-            && CardViews.FindActionSource(state, key)?.Card is { FaceDown: false };
+            && CardViews.CanReadActionSource(state, key);
     }
     internal Dictionary<string, object?> Encode(GameCommand command)
     {

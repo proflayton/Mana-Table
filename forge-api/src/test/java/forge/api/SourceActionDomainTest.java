@@ -13,6 +13,114 @@ import static org.testng.Assert.*;
 /** Complete timing domains and payment certainty are separate engine facts. */
 public class SourceActionDomainTest {
     @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void anOrdinaryManifestedCreatureCanBeReadQueriedAndActuallyTurnedFaceUpWithoutPublicDisclosure() throws Exception {
+        try (var scenario = new RulesScenario("ordinary-manifested-creature", Map.of(0, List.of("Island", "Island", "Mogg Fanatic")), "Merfolk Looter", "Rhys the Redeemed")) {
+            scenario.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").equals("InputPassPriority")
+                    && text(next.state(), "phaseKey").equals("MAIN1"));
+            var actor = scenario.table.game.getRegisteredPlayers().get(0);
+            HeadlessPlatform.query(scenario.table, () -> {
+                // Controlled real engine operation: this is the same manifest
+                // implementation used by Reality Shift's resolving effect.
+                var cause = forge.game.ability.AbilityFactory.getAbility("DB$ Manifest | DefinedPlayer$ You", actor.getCommanders().get(0));
+                cause.setActivatingPlayer(actor);
+                assertTrue(actor.getCardsIn(ZoneType.Library).get(0).manifest(actor, cause, forge.game.ability.AbilityKey.newMap()).isManifested());
+                scenario.table.publish(); return null;
+            });
+            var json = new com.google.gson.Gson();
+            var owned = json.toJsonTree(scenario.session(0).decisionObservation()).getAsJsonObject();
+            assertEquals(text(owned.getAsJsonObject("domain"), "coverage"), "Complete",
+                    "An original ordinary owned read must include its entitled face-down turn-up route");
+            var legacy = scenario.state(0);
+            assertTrue(legacy.getAsJsonArray("actionSources").isEmpty(), "Unopted readers never receive the new Battlefield source zone");
+            var state = json.toJsonTree(scenario.session(0).state(true)).getAsJsonObject();
+            assertEquals(state.get("revision"), legacy.get("revision")); assertEquals(state.get("boardRevision"), legacy.get("boardRevision"));
+            var row = state.getAsJsonArray("actionSources").get(0).getAsJsonObject();
+            var physical = row.getAsJsonObject("card"); var known = row.getAsJsonObject("knownFace");
+            assertEquals(text(known, "name"), "Merfolk Looter"); assertFalse(known.get("faceDown").getAsBoolean());
+            for (String identity : List.of("key", "visualId", "combatId")) assertEquals(text(known, identity), "");
+            assertTrue(physical.get("faceDown").getAsBoolean()); assertEquals(text(physical, "name"), "Face-down card");
+            assertEquals(physical.get("power").getAsInt(), 2); assertEquals(physical.get("toughness").getAsInt(), 2);
+            var published = zone(viewer(state), "Battlefield").getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject())
+                    .filter(card -> card.get("faceDown").getAsBoolean()).findFirst().orElseThrow();
+            assertEquals(physical, published, "A private reading descriptor cannot rewrite any physical battlefield fact");
+            var ignored = state.getAsJsonObject("prompt").getAsJsonArray("priorityAbilities").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(ability -> text(ability, "sourceName").equals("Mogg Fanatic")).findFirst().orElseThrow();
+            var receipt = json.toJsonTree(scenario.session(0).action(request(new RulesScenario.Input(0, state, state.getAsJsonObject("prompt")),
+                    Map.of("action", "setAbilityAutoPass", "abilityId", text(ignored, "id"), "ignored", true)))).getAsJsonObject();
+            assertTrue(receipt.getAsJsonArray("actionSources").isEmpty(), "A default command receipt must remain readable by an unopted old client");
+            assertFalse(json.toJsonTree(scenario.session(0).state(true)).getAsJsonObject().getAsJsonArray("actionSources").isEmpty(),
+                    "Filtering the command receipt cannot revoke or mutate the current owner's separate opted-in reading view");
+            String concealed = json.toJson(SpectatorObservation.project(scenario.table, 1, null));
+            assertFalse(concealed.contains("Merfolk Looter")); assertTrue(concealed.contains("Face-down card"));
+            var before = new RulesScenario.Input(0, state, state.getAsJsonObject("prompt"));
+            assertThrows(IllegalArgumentException.class, () -> scenario.session(1).sourceActions(request(before, Map.of("key", text(physical, "key")))));
+            var catalog = json.toJsonTree(scenario.session(0).sourceActions(request(before, Map.of("key", text(physical, "key"))))).getAsJsonObject();
+            assertEquals(text(catalog, "sourceCardId"), text(physical, "combatId"));
+            assertFalse(catalog.getAsJsonArray("actions").isEmpty());
+            var command = Map.of("action", "useSourceAction", "key", text(physical, "key"), "actionId",
+                    text(catalog.getAsJsonArray("actions").get(0).getAsJsonObject(), "id"));
+            assertTrue(scenario.answer(before, command));
+            for (int resource = 0; resource < 2; resource++) {
+                var payment = scenario.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").startsWith("InputPayMana"));
+                var island = zone(viewer(payment.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
+                        .map(value -> value.getAsJsonObject()).filter(card -> text(card, "name").equals("Island") && !card.get("tapped").getAsBoolean()).findFirst().orElseThrow();
+                var mana = json.toJsonTree(scenario.session(0).sourceActions(request(payment, Map.of("key", text(island, "key"))))).getAsJsonObject();
+                assertTrue(scenario.answer(payment, Map.of("action", "useSourceAction", "key", text(island, "key"), "actionId",
+                        text(mana.getAsJsonArray("actions").get(0).getAsJsonObject(), "id"))));
+                final int expected = resource + 1;
+                long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+                while (System.nanoTime() < deadline && actor.getCardsIn(ZoneType.Battlefield).stream().filter(forge.game.card.Card::isTapped).count() < expected)
+                    Thread.sleep(5);
+                assertEquals(actor.getCardsIn(ZoneType.Battlefield).stream().filter(forge.game.card.Card::isTapped).count(), expected);
+            }
+            boolean resumed = false;
+            for (int notices = 0; notices <= 4; notices++) {
+                var next = scenario.until(current -> text(current.prompt(), "kind").equals("reveal")
+                        || current.seat() == 0 && text(current.prompt(), "inputType").equals("InputPassPriority")
+                            && actor.getCardsIn(ZoneType.Battlefield).stream().noneMatch(forge.game.card.Card::isFaceDown));
+                if (!text(next.prompt(), "kind").equals("reveal")) { resumed = true; break; }
+                assertEquals(next.prompt().get("min").getAsInt(), 0); assertEquals(next.prompt().get("max").getAsInt(), 0);
+                assertTrue(scenario.answer(next, Map.of("choices", List.of())), "A real transformed-card reveal requires its ordinary acknowledgment");
+            }
+            assertTrue(resumed, "All real reveal acknowledgments return the caster's current priority");
+            assertTrue(json.toJsonTree(scenario.session(0).state(true)).getAsJsonObject().getAsJsonArray("actionSources").isEmpty());
+            assertThrows(IllegalArgumentException.class, () -> scenario.session(0).action(request(before, command)));
+            assertTrue(json.toJson(SpectatorObservation.project(scenario.table, 1, null)).contains("Merfolk Looter"));
+        }
+    }
+
+    @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void aManifestedLandCanBeReadByItsOwnerWithoutInventingItsPrintedManaOrTurnFaceUpAction() throws Exception {
+        try (var scenario = new RulesScenario("known-manifested-land", Map.of(), "Forest", "Rhys the Redeemed")) {
+            scenario.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").equals("InputPassPriority")
+                    && text(next.state(), "phaseKey").equals("MAIN1"));
+            var actor = scenario.table.game.getRegisteredPlayers().get(0);
+            HeadlessPlatform.query(scenario.table, () -> {
+                var cause = forge.game.ability.AbilityFactory.getAbility("DB$ Manifest | DefinedPlayer$ You", actor.getCommanders().get(0));
+                cause.setActivatingPlayer(actor);
+                var manifested = actor.getCardsIn(ZoneType.Library).get(0).manifest(actor, cause, forge.game.ability.AbilityKey.newMap());
+                assertTrue(manifested.isManifested()); assertTrue(manifested.isFaceDown());
+                scenario.table.publish();
+                return null;
+            });
+            var state = new com.google.gson.Gson().toJsonTree(scenario.session(0).state(true)).getAsJsonObject();
+            var row = state.getAsJsonArray("actionSources").get(0).getAsJsonObject();
+            assertEquals(text(row.getAsJsonObject("knownFace"), "name"), "Forest");
+            var physical = row.getAsJsonObject("card");
+            assertEquals(text(physical, "name"), "Face-down card"); assertEquals(text(physical, "type"), "Creature");
+            assertEquals(physical.get("power").getAsInt(), 2); assertEquals(physical.get("toughness").getAsInt(), 2);
+            var catalog = new com.google.gson.Gson().toJsonTree(scenario.session(0).sourceActions(request(
+                    new RulesScenario.Input(0, state, state.getAsJsonObject("prompt")), Map.of("key", text(physical, "key"))))).getAsJsonObject();
+            assertTrue(catalog.getAsJsonArray("actions").isEmpty(), "A known printed land is still only its actual face-down creature");
+            var own = new com.google.gson.Gson().toJsonTree(scenario.session(0).decisionObservation(true)).getAsJsonObject();
+            assertEquals(text(own.getAsJsonObject("domain"), "coverage"), "Complete");
+            assertFalse(own.getAsJsonObject("domain").getAsJsonArray("sources").asList().stream()
+                    .map(value -> value.getAsJsonObject()).anyMatch(source -> text(source, "sourceCardKey").equals(text(physical, "key"))));
+        }
+    }
+
+
+    @Test(groups = "canonical-interaction", timeOut = 90000)
     public void discoversCommandHandAndManaWithoutTheBoundedHighlightScanOrInventingAffordability() throws Exception {
         try (var scenario = new RulesScenario("source-action-domain", Map.of(0,
                 List.of("Island", "Loch Mare")), "Miscast", "Rhys the Redeemed", true)) {

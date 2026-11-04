@@ -45,6 +45,21 @@ public class CardZoneTable extends ForwardingTable<ZoneType, ZoneType, CardColle
         lastStateGraveyard = cardZoneTable.getLastStateGraveyard();
     }
 
+    /** Independent mutable containers, retaining exact rules objects and LKI. */
+    public CardZoneTable copy() {
+        CardZoneTable copy = new CardZoneTable();
+        for (var cell : cellSet()) {
+            copy.dataMap.put(cell.getRowKey(), cell.getColumnKey(), new CardCollection(cell.getValue()));
+        }
+        copy.lastStateBattlefield = lastStateBattlefield == CardCollection.EMPTY
+                ? CardCollection.EMPTY : new CardCollection(lastStateBattlefield);
+        copy.lastStateGraveyard = lastStateGraveyard == CardCollection.EMPTY
+                ? CardCollection.EMPTY : new CardCollection(lastStateGraveyard);
+        copy.createdTokens = new CardCollection(createdTokens);
+        copy.firstTimeTokenCreators = new PlayerCollection(firstTimeTokenCreators);
+        return copy;
+    }
+
     public static CardZoneTable getSimultaneousInstance(SpellAbility sa) {
         if (sa.isReplacementAbility() && sa.getReplacementEffect().getMode() == ReplacementType.Moved
                 && sa.getReplacingObject(AbilityKey.InternalTriggerTable) != null) {
