@@ -39,11 +39,12 @@ internal sealed partial class TableApplication
 
     private void FlipReaderText(string id)
     {
-        if (matchPresentation.Cards.Pinned is not { } entry || entry.Id != id || entry.Card.FaceDown || !CardContext.CanRead(entry)) return;
+        if (matchPresentation.Cards.Pinned is not { } entry || entry.Id != id || !CardContext.CanRead(entry)
+            || CardContext.ReadingFace(entry) is not { } face) return;
         if (rulesReaderId != id || rulesReaderGame != match?.Id) ClearRulesReader();
         rulesReaderId = id; rulesReaderGame = match?.Id;
         rulesReaderText = !rulesReaderText; rulesReaderTurnedAt = now;
-        if (rulesReaderText) RulesLayout(entry.Card);
+        if (rulesReaderText) RulesLayout(face);
     }
 
     private static Rectangle ReaderControlPaintBounds(Rectangle bounds) => Rectangle.Union(bounds,
@@ -51,7 +52,7 @@ internal sealed partial class TableApplication
 
     private void DrawRulesReaderControl(PresentedCard entry, Rectangle face, IReadOnlyList<Rectangle> actions)
     {
-        if (!entry.Focused || entry.Card.FaceDown || !CardContext.CanRead(entry)) return;
+        if (!entry.Focused || !CardContext.CanRead(entry)) return;
         // Earlier reader actions are current. A bill is present here only when
         // its owner has already composed it in this frame; later bills reserve us.
         var retained = DecisionActionReservations(face, false,
@@ -77,7 +78,8 @@ internal sealed partial class TableApplication
     private bool DrawRulesReader(PresentedCard entry)
     {
         if (!entry.Focused || rulesReaderId != entry.Id || rulesReaderGame != match?.Id
-            || entry.Card.FaceDown || !CardContext.CanRetainPinned(entry) || entry.Display.Size.X < 300) return false;
+            || !CardContext.CanRetainPinned(entry) || entry.Display.Size.X < 300
+            || CardContext.ReadingFace(entry) is not { } face) return false;
         float progress = preferences.ReducedMotion ? 1 : Math.Clamp((float)((now - rulesReaderTurnedAt) / RulesFlipSeconds), 0, 1);
         if (!rulesReaderText && progress >= 1) return false;
         bool text = progress >= .5f ? rulesReaderText : !rulesReaderText;
@@ -85,13 +87,13 @@ internal sealed partial class TableApplication
         var pose = entry.Display with { Size = entry.Display.Size * new Vector2(width, 1) };
         if (width < .35f) {
             canvas.Surface(null, pose, Gold);
-        } else if (text) PaintRulesFace(entry.Card, pose);
-        else PaintCard(entry.Card, pose, false, false, true);
+        } else if (text) PaintRulesFace(face, pose, current: CardContext.CurrentOccurrence(entry) ?? entry.Card);
+        else PaintCard(face, pose, false, false, true);
         if (IsStudyBattlefieldReader(entry)) PaintBattlefieldReaderState(entry.Card, entry);
         return true;
     }
 
-    private void PaintRulesFace(Card card, Pose pose, CardRulesLayout? prepared = null, Card? illustration = null)
+    private void PaintRulesFace(Card card, Pose pose, CardRulesLayout? prepared = null, Card? illustration = null, Card? current = null)
     {
         var face = pose.Bounds;
         var layout = prepared ?? RulesLayout(card);
@@ -126,7 +128,7 @@ internal sealed partial class TableApplication
             RegisterRulesKeywordHelp(card, paragraph, x, y, index);
             Paint(paragraph, CardRulesLayout.RulesFont, false); y += 12;
         }
-        var statsCard = illustration ?? card;
+        var statsCard = current ?? illustration ?? card;
         if (CardPresentation.HasCombatStats(statsCard)) {
             var stats = new Rectangle(face.Right - 112, face.Bottom - 45, 92, 32);
             canvas.Rounded(stats, new(24, 47, 45), 4);

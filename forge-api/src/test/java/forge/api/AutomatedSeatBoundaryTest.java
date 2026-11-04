@@ -75,7 +75,7 @@ public class AutomatedSeatBoundaryTest {
                 MatchTable.automated(new Deck(), "Commander", "Policy 1"),
                 MatchTable.automated(new Deck(), "Commander", "Policy 2"));
         try (var table = new MatchTable("Commander", players, RESOURCES,
-                Files.createTempDirectory("automated-human-departure"))) {
+                Files.createTempDirectory("automated-human-departure"), MatchTable.CompletionPolicy.STOP_AFTER_LAST_HUMAN)) {
             var request = new JsonObject();
             request.addProperty("sessionId", table.id);
             table.seat(0).concede(request);

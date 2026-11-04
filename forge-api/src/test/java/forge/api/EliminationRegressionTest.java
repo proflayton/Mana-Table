@@ -158,7 +158,8 @@ public class EliminationRegressionTest {
                 registered.addExtraCardsOnBattlefield(extras);
                 players.add(registered);
             }
-            table = new MatchTable("Commander", players, RESOURCES, evidence);
+            table = new MatchTable("Commander", players, RESOURCES, evidence,
+                    allHuman ? MatchTable.CompletionPolicy.RULES_OUTCOME : MatchTable.CompletionPolicy.STOP_AFTER_LAST_HUMAN);
             table.game.subscribeToEvents(this);
             table.start();
         }

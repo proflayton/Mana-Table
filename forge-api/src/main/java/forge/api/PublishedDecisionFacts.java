@@ -10,6 +10,15 @@ import java.util.Map;
 
 /** Copied structured facts for an audience's retained decision publication. */
 final class PublishedDecisionFacts {
+    /** Detach already projected wire records as well as their nested collections.
+     * Only the on-demand complete observation pays this cost; normal state reads
+     * continue returning their committed publication without serializing it. */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> freezeWire(Map<String, Object> published) {
+        var json = forge.api.sync.SyncTransport.JSON;
+        return freeze(json.fromJson(json.toJsonTree(published), Map.class));
+    }
+
     static Map<String, Object> freeze(Map<String, Object> facts) {
         var copy = new LinkedHashMap<String, Object>();
         facts.forEach((key, value) -> copy.put(key, freezeValue(value, 0)));

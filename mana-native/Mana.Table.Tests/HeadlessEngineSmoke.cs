@@ -120,9 +120,15 @@ internal static class HeadlessEngineSmoke
             Check(initial.Players.All(player => player.Life == 40), "A real four-player Commander game reaches its opening decision");
             lastObserved = initial;
             new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f }.Save(paths.Profile);
-            using var app = new TableApplication(TestTableServices.For(engine), paths.Profile, initialState: initial);
+            // This journey deliberately samples provider frames around each
+            // gesture. Give that producer the existing external ingress instead
+            // of racing it with the application's independent polling owner.
+            using var app = new TableApplication(TestTableServices.For(engine), paths.Profile, initialState: initial,
+                observationDelivery: ObservationDeliveryMode.External);
             app.Automated = true; app.Initialize();
             var view = app.TestPort;
+            using var observations = app.OpenObservationIngress(initial.Id, initial.ViewerId);
+            Observe(initial);
             view.SetTableStudy(true);
             var viewport = new Point(1600, 900);
             Point pointer = new(20, 60);
@@ -327,7 +333,7 @@ internal static class HeadlessEngineSmoke
             var conceding = view.Match;
             Click("concede"); Click("confirm-concede"); await Idle();
             Guard();
-            view.Accept(await MatchCompletion.WaitAsync(engine, conceding, TimeSpan.FromSeconds(90) - elapsed.Elapsed));
+            Observe(await MatchCompletion.WaitAsync(engine, conceding, TimeSpan.FromSeconds(90) - elapsed.Elapsed));
             frame = Tick("finished");
             Check(view.Match is { Status: "finished", Result: "Defeat" }, "The real game concedes through production confirmation controls and publishes its result");
             Save("finished");
@@ -362,13 +368,19 @@ internal static class HeadlessEngineSmoke
             }
             async Task Refresh(string stage)
             {
-                if (await engine.ObserveAsync() is { } next) { lastObserved = next; view.Accept(next); }
+                await AwaitCommand();
+                if (await engine.ObserveAsync() is { } next) Observe(next);
                 frame = Tick(stage);
             }
-            async Task Idle()
+            async Task AwaitCommand()
             {
                 while (view.Busy) { Guard(); await Task.Delay(5); frame = Tick("await-command"); }
-                await Refresh("after-command");
+            }
+            Task Idle() => Refresh("after-command");
+            void Observe(GameSnapshot next)
+            {
+                if (!observations.TryPost(next)) throw new InvalidOperationException("The real-engine observation producer lost its bound game/viewer ingress.");
+                lastObserved = next;
             }
             void Save(string stage) => File.WriteAllText(Path.Combine(paths.Profile, "headless-engine-" + stage + ".json"),
                 JsonSerializer.Serialize(new { snapshot = view.Match, frame = frame.Observe() }, json));
@@ -463,7 +475,7 @@ internal static class HeadlessEngineSmoke
                         JsonSerializer.Serialize(new { card, sourceZone, expectedKind, displayedBeforeQuery, primed, beforeQuery, sourceActions, repeated, afterQuery }, json));
                 Check(stableRead,
                     "Reading the real source actions twice preserves full engine text, stable opaque handles and the unanswered prompt: " + card.Name);
-                view.Accept(afterQuery); frame = Tick("source-read-settled");
+                Observe(afterQuery); frame = Tick("source-read-settled");
                 bool staleQueryRejected = false;
                 try { await engine.SourceActionsAsync(beforeQuery.Id, prompt, "expired-source-key"); }
                 catch (EngineCommandRejectedException) { staleQueryRejected = true; }

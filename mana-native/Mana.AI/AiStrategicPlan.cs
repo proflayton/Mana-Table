@@ -102,7 +102,7 @@ internal static class AiPlanValidation
                 || !OwnedOccurrence(state, reservation.SourceCardId, reservation.SourceZone, out var response)
                 || response.FaceDown || response.PhasedOut) return false;
             foreach (string id in reservation.ManaSourceIds) {
-                if (!Identifier(id) || !funding.Add(id) || !AvailablePermanent(state, id, out _)) return false;
+                if (!Identifier(id) || !funding.Add(id) || !CanRetainFundingSource(state, id)) return false;
             }
             foreach (var amount in reservation.PoolMana) {
                 if (!Colors.Contains(amount.Key) || amount.Value is < 1 or > 1024) return false;
@@ -111,12 +111,19 @@ internal static class AiPlanValidation
         }
         if (funding.Count > MaxSources || pool.Any(pair => pair.Value > state.Viewer!.Mana.GetValueOrDefault(pair.Key))) return false;
         foreach (string id in plan.RetainedBlockerIds)
-            if (!AvailablePermanent(state, id, out var blocker) || !blocker.Type.Contains("Creature", StringComparison.OrdinalIgnoreCase)) return false;
+            if (!CanRetainBlocker(state, id)) return false;
         return true;
     }
 
-    private static bool AvailablePermanent(GameSnapshot state, string id, out Card card)
-        => OwnedOccurrence(state, id, "Battlefield", out card) && !card.Tapped && !card.PhasedOut && !card.FaceDown;
+    // Defensive memory needs current public physical characteristics, not the
+    // printed face that a response or mana-source reservation must know.
+    internal static bool CanRetainBlocker(GameSnapshot state, string id)
+        => OwnedOccurrence(state, id, "Battlefield", out var card) && !card.Tapped && !card.PhasedOut && !card.Attacking
+            && card.Type.Contains("Creature", StringComparison.OrdinalIgnoreCase)
+            && card.BlockingCapacity is not { Maximum: 0, Unlimited: false };
+
+    private static bool CanRetainFundingSource(GameSnapshot state, string id)
+        => OwnedOccurrence(state, id, "Battlefield", out var card) && !card.Tapped && !card.PhasedOut && !card.FaceDown;
 
     private static bool OwnedOccurrence(GameSnapshot state, string id, string zone, out Card card)
     {

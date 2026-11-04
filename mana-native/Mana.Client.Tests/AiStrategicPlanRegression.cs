@@ -12,6 +12,7 @@ internal static class AiStrategicPlanRegression
     {
         await ReceiptAndObservation(check);
         await CarryAcrossCombat(check);
+        await PublicBlockerResourceRoles(check);
         await RejectedAndInvalid(check);
         await CancelledAndLate(check);
         await ResourceLifetime(check);
@@ -40,6 +41,58 @@ internal static class AiStrategicPlanRegression
                     "Combat planning can carry an equal held response while adding a defensive intention without needing a current response offer");
             } else check(command == null && session.View.Status == AiSeatStatus.Invalid && session.Plan is { Version: 1 },
                 "A combat-only observation cannot invent a new response route, bill or funding witness by modifying carried strategic memory");
+        }
+    }
+
+    private static async Task PublicBlockerResourceRoles(Action<bool, string> check)
+    {
+        var original = Frame();
+        var blocker = original.State.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == "own-blocker");
+        var masked = blocker with { VisualId = "", FaceDown = true, Name = "Face-down card" };
+        AiDecisionFrame WithBlocker(Card? current, bool foreign = false)
+        {
+            var state = original.State with { Players = original.State.Players.Select(player => player with {
+                Zones = player.Zones.Select(zone => {
+                    if (zone.Name != "Battlefield") return zone;
+                    var cards = zone.Cards.Where(card => CardViews.Identity(card) != "own-blocker")
+                        .Concat(current != null && player.Id == (foreign ? 7 : 0) ? [current] : []).ToImmutableArray();
+                    return zone with { Cards = cards, Count = cards.Length };
+                }).ToImmutableArray()
+            }).ToImmutableArray() };
+            return new(state, domain: original.Domain);
+        }
+        using (var seat = Seat(new Immediate(Hold))) {
+            var frame = WithBlocker(masked); seat.Observe(frame); await seat.EvaluateAsync();
+            var command = seat.TakeCommand();
+            check(command != null && seat.Report(command, AiExecutionReceipt.Accepted)
+                    && seat.Plan is { RetainedBlockerIds: ["own-blocker"], Reservations.Length: 1 }
+                    && seat.Plan.Reservations[0].ManaSourceIds.SequenceEqual(["own-mana"])
+                    && frame.State.ActionSources.IsEmpty && CardViews.FindZoneOccurrence(frame.State, "own-blocker")?.Card.FaceDown == true,
+                "The actual plan owner retains an untapped own masked blocker by public physical ID while preserving its independent known funding reservation");
+        }
+        foreach (var frame in new[] {
+            WithBlocker(masked, foreign: true), WithBlocker(null),
+            WithBlocker(masked with { CombatId = "replacement-blocker" }),
+            WithBlocker(masked with { Tapped = true }), WithBlocker(masked with { PhasedOut = true }),
+            WithBlocker(masked with { Type = "" }), WithBlocker(masked with { Type = "Land" }),
+            WithBlocker(masked with { Attacking = true }), WithBlocker(blocker with { BlockingCapacity = new(0) })
+        }) {
+            using var seat = Seat(new Immediate(Hold)); seat.Observe(frame); await seat.EvaluateAsync();
+            check(seat.View.Status == AiSeatStatus.Invalid && seat.TakeCommand() == null && seat.Plan == null,
+                "Foreign, missing, replaced, tapped, phased or nonblocking physical occurrences cannot borrow retained blocker authority");
+        }
+        foreach (string hidden in new[] { "own-mana", "response-occurrence" }) {
+            using var seat = Seat(new Immediate(Hold)); seat.Observe(original); await seat.EvaluateAsync();
+            seat.Report(seat.TakeCommand()!, AiExecutionReceipt.Accepted);
+            var next = Frame(2, omitOffers: true);
+            var state = next.State with { Players = next.State.Players.Select(player => player with {
+                Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Select(card => card.VisualId == hidden
+                    ? card with { CombatId = card.VisualId, VisualId = "", FaceDown = true, Name = "Face-down card" }
+                    : card).ToImmutableArray() }).ToImmutableArray()
+            }).ToImmutableArray() };
+            seat.Observe(new(state, domain: next.Domain));
+            check(seat.Plan == null && seat.PlanVersion == 2 && seat.TakeCommand() == null,
+                "Public masked-blocker memory grants neither a hidden response-spell reservation nor a hidden mana-source witness: " + hidden);
         }
     }
 

@@ -63,13 +63,12 @@ final class SpectatorObservation {
             var ability = item.getSpellAbility();
             CardView source = ability.getHostCard().getView();
             boolean disclosed = !source.isFaceDown() && publicCard(source);
-            var targets = new ArrayList<Object>();
+            var targets = new ArrayList<StackTargetProjection.Reference>();
             if (disclosed) for (var part : ability.getAllTargetChoices()) {
-                for (Player target : part.getTargetPlayers()) targets.add(map("kind", "player", "id", String.valueOf(target.getId()), "playerId", target.getId(), "name", target.getName()));
+                for (Player target : part.getTargetPlayers()) targets.add(StackTargetProjection.player(target.getView(), target.getName()));
                 for (Card target : part.getTargetCards()) {
                     CardView face = target.getView();
-                    if (publicCard(face)) targets.add(map("kind", "card", "id", id(table, face),
-                            "name", face.isFaceDown() ? "Face-down card" : face.getCurrentState().getName()));
+                    if (publicCard(face)) targets.add(StackTargetProjection.card(game, face, targetView -> id(table, targetView)));
                 }
             }
             stack.add(map("id", item.getId(), "name", disclosed ? source.getCurrentState().getName() : "Face-down spell",
@@ -79,7 +78,7 @@ final class SpectatorObservation {
                     "text", disclosed ? CardRulesText.of(source) : "", "card", publicCard(source) ? card(table, source) : null,
                     "ability", !ability.isSpell(), "kind", ability.isTrigger() ? "triggered" : ability.isSpell() ? "spell" : ability.isActivatedAbility() ? "activated" : "ability",
                     "controllerId", ability.getActivatingPlayer() == null ? null : ability.getActivatingPlayer().getId(),
-                    "targets", List.copyOf(targets), "effect", null, "operationGraph", ActionOperationProjection.unknown()));
+                    "targets", StackTargetProjection.distinct(targets), "effect", null, "operationGraph", ActionOperationProjection.unknown()));
         }
         var outcome = MatchOutcomeProjection.of(table, error);
         String result = MatchOutcomeProjection.forSpectator(outcome, table);
@@ -108,22 +107,13 @@ final class SpectatorObservation {
         return card.isFaceDown() ? table.identities.concealed(card) : table.identities.id(card);
     }
     private static Map<String, Object> card(MatchTable table, CardView card) {
-        var face = card.getCurrentState();
         boolean hidden = card.isFaceDown();
         boolean publicStats = !hidden || card.getZone() == ZoneType.Battlefield;
-        var counters = new LinkedHashMap<String, Integer>();
-        if (card.getCounters() != null) for (var count : card.getCounters().entrySet()) counters.put(count.getElement().getName(), count.getCount());
-        String kind = hidden ? "card" : card.isEmblem() ? "emblem" : card.isImmutable() ? "effect" : card.isToken() ? "token" : "card";
-        var result = map("key", "", "visualId", id(table, card), "combatId", id(table, card),
-                "name", hidden ? "Face-down card" : face.getName(), "type", publicStats ? face.getType().toString() : "",
-                "gamePieceType", kind, "manaCost", hidden ? "" : face.getManaCost().toString(), "text", hidden ? "" : CardRulesText.of(card),
-                "power", publicStats ? face.getPower() : null, "toughness", publicStats ? face.getToughness() : null,
-                "tapped", card.isTapped(), "phasedOut", card.isPhasedOut(), "sick", card.isSick(), "damage", card.getDamage(),
-                "attacking", card.isAttacking(), "blocking", card.isBlocking(), "faceDown", hidden, "selectable", false, "highlighted", false,
-                "counters", Collections.unmodifiableMap(counters), "states", publicStats ? PublicStates.of(card.getPublicStates(AUDIENCE)) : List.of(),
-                "combatKeywords", publicStats ? face.getPublicStates().stream().map(forge.game.PublicState::key).distinct().toList() : List.of(),
-                "blockingCapacity", card.getPublicBlockingCapacity(AUDIENCE),
-                "attachedTo", attachment(table, card.getAttachedTo()), "attachments", card.getAllAttachedCards().stream().filter(SpectatorObservation::publicCard).map(attached -> attachment(table, attached)).toList());
+        var result = new LinkedHashMap<>(PublicCardCharacteristics.capture(card, AUDIENCE, table.game.getView().getCombat(), hidden, publicStats));
+        result.put("key", ""); result.put("visualId", id(table, card)); result.put("combatId", id(table, card));
+        result.put("selectable", false); result.put("highlighted", false);
+        result.put("attachedTo", attachment(table, card.getAttachedTo()));
+        result.put("attachments", card.getAllAttachedCards().stream().filter(SpectatorObservation::publicCard).map(attached -> attachment(table, attached)).toList());
         MatchSession.addCardFaces(result, card, !hidden);
         MatchSession.addCardPrinting(result, card, !hidden);
         return Collections.unmodifiableMap(result);

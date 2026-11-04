@@ -30,8 +30,8 @@ public abstract class CostPartWithList extends CostPart {
      */
     private static final long serialVersionUID = 1L;
     /** The lists: one for LKI, one for the actual cards. */
-    private final CardCollection lkiList = new CardCollection();
-    protected final CardCollection cardList = new CardCollection();
+    private CardCollection lkiList = new CardCollection();
+    protected CardCollection cardList = new CardCollection();
 
     private boolean intrinsic = true;
 
@@ -54,6 +54,17 @@ public abstract class CostPartWithList extends CostPart {
 
     public final void setIntrinsic(boolean b) {
         intrinsic = b;
+    }
+
+    @Override
+    public CostPartWithList copy() {
+        CostPartWithList copy = (CostPartWithList) super.copy();
+        // A cost snapshot retains paid evidence, but never owns another
+        // attempt's mutable lists or zone batch. Card/LKI identities stay exact.
+        copy.lkiList = new CardCollection(lkiList);
+        copy.cardList = new CardCollection(cardList);
+        copy.table = table.copy();
+        return copy;
     }
 
     /**

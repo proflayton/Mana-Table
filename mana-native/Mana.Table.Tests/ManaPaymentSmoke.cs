@@ -604,10 +604,14 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             }
             bool SameLabels(IEnumerable<string> actual, Player player) => actual.OrderBy(value => value, StringComparer.Ordinal)
                 .SequenceEqual(LandLabels(player).OrderBy(value => value, StringComparer.Ordinal));
+            var readerSurfaces = ReaderOcclusionSurfaces(view);
+            var coveredPlayers = worldReadouts.Values.Where(group => group.Pieces.Any(piece => readerSurfaces.Any(piece.Intersects)))
+                .Select(group => group.PlayerId).ToHashSet();
             bool exactGroups = worldReadouts.Count == opponents.Length && opponents.All(player => worldReadouts.ContainsKey(player.Id))
                 && opponents.All(player => {
                     var group = worldReadouts[player.Id];
                     var emitted = printedReadouts.Where(text => group.Pieces.Contains(text.bounds)).ToArray();
+                    if (coveredPlayers.Contains(player.Id)) return emitted.Length == 0 && group.Pieces.All(piece => !view.SeatReadouts.Contains(piece));
                     return emitted.Length == 2 && SameLabels(emitted.Select(text => text.Value), player);
                 });
             var localReadouts = printedReadouts.Where(text => !worldReadouts.Values.Any(group => group.Pieces.Contains(text.bounds))).ToArray();
@@ -619,18 +623,22 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             var nameplates = frame.Hits.Where(hit => hit.Id.StartsWith("focus:", StringComparison.Ordinal)
                     && hit.Intent is MatchIntent.OpenZone { Zone: "Battlefield" })
                 .Select(hit => new { hit.Id, hit.Bounds, intent = hit.Intent.ToString() }).ToArray();
+            bool exactNameplates = nameplates.Select(hit => hit.Id).Order(StringComparer.Ordinal)
+                .SequenceEqual(opponents.Where(player => !coveredPlayers.Contains(player.Id)).Select(player => "focus:" + player.Id).Order(StringComparer.Ordinal));
+            var seatGeometry = ReaderSeatReadoutGeometry(view);
             var bill = view.ManaJourney;
             File.WriteAllText(Path.Combine(view.Profile, "reader-bill-public-readouts-" + label + ".json"),
                 JsonSerializer.Serialize(new { state, frame = observedFrame, printedReadouts, worldReadouts, expectedReadouts, readouts, nameplates,
-                    exactGroups, exactObservedReadouts,
+                    exactGroups, exactObservedReadouts, coveredPlayers, readerSurfaces, exactNameplates, seatGeometry,
                     currentBill = bill, currentReader = SameCurrentReader(), replies = engine.Replies.Count,
                     artworkSource = ArtworkSource, realArtwork = RealArtwork,
                     scope = "Exact current visible world groups and emitted land labels, observed clipped screen text, and current focus/nameplate hits; no seat-placement formula."
                 }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
-            Check(exactGroups && exactObservedReadouts && readouts.Length == expectedReadouts.Length && nameplates.Length == state.Players.Length - 1
+            Check(exactGroups && exactObservedReadouts && readouts.Length == expectedReadouts.Length && exactNameplates
+                && seatGeometry.Clear && seatGeometry.CoveredTargetsRetired && seatGeometry.UncoveredVisible
                 && bill != null && readouts.All(text => !bill.Bounds.Intersects(text.bounds))
                 && nameplates.All(hit => !bill.Bounds.Intersects(hit.Bounds)),
-                "The current exact printed-cost bill stays clear of the measured land summaries and current player nameplate targets");
+                "The current exact printed-cost bill stays clear of every visible land summary and nameplate, while only geometrically covered reader groups lose their paint and targets");
         }
         void CheckReaderBodyPhase() {
             var frame = view.Frame!;
@@ -1006,6 +1014,29 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
         && frame.Cards.SingleOrDefault(card => card.Focused) is { } reader
         && new[] { "Flash", "Flying" }.All(value => frame.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Text>()
             .Any(text => text.Value == value && reader.Display.Bounds.Contains(text.X, text.Y)));
+
+    internal static (bool Clear, bool CoveredTargetsRetired, int CoveredPlans, bool UncoveredVisible) ReaderSeatReadoutGeometry(TableApplication.Probe view)
+    {
+        if (view.Frame is not { } frame || frame.Cards.SingleOrDefault(card => card.Focused) is not { } reader)
+            return (false, false, 0, false);
+        var surfaces = ReaderOcclusionSurfaces(view);
+        var covered = view.ReadoutPlans.Values.Where(plan => plan.Pieces.Any(piece => surfaces.Any(piece.Intersects))).ToArray();
+        bool retired = covered.All(plan => frame.Hits.All(hit => hit.Id != "focus:" + plan.PlayerId
+            && hit.Id != "player-counters:" + plan.PlayerId && !hit.Id.StartsWith("player-state:" + plan.PlayerId + ":", StringComparison.Ordinal)
+            && hit.Id != "player-state-more:" + plan.PlayerId));
+        bool uncoveredVisible = view.ReadoutPlans.Values.Except(covered).Any(plan => plan.Pieces.Any(view.SeatReadouts.Contains));
+        return (view.SeatReadouts.All(bounds => surfaces.All(surface => !surface.Intersects(bounds))), retired, covered.Length, uncoveredVisible);
+    }
+
+    private static Microsoft.Xna.Framework.Rectangle[] ReaderOcclusionSurfaces(TableApplication.Probe view)
+    {
+        if (view.Frame is not { } frame || frame.Cards.SingleOrDefault(card => card.Focused) is not { } reader) return [];
+        var body = new Mana.Renderer.CardPaintGeometry(reader.Display);
+        return frame.Hits.Where(hit => hit.Id is "battlefield-reader-state" or "source-actions-surface" or "read-card-rules")
+            .Select(hit => hit.Id == "battlefield-reader-state" ? hit.Bounds : Microsoft.Xna.Framework.Rectangle.Union(hit.Bounds,
+                new(hit.Bounds.X + 2, hit.Bounds.Y + 5, hit.Bounds.Width, hit.Bounds.Height)))
+            .Append(body.Backing.Bounds).Append(body.Shadow.Bounds).ToArray();
+    }
 
     internal static object ReaderControlFacts(TableApplication.Probe view, int replies, string artworkSource = "none")
     {

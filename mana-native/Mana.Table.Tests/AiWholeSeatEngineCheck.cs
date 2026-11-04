@@ -52,6 +52,17 @@ internal static class AiWholeSeatEngineCheck
         int steps = 0, lastTurn = 0, comparedCheckpoints = 0, divergentCheckpoints = 0;
         int? rhysSeat = null;
         string? lastPublicFacts = null;
+        var executionCohorts = new Dictionary<(string Game, long Board), ForgePublicProjectionFacts.ExecutionCorrelation>();
+        void ObserveExecutionCorrelations(GameSnapshot frame) {
+            var current = ForgePublicProjectionFacts.CaptureExecutionCorrelations(frame);
+            if (!current.Valid) throw new InvalidDataException("Whole-seat observation has invalid local execution references.");
+            var key = (frame.Id, frame.BoardRevision);
+            executionCohorts[key] = executionCohorts.TryGetValue(key, out var prior)
+                ? ForgePublicProjectionFacts.MergeExecutionCorrelations(prior, current)
+                    ?? throw new InvalidDataException("Whole-seat audiences contradicted admitted stack references in one public board cohort.")
+                : current;
+            foreach (var old in executionCohorts.Keys.OrderByDescending(item => item.Board).Skip(64).ToArray()) executionCohorts.Remove(old);
+        }
         await using var trace = new StreamWriter(Path.Combine(profile, "whole-seat-ai-public.jsonl"), false);
         try {
             // Specific draw/counter rules are mandatory controlled goldens. A
@@ -61,6 +72,7 @@ internal static class AiWholeSeatEngineCheck
                     throw new TimeoutException(complete ? "The four-policy game did not finish within two minutes and 160 turns."
                         : $"The four-policy canonical prefix exceeded 60 seconds: turn={lastTurn}, developed={developed.Count}/4, commanders={commanders.Count}/4, paidTokens={tokenSeen}, combat={combatSeen}.");
                 state = await engine.ObserveSimulationAsync();
+                if (state != null) ObserveExecutionCorrelations(state);
                 if (state?.Status == "error") throw new InvalidOperationException(state.Error ?? "The simulation stopped with a rules error.");
                 if (state?.Status == "finished") {
                     completed = true;
@@ -72,6 +84,7 @@ internal static class AiWholeSeatEngineCheck
                 }
                 var bots = await engine.ObserveAutomatedSeatsAsync(); lastBotObservations = bots;
                 foreach (var bot in bots) {
+                    ObserveExecutionCorrelations(bot.State);
                     seenBots.Add(bot.SeatId);
                     bool isolated = bot.State.ViewerId == bot.SeatId
                         && AiCampaignVisibility.PrivateWindowsAreDisclosed(bot.State, bot.Semantics, bot.Domain);
@@ -187,25 +200,16 @@ internal static class AiWholeSeatEngineCheck
 
     internal static bool ComparePublicProjection(GameSnapshot spectator, GameSnapshot seat, string profile)
     {
-        string PublicFacts(GameSnapshot state) => JsonSerializer.Serialize(new {
-            outcome = state.Outcome is not { } outcome ? null : new {
-                outcome.GameId, outcome.Kind, outcome.RuleReason,
-                winningPlayerIds = outcome.WinningPlayerIds.Order().ToArray(),
-                winningTeamIds = outcome.WinningTeamIds.Order().ToArray()
-            },
-            players = state.Players.OrderBy(player => player.Id).Select(player => new {
-            player.Id, player.TeamId, player.Life, player.Eliminated,
-            mana = player.Mana.OrderBy(entry => entry.Key).Select(entry => new { entry.Key, entry.Value }),
-            zones = player.Zones.OrderBy(zone => zone.Name).Select(zone => new { zone.Name, zone.Count }),
-            battlefield = player.Zone("Battlefield").Cards.OrderBy(card => card.CombatId.Length > 0 ? card.CombatId : card.VisualId)
-                .Select(card => new { id = card.CombatId.Length > 0 ? card.CombatId : card.VisualId, card.Power, card.Toughness,
-                    card.Damage, card.Tapped, card.PhasedOut, card.BlockingCapacity, counters = card.Counters.OrderBy(entry => entry.Key).Select(entry => new { entry.Key, entry.Value }) })
-        }) });
-        string expected = PublicFacts(spectator), actual = PublicFacts(seat);
-        if (expected != actual) {
+        if (string.IsNullOrEmpty(spectator.Id) || spectator.Id != seat.Id || spectator.BoardRevision != seat.BoardRevision)
+            throw new ArgumentException("Compare only observations from the same actual game and public board publication.");
+        string expected = ForgePublicProjectionFacts.Capture(spectator), actual = ForgePublicProjectionFacts.Capture(seat);
+        bool executionCorrelations = ForgePublicProjectionFacts.ExecutionCorrelationsAgree(
+            ForgePublicProjectionFacts.CaptureExecutionCorrelations(spectator), ForgePublicProjectionFacts.CaptureExecutionCorrelations(seat));
+        if (expected != actual || !executionCorrelations) {
             string path = Path.Combine(profile, "whole-seat-ai-projection-mismatch.json");
             if (!File.Exists(path)) File.WriteAllText(path, JsonSerializer.Serialize(new {
-                    spectator.BoardRevision, seat.ViewerId, expected = JsonSerializer.Deserialize<JsonElement>(expected), actual = JsonSerializer.Deserialize<JsonElement>(actual)
+                    spectator.BoardRevision, seat.ViewerId, executionCorrelations,
+                    expected = JsonSerializer.Deserialize<JsonElement>(expected), actual = JsonSerializer.Deserialize<JsonElement>(actual)
                 }, new JsonSerializerOptions { WriteIndented = true }));
             return false;
         }

@@ -52,7 +52,7 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
             if (OverlayOpen || State == null) return false;
             if (PublicCollection is { } zone && entry.Request.Owner == zone.PlayerId && entry.Zone == zone.ZoneName)
                 return CanBrowsePublicCollection(entry);
-            return CurrentOccurrence(entry) is { FaceDown: false };
+            return ReadingFace(entry) is { FaceDown: false };
         }
         // Anonymous revealed faces belong to an original slot in one decision.
         // Neither their name nor a retained visual id can extend that authority.
@@ -85,6 +85,18 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
             ? State.Stack.Where(item => item.Card != null).Select(item => item.Card!)
             : CardViews.InZones(State).Where(occurrence => occurrence.Zone == zoneName).Select(occurrence => occurrence.Card);
         return candidates.FirstOrDefault(card => CardViews.Same(card, shown));
+    }
+
+    // A readable printed face is separate from the physical occurrence used
+    // for layout, targeting and commands. A private descriptor has no handles.
+    public Card? ReadingFace(PresentedCard entry) => entry.ChoiceSlot >= 0
+        ? ChoiceFace(entry.ChoiceSlot) : ReadingFace(entry.Zone, entry.Card);
+
+    public Card? ReadingFace(string zoneName, Card shown)
+    {
+        var physical = CurrentOccurrence(zoneName, shown);
+        return physical is not { FaceDown: true } ? physical
+            : State == null ? null : CardViews.KnownActionFace(State, physical);
     }
 }
 

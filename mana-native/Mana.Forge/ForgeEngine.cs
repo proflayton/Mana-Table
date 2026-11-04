@@ -14,6 +14,8 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
     private sealed record PendingRequest(string Method, TaskCompletionSource<JsonElement> Completion, CancellationToken Cancellation);
     private readonly ConcurrentDictionary<long, PendingRequest> pending = new();
     private readonly SemaphoreSlim write = new(1);
+    private readonly object worldScopeGate = new();
+    private long worldGeneration;
     private readonly TimeProvider requestTime = requestClock ?? TimeProvider.System;
     // Readers retain their own process and ready signal across a failed startup.
     private sealed class EngineProcess(Process process)
@@ -34,6 +36,8 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         public bool AutomatedHistoryAvailable { get; set; }
         public bool MatchSetupAvailable { get; set; }
         public bool EncounterStartAvailable { get; set; }
+        public bool OwnedDecisionAvailable { get; set; }
+        public bool PrivateActionFacesAvailable { get; set; }
         public ForgeCommandScope Commands { get; } = new();
         public volatile Exception? Failure;
         public volatile bool FramingFailed;
@@ -81,6 +85,8 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
                             owner.AutomatedHistoryAvailable = capabilities.Contains("automated-match-history");
                             owner.MatchSetupAvailable = capabilities.Contains("match-setup");
                             owner.EncounterStartAvailable = capabilities.Contains("durable-encounter-admission");
+                            owner.OwnedDecisionAvailable = capabilities.Contains("owned-decision-observation");
+                            owner.PrivateActionFacesAvailable = capabilities.Contains("private-action-faces");
                             owner.Ready.TrySetResult();
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
@@ -190,6 +196,10 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         // discarding a batch; identical prose on any other failure stays fatal.
         if (method == "automatedState" && Text(message, "errorCode") == "observation-superseded")
             return new EngineObservationSupersededException();
+        if (method == "matchDecisionObservation" && Text(message, "errorCode") == "observation-superseded")
+            return new EngineObservationSupersededException();
+        if (method == "matchDecisionObservation" && Text(message, "errorCode") == "unsupported-capability")
+            return new NotSupportedException("This table does not expose owned decision observations.");
         if (method is "matchHistory" or "automatedMatchHistory" && Text(message, "errorCode") == "history-unavailable")
             return new NotSupportedException("This table does not expose match history.");
         return new EngineCommandRejectedException(Text(message, "error") is { Length: > 0 } error
@@ -378,9 +388,31 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
     public async Task<GameSnapshot?> ObserveAsync()
     {
         var owner = current ?? throw new IOException("The engine is not running");
-        var raw = await Request("matchState");
-        if (current != owner || owner.Failure != null) throw new IOException("The engine is not running");
-        return owner.Commands.ObserveRaw(raw, owner.CertifiedUndoAvailable);
+        long generation, audience;
+        GameSnapshot? anchor;
+        lock (worldScopeGate) {
+            generation = worldGeneration; audience = owner.Commands.AudienceGeneration; anchor = owner.Commands.ObservedState;
+        }
+        var raw = await Request("matchState", owner.PrivateActionFacesAvailable ? new { privateActionFaces = true } : null);
+        lock (worldScopeGate) {
+            if (current != owner || owner.Failure != null || worldGeneration != generation)
+                throw new IOException("The observation connection or match changed.");
+            if (owner.Commands.AudienceGeneration != audience) throw new EngineObservationSupersededException();
+            GameSnapshot? state;
+            try { state = ForgeSnapshotDecoder.Decode(raw, certifiedUndo: owner.CertifiedUndoAvailable); }
+            catch {
+                // A malformed retired read cannot erase a newer publication's
+                // command authority, even when its audience stayed the same.
+                owner.Commands.ClearIfCurrent(anchor, audience);
+                throw;
+            }
+            // Absence carries no revision. Only the exact captured publication
+            // can be cleared by an in-flight observation returning null.
+            bool accepted = state == null ? owner.Commands.ClearIfCurrent(anchor, audience)
+                : owner.Commands.Observe(state, audience);
+            if (!accepted) throw new EngineObservationSupersededException();
+            return state;
+        }
     }
     public async Task ExecuteAsync(GameCommand command)
     {

@@ -302,7 +302,11 @@ public sealed partial class ClientSession
         _ = Task.Run(async () => {
             try {
                 var lobby = withLobby ? await (setup ?? throw new InvalidOperationException("No lobby connection")).LobbyAsync() : null;
-                var state = !withLobby || lobby?.MatchActive == true ? await connection.ObserveAsync() : null;
+                GameSnapshot? state;
+                try { state = !withLobby || lobby?.MatchActive == true ? await connection.ObserveAsync() : null; }
+                // Discovery produced no observation or command receipt. Keep the
+                // current replica and let the next ordinary poll read afresh.
+                catch (EngineObservationSupersededException) { return; }
                 Exception? admissionFailure = null;
                 try { audience?.Validate(state); }
                     catch (IOException error) { admissionFailure = error; }
@@ -423,7 +427,8 @@ public sealed partial class ClientSession
         // Embedded decision/choice faces can describe history. Only a currently
         // disclosed physical occurrence can carry authority to act on a source.
         var card = CardViews.FindActionSource(state, key)?.Card;
-        return card is not { FaceDown: false } ? null : new(state.Id, decision.Id, state.Revision, state.ViewerId, card.Key, CardViews.Identity(card));
+        return card == null || !CardViews.CanReadActionSource(state, key) ? null
+            : new(state.Id, decision.Id, state.Revision, state.ViewerId, card.Key, CardViews.Identity(card));
     }
     private void StopFiniteIntent() { QueueFiniteRevocation(); finiteIntent?.Stop(); finiteIntent = null; }
     public void Close()

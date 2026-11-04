@@ -965,6 +965,93 @@ recoverable. A stale signal during execution remains an unknown receipt and
 fails closed. This preserves the distinction between superseded observations,
 rejected commands, lost receipts and fatal provider defects.
 
+An ordinary `ClientSession` background poll makes the same narrow distinction:
+typed supersession from its discovery read publishes nothing and retires that
+poll. The current replica and its synchronization timestamp remain unchanged;
+the next ordinary poll can discover fresh authority. A command or post-command
+readback still uses the normal uncertain-receipt failure path. Catching a safe
+read at this owner must not turn a possibly executed command into a retry.
+
+`IOwnedDecisionObservations` is the corresponding narrow on-demand read port for
+an ordinary connection. The provider chooses its bound audience; the caller
+cannot name a player. Java shares the immutable fenced publication builder with
+the automated wrapper. Native shares the row decoder while keeping automated
+ownership, human command scopes and command routes distinct. An unsupported
+older host is explicit, and a superseded discovery withdraws only its captured
+current authority. Lifecycle/audience generations fence held observations and
+source queries, including a viewer A-to-B-to-A round trip with identical values.
+World replacement invalidates scopes while receiving its successful receipt,
+before asynchronously scheduled request continuations can re-install old work.
+
+Cost copies also have an explicit boundary: copied paid lists, zone-table
+containers and counter multisets are independent containers containing the same
+canonical card/LKI/player references. They preserve paid evidence, not a fresh
+empty transaction and not cloned rules entities. Clearing or mutating a copied
+ability's buffers cannot change an already paid input's cancellation/refund or
+zone-trigger evidence. This is narrower than copying the entire cost/ability
+graph or restoring the game world. Direct resolution-cost consumers retain
+their normal payment and cleanup ownership.
+
+Table completion is selected by composition through `MatchTable.CompletionPolicy`.
+Solo explicitly requests `STOP_AFTER_LAST_HUMAN`, retaining its individual defeat
+display without inventing a global AI winner. Multiplayer, simulations and
+cooperative encounters use `RULES_OUTCOME`: losing the last human does not stop
+the remaining AI contest at the next phase. Explicit close and fault retirement
+remain separate lifecycle operations, and cannot supply a natural outcome.
+
+Cooperative terminal completion crosses back onto the exact start reservation's
+existing coordinator before capturing/committing encounter progress. The rules
+worker never waits for the lobby monitor while holding the rules-state boundary.
+This prevents an ordinary owned observation (lobby then rules state) from
+deadlocking terminal completion (rules state then lobby). The captured table
+identity and durable-progress retirement barrier still reject stale completion
+or return-to-lobby requests; no additional executor or common-pool lifetime is
+introduced.
+
+Private reading material is also separate from physical card state. The optional
+`private-action-faces` projection adds `KnownFace` to an explicitly current own
+Battlefield action-source occurrence. Its source remains the masked permanent
+with its live characteristics and opaque physical identity. The known printed
+face contains no action/physical handles; inspection and artwork may use it,
+while queries, input hits and commands retain the original physical context.
+Revoking that current grant withdraws private reader paint and source queries.
+It does not expose the face in normal board paint or to another viewer. Native
+and synchronization readers explicitly opt in; legacy readers retain their old
+source-zone schema. This models a decision-bound reading grant, not a general
+permission to inspect hidden cards outside that input's lifetime.
+
+Player and spectator card projections share one detached
+`PublicCardCharacteristics` capture for current physical facts. Commander tax,
+piece category, visible type, counters, stats and combat descriptors cannot gain
+separate formulas in each consumer. The capture uses the caller's existing face,
+stat and audience disclosure inputs and retains no live engine view. Its map and
+nested collections are immutable. Facts keep that audience's privacy scope;
+an entitled private-hand portrait does not become public through this helper.
+Consumers still own visibility admission,
+opaque identities, action keys, selection, private reading grants and attachment
+policy; those permissions are never inferred from the shared characteristics.
+`CombatDefenders` supplies the same guarded current-defender descriptor to both
+readers, while combat's typed player/permanent target topology stays separate.
+Committed stack references likewise use one immutable `StackTargetProjection`
+value for both audiences, including a disclosed card target's controller. Its
+display set deduplicates kind/opaque-ID pairs across subinstances. It does not
+replace target offers, per-effect recipients or divided allocations: three
+effects may still act on the same displayed target.
+`CurrentCardViews` distinguishes exact rules-object membership from a visibility
+refresh's lookup of the current physical card. A committed target must pass the
+exact-view check before receiving an audience identity. Moving a card to a public
+zone cannot rebind an old target to the new object with the same physical ID.
+
+Eligibility probes must not announce a physical change from a last-known card
+copy. `Card.setState` retains local copy/view updates but publishes no global
+characteristic-change event for an LKI card. Morph eligibility checks can
+turn a temporary copy face up while rebuilding static abilities; emitting that
+copy's event falsely revoked an unchanged source input. The fix belongs at that
+producer, rather than ignoring events during all action discovery. Actual live
+changes still invalidate offers and Undo. This establishes event/authority
+isolation for that state-change path, not bitwise purity of every rules query or
+a rollback of allocation counters.
+
 `PublicActivityCursor` consumes the accepted observation's event IDs once and
 publishes one immutable `PublicActivityBatch` to the feedback consumers. The batch
 binds its new entries to the same before/after snapshots. Initial observations,

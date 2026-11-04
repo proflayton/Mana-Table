@@ -35,6 +35,7 @@ internal sealed record AiCampaignDeckQualification(AiCampaignDeckBinding Deck, s
         + "Missing defining branches remain unobserved. A smoke prefix, natural finish or legality is not strategic qualification. "
         + "Causal witnesses certify positive committed-event ancestry, not exhaustive activity history; activity has no exported lower-retention watermark.";
 }
+internal sealed record AiCampaignTableParticipant(int Index, int PlayerId, int TeamId);
 
 internal static class AiCampaignQualification
 {
@@ -72,6 +73,8 @@ internal static class AiCampaignQualification
 // consequences. Unrelated global BoardWitnesses never enter this collector.
 internal sealed class AiCampaignQualificationTracker
 {
+    private sealed record AcceptedTable(string GameId, ImmutableArray<AiCampaignTableParticipant> Participants,
+        ImmutableArray<string> DeckHandles, System.Action<GameSnapshot> ValidateOwned, System.Action<GameSnapshot> ValidatePublic);
     private sealed class Action(AutomatedSeatObservation observation, GameCommand command, string sourceId,
         string sourceName, string sourceType, string route, string executionId)
     {
@@ -85,7 +88,7 @@ internal sealed class AiCampaignQualificationTracker
         internal readonly List<ActivityEntry> Changes = [];
         internal bool Resolved;
     }
-    private readonly ConfiguredSimulationStart accepted;
+    private readonly AcceptedTable accepted;
     private readonly ImmutableArray<AiCampaignDeckBinding> decks;
     private readonly string configurationId, definitionSha256;
     private readonly Dictionary<int, int> slots;
@@ -94,13 +97,17 @@ internal sealed class AiCampaignQualificationTracker
     private readonly Dictionary<int, List<AiCampaignWitnessOccurrence>> wrongSourceCosts = [];
     private readonly AiCausalMechanicEvidence causal = new();
     internal AiCausalMechanicEvidence CausalEvidence => causal;
+    internal ImmutableArray<AiCampaignTableParticipant> Participants => accepted.Participants;
     private readonly Dictionary<int, Dictionary<string, AiCampaignWitnessOccurrence>> commanderCasts = [];
     private const int MaximumActions = 512, MaximumWitnesses = 8;
 
     internal AiCampaignQualificationTracker(ImmutableArray<AiCampaignDeckBinding> orderedBindings,
         ConfiguredSimulationStart accepted, string configurationId, string definitionSha256)
+        : this(orderedBindings, FromConfigured(accepted), configurationId, definitionSha256) { }
+
+    private AiCampaignQualificationTracker(ImmutableArray<AiCampaignDeckBinding> orderedBindings,
+        AcceptedTable accepted, string configurationId, string definitionSha256)
     {
-        ConfiguredSimulationFacts.ValidateState(accepted, accepted.State);
         if (orderedBindings.IsDefault || orderedBindings.Length != accepted.Participants.Length
             || !AiCampaignQualification.Hash(definitionSha256) || string.IsNullOrWhiteSpace(configurationId))
             throw new InvalidDataException("Invalid qualification configuration identity.");
@@ -110,10 +117,90 @@ internal sealed class AiCampaignQualificationTracker
                 || !deck.RequiredWitnessIds.SequenceEqual(manifest.RequiredWitnessIds))
                 throw new InvalidDataException("Unknown or changed campaign qualification content.");
         }
-        if (!orderedBindings.Select(deck => deck.Handle).SequenceEqual(accepted.Setup.Decks, StringComparer.Ordinal))
-            throw new InvalidDataException("Accepted simulation decks differ from the pinned semantic bindings.");
+        if (!orderedBindings.Select(deck => deck.Handle).SequenceEqual(accepted.DeckHandles, StringComparer.Ordinal))
+            throw new InvalidDataException("Accepted table decks differ from the pinned semantic bindings.");
         this.accepted = accepted; decks = orderedBindings; this.configurationId = configurationId; this.definitionSha256 = definitionSha256;
         slots = accepted.Participants.ToDictionary(item => item.PlayerId, item => item.Index);
+    }
+
+    private static AcceptedTable FromConfigured(ConfiguredSimulationStart accepted)
+    {
+        ConfiguredSimulationFacts.ValidateState(accepted, accepted.State);
+        return new(accepted.State.Id, accepted.Participants.Select(participant => new AiCampaignTableParticipant(
+            participant.Index, participant.PlayerId, accepted.Setup.Specification.Seats.Single(seat => seat.Index == participant.Index).TeamId))
+            .ToImmutableArray(), accepted.Setup.Decks,
+            state => ConfiguredSimulationFacts.ValidateOwnedState(accepted, state),
+            state => ConfiguredSimulationFacts.ValidateState(accepted, state));
+    }
+
+    // These are actual ready/selection receipts and owned connection rows. A
+    // configured-simulation receipt is never manufactured for an ordinary table.
+    internal static AiCampaignQualificationTracker ForMixedTable(ImmutableArray<AiCampaignDeckBinding> orderedBindings,
+        Lobby acceptedLobby, ImmutableArray<OwnedDecisionObservation> ownedRows,
+        ImmutableArray<string> selectionIdsInSlotOrder, string configurationId, string definitionSha256)
+    {
+        if (acceptedLobby == null || acceptedLobby.Mode != "hosting" || !string.IsNullOrEmpty(acceptedLobby.Error)
+            || !acceptedLobby.CanStart || acceptedLobby.MatchActive || string.IsNullOrWhiteSpace(acceptedLobby.TableId)
+            || acceptedLobby.Seats.IsDefault || acceptedLobby.Seats.Length != 4
+            || acceptedLobby.Seats.Any(seat => seat == null)
+            || !acceptedLobby.Seats.Select(seat => seat.Index).Order().SequenceEqual([0, 1, 2, 3])
+            || acceptedLobby.Seats.Any(seat => !seat.Ready || string.IsNullOrWhiteSpace(seat.ParticipantId)
+                || seat.DeckPreview == null || seat.DeckPreview.Problem != null)
+            || acceptedLobby.Seats.Select(seat => seat.ParticipantId).Distinct(StringComparer.Ordinal).Count() != 4
+            || acceptedLobby.Seats.Count(seat => seat.Type == "LOCAL") != 1
+            || acceptedLobby.Seats.Count(seat => seat.Type == "REMOTE") != 1
+            || acceptedLobby.Seats.Count(seat => seat.Type == "AI") != 2
+            || selectionIdsInSlotOrder.IsDefault || selectionIdsInSlotOrder.Length != 4
+            || selectionIdsInSlotOrder.Any(string.IsNullOrWhiteSpace)
+            || selectionIdsInSlotOrder.Distinct(StringComparer.Ordinal).Count() != 4
+            || orderedBindings.IsDefault || orderedBindings.Length != 4
+            || ownedRows.IsDefault || ownedRows.Length != 4 || ownedRows.Any(row => row?.State == null)
+            || ownedRows.Select(row => row.State.ViewerId).Distinct().Count() != 4)
+            throw new InvalidDataException("Mixed qualification requires four actual ready assignments and owned audiences.");
+        string gameId = ownedRows[0].State.Id;
+        var participants = ImmutableArray.CreateBuilder<AiCampaignTableParticipant>();
+        var commanderSets = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var seat in acceptedLobby.Seats.OrderBy(seat => seat.Index)) {
+            var deck = orderedBindings[seat.Index];
+            var manifest = AiCampaignDecks.All.SingleOrDefault(candidate => candidate.Id == deck.CandidateId)
+                ?? throw new InvalidDataException("Unknown mixed qualification deck.");
+            string commanders = CommanderSet(manifest.Commanders);
+            if (!commanderSets.Add(commanders) || seat.DeckPreview!.SelectionId != selectionIdsInSlotOrder[seat.Index]
+                || CommanderSet(seat.DeckPreview.Commanders.Select(card => card.Name)) != commanders
+                || seat.Type == "AI" && seat.OpponentId != deck.Handle)
+                throw new InvalidDataException("The mixed ready assignments changed their pinned deck/selection identity.");
+            var matches = ownedRows.Where(row => row.State.Viewer is { } viewer
+                && CommanderSet(viewer.Zone("Command").Cards.Select(card => card.Name)) == commanders).ToArray();
+            if (matches.Length != 1 || matches[0].State.Viewer!.TeamId is not int team || team < 0
+                || seat.TeamId is int expectedTeam && team != expectedTeam)
+                throw new InvalidDataException("Initial owned commanders cannot prove a unique actual mixed slot/player binding.");
+            participants.Add(new(seat.Index, matches[0].State.ViewerId, team));
+        }
+        var actual = participants.ToImmutable();
+        if (actual.Select(participant => participant.PlayerId).Distinct().Count() != 4
+            || actual.Select(participant => participant.TeamId).Distinct().Count() != 4)
+            throw new InvalidDataException("The ordinary mixed qualification needs four distinct free-for-all players and teams.");
+        foreach (var row in ownedRows) ValidateMixedFrame(row.State, gameId, actual, true);
+        var accepted = new AcceptedTable(gameId, actual, orderedBindings.Select(deck => deck.Handle).ToImmutableArray(),
+            state => ValidateMixedFrame(state, gameId, actual, true), state => ValidateMixedFrame(state, gameId, actual, false));
+        return new(orderedBindings, accepted, configurationId, definitionSha256);
+    }
+
+    private static string CommanderSet(IEnumerable<string> names) => string.Join("\n", names.Order(StringComparer.Ordinal));
+
+    private static void ValidateMixedFrame(GameSnapshot state, string gameId,
+        ImmutableArray<AiCampaignTableParticipant> participants, bool owned)
+    {
+        if (state == null || string.IsNullOrWhiteSpace(gameId) || state.Id != gameId || state.Error != null || state.Encounter != null
+            || state.Status is not ("playing" or "resolving" or "finished")
+            || state.Players.IsDefault || state.Players.Length != 4 || state.Players.Any(player => player == null)
+            || state.Players.Select(player => player.Id).Distinct().Count() != 4
+            || owned && !participants.Any(participant => participant.PlayerId == state.ViewerId))
+            throw new InvalidDataException("Mixed qualification changed its accepted game or audience.");
+        foreach (var participant in participants)
+            if (state.Players.SingleOrDefault(player => player.Id == participant.PlayerId)?.TeamId != participant.TeamId)
+                throw new InvalidDataException("Mixed qualification changed an actual player/team binding.");
+        MatchOutcomeFacts.Validate(state);
     }
 
     internal void Receipt(AutomatedSeatObservation? observation, GameCommand command, bool wasAccepted, string? error)
@@ -172,7 +259,7 @@ internal sealed class AiCampaignQualificationTracker
     internal void HistoryUnavailable(string gameId, int playerId) => causal.HistoryUnavailable(gameId, playerId);
     internal void ObserveHistory(HistoryBatch batch)
     {
-        if (batch.GameId != accepted.State.Id || !slots.ContainsKey(batch.ViewerId))
+        if (batch.GameId != accepted.GameId || !slots.ContainsKey(batch.ViewerId))
             throw new InvalidDataException("Qualification history changed its accepted game or owned audience.");
         causal.ObserveHistory(batch);
         ImportCausalWitnesses();
@@ -180,7 +267,7 @@ internal sealed class AiCampaignQualificationTracker
 
     internal void ObservePublic(GameSnapshot state)
     {
-        ConfiguredSimulationFacts.ValidateState(accepted, state);
+        accepted.ValidatePublic(state);
         causal.ObservePublic(state);
         ImportCausalWitnesses();
         foreach (var action in actions.Where(item => item.Resolved && item.ExecutionId.Length > 0 && state.BoardRevision >= item.Before.State.BoardRevision)) {
@@ -224,12 +311,12 @@ internal sealed class AiCampaignQualificationTracker
         ImportCausalWitnesses();
         return accepted.Participants.OrderBy(item => item.Index).Select(participant => {
             bool incomplete = mechanicalFailure != null || stopReason is "time-budget" or "mechanical-failure"
-                || causal.IsIncomplete(accepted.State.Id, participant.PlayerId);
+                || causal.IsIncomplete(accepted.GameId, participant.PlayerId);
             var witnesses = decks[participant.Index].RequiredWitnessIds.Select(id => {
                 var proof = observed.GetValueOrDefault((participant.Index, id))?.ToImmutableArray() ?? [];
                 bool failed = id == "source-cost-ownership" && wrongSourceCosts.TryGetValue(participant.PlayerId, out var errors) && errors.Count > 0;
                 bool implemented = AiCampaignQualification.SupportedWitnessIds.Contains(id);
-                bool unavailable = id == "required-colorless-payment" && causal.IsHistoryUnavailable(accepted.State.Id, participant.PlayerId);
+                bool unavailable = id == "required-colorless-payment" && causal.IsHistoryUnavailable(accepted.GameId, participant.PlayerId);
                 return new AiCampaignDeckWitness(id, failed ? "failed" : !proof.IsEmpty ? "observed"
                         : !implemented ? "not-instrumented" : incomplete || unavailable ? "inconclusive" : "not-observed",
                     failed ? "An accepted from-source cost selected a different actual occurrence."
@@ -240,8 +327,8 @@ internal sealed class AiCampaignQualificationTracker
                     failed ? wrongSourceCosts[participant.PlayerId].ToImmutableArray() : proof);
             }).ToImmutableArray();
             return new AiCampaignDeckQualification(decks[participant.Index], configurationId, definitionSha256, participant.Index,
-                participant.PlayerId, accepted.Setup.Specification.Seats.Single(item => item.Index == participant.Index).TeamId,
-                accepted.State.Id, mechanicalFailure != null || witnesses.Any(item => item.Status == "failed")
+                participant.PlayerId, participant.TeamId,
+                accepted.GameId, mechanicalFailure != null || witnesses.Any(item => item.Status == "failed")
                     || wrongSourceCosts.TryGetValue(participant.PlayerId, out var costFailures) && costFailures.Count > 0 ? "failed" : "no-observed-integrity-failure",
                 verifiedNaturalOutcome ? "observed-natural-outcome" : "inconclusive", "pending", witnesses) {
                     IntegrityFailures = wrongSourceCosts.GetValueOrDefault(participant.PlayerId)?.ToImmutableArray() ?? []
@@ -253,7 +340,7 @@ internal sealed class AiCampaignQualificationTracker
     {
         if (observation.SeatId != observation.State.ViewerId || !slots.ContainsKey(observation.SeatId))
             throw new InvalidDataException("Unknown qualification observation audience.");
-        ConfiguredSimulationFacts.ValidateOwnedState(accepted, observation.State);
+        accepted.ValidateOwned(observation.State);
     }
     private void ImportCausalWitnesses()
     {

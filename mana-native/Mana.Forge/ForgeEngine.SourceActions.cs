@@ -31,6 +31,7 @@ public sealed partial class ForgeEngine
         ObjectDisposedException.ThrowIf(disposed, this);
         if (!SupportsSourceActions) throw new NotSupportedException("This rules adapter does not expose source actions.");
         var owner = current ?? throw new IOException("The engine is not running");
+        long audience = owner.Commands.AudienceGeneration;
         if (!owner.Commands.CanReadSource(gameId, decisionId, sourceCardKey))
             throw new EngineCommandRejectedException("That source does not belong to the currently observed decision.");
         var observed = owner.Commands.ObservedState ?? throw new EngineCommandRejectedException("Observe the current source first.");
@@ -46,7 +47,8 @@ public sealed partial class ForgeEngine
             sourceActionsUnsupportedGame = gameId;
             throw new NotSupportedException("This table host does not expose source actions.", error);
         }
-        if (current != owner || owner.Failure != null || !owner.Commands.CanReadSource(gameId, decisionId, sourceCardKey)
+        if (current != owner || owner.Failure != null || owner.Commands.AudienceGeneration != audience
+            || !owner.Commands.CanReadSource(gameId, decisionId, sourceCardKey)
             || owner.Commands.ObservedState is not { } latest || latest.Revision != observed.Revision || latest.ViewerId != observed.ViewerId)
             throw new EngineCommandRejectedException("The source action context changed. Select the current card again.");
         if (!string.Equals(result.GameId, gameId, StringComparison.Ordinal)

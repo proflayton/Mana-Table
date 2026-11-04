@@ -31,6 +31,15 @@ public class GameEntityCounterTable extends ForwardingTable<Optional<Player>, Ga
         putAll(counterTable);
     }
 
+    /** Independent counter quantities, retaining their exact player/entity keys. */
+    public GameEntityCounterTable copy() {
+        GameEntityCounterTable copy = new GameEntityCounterTable();
+        for (var cell : cellSet()) {
+            copy.put(cell.getRowKey(), cell.getColumnKey(), HashMultiset.create(cell.getValue()));
+        }
+        return copy;
+    }
+
     /*
      * (non-Javadoc)
      * @see com.google.common.collect.ForwardingTable#delegate()

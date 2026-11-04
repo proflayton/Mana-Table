@@ -19,6 +19,7 @@ internal static class ForgeCommandBoundaryChecks
     internal static void Run(Action<bool, string> check)
     {
         LobbyPublicDeckIdentity(check);
+        PrivateBattlefieldSources(check);
         var legacyReady = JsonSerializer.SerializeToElement(new { protocolVersion = ForgeProtocol.Version,
             capabilities = ForgeProtocol.RequiredCapabilities.Where(capability => capability != "explicit-deck-setup") });
         bool legacyRejected = false;
@@ -373,6 +374,46 @@ internal static class ForgeCommandBoundaryChecks
         bool replacementRejected = false;
         try { new ForgeCommandScope().Encode(new PassPriority(game, prompt)); } catch (EngineCommandRejectedException) { replacementRejected = true; }
         check(replacementRejected, "A replacement provider process cannot inherit command authority");
+    }
+
+    private static void PrivateBattlefieldSources(Action<bool, string> check)
+    {
+        var physical = new Card { Key = "masked-key", CombatId = "masked-physical", Name = "Face-down card",
+            Type = "Creature", FaceDown = true, Power = 2, Toughness = 2 };
+        var known = new Card { Name = "Elvish Mystic", Type = "Creature — Elf Druid", ManaCost = "{G}",
+            Text = "{T}: Add {G}.", ArtName = "Elvish Mystic", Power = 1, Toughness = 1 };
+        var source = new ActionSourceOccurrence("wire-prompt", "Battlefield", 0, physical) { KnownFace = known };
+        var players = new[] {
+            new Player(0, "You", 40, true, false, ImmutableDictionary<string, int>.Empty, [new("Battlefield", 1, [physical], null)]),
+            new Player(1, "Other", 40, false, false, ImmutableDictionary<string, int>.Empty, [])
+        };
+        JsonElement Wire(ActionSourceOccurrence[] sources, int viewer = 0) => JsonSerializer.SerializeToElement(new {
+            id = "known-source-game", status = "playing", viewerId = viewer, turn = 2, phase = "Main", phaseKey = "MAIN1",
+            activePlayerId = viewer, priorityPlayerId = viewer, decisionOwnerId = viewer, players, stack = Array.Empty<object>(),
+            prompt = Prompt("\"kind\":\"input\",\"task\":\"priority\",\"okEnabled\":true"), actionSources = sources
+        });
+        var scope = new ForgeCommandScope();
+        var state = scope.ObserveRaw(Wire([source]))!;
+        check(scope.CanReadSource(state.Id, "wire-prompt", physical.Key)
+                && CardViews.FindActionSource(state, physical.Key)?.Card is { FaceDown: true, Power: 2 }
+                && CardViews.KnownActionFace(state, physical)?.Name == known.Name
+                && (string)scope.Encode(new UseOfferedAction(state.Id, "wire-prompt", physical.Key, "turn-up"))["key"]! == physical.Key,
+            "The actual codec and command owner preserve a masked physical source while admitting its separate explicit private reading and source query");
+        scope.ObserveRaw(Wire([]));
+        check(!scope.CanReadSource(state.Id, "wire-prompt", physical.Key),
+            "A fresh ordinary publication without the private descriptor immediately revokes its source-query permission");
+        foreach (var invalid in new[] {
+            Wire([source], 1), Wire([source with { DecisionId = "retired-priority" }]),
+            Wire([source with { PlayerId = 1 }]), Wire([source with { KnownFace = known with { Key = "injected-command" } }]),
+            Wire([source with { KnownFace = known with { VisualId = "injected-identity" } }]),
+            Wire([source with { Card = physical with { CombatId = "departed-source" } }]),
+            Wire([source with { Card = physical with { Power = 1 } }]), Wire([source, source])
+        }) {
+            bool rejected = false;
+            try { scope.ObserveRaw(invalid); } catch (IOException) { rejected = true; }
+            check(rejected && !scope.CanReadSource(state.Id, "wire-prompt", physical.Key),
+                "Opponent, retired, mislinked or actionable private reading rows cannot survive the actual snapshot codec or retain query authority");
+        }
     }
 
     private static void TargetSelectionProgressShapes(Action<bool, string> check)

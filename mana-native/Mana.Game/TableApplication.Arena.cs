@@ -43,7 +43,6 @@ internal sealed partial class TableApplication
         if (!BattlefieldFocused && !CardCollectionOpen) DrawLiftedCards();
         // Your seat stays in front of the fan and readable during card travel.
         if (state.Viewer is { } local) DrawHero(local, SeatHero(local.Id), true, 3);
-        DrawOpponentSeatReadouts();
         DrawPriorityHandoff();
         DrawGameHeader(); DrawCombatBar(); DrawActionCallout(); DrawPublicAnnouncement();
         DrawTurnCallout();
@@ -62,6 +61,7 @@ internal sealed partial class TableApplication
         }
         hovered = !dragging ? HitAt(pointer)?.Card : null;
         if (!OverlayOpen && !CardCollectionOpen) DrawReaderControls();
+        DrawOpponentSeatReadouts();
         // BeginFrame clears composed cards. Resolve the current reader and its
         // offer only after those cards have been prepared for this frame.
         PrepareManaJourney();

@@ -115,6 +115,13 @@ internal sealed partial class TableApplication
 
     private void DrawSeatReadout(SeatReadoutPlan plan)
     {
+        // Soft seat summaries may yield to an explicitly opened reader. Its
+        // face, state and controls have all been measured in this composition;
+        // omitting the complete plan also withdraws its covered input targets.
+        if (CurrentReaderOcclusions().Any(area => plan.Pieces.Any(area.Intersects))) {
+            hits.RemoveAll(hit => hit.Id == "focus:" + plan.PlayerId);
+            return;
+        }
         foreach (var item in plan.Text) {
             var color = item.Role == SeatReadoutTextRole.Incoming ? Red : item.Role == SeatReadoutTextRole.Status ? Gold : Ink;
             if (item.Role is SeatReadoutTextRole.LandTotal or SeatReadoutTextRole.Identity or SeatReadoutTextRole.ResourceSummary

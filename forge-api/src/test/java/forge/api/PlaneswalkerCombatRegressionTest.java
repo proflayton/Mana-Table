@@ -50,6 +50,7 @@ public class PlaneswalkerCombatRegressionTest {
             var liveAttack = assigned.state().getAsJsonObject("combat").getAsJsonArray("attackers").get(0).getAsJsonObject();
             assertTrue(liveAttack.get("hasDefender").getAsBoolean());
             assertEquals(text(liveAttack.getAsJsonObject("defender"), "id"), text(walker, "combatId"));
+            assertPublicCardDefender(scenario, "Charging Monstrosaur", null, "Chandra, the Firebrand", "walker-assigned");
             String blockerId = "";
             if (blocked) {
                 var blocking = scenario.until(input -> input.seat() == 1 && text(input.prompt(), "inputType").equals("InputBlock"));
@@ -85,6 +86,7 @@ public class PlaneswalkerCombatRegressionTest {
                     SpectatorObservation.project(scenario.table, boardRevision, null))).getAsJsonObject();
             Files.writeString(scenario.evidence.resolve("after-lethal-spectator.json"), json.toJson(publicState));
             assertDepartedDefender(publicState, text(attacker, "combatId"), defendingPlayer, blockerId);
+            assertPublicCardDefender(scenario, "Charging Monstrosaur", null, null, "walker-departed");
             if (blocked) assertEquals(card(player(after.state(), defendingPlayer), "Battlefield", "Darksteel Myr").get("damage").getAsInt(), 1,
                     "The real indestructible blocker survives its assigned trample damage");
             var main = scenario.until(input -> input.seat() == 0 && text(input.state(), "phaseKey").equals("MAIN2")
@@ -92,6 +94,29 @@ public class PlaneswalkerCombatRegressionTest {
             assertNotNull(card(player(main.state(), owner), "Battlefield", "Charging Monstrosaur"));
             assertEquals(player(main.state(), defendingPlayer).get("life").getAsInt(), 40);
         }
+    }
+
+    static void assertPublicCardDefender(RulesScenario scenario, String attacker, Integer playerId, String name, String stage) throws Exception {
+        HeadlessPlatform.query(scenario.table, () -> {
+            var json = new GsonBuilder().serializeNulls().setPrettyPrinting().create();
+            var states = new java.util.ArrayList<JsonObject>();
+            for (int seat = 0; seat < 4; seat++) states.add(json.toJsonTree(scenario.table.seat(seat).state()).getAsJsonObject());
+            states.add(json.toJsonTree(SpectatorObservation.project(scenario.table,
+                    states.get(0).get("boardRevision").getAsLong(), null)).getAsJsonObject());
+            for (var state : states) {
+                var attacking = state.getAsJsonArray("players").asList().stream().map(value -> value.getAsJsonObject())
+                        .flatMap(owner -> zone(owner, "Battlefield").getAsJsonArray("cards").asList().stream())
+                        .map(value -> value.getAsJsonObject()).filter(card -> text(card, "name").equals(attacker)).findFirst().orElseThrow();
+                var id = attacking.get("defenderId");
+                Integer actualId = id == null || id.isJsonNull() ? null : id.getAsInt();
+                var label = attacking.get("defender");
+                String actualName = label == null || label.isJsonNull() ? null : label.getAsString();
+                Files.writeString(scenario.evidence.resolve(stage + "-card-seat-" + state.get("viewerId").getAsInt() + ".json"), json.toJson(state));
+                assertEquals(actualId, playerId, "Each audience publishes the current player-only defender identity on the actual attacking card");
+                assertEquals(actualName, name, "A current permanent defender has its readable label; a departed defender has none");
+            }
+            return null;
+        });
     }
 
     private static void assertDepartedDefender(JsonObject state, String attackerId, int playerId, String blockerId) {

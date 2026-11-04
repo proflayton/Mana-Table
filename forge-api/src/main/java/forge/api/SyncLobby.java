@@ -125,7 +125,7 @@ final class SyncLobby {
             conversation = new TableConversation(); conversation.join(0, slots.get(0).name);
             revision = 1;
             long epoch = ++transportEpoch;
-            server = new SyncTransport.Server(this::dispatch, this::joinSeat, seat -> disconnected(epoch, seat), Set.of("match-history", "match-setup", "durable-encounter-admission")); connection = server.local(0);
+            server = new SyncTransport.Server(this::dispatch, this::joinSeat, seat -> disconnected(epoch, seat), Set.of("match-history", "match-setup", "durable-encounter-admission", "owned-decision-observation", "private-action-faces")); connection = server.local(0);
             try { port = transport.equals("local") ? 0 : server.listen(); } catch (java.io.IOException e) { close(); throw new IllegalStateException("Could not host the table", e); }
             if (port != 0) {
                 // Endpoint metadata is discovered once, off the command pipe.
@@ -270,7 +270,8 @@ final class SyncLobby {
             case "chat": requireConversation(p); conversation.send(seat, p.get("kind").getAsString(), p.get("text").getAsString()); return conversation.snapshot(seat);
             case "name": requireConversation(p); requireSetup(); slot.name = conversation.rename(seat, p.get("name").getAsString()); recordMutation(before); return conversation.snapshot(seat);
             case "lobby": return lobby(seat);
-            case "observe": return table == null ? null : table.seat(seat).state();
+            case "observe": return table == null ? null : table.seat(seat).state(MatchEndpoint.privateActionFaces(p));
+            case "decisionObservation": return table == null ? null : table.seat(seat).decisionObservation(MatchEndpoint.privateActionFaces(p));
             case "reply": requireMatch(); return table.seat(seat).action(p);
             case "sourceActions": requireMatch(); return table.seat(seat).sourceActions(p);
             case "history": requireMatch(); return table.seat(seat).history(p);
@@ -365,10 +366,11 @@ final class SyncLobby {
                         ? automated ? MatchTable.automated(s.selection.deck(), format, s.name) : MatchTable.ai(s.selection.deck(), format, s.name)
                         : MatchTable.human(s.selection.deck(), format, s.name)).toList();
                 if (matchSetup != null) for (var assignment : matchSetup.seats()) players.get(assignment.index()).setTeamNumber(assignment.teamId());
-                var owner = new MatchTable(format, players, resources, profile, tempo, () -> System.nanoTime() / 1_000_000, false, null);
+                var owner = new MatchTable(format, players, resources, profile, tempo, () -> System.nanoTime() / 1_000_000,
+                        false, null, MatchTable.CompletionPolicy.RULES_OUTCOME);
                 table = owner; encounterId = null; pendingReceipt = null;
                 retirementReady = true; saveState = "ready"; saveError = null;
-                owner.start().whenComplete((ignored, error) -> encounterFinished(owner));
+                owner.start();
                 conversation.activity(seat, "started the game."); break;
             }
             case "return":
@@ -428,7 +430,8 @@ final class SyncLobby {
                 participants.add(new EncounterContext.Participant(seat.participantId(), assignment.index(), assignment.teamId(), assignment.role(), seat.selection().preview().selectionId()));
             }
             var context = new EncounterContext(reservation.partyId, reservation.attemptId, reservation.fence.setup(), participants);
-            owner = new MatchTable(reservation.fence.format(), players, resources, profile, reservation.fence.tempo(), () -> System.nanoTime() / 1_000_000, false, context);
+            owner = new MatchTable(reservation.fence.format(), players, resources, profile, reservation.fence.tempo(), () -> System.nanoTime() / 1_000_000,
+                    false, context, MatchTable.CompletionPolicy.RULES_OUTCOME);
             var identities = new ArrayList<EncounterProgressStore.Participant>();
             for (var participant : participants) {
                 var registered = players.get(participant.index());
@@ -466,7 +469,10 @@ final class SyncLobby {
                 }
                 if (!accepted) { reservation.prepared.close(); return; }
                 var owner = reservation.prepared;
-                owner.start().whenComplete((ignored, error) -> encounterFinished(owner));
+                // This reservation's coordinator owns completion capture and
+                // checkpoint admission too. A rules-state callback must never
+                // wait on the lobby monitor while an owned read holds it.
+                owner.start().whenCompleteAsync((ignored, error) -> encounterFinished(owner), reservation.coordinator);
             }, reservation.coordinator);
         } catch (Throwable failure) { failStart(reservation, failure); }
     }
@@ -539,8 +545,8 @@ final class SyncLobby {
         conversation.activity(0, "changed the encounter sides. Ready again to accept the new setup.");
     }
     private void encounterFinished(MatchTable owner) {
-        // The game worker invokes completion outside the rules/table monitor.
-        // Capture only public immutable outcome facts before scheduling disk I/O.
+        // The captured admission coordinator runs this outside the rules/table
+        // monitor. Retired owners cannot commit into a replacement lobby.
         if (owner.encounterId() == null) return;
         var receipt = owner.terminalReceipt();
         synchronized (this) {

@@ -31,6 +31,9 @@ internal static class AutomatedWireFailureChecks
         check(last is [{ SeatId: 0, State.Id: "wire-failure-fixture" }],
             "The production automated wire decoder retains a fully decoded batch independently of later rejected input");
         var timing = JsonNode.Parse(valid)!;
+        timing[0]!["state"]!["prompt"] = new JsonObject { ["id"] = "timing-priority", ["kind"] = "input",
+            ["task"] = "priority", ["ok"] = "Pass", ["okEnabled"] = true };
+        timing[0]!["domain"]!["coverage"] = "Complete";
         timing[0]!["domain"]!["actions"] = JsonNode.Parse("""
             [{"actionId":"timing-fact","effect":"Token","effects":["Token"],"costs":[],"affordability":"Unknown"}]
             """);

@@ -22,16 +22,17 @@ internal sealed partial class TableApplication
 
     private bool DrawSourceActionReader(PresentedCard entry)
     {
-        if ((!SourceActionsSupported && !IsStudyBattlefieldReader(entry)) || !entry.Focused || entry.ChoiceSlot >= 0 || entry.Card.FaceDown
+        if ((!SourceActionsSupported && !IsStudyBattlefieldReader(entry)) || !entry.Focused || entry.ChoiceSlot >= 0
             || entry.Display.Size.X < 300 || !CardContext.CanRetainPinned(entry)) return false;
-        var card = VisibleCards().FirstOrDefault(current => SameVisibleCard(current, entry.Card));
+        var card = CardContext.ReadingFace(entry);
         if (card == null) return false;
         // Reading always paints the complete original face. Action discovery,
         // effective stats and controls never replace or cover its printed rules.
         if (IsStudyBattlefieldReader(entry)) PaintStudyBattlefieldReader(card, entry);
         else {
-            PaintCard(card, entry.Display, false, IsCardActionable(card), true);
-            PaintPreparedMarker(card, entry.Display, entry.Request.Owner ?? -1);
+            var physical = CardContext.CurrentOccurrence(entry) ?? entry.Card;
+            PaintCard(card, entry.Display, false, IsCardActionable(physical), true);
+            PaintPreparedMarker(physical, entry.Display, entry.Request.Owner ?? -1);
         }
         return true;
     }
@@ -57,6 +58,7 @@ internal sealed partial class TableApplication
     private static string SourceReaderState(Card card, string zone)
     {
         var parts = new List<string>();
+        if (card.FaceDown) parts.Add("Face down");
         if (CardPresentation.HasCombatStats(card)) parts.Add(CurrentStats(card));
         if (card.Damage > 0) parts.Add(card.Damage + " damage");
         parts.AddRange(CardPresentation.Counters(card).Select(counter => counter.Key + " ×" + counter.Value));
@@ -70,7 +72,7 @@ internal sealed partial class TableApplication
 
     private void DrawSourceReaderControls(PresentedCard entry)
     {
-        var card = VisibleCards().FirstOrDefault(current => SameVisibleCard(current, entry.Card));
+        var card = CardContext.CurrentOccurrence(entry) ?? VisibleCards().FirstOrDefault(current => SameVisibleCard(current, entry.Card));
         if (card == null) return;
         var options = SourceReaderOptions(card);
         string state = IsStudyBattlefieldReader(entry) ? "" : SourceReaderState(card, entry.Zone);

@@ -73,8 +73,13 @@ internal sealed class CardPresentationController
     {
         bool readable = (request.ChoiceSlot >= 0 ? context.GalleryOpen : !context.OverlayOpen
             || context.PassivePinnedReading && request.Id == pinnedId && request.Zone == pinnedZone) && !context.Dragging;
-        bool focused = !request.Card.FaceDown && pinnedId == request.Id && pinnedZone == request.Zone && readable;
-        if (request.Card.FaceDown) { transitions.Remove(request.Id); playFlights.Remove(request.Id); }
+        bool knownFace = !request.Card.FaceDown || request.ChoiceSlot < 0
+            && context.ReadingFace(request.Zone, request.Card) is { FaceDown: false };
+        bool focused = knownFace && pinnedId == request.Id && pinnedZone == request.Zone && readable;
+        if (request.Card.FaceDown) {
+            if (!knownFace) transitions.Remove(request.Id);
+            playFlights.Remove(request.Id);
+        }
         var view = request.UsesTableCamera ? boardView : BoardView.Identity;
         var rest = view.Apply(request.Rest);
         if (focused) {
@@ -149,7 +154,7 @@ internal sealed class CardPresentationController
     public bool Toggle(Hit hit, CardPresentationContext current)
     {
         var entry = cards.LastOrDefault(card => card.Hit.Id == hit.Id && card.Hit.Scope == hit.Scope);
-        if (entry == null || entry.Card.FaceDown || !current.InspectOnClick(entry)) return false;
+        if (entry == null || !current.InspectOnClick(entry)) return false;
         bool close = pinnedId == entry.Id && pinnedZone == entry.Zone;
         Collapse(hit.Id);
         if (!close) {

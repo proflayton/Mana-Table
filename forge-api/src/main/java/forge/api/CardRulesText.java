@@ -5,6 +5,13 @@ import forge.game.zone.ZoneType;
 
 /** Live rules wording only; CardView.getText also appends unscoped engine debug objects. */
 final class CardRulesText {
+    static String of(CardView.CardStateView face) {
+        var text = new StringBuilder();
+        append(text, face.getRulesText());
+        append(text, face.getAbilityText());
+        return text.toString().trim().replace("\\r", "\r").replace("\\n", "\n");
+    }
+
     static String of(CardView card) {
         var text = new StringBuilder();
         append(text, card.getCurrentState().getRulesText());

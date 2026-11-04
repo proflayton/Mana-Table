@@ -22,10 +22,11 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
     {
         if (method is not ("matchStart" or "workshopStartTest" or "multiplayerHost" or "multiplayerJoin"
             or "multiplayerStart" or "startEncounter" or "retryEncounterStart" or "multiplayerReturn" or "multiplayerClose")) return;
-        lock (automatedScopes) {
+        lock (worldScopeGate) {
             if (current != owner || owner.Failure != null) return;
-            Interlocked.Increment(ref simulationGeneration);
+            Interlocked.Increment(ref worldGeneration);
             automatedScopes.Clear();
+            owner.Commands.Clear();
         }
     }
 
@@ -47,7 +48,7 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
             EnsureSimulationConnection(owner);
             var raw = await Request("automatedSimulationStart", new { decks = deckIds });
             EnsureSimulationConnection(owner);
-            lock (automatedScopes) { Interlocked.Increment(ref simulationGeneration); automatedScopes.Clear(); }
+            lock (worldScopeGate) { Interlocked.Increment(ref worldGeneration); automatedScopes.Clear(); }
             return ForgeSnapshotDecoder.Decode(raw, spectator: true, certifiedUndo: owner.CertifiedUndoAvailable)
                 ?? throw new IOException("The simulation did not start.");
         } finally { simulationLifecycle.Release(); }
@@ -55,7 +56,7 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
     public async Task<GameSnapshot?> ObserveSimulationAsync()
     {
         var owner = current ?? throw new IOException("The engine is not running");
-        long generation = simulationGeneration;
+        long generation = worldGeneration;
         var raw = await Request("automatedSimulationState");
         EnsureSimulationOwner(owner, generation);
         return ForgeSnapshotDecoder.Decode(raw, spectator: true,
@@ -70,7 +71,7 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
             EnsureSimulationConnection(owner);
             await Request("automatedSimulationStop", new { sessionId = gameId });
             EnsureSimulationConnection(owner);
-            lock (automatedScopes) { Interlocked.Increment(ref simulationGeneration); automatedScopes.Clear(); }
+            lock (worldScopeGate) { Interlocked.Increment(ref worldGeneration); automatedScopes.Clear(); }
         } finally { simulationLifecycle.Release(); }
     }
 
@@ -79,15 +80,15 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         cancellation.ThrowIfCancellationRequested();
         var owner = current ?? throw new IOException("The engine is not running");
         if (!owner.AutomationAvailable) throw new NotSupportedException("This engine has no automated-seat port.");
-        long generation = simulationGeneration;
+        long generation = worldGeneration;
         JsonElement raw;
         try { raw = await Request("automatedState", cancellation: cancellation); }
         catch (EngineObservationSupersededException) {
-            lock (automatedScopes)
-                if (current == owner && owner.Failure == null && simulationGeneration == generation) automatedScopes.Clear();
+            lock (worldScopeGate)
+                if (current == owner && owner.Failure == null && worldGeneration == generation) automatedScopes.Clear();
             throw;
         }
-        lock (automatedScopes) { cancellation.ThrowIfCancellationRequested(); EnsureSimulationOwner(owner, generation); }
+        lock (worldScopeGate) EnsureAutomatedObservationOwner(owner, generation, cancellation);
         ImmutableArray<AutomatedSeatObservation> result;
         try {
             cancellation.ThrowIfCancellationRequested();
@@ -96,14 +97,15 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { throw; }
         catch (Exception error) {
-            lock (automatedScopes)
-                if (current == owner && owner.Failure == null && simulationGeneration == generation) automatedScopes.Clear();
+            lock (worldScopeGate) {
+                EnsureAutomatedObservationOwner(owner, generation, cancellation);
+                automatedScopes.Clear();
+            }
             PreserveRejectedAutomatedObservation(paths.Profile, raw, error);
             throw;
         }
-        lock (automatedScopes) {
-            cancellation.ThrowIfCancellationRequested();
-            EnsureSimulationOwner(owner, generation);
+        lock (worldScopeGate) {
+            EnsureAutomatedObservationOwner(owner, generation, cancellation);
             automatedScopes.Clear();
             // Request already returned an owned immutable JSON clone.
             lastDecodedAutomatedWire = raw;
@@ -113,6 +115,16 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
             }
         }
         return result;
+    }
+
+    // Background discovery spans ordinary host/start/return lifecycle changes.
+    // A healthy process replacing its world produced no current observation;
+    // connection failure remains fatal, and command/startup owners stay strict.
+    private void EnsureAutomatedObservationOwner(EngineProcess owner, long generation, CancellationToken cancellation)
+    {
+        cancellation.ThrowIfCancellationRequested();
+        EnsureSimulationConnection(owner);
+        if (worldGeneration != generation) throw new EngineObservationSupersededException();
     }
 
     // Failure-only local quarantine, separate from engine.log and public errors.
@@ -136,14 +148,11 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
             var result = ImmutableArray.CreateBuilder<AutomatedSeatObservation>();
             foreach (var item in raw.EnumerateArray()) {
                 int seat = item.GetProperty("seatId").GetInt32();
-                var state = ForgeSnapshotDecoder.Decode(item.GetProperty("state"), certifiedUndo: certifiedUndo) ?? throw new IOException("Missing automated seat state.");
-                var domain = item.GetProperty("domain").Deserialize<DecisionActionDomain>(AutomationJson) ?? throw new IOException("Missing action domain.");
-                var semantics = item.GetProperty("semantics").Deserialize<DecisionSemantics>(AutomationJson) ?? throw new IOException("Missing decision semantics.");
-                if (seat < 0 || seat != state.ViewerId || domain.Version < 0 || domain.Sources.IsDefault || domain.Actions.IsDefault
-                    || semantics.Options.IsDefault || semantics.LegalTextValues.IsDefault || semantics.UnpaidMana.IsDefault)
+                var observation = DecodeOwnedDecisionObservation(item, certifiedUndo)
+                    ?? throw new IOException("Missing automated seat state.");
+                if (seat < 0 || seat != observation.State.ViewerId)
                     throw new IOException("Invalid automated seat observation.");
-                DecisionOrderingFacts.Validate(state, semantics);
-                result.Add(new(seat, state, domain, semantics));
+                result.Add(new(seat, observation.State, observation.Domain, observation.Semantics));
             }
             if (result.Select(item => (item.State.Id, item.SeatId)).Distinct().Count() != result.Count)
                 throw new IOException("Duplicate automated seat observation.");
@@ -158,7 +167,7 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
     {
         cancellation.ThrowIfCancellationRequested();
         Dictionary<string, object?> args;
-        lock (automatedScopes) {
+        lock (worldScopeGate) {
             if (command is UndoAction && current?.CertifiedUndoAvailable != true)
                 throw new EngineCommandRejectedException("This engine does not support certified gameplay Undo.");
             if (!automatedScopes.TryGetValue((command.GameId, seatId), out var currentScope))
@@ -208,7 +217,7 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         // Provider decoding can succeed before frame/strategy validation fails.
         // Keep that accepted observation distinct from a rejected wire batch.
         JsonElement? last;
-        lock (automatedScopes) last = lastDecodedAutomatedWire;
+        lock (worldScopeGate) last = lastDecodedAutomatedWire;
         PreserveLastAutomatedObservation(paths.Profile, last, gameId, seatId, reasonCode);
         await Request("automatedFault", new { sessionId = gameId, seatId, reasonCode }, cancellation);
     }

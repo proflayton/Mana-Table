@@ -19,6 +19,7 @@ public class CommanderTaxTest {
             var input = priority(game);
             int ownerId = input.state().get("viewerId").getAsInt();
             assertEquals(card(input.state(), ownerId, "Command", COMMANDER).get("commanderTax").getAsInt(), 0);
+            assertEquals(tax(card(spectator(game), ownerId, "Command", COMMANDER)), 0);
             for (int cast = 1; cast <= 3; cast++) {
                 int tappedBeforeCast = tappedMountains(input.state(), ownerId);
                 var commander = card(input.state(), ownerId, "Command", COMMANDER);
@@ -52,6 +53,10 @@ public class CommanderTaxTest {
                 }
                 if (!input.state().getAsJsonArray("stack").isEmpty()) {
                     assertEquals(input.state().getAsJsonArray("stack").get(0).getAsJsonObject().getAsJsonObject("card").get("commanderTax").getAsInt(), cast * 2);
+                    var publicStack = spectator(game);
+                    java.nio.file.Files.writeString(game.evidence.resolve("spectator-command-tax-cast-" + cast + ".json"), publicStack.toString());
+                    assertEquals(tax(publicStack.getAsJsonArray("stack").get(0).getAsJsonObject().getAsJsonObject("card")), cast * 2,
+                            "The anonymous spectator reports the same public next-cast tax while the real commander is on the stack");
                     assertTrue(game.answer(input, Map.of("action", "ok")));
                     input = priority(game);
                 }
@@ -67,6 +72,11 @@ public class CommanderTaxTest {
                             .filter(p -> p.get("id").getAsInt() != ownerId).findFirst().orElseThrow();
                     assertEquals(zone(other, "Command").getAsJsonArray("cards").get(0).getAsJsonObject().get("commanderTax").getAsInt(), 0);
                 }
+                var publicBattlefield = spectator(game);
+                assertEquals(tax(card(publicBattlefield, ownerId, "Battlefield", COMMANDER)), cast * 2,
+                        "The public commander tax is not limited to a current command-zone payment");
+                assertEquals(tax(card(publicBattlefield, ownerId, "Battlefield", "Mountain")), 0,
+                        "An ordinary public mana source never inherits its owner's commander cast count");
                 if (cast == 3) break;
                 var seal = card(input.state(), ownerId, "Battlefield", "Seal of Fire");
                 assertTrue(game.answer(input, Map.of("action", "card", "key", text(seal, "key"))));
@@ -77,8 +87,32 @@ public class CommanderTaxTest {
                         && count(viewer(i.state()), "Command") == 1);
                 assertEquals(card(input.state(), ownerId, "Command", COMMANDER).get("commanderTax").getAsInt(), cast * 2,
                         "Dying and returning to command do not add tax");
+                assertEquals(tax(card(spectator(game), ownerId, "Command", COMMANDER)), cast * 2,
+                        "The spectator observes the same unchanged tax after the actual death and return");
             }
+            HeadlessPlatform.query(game.table, () -> {
+                var owner = game.table.game.getRegisteredPlayers().stream().filter(player -> player.getId() == ownerId).findFirst().orElseThrow();
+                var commander = owner.getCardsIn(forge.game.zone.ZoneType.Battlefield).stream().filter(forge.game.card.Card::isCommander).findFirst().orElseThrow();
+                // Controlled real operation also used by effects such as Ixidron.
+                assertTrue(commander.turnFaceDown(true)); game.table.publish();
+                return null;
+            });
+            var concealed = zone(player(spectator(game), ownerId), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(value -> value.get("faceDown").getAsBoolean()).findFirst().orElseThrow();
+            assertEquals(tax(concealed), 0, "A concealed commander does not disclose commander-specific cast history");
+            assertEquals(text(concealed, "name"), "Face-down card");
         }
+    }
+
+    private static JsonObject spectator(RulesScenario game) {
+        return HeadlessPlatform.query(game.table, () -> new Gson().toJsonTree(SpectatorObservation.project(game.table,
+                ((Number)game.session(0).state().get("boardRevision")).longValue(), null)).getAsJsonObject());
+    }
+
+    private static int tax(JsonObject card) {
+        // Optional fields from older projections have the same zero default as
+        // the native decoder; the real nonzero assertion catches the omission.
+        return card.has("commanderTax") ? card.get("commanderTax").getAsInt() : 0;
     }
 
     private static RulesScenario.Input priority(RulesScenario game) throws Exception {

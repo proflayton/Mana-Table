@@ -4,6 +4,9 @@ namespace Mana.Contracts;
 
 // A host-only port. It is never supplied to the table renderer, a remote seat,
 // or a policy. Each snapshot has exactly the knowledge of that automated seat.
+// Composition supplies one serialized discovery owner per provider. Retire and
+// cancel that owner before replacing it; independent same-world discovery calls
+// are not a general monotonic merge of automated command authority.
 public interface IAutomatedSeatProvider
 {
     Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default);

@@ -19,6 +19,7 @@ import java.util.function.LongSupplier;
 
 /** The sole owner of a Forge game. Seats, projections and decisions never depend on transport. */
 final class MatchTable implements ManaTableSession, AutoCloseable {
+    enum CompletionPolicy { RULES_OUTCOME, STOP_AFTER_LAST_HUMAN }
     final String id = UUID.randomUUID().toString();
     final Object gate = new Object();
     final Game game;
@@ -30,6 +31,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     private final Map<Integer, MatchSession> automated = new LinkedHashMap<>();
     private final Set<Integer> humanSeats = new LinkedHashSet<>();
     private final boolean automatedOnly;
+    private final CompletionPolicy completionPolicy;
     private final EncounterContext encounter;
     private final Map<Integer, EncounterContext.Participant> encounterParticipants = new LinkedHashMap<>();
     private volatile boolean encounterRetirementAllowed;
@@ -46,6 +48,11 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
 
     MatchTable(String format, List<RegisteredPlayer> players, Path resources, Path profile) {
         this(format, players, resources, profile, DecisionTempo.Settings.off(), () -> System.nanoTime() / 1_000_000);
+    }
+
+    MatchTable(String format, List<RegisteredPlayer> players, Path resources, Path profile, CompletionPolicy completionPolicy) {
+        this(format, players, resources, profile, DecisionTempo.Settings.off(), () -> System.nanoTime() / 1_000_000,
+                false, null, completionPolicy);
     }
 
     /** Explicit simulation composition; live-table construction retains its human requirement. */
@@ -65,6 +72,15 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
 
     MatchTable(String format, List<RegisteredPlayer> players, Path resources, Path profile,
                DecisionTempo.Settings timing, LongSupplier monotonicMillis, boolean automatedOnly, EncounterContext encounter) {
+        this(format, players, resources, profile, timing, monotonicMillis, automatedOnly, encounter, CompletionPolicy.RULES_OUTCOME);
+    }
+
+    MatchTable(String format, List<RegisteredPlayer> players, Path resources, Path profile,
+               DecisionTempo.Settings timing, LongSupplier monotonicMillis, boolean automatedOnly, EncounterContext encounter,
+               CompletionPolicy completionPolicy) {
+        this.completionPolicy = Objects.requireNonNull(completionPolicy);
+        if ((automatedOnly || encounter != null) && completionPolicy != CompletionPolicy.RULES_OUTCOME)
+            throw new IllegalArgumentException("Simulations and encounters require an actual rules outcome");
         if (automatedOnly && (players.size() < 2 || players.stream().anyMatch(player -> !(player.getPlayer() instanceof AutomatedLobbyPlayer))))
             throw new IllegalArgumentException("A simulation requires at least two externally automated seats");
         this.automatedOnly = automatedOnly;
@@ -357,7 +373,8 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     }
     // A controller boundary publishes the terminal board before waking the game.
     boolean finishIfNoHumans() {
-        if (!automatedOnly && encounter == null && !game.isGameOver() && humanSeats.stream().map(seats::get).allMatch(MatchSession::eliminated)) {
+        if (completionPolicy == CompletionPolicy.STOP_AFTER_LAST_HUMAN && !game.isGameOver()
+                && humanSeats.stream().map(seats::get).allMatch(MatchSession::eliminated)) {
             game.setGameOver(GameEndReason.AllHumansLost);
             return true;
         }

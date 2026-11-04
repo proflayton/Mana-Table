@@ -489,6 +489,100 @@ own-land return is legitimate. Policy seeds do not control Forge's rules RNG.
 
 ## Configured team AI qualification
 
+### Connected two-player/two-AI qualification
+
+`--qualify-mixed-game --campaign-profile natural` launches an ordinary four-seat
+lobby with a real host, separate TCP guest, and two independent host-owned AI
+seats. Four rotations put each existing versioned campaign deck in every seat.
+Each game retains the existing natural-campaign ceiling of 160 turns/180 seconds;
+setup and transport operations have their own bounded waits. The `smoke` profile
+is one 16-turn/45-second prefix and never claims natural completion. `release`
+uses the same full rotations and additionally requires the causal-mechanic and
+role qualification gate to pass; missing evidence makes it inconclusive, even
+when a natural winner was observed. Unknown
+profiles fail. Use the normal `--engine-resources`, `--engine-jar`, and disposable
+`--profile` arguments; manifests record the exact launch jar and native/policy
+assembly hashes. A local overlay remains an overlay, not a clean release build.
+
+The two scripted player drivers receive only their own connection's optional
+owned-decision observations, query current source offers, and submit through
+`ClientSession` and ordinary `matchAction`. Their policies never borrow the
+host's bot observations. Client admission, provider acceptance and resolved
+effects are recorded separately. Scripted human seats do not supply actual
+human UX acceptance. The ordinary CI mixed-lobby prefix and its deadline remain
+unchanged; the longer natural qualification is a separate manual release gate.
+
+Public checkpoints compare exact game/board cohorts across all audiences,
+including turn/phase, identities and attachments, graveyard/exile contents,
+stack order/controllers/targets, and combat assignments. Hidden hand/library
+contents, private offers, prose and source portraits are excluded. A bounded
+cohort cache also catches contradictions between repeated observations of one
+audience. Stack execution references are optional audience-admitted correlation,
+not universal public fields: each supplied reference must join a structurally
+valid local admitted frame. Historical actor, source-generation and execution-kind
+metadata do not redefine current stack control, visibility or spell-wrapper facts.
+References exposed by both audiences must agree; an absent spectator reference
+does not erase a previously admitted cohort mapping. Full snapshots, decisions, receipts and policy replay cases stay in
+explicitly private artifacts. Typed natural outcomes must be present and agree
+across all four audiences before lifecycle teardown. No forced concession,
+cutoff, passive-prefix completion or unrun rotation counts as a successful game.
+
+Printed name/type/mana on a current stack spell's portrait are not an independent
+comparison gate yet: the existing stack source field can also describe historical
+ability sources, and current-spell provenance has not been established for every
+producer. Stack occurrence, controller, spell/ability status and public targets
+remain strict; this portrait-identity gap is unproven coverage, not a reason to
+infer identity from card names.
+
+The collector pins the actual ready lobby's selection identities and exact saved
+semantic deck versions, derives physical slot/player mapping from each owned
+initial command zone, and reuses the existing bounded causal-mechanic collector.
+Ordinary player history is read through its own history connection; bot history
+keeps its host-only port. The summary distinguishes supported/observed,
+unsupported, missing and contradictory per-deck evidence. Human review stays
+pending rather than being inferred from a natural winner. Negative controls
+reject missing roles, private leaks even with equal public facts, erased mechanic
+requirements, foreign deck versions and cutoffs that otherwise look successful.
+
+The normal full/configured presentation checks include actual child-process
+own-observation race/codec controls; Java `OwnedDecisionObservationTest` covers
+real mixed TCP ownership, ordinary offered actions, replay rejection and
+reconnection. `CostBufferOwnershipTest` covers actual paid tap/counter refunds,
+zone/LKI trigger consumers and direct resolution costs under copied-buffer
+interference. These focused regressions complement full games rather than
+waiting for rare interactions to occur randomly.
+
+`TableCompletionPolicyTest` retains a real drain/phase journey: both connected
+humans lose while two bots survive, the next actual phase must continue, and a
+later rules loss produces a typed winner. Solo stopping, explicit close and
+faults remain separate controls. `CooperativeObservationCompletionTest` overlaps
+an actual cooperative terminal completion with an owned state read using latches
+in an isolated child. It requires completion, durable progress and actual table
+retirement, so a deadlocked rules worker cannot strand the main test JVM or pass
+merely because a timeout elapsed. Both run in ordinary Java test discovery.
+
+`SourceActionDomainTest` also follows an actual manifested creature through an
+ordinary owner read, source query, payment, reveal acknowledgements and physical
+turn-face-up transition. It keeps the public permanent masked until that action,
+checks read-only known-face data, opponent denial and old-reader/receipt
+compatibility, and rejects invented actions for a manifested noncreature.
+`MorphSourceQueryPurityTest` separately records a real morph eligibility query's
+copied-card event and unchanged live input; the candidate must retain complete
+owned action coverage without that false event. A real live turn-up must still
+publish the canonical event and revoke prior authority. The test does not claim
+every probe or global allocation counter is pure.
+
+The normal-table private-face reading journey also runs through ordinary
+pointer input, `SourceActionSession`, `ClientSession.Submit` and a real connection
+receipt in the existing headless presentation harness. Negative controls retain
+revoked, stale and opponent-denied behavior; the known printed face never
+becomes a physical hit or command source. The existing rendered card-states
+queue checks the reader, Rules, physical current stats and concealed opponent
+at 1000x740 and 1540x980. It uses an offline patterned art fixture, not production
+Scryfall artwork or human UX acceptance. Reader composite occlusion tests retire
+covered soft seat-label paint and hit targets while keeping clear readouts and
+their stable layout reservations.
+
 The source team-simulation slice reuses that campaign. Java
 `ConfiguredSimulationTest` exercises actual registered teams/player bindings,
 independent resources and private audiences, invalid-request preservation,
@@ -634,6 +728,26 @@ within the original deadline, never replayed. `mixed-lobby/prefix-results.json`
 is a bounded integration result; private observations stay separately labelled.
 The human connections are scripted and supply no human UX, natural outcome or
 deck-qualification credit.
+The same required `NativeSmoke` route then runs `PolledMixedLobbyEngineJourney`
+within that original deadline. Its actual host and TCP guest use default
+`ClientSession` lobby/match polling while one background `AiTableHost` shares the
+host's provider. Human scripts submit only current ordinary source/decision
+commands; they receive no private bot windows or rich observation injection.
+A one-shot gate delays delivery of a real host poll while an ordinary command,
+guest polling and background bot discovery continue. The prefix requires real
+human/bot development, known command receipts, monotonic private-safe player
+frames and coherent public boards, then releases the gate and tears down the
+owners. `polled-mixed-lobby/prefix-results.json` records this bounded concurrency
+evidence; its snapshots and policy receipts remain private. The local
+`--smoke-polled-mixed` route invokes the same helper, not an alternative gate.
+Background discovery is serialized by one `AiTableHost` per provider. Same
+healthy-process world replacement supersedes a read without faulting that host;
+engine-process failure, malformed current data and command failures remain
+failures. The configured-simulation child probes retain old success, malformed,
+superseded and null replies across a new world and its fresh command scope.
+These checks do not establish arbitrary independent same-world multi-reader
+merging of automated authority; cancellation and retirement still belong to the
+single composition owner.
 The required native verification `engine` case now runs this existing `--smoke`
 route after the headless engine suite, using the verified **production** engine
 JAR and resources. It keeps the four warmed clients and original four-minute
@@ -1969,6 +2083,13 @@ dotnet $driver --smoke-headless-engine --engine-resources '<package>/engine' --e
 
 `--smoke-headless-engine` operates a real Commander opening, a land play, a paid
 command-zone cast and concession through production input without a GPU. Its
+observation producer uses the existing external ingress and waits for a pointer
+command's normal readback to retire before sampling again. Frames still enter
+through the production update pump and audience/epoch/revision fences; a second
+background polling owner cannot race these deliberate samples. Separate client
+regressions cover ordinary polling, including superseded discovery and uncertain
+command readback. This journey does not substitute for default-polling timing or
+human playtesting. Its
 same opening now takes two Commander mulligans: the first returns directly to
 Keep with seven cards, and the second projects exactly one required bottom card.
 It verifies that reading a

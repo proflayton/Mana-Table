@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Globalization;
 using System.Text.Json;
 using Mana.AI;
 using Mana.Contracts;
@@ -17,8 +16,10 @@ internal static class MixedLobbyEngineJourney
     {
         string directory = Path.Combine(profile, "mixed-lobby");
         Directory.CreateDirectory(directory);
+        using var humanEvidence = new AiCampaignDiagnostics(directory);
+        using var hostDriver = new ConnectedPlayerDriver(engines[0], humanEvidence, 261102);
+        using var guestDriver = new ConnectedPlayerDriver(engines[1], humanEvidence, 261103);
         var accepted = new Dictionary<(AiDecisionStamp Stamp, string Command), AiDecisionRecord>();
-        var humanReplies = new HashSet<(int Viewer, string Decision, long Revision)>();
         var botIds = new HashSet<int>();
         var botCommanders = new Dictionary<int, string[]>();
         var developed = new HashSet<int>();
@@ -54,8 +55,10 @@ internal static class MixedLobbyEngineJourney
             new(TimeSpan.FromSeconds(3), 2048));
         try {
             while (DateTime.UtcNow < deadline && !continued) {
-                hostState = await engines[0].ObserveAsync();
-                guestState = await engines[1].ObserveAsync();
+                try { await hostDriver.ObserveAsync(); await guestDriver.ObserveAsync(); }
+                catch (EngineObservationSupersededException) { continue; }
+                hostState = hostDriver.Last?.State;
+                guestState = guestDriver.Last?.State;
                 bots = await engines[0].ObserveAutomatedSeatsAsync();
                 foreach (var state in new[] { hostState, guestState }.OfType<GameSnapshot>().Concat(bots.Select(bot => bot.State))) {
                     if (state.Status == "error") throw new InvalidOperationException(state.Error ?? "The mixed table stopped with a rules error.");
@@ -131,19 +134,8 @@ internal static class MixedLobbyEngineJourney
                             && pair.Value.Command is nameof(PlayCard) or nameof(UseOfferedAction));
                     if (continued) break;
                 }
-                for (int index = 0; index < 2; index++) {
-                    var state = index == 0 ? hostState : guestState;
-                    if (state is not { Status: "playing", Viewer.Eliminated: false, Decision: { } decision }
-                        || humanReplies.Contains((state.ViewerId, decision.Id, state.Revision))) continue;
-                    var reply = ScriptedHumanReply(state);
-                    if (reply == null) throw new InvalidOperationException("The mixed-lobby scripted human driver cannot answer " + decision.Payload.GetType().Name);
-                    try {
-                        await engines[index].ExecuteAsync(reply);
-                        humanReplies.Add((state.ViewerId, decision.Id, state.Revision));
-                        scriptedReplies++;
-                    } catch (EngineCommandRejectedException error) when (error.Message.Contains("choice has changed")
-                        || error.Message == "That command does not answer the currently observed decision. Observe the table again.") { }
-                }
+                await hostDriver.StepAsync(); await guestDriver.StepAsync();
+                scriptedReplies = hostDriver.ProviderAcceptances + guestDriver.ProviderAcceptances;
                 await ai.StepAsync();
                 steps++;
                 foreach (var record in ai.Histories.SelectMany(history => history.Decisions)
@@ -174,37 +166,6 @@ internal static class MixedLobbyEngineJourney
                 stopReason = continued ? "observed-host-departure-and-ai-progress" : "required-continuation-not-observed"
             }, new JsonSerializerOptions { WriteIndented = true }));
         }
-    }
-
-    private static DecisionCommand? ScriptedHumanReply(GameSnapshot state)
-    {
-        var decision = state.Decision!;
-        if (decision.Payload is PriorityPayload && state.ActivePlayerId == state.ViewerId && state.PhaseKey is "MAIN1" or "MAIN2") {
-            var land = state.Viewer!.Zone("Hand").Cards.FirstOrDefault(card => card.Name == "Mountain" && card.Selectable);
-            if (land != null && DecisionCommands.Card(state, land.Key) is { } play) return play;
-        }
-        if (DecisionCommands.Confirm(state) is { } confirm) return confirm;
-        var selection = decision.Payload switch {
-            OptionsPayload options => options.Selection,
-            AbilityChoicePayload ability => ability.Selection,
-            OrderingPayload ordering => ordering.Selection, _ => null };
-        if (selection != null) return DecisionCommands.Choose(state, selection.Choices
-            .Take(decision.Payload is OrderingPayload ? selection.Choices.Length : selection.Range.Min).Select(choice => choice.Index));
-        if (decision.Payload is RevealPayload) return DecisionCommands.Choose(state, []);
-        if (decision.Payload is NumberPayload number) return DecisionCommands.Value(state,
-            number.Range?.Min.ToString(CultureInfo.InvariantCulture) ?? number.Initial);
-        if (decision.Payload is TextPayload text) return DecisionCommands.Value(state, text.Initial);
-        if (decision.Payload is TargetSelectionPayload or EntitySelectionPayload) {
-            var players = decision.Payload is TargetSelectionPayload targets ? targets.Players : ((EntitySelectionPayload)decision.Payload).Players;
-            foreach (int player in players) {
-                if (decision.Payload is TargetSelectionPayload { Progress: { } progress } && progress.SelectedPlayers.Contains(player)) continue;
-                var select = new SelectPlayer(state.Id, decision.Id, player);
-                if (GameCommandPermissions.Allows(state, select)) return select;
-            }
-            foreach (var card in CardViews.Located(state).Select(item => item.Card).Where(card => card.Selectable && !card.Highlighted))
-                if (DecisionCommands.Card(state, card.Key) is { } select) return select;
-        }
-        return DecisionCommands.Cancel(state);
     }
 
     private static async Task RequireHistoryDenialAsync(ForgeEngine engine, string gameId, int seatId)

@@ -7,7 +7,6 @@ namespace Mana.Forge;
 
 public sealed partial class ForgeEngine
 {
-    private long simulationGeneration;
     private readonly SemaphoreSlim simulationLifecycle = new(1);
     public bool SupportsConfiguredSimulation => current is {
         AutomationAvailable: true, ConfiguredSimulationAvailable: true, Failure: null };
@@ -27,8 +26,8 @@ public sealed partial class ForgeEngine
                 EnsureSimulationConnection(owner);
                 receipt = await Request("automatedSimulationStartConfigured", EncodeConfiguredSimulation(setup));
                 EnsureSimulationConnection(owner);
-                lock (automatedScopes) {
-                    generation = Interlocked.Increment(ref simulationGeneration);
+                lock (worldScopeGate) {
+                    generation = Interlocked.Increment(ref worldGeneration);
                     automatedScopes.Clear();
                 }
                 start = DecodeConfiguredSimulation(receipt.Value, setup, owner.CertifiedUndoAvailable);
@@ -49,8 +48,8 @@ public sealed partial class ForgeEngine
             EnsureSimulationOwner(owner, generation);
             return start with { State = state };
         } catch (Exception error) {
-            lock (automatedScopes)
-                if (generation != 0 && current == owner && simulationGeneration == generation) automatedScopes.Clear();
+            lock (worldScopeGate)
+                if (generation != 0 && current == owner && worldGeneration == generation) automatedScopes.Clear();
             PreserveRejectedConfiguredSimulation(paths.Profile, receipt, observed, error);
             if (error is EngineCommandRejectedException) throw;
             if (error is InvalidOperationException or JsonException or ArgumentException or FormatException or OverflowException)
@@ -62,7 +61,7 @@ public sealed partial class ForgeEngine
     private void EnsureSimulationOwner(EngineProcess owner, long generation)
     {
         EnsureSimulationConnection(owner);
-        if (simulationGeneration != generation)
+        if (worldGeneration != generation)
             throw new IOException("The configured simulation or its engine process changed during startup.");
     }
 

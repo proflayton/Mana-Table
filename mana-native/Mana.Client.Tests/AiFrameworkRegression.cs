@@ -46,6 +46,7 @@ internal static class AiFrameworkRegression
             "AI conformance covers every closed engine decision family; a new family requires explicit framework coverage");
         await SourceAuthority(check);
         AdditionalSourceAuthority(check);
+        await PrivateBattlefieldSourceRegression.RunAsync(check);
         await CancellationAndBudgets(check);
         await ExecutionBudgets(check);
         await CopiedExecutionBudget(check);

@@ -621,7 +621,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
                 if (state == CardStateName.FaceDown) {
                     view.updateHiddenId(game.nextHiddenCardId());
                 }
-                game.fireEvent(new GameEventCardStatsChanged(this)); //ensure stats updated for new characteristics
+                if (!isLKI()) game.fireEvent(new GameEventCardStatsChanged(this)); //ensure live stats updated for new characteristics
             }
         }
         return true;
