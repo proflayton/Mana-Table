@@ -7444,6 +7444,13 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
         return abilities;
     }
 
+    /** Current source offers without rebinding a live ability's execution actor. */
+    public List<SpellAbility> getSourceActionAbilities(final Player player) {
+        final List<SpellAbility> abilities = getAbilityVariants(player, null, false, true);
+        abilities.removeIf(ability -> !ability.canPlay(true));
+        return abilities;
+    }
+
     /**
      * Durable play routes from this occurrence, independent of the current
      * priority window, payment resources and per-turn play limits. This is
@@ -7462,12 +7469,19 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
 
     private List<SpellAbility> getAbilityVariants(final Player player,
             final Multimap<SpellAbility, SpellAbility> unhiddenAltCost, final boolean includeTimingLimitedRoutes) {
+        return getAbilityVariants(player, unhiddenAltCost, includeTimingLimitedRoutes, false);
+    }
+
+    private List<SpellAbility> getAbilityVariants(final Player player,
+            final Multimap<SpellAbility, SpellAbility> unhiddenAltCost, final boolean includeTimingLimitedRoutes,
+            final boolean query) {
         CardState oState = getOriginalState(CardStateName.Original);
         final List<SpellAbility> abilities = Lists.newArrayList();
         Consumer<SpellAbility> consumer = original -> {
             // Every seat reads access. Do not change the activating player on
             // a base ability retained by the current actor's action catalog.
-            SpellAbility sa = includeTimingLimitedRoutes ? original.copy(player) : original;
+            SpellAbility sa = query ? original.copyForQuery(player)
+                    : includeTimingLimitedRoutes ? original.copy(player) : original;
             abilities.add(sa);
             //add alternative costs as additional spell abilities
             List<SpellAbility> altCost = GameActionUtil.getAlternativeCosts(sa, player, false, includeTimingLimitedRoutes);
@@ -7485,15 +7499,16 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
 
         if (isFaceDown() && isInZone(ZoneType.Exile)) {
             for (final SpellAbility sa : oState.getSpellAbilities()) {
-                abilities.addAll(GameActionUtil.getAlternativeCosts(sa, player, false, includeTimingLimitedRoutes));
+                abilities.addAll(GameActionUtil.getAlternativeCosts(query ? sa.copyForQuery(player) : sa,
+                        player, false, includeTimingLimitedRoutes));
             }
         }
         if (isFaceDown() && isInZone(ZoneType.Command)) {
             for (KeywordInterface k : oState.getCachedKeyword(Keyword.HIDDEN_AGENDA)) {
-                abilities.addAll(k.getAbilities());
+                for (SpellAbility ability : k.getAbilities()) abilities.add(query ? ability.copyForQuery(player) : ability);
             }
             for (KeywordInterface k : oState.getCachedKeyword(Keyword.DOUBLE_AGENDA)) {
-                abilities.addAll(k.getAbilities());
+                for (SpellAbility ability : k.getAbilities()) abilities.add(query ? ability.copyForQuery(player) : ability);
             }
         }
         // Add Modal Spells
@@ -7520,10 +7535,12 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
 
         if (isInPlay() && !isPhasedOut() && player.canCastSorcery()) {
             if (getCurrentStateName() == CardStateName.RightSplit || getCurrentStateName() == CardStateName.EmptyRoom) {
-                abilities.add(getUnlockAbility(CardStateName.LeftSplit));
+                SpellAbility ability = getUnlockAbility(CardStateName.LeftSplit);
+                abilities.add(query ? ability.copyForQuery(player) : ability);
             }
             if (getCurrentStateName() == CardStateName.LeftSplit || getCurrentStateName() == CardStateName.EmptyRoom) {
-                abilities.add(getUnlockAbility(CardStateName.RightSplit));
+                SpellAbility ability = getUnlockAbility(CardStateName.RightSplit);
+                abilities.add(query ? ability.copyForQuery(player) : ability);
             }
         }
 
@@ -7531,16 +7548,18 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
             if (getCurrentStateName() == CardStateName.FaceDown) {
                 for (SpellAbility sa : oState.getNonManaAbilities()) {
                     if (sa.isTurnFaceUp()) {
-                        abilities.add(sa);
+                        abilities.add(query ? sa.copyForQuery(player) : sa);
                     }
                 }
             }
             if (oState.getType().isCreature() && oState.getManaCost() != null && !oState.getManaCost().isNoCost()) {
                 if (isManifested()) {
-                    abilities.add(oState.getManifestUp());
+                    SpellAbility ability = oState.getManifestUp();
+                    abilities.add(query ? ability.copyForQuery(player) : ability);
                 }
                 if (isCloaked()) {
-                    abilities.add(oState.getCloakUp());
+                    SpellAbility ability = oState.getCloakUp();
+                    abilities.add(query ? ability.copyForQuery(player) : ability);
                 }
             }
         }

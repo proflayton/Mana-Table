@@ -32,7 +32,8 @@ internal static partial class HeadlessPresentationSmoke
         }
         try {
             if (group != null) {
-                if (group == "mana-pool") CheckManaPoolPaymentClarity(profile, Check, trace, performance);
+                if (group == "startup-playback") StartupPlaybackChecks.Run(profile, Check);
+                else if (group == "mana-pool") CheckManaPoolPaymentClarity(profile, Check, trace, performance);
                 else if (group == "keyword-help") CheckKeywordHelp(profile, Check, trace, performance);
                 else if (group == "match-header") MatchHeaderInteractionChecks.Run(profile, Check);
                 else if (group == "cooperative-lobby") CooperativeLobbyInteractionChecks.Run(profile, Check);
@@ -74,6 +75,7 @@ internal static partial class HeadlessPresentationSmoke
                 return;
             }
             PresentationRunChecks.Run(profile, Check);
+            StartupPlaybackChecks.Run(profile, Check);
             CheckFinishedTable(profile, Check, trace, performance);
             ProviderIsolationChecks.Run(Check);
             ManaFundingWireChecks.Run(Check);

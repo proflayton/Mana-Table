@@ -23,6 +23,33 @@ Ordinary native UI partitions now include both card-state window sizes;
 `-ListOnly` inventory checks verify their actual mode, size and result mapping.
 Passing these checks does not establish natural AI outcomes or human UX approval.
 
+The follow-up sequence checks in `ExternalObservationRegression` compose two
+lifecycle changes around a held direct, Auto or poll result/failure, including
+viewer ABA, null/reset followed by a new game and closing after replacement.
+`FiniteYieldLifecycleRegression` retains exact old-owner consent across an empty
+replica and checks the prospective/held-revocation paths through continuation
+and close. These run in the existing graphics-free executable, without random
+wall-clock ordering or larger deadlines.
+Its bootstrap cases also prevent an unbound poll's late game/null/error from
+replacing or faulting a subsequently accepted game, while retaining the existing
+initial-plus-next observation prefix from one admitted ingress.
+
+The headless `startup-playback` group runs `StartupPlaybackChecks` and is included
+in the full headless suite. It opts into actual non-automated initialization with
+controlled ports and clock, preserving the ordinary harness's manual default.
+It covers saved Auto off/on, actual Hold/Return/reset, profile reopen and a fresh
+scoped dispatch held in flight. No `SetAutomatic` shortcut supplies the expected
+startup state; no production startup policy is added.
+
+The ordinary Java collection includes `SourceQueryPurityTest`,
+`SourceInvocationLineageTest`, `SourceQueryPurposeTest` and `SourcePaymentActorTest`.
+They inspect live ability context as well as published boards, retain and execute
+an offered handle after a foreign read, exercise actual activation ledgers and
+alternate payments, reject raw query execution, and distinguish payment actor
+from viewer. Generated Blitz and additional-mode graphs are controls. These
+source-query cases do not certify purity of all legacy static helpers or every
+possible generated route.
+
 Mana Table has one client: the Windows MonoGame app. Use the smallest check that
 covers the change. Reuse the existing Java and native harnesses; do not add a
 second client or rules simulator to test the shipping app.

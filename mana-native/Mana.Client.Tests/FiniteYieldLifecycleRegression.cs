@@ -25,6 +25,50 @@ internal static class FiniteYieldLifecycleRegression
         await RevocationAudienceAndRevision(check);
         await AudienceHandoffCleanup(check);
         await RejectedHandoffPreservesConsent(check);
+        await RetiredConsentTransitions(check);
+    }
+
+    private static async Task RetiredConsentTransitions(Action<bool, string> check)
+    {
+        foreach (bool reset in new[] { false, true })
+        foreach (bool clearDuringRevoke in new[] { false, true })
+        foreach (bool close in new[] { false, true }) {
+            var port = new Port(3, automatic: false) { HoldGrant = true, HoldRevoke = true };
+            var session = new ClientSession(port); var before = port.State; session.Accept(before);
+            var intent = FiniteResolutionRegression.Arm(before)!;
+            check(session.AdvanceFinite(intent, (_, _) => false), "Begin finite consent across a cleared replica");
+            await port.GrantStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var grant = (GrantFiniteStackYield)port.Commands.Single();
+            var replacement = before with { Id = "replacement-after-clear", Revision = 10 };
+            if (clearDuringRevoke) {
+                check(!session.Accept(replacement), "An initial handoff queues the old finite grant cleanup");
+                port.ReleaseGrant.TrySetResult();
+                await PumpUntil(session, () => port.RevokeStarted.Task.IsCompleted);
+            }
+            if (reset) session.Reset(); else check(session.Accept(null), "Explicit null acceptance retires the finite presentation replica");
+            check(session.State == null && !session.Accept(replacement) && session.State == null,
+                "Clearing a replica cannot erase the old audience's pending finite-cleanup barrier");
+            if (!clearDuringRevoke) {
+                port.ReleaseGrant.TrySetResult();
+                await PumpUntil(session, () => port.RevokeStarted.Task.IsCompleted);
+            }
+            check(port.Commands is [GrantFiniteStackYield, RevokeFiniteStackYield revoke]
+                    && revoke.GameId == before.Id && revoke.GrantId == grant.GrantId && port.MaximumConcurrentCommands == 1,
+                "Reset/null composition preserves the exact old negative capability and one serialized connection lane");
+            if (close) session.Close();
+            port.ReleaseRevoke.TrySetResult();
+            if (close) {
+                await port.RevokeObserved.Task.WaitAsync(TimeSpan.FromSeconds(5)); session.Pump();
+                check(session.Closed && session.State == null && !session.Accept(replacement) && port.Commands.Count == 2,
+                    "Close after retiring a replica reconciles old consent without reopening or dispatching another command");
+            } else {
+                await PumpUntil(session, () => !session.Busy && port.State.FiniteStackYield?.Status == FiniteStackYieldStatus.Revoked);
+                check(session.State == null && !session.NeedsRecovery && session.Accept(replacement) && session.State == replacement
+                        && port.Commands.Count == 2,
+                    "Only an observed old-owner revoke acknowledgement admits the replacement after reset/null");
+                session.Close();
+            }
+        }
     }
 
     private static async Task AudienceHandoffCleanup(Action<bool, string> check)

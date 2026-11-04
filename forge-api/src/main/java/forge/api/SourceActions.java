@@ -55,9 +55,25 @@ final class SourceActions {
         }
         return new Domain(List.copyOf(sources), complete);
     }
-    record Action(String id, SpellAbility ability, String kind, String text, Card host, long timestamp, ZoneType zone) {
+    private record QueryVariant(SpellAbility ability) {
+        QueryVariant {
+            if (!ability.isQueryCopy()) throw new IllegalArgumentException("Source descriptions require a detached query variant");
+        }
+        Invocation invocation(Player actor) {
+            if (ability.getActivatingPlayer() != actor) throw new IllegalArgumentException("The source action belongs to another actor");
+            return new Invocation(ability.copyForInvocation(actor));
+        }
+    }
+    record Invocation(SpellAbility ability) {
+        Invocation {
+            if (ability.isQueryCopy()) throw new IllegalArgumentException("A query description cannot execute");
+        }
+    }
+    record Action(String id, QueryVariant query, String kind, String text, Card host, long timestamp, ZoneType zone) {
+        SpellAbility ability() { return query.ability(); }
+        Invocation invocation(Player actor) { return query.invocation(actor); }
         boolean matches(Card source) {
-            return ability.getHostCard() == host && host.getGameTimestamp() == timestamp && host.getZone() != null
+            return ability().getHostCard() == host && host.getGameTimestamp() == timestamp && host.getZone() != null
                     && host.getZone().getZoneType() == zone && (host == source || linkedSpell(source) == host);
         }
     }
@@ -88,7 +104,7 @@ final class SourceActions {
     }
     private static Action describe(SpellAbility ability) {
         var host = ability.getHostCard();
-        return new Action(UUID.randomUUID().toString(), ability,
+        return new Action(UUID.randomUUID().toString(), new QueryVariant(ability),
                 ability.isLandAbility() ? "play" : ability.isSpell() ? "cast" : "activate", ability.toUnsuppressedString(),
                 host, host.getGameTimestamp(), host.getZone().getZoneType());
     }

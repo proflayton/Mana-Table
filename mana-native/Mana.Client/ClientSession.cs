@@ -193,7 +193,7 @@ public sealed partial class ClientSession
             executions.Validate(state);
             if (state != null) { FiniteResolutionFacts.Validate(state); FiniteStackYieldFacts.Validate(state); }
             ValidateFiniteAcknowledgement(state);
-            bool audienceChanged = state != null && previous != null && (state.Id != previous.Id || state.ViewerId != previous.ViewerId);
+            bool audienceChanged = previous != null && (state == null || state.Id != previous.Id || state.ViewerId != previous.ViewerId);
             // An explicit audience handoff retires work admitted for the old
             // viewer. Capture its negative consent before replacing the replica.
             if (audienceChanged) {
@@ -201,13 +201,17 @@ public sealed partial class ClientSession
                 // Cleanup still belongs to the existing connection/audience.
                 // The owner must retry handoff after its exact negative ACK;
                 // neither replacement state nor a different port proves it.
-                if (finiteRevocations.Count > 0) return false;
+                if (state != null && finiteRevocations.Count > 0) return false;
             }
+            // Reset or explicit null can clear presentation before cleanup is
+            // observed. Its negative capability still belongs to the old audience.
+            if (state != null && finiteRevocations.Values.Any(item => item.Command.GameId != state.Id || item.ViewerId != state.ViewerId))
+                return false;
             if (!replica.Accept(state, epoch)) return false;
             RestorationChanged = restored;
             if (RestorationChanged || audienceChanged) {
-                // Restoration and audience handoff both replace current action
-                // ownership before Changed, without retiring this game's identity.
+                // Restoration, retirement and audience handoff replace current
+                // action ownership before Changed.
                 finiteIntent?.Stop(); finiteIntent = null;
                 advancing?.Cancel(); SourceActions.Clear(); pendingSettings.Clear(); activeSetting = null;
                 ClearAllOptionalPaymentPolicies(); optionalSubmissions.Clear(); optionalPaymentsPaused = false;
@@ -291,6 +295,10 @@ public sealed partial class ClientSession
         Polling = true; long epoch = replica.Epoch;
         var lobbyOwner = lobbyReplica;
         ObservationAudience? audience = State is { } current ? new(current) : null;
+        // Called only by posted owner callbacks. A bootstrap read can bind an
+        // empty replica, but cannot replace an audience accepted while it waited.
+        bool OwnsObservation() => epoch == replica.Epoch && (audience != null || State == null)
+            && (!withLobby || ReferenceEquals(lobbyOwner, lobbyReplica));
         _ = Task.Run(async () => {
             try {
                 var lobby = withLobby ? await (setup ?? throw new InvalidOperationException("No lobby connection")).LobbyAsync() : null;
@@ -301,13 +309,12 @@ public sealed partial class ClientSession
                 if (lobby != null) try { EncounterStartFacts.ValidateMatch(lobby, state); }
                     catch (InvalidOperationException error) { admissionFailure = new IOException("The table did not publish its admitted encounter's rules frame.", error); }
                 Post(() => {
-                    if (epoch != replica.Epoch || withLobby && (!ReferenceEquals(lobbyOwner, lobbyReplica)
-                        || lobby == null || !AcceptLobby(lobby))) return;
+                    if (!OwnsObservation() || withLobby && (lobby == null || !AcceptLobby(lobby))) return;
                     if (admissionFailure != null) { ReportFailure(admissionFailure, false); return; }
                     if (Accept(state, epoch)) lobbyChanged(lobby);
                 });
             } catch (Exception error) { Post(() => {
-                if (epoch == replica.Epoch && (!withLobby || ReferenceEquals(lobbyOwner, lobbyReplica))) ReportFailure(error, false);
+                if (OwnsObservation()) ReportFailure(error, false);
             }); }
             finally { Post(() => Polling = false); }
         });

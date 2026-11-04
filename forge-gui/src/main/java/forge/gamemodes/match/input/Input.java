@@ -19,8 +19,11 @@ public interface Input {
 
     boolean selectAbility(SpellAbility ab);
 
-    /** Explicit actions for one source in this exact input. Describing them does
-     * not select the card, choose an ability, or begin paying its costs. */
+    /** Explicit actions for one source in this exact input. Priority/payment
+     * implementations return detached query variants, not executable abilities.
+     * Describing them does not select the card, rebind a live execution actor,
+     * or begin paying costs. The owner must revalidate and materialize a current
+     * invocation before submitting it to selectAbility. */
     default List<SpellAbility> getSourceActions(Card card) { return List.of(); }
 
     void selectPlayer(Player player, ITriggerEvent triggerEvent);
