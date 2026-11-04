@@ -19,6 +19,8 @@ public class CombatChoicePublicationTest {
             int defender = scenario.state(1).get("viewerId").getAsInt();
             assertTrue(scenario.answer(attack, Map.of("action", "attack", "attackerKey", text(attacker, "key"), "defenderPlayerId", defender)));
             var block = scenario.until(input -> input.seat() == 1 && type(input, "InputBlock"));
+            PlaneswalkerCombatRegressionTest.assertPublicCardDefender(scenario, "Ripscale Predator", defender,
+                    scenario.table.game.getRegisteredPlayers().get(1).getName(), "player-assigned");
             var human = (PlayerControllerHuman)scenario.table.game.getPlayers().get(1).getController();
             String[] beforeRulesRefresh = new String[1];
             var missing = HeadlessPlatform.query(scenario.table, () -> {

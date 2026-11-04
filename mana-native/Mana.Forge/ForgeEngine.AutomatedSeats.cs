@@ -88,7 +88,7 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
                 if (current == owner && owner.Failure == null && worldGeneration == generation) automatedScopes.Clear();
             throw;
         }
-        lock (worldScopeGate) { cancellation.ThrowIfCancellationRequested(); EnsureSimulationOwner(owner, generation); }
+        lock (worldScopeGate) EnsureAutomatedObservationOwner(owner, generation, cancellation);
         ImmutableArray<AutomatedSeatObservation> result;
         try {
             cancellation.ThrowIfCancellationRequested();
@@ -97,14 +97,15 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { throw; }
         catch (Exception error) {
-            lock (worldScopeGate)
-                if (current == owner && owner.Failure == null && worldGeneration == generation) automatedScopes.Clear();
+            lock (worldScopeGate) {
+                EnsureAutomatedObservationOwner(owner, generation, cancellation);
+                automatedScopes.Clear();
+            }
             PreserveRejectedAutomatedObservation(paths.Profile, raw, error);
             throw;
         }
         lock (worldScopeGate) {
-            cancellation.ThrowIfCancellationRequested();
-            EnsureSimulationOwner(owner, generation);
+            EnsureAutomatedObservationOwner(owner, generation, cancellation);
             automatedScopes.Clear();
             // Request already returned an owned immutable JSON clone.
             lastDecodedAutomatedWire = raw;
@@ -114,6 +115,16 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
             }
         }
         return result;
+    }
+
+    // Background discovery spans ordinary host/start/return lifecycle changes.
+    // A healthy process replacing its world produced no current observation;
+    // connection failure remains fatal, and command/startup owners stay strict.
+    private void EnsureAutomatedObservationOwner(EngineProcess owner, long generation, CancellationToken cancellation)
+    {
+        cancellation.ThrowIfCancellationRequested();
+        EnsureSimulationConnection(owner);
+        if (worldGeneration != generation) throw new EngineObservationSupersededException();
     }
 
     // Failure-only local quarantine, separate from engine.log and public errors.

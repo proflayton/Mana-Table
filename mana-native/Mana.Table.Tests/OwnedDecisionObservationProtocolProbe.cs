@@ -25,9 +25,10 @@ internal static class OwnedDecisionObservationProtocolProbe
         Console.WriteLine(JsonSerializer.Serialize(new { @event = "ready", protocolVersion = ForgeProtocol.Version, capabilities }));
         Console.Out.Flush();
         string game = InitialGame, decision = InitialDecision;
-        int viewer = InitialViewer, reads = 0, states = 0, actions = 0;
+        int viewer = InitialViewer, reads = 0, states = 0, actions = 0, automatedReads = 0, automatedActions = 0;
         long revision = 10;
         (long Id, JsonNode Payload, bool Ordinary)? held = null;
+        (long Id, JsonNode Payload)? heldAutomated = null;
         void Reply(long id, object? result) {
             Console.WriteLine(JsonSerializer.Serialize(new { id, result })); Console.Out.Flush();
         }
@@ -74,6 +75,22 @@ internal static class OwnedDecisionObservationProtocolProbe
                 }
                 Reply(id, State(game, viewer, decision, revision)); continue;
             }
+            if (method == "automatedState" && mode.StartsWith("automated-", StringComparison.Ordinal)) {
+                automatedReads++;
+                if (mode == "automated-cancel-malformed" && automatedReads >= 3) { revision = 11; decision = "fresh-bot-priority"; }
+                var envelope = Envelope(game, viewer, decision, revision); envelope["seatId"] = viewer;
+                var batch = new JsonArray(envelope);
+                if (automatedReads == 2 && mode != "automated-action-code") { heldAutomated = (id, batch); continue; }
+                Reply(id, batch); continue;
+            }
+            if (method == "automatedAction" && mode.StartsWith("automated-", StringComparison.Ordinal)) {
+                automatedActions++;
+                if (mode == "automated-action-code" && automatedActions == 1) { Error(id, "observation-superseded"); continue; }
+                if (args.GetProperty("sessionId").GetString() != game || args.GetProperty("promptId").GetString() != decision
+                    || args.GetProperty("seatId").GetInt32() != viewer) Error(id, "foreign-command");
+                else Reply(id, new { accepted = true });
+                continue;
+            }
             if (method == "matchAction") {
                 actions++;
                 if (mode == "action-code" && actions == 1) { Error(id, "observation-superseded"); continue; }
@@ -87,6 +104,16 @@ internal static class OwnedDecisionObservationProtocolProbe
             }
             if (method == "matchStart") { game = "replacement-owned-game"; decision = "replacement-priority"; revision = 1; }
             Reply(id, new { acknowledged = true });
+            if (method == "automatedEnable" && heldAutomated is { } automated) {
+                if (mode == "automated-process-failure") return 17;
+                if (mode.EndsWith("superseded", StringComparison.Ordinal)) Error(automated.Id, "observation-superseded");
+                else {
+                    if (mode.EndsWith("malformed", StringComparison.Ordinal)) automated.Payload[0]!["state"]!["viewerId"] = -1;
+                    Reply(automated.Id, mode.EndsWith("null", StringComparison.Ordinal) ? null : automated.Payload);
+                }
+                heldAutomated = null;
+                File.WriteAllText(Path.Combine(directory, "held-response-sent.txt"), "sent\n");
+            }
             if (method == "automatedEnable" && held is { } old) {
                 if (mode.EndsWith("superseded", StringComparison.Ordinal)) Error(old.Id, "observation-superseded");
                 else {
@@ -121,6 +148,7 @@ internal static class OwnedDecisionObservationProtocolProbe
     internal static async Task RunAsync(string profile, Action<bool, string> check)
     {
         CheckWire(check);
+        await CheckAutomatedReadsAsync(profile, check);
         await CheckOrdinaryReadsAsync(profile, check);
         string executable = Path.Combine(AppContext.BaseDirectory, "Mana.Table.Tests.exe");
         foreach (string mode in new[] { "legacy", "ready", "private-faces", "null", "malformed", "superseded", "unsupported", "action-code",
@@ -219,6 +247,76 @@ internal static class OwnedDecisionObservationProtocolProbe
                 check(Count(directory, "matchAction") == (mode == "unsupported" ? 2 : 1),
                     "A fresh exact owned read admits only the subsequently explicit command: " + mode);
             }
+        }
+    }
+
+    private static async Task CheckAutomatedReadsAsync(string profile, Action<bool, string> check)
+    {
+        string executable = Path.Combine(AppContext.BaseDirectory, "Mana.Table.Tests.exe");
+        foreach (string mode in new[] { "automated-world-success", "automated-world-malformed", "automated-world-superseded",
+                "automated-world-null", "automated-current-malformed", "automated-process-failure", "automated-action-code", "automated-cancel-malformed" }) {
+            string directory = Path.Combine(profile, "owned-observation-" + mode); Directory.CreateDirectory(directory);
+            await using var engine = new ForgeEngine(new(executable, Marker, mode, directory));
+            await engine.InitializeAsync();
+            var first = (await engine.ObserveAutomatedSeatsAsync()).Single();
+            if (mode == "automated-action-code") {
+                var rejected = await Failure(() => engine.ExecuteAutomatedAsync(first.SeatId, new PassPriority(first.State.Id, first.State.Decision!.Id)));
+                check(rejected is EngineCommandRejectedException && rejected is not EngineObservationSupersededException
+                        && Count(directory, "automatedAction") == 1,
+                    "The discovery-only superseded code on an automated command remains an explicit rejection, never a read retry");
+                var current = (await engine.ObserveAutomatedSeatsAsync()).Single();
+                await engine.ExecuteAutomatedAsync(current.SeatId, new PassPriority(current.State.Id, current.State.Decision!.Id));
+                check(Count(directory, "automatedAction") == 2,
+                    "Only a second explicit automated command can follow its definite rejection");
+                continue;
+            }
+            using var cancellation = new CancellationTokenSource();
+            var old = engine.ObserveAutomatedSeatsAsync(cancellation.Token);
+            await WaitFor(directory, () => Count(directory, "automatedState") == 2, "held automated observation");
+            if (mode == "automated-cancel-malformed") {
+                cancellation.Cancel();
+                check(await Failure(async () => { _ = await old; }) is OperationCanceledException,
+                    "Cancelling an in-flight ordinary automated read retires its caller before late malformed delivery");
+                var current = (await engine.ObserveAutomatedSeatsAsync()).Single();
+                await engine.EnableAutomatedSeatsAsync();
+                await WaitFor(directory, () => File.Exists(Path.Combine(directory, "held-response-sent.txt")), "cancelled malformed automated response");
+                // Its old caller has already completed, so drain the pipe via a
+                // nonmutating acknowledgement, not a new scope-granting read.
+                await engine.EnableAutomatedSeatsAsync();
+                await engine.ExecuteAutomatedAsync(current.SeatId, new PassPriority(current.State.Id, current.State.Decision!.Id));
+                check(current.State.Revision > first.State.Revision && Count(directory, "automatedAction") == 1
+                        && !File.Exists(Path.Combine(directory, "diagnostics", "private-rejected-ai-observation.json")),
+                    "A cancelled caller's late malformed reply grants no commands, clears no fresh same-world scope and writes no rejection quarantine");
+                continue;
+            }
+            AutomatedSeatObservation? fresh = null;
+            if (mode.StartsWith("automated-world-", StringComparison.Ordinal)) {
+                await engine.StartSoloAsync("new-deck", ["opponent"]);
+                fresh = (await engine.ObserveAutomatedSeatsAsync()).Single();
+                check(fresh.State.Id != first.State.Id && Count(directory, "automatedAction") == 0,
+                    "A successful world replacement admits a fresh bot scope without any implicit command: " + mode);
+            }
+            await engine.EnableAutomatedSeatsAsync();
+            var error = await Failure(async () => { _ = await old; });
+            if (mode.StartsWith("automated-world-", StringComparison.Ordinal)) {
+                check(error is EngineObservationSupersededException,
+                    "A late automated " + mode + " from a replaced world is typed read-only supersession rather than a provider failure");
+                await engine.ExecuteAutomatedAsync(fresh!.SeatId, new PassPriority(fresh.State.Id, fresh.State.Decision!.Id));
+                check(Count(directory, "automatedAction") == 1,
+                    "The retired automated reply cannot clear or replace the newly admitted world's command scope: " + mode);
+            } else if (mode == "automated-current-malformed") {
+                check(error is IOException && error is not EngineObservationSupersededException,
+                    "Malformed current automated data remains a real provider failure rather than safe world supersession");
+                var unavailable = await Failure(() => engine.ExecuteAutomatedAsync(first.SeatId, new PassPriority(first.State.Id, first.State.Decision!.Id)));
+                check(unavailable is EngineCommandRejectedException && Count(directory, "automatedAction") == 0,
+                    "A malformed current automated observation withdraws its former command authority");
+                fresh = (await engine.ObserveAutomatedSeatsAsync()).Single();
+                await engine.ExecuteAutomatedAsync(fresh.SeatId, new PassPriority(fresh.State.Id, fresh.State.Decision!.Id));
+                check(Count(directory, "automatedAction") == 1,
+                    "A subsequently explicit fresh automated observation restores only its current command scope");
+            } else check(error is IOException && error is not EngineObservationSupersededException
+                    && Count(directory, "automatedAction") == 0,
+                "An actual failed engine process remains fatal and cannot be classified as a healthy world replacement");
         }
     }
 

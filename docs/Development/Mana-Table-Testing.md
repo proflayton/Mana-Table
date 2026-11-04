@@ -728,6 +728,26 @@ within the original deadline, never replayed. `mixed-lobby/prefix-results.json`
 is a bounded integration result; private observations stay separately labelled.
 The human connections are scripted and supply no human UX, natural outcome or
 deck-qualification credit.
+The same required `NativeSmoke` route then runs `PolledMixedLobbyEngineJourney`
+within that original deadline. Its actual host and TCP guest use default
+`ClientSession` lobby/match polling while one background `AiTableHost` shares the
+host's provider. Human scripts submit only current ordinary source/decision
+commands; they receive no private bot windows or rich observation injection.
+A one-shot gate delays delivery of a real host poll while an ordinary command,
+guest polling and background bot discovery continue. The prefix requires real
+human/bot development, known command receipts, monotonic private-safe player
+frames and coherent public boards, then releases the gate and tears down the
+owners. `polled-mixed-lobby/prefix-results.json` records this bounded concurrency
+evidence; its snapshots and policy receipts remain private. The local
+`--smoke-polled-mixed` route invokes the same helper, not an alternative gate.
+Background discovery is serialized by one `AiTableHost` per provider. Same
+healthy-process world replacement supersedes a read without faulting that host;
+engine-process failure, malformed current data and command failures remain
+failures. The configured-simulation child probes retain old success, malformed,
+superseded and null replies across a new world and its fresh command scope.
+These checks do not establish arbitrary independent same-world multi-reader
+merging of automated authority; cancellation and retirement still belong to the
+single composition owner.
 The required native verification `engine` case now runs this existing `--smoke`
 route after the headless engine suite, using the verified **production** engine
 JAR and resources. It keeps the four warmed clients and original four-minute

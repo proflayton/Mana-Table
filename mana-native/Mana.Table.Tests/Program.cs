@@ -39,6 +39,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-configured-simulation");
         testRun |= args.Contains("--smoke-ai-team-goldens");
         testRun |= args.Contains("--smoke-ai-resources");
+        testRun |= args.Contains("--smoke-polled-mixed");
         testRun |= args.Contains("--smoke-whole-seat-ai");
         testRun |= args.Contains("--replay-ai-decision");
         testRun |= args.Contains("--replay-projection");
@@ -205,6 +206,7 @@ internal static class Program
                 Arg("--source-revision") ?? throw new ArgumentException("Release evaluation requires --source-revision for the exact tested source."),
                 Arg("--source-manifest")).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke")) { NativeSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--smoke-polled-mixed")) { PolledMixedLobbyEngineJourney.RunStandaloneAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-ai")) { AiSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-cleanup")) { CleanupSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-analysis-adapter")) { AnalysisRegression.RunAsync(paths).GetAwaiter().GetResult(); return 0; }

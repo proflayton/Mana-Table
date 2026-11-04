@@ -46,6 +46,7 @@ internal static class ForgePublicProjectionFactChecks
             ("permanent printed identity", value => ChangeCard(value, 0, "Battlefield", "a", card => card with { Name = "Different creature" })),
             ("permanent current face", value => ChangeCard(value, 0, "Battlefield", "a", card => card with { ArtFace = "back" })),
             ("permanent concealed state", value => ChangeCard(value, 0, "Battlefield", "a", card => card with { FaceDown = true })),
+            ("face-down permanent public physical type", value => ChangeCard(value, 0, "Battlefield", "morph", card => card with { Type = "Artifact Creature" })),
             ("permanent controller", MoveController),
             ("attachment parent", value => ChangeCard(value, 0, "Battlefield", "equipment", card => card with { AttachedTo = new("c", "Other", "Creature") })),
             ("attached occurrence", value => ChangeCard(value, 0, "Battlefield", "a", card => card with { Attachments = [] })),
@@ -68,6 +69,21 @@ internal static class ForgePublicProjectionFactChecks
             "The same public game tolerates other viewers' private hand/library/face-down disclosures, opaque keys, priority and decision permissions, localized prose and table ordering");
         check(AiWholeSeatEngineCheck.ComparePublicProjection(perspective, state, directory),
             "Public agreement is symmetric when neither audience is a spectator and each retains different private knowledge");
+        var privatelyReadable = ChangeCard(state, 0, "Battlefield", "morph", card => card with { Key = "owner-masked-action", VisualId = "" });
+        var physical = privatelyReadable.Players.Single(player => player.Id == 0).Zone("Battlefield").Cards.Single(card => card.CombatId == "morph");
+        var known = new Card { Name = "PRIVATE_NOT_A_PUBLIC_FACT", Type = "Private printed Artifact", ManaCost = "{8}", Power = 1, Toughness = 1 };
+        var grant = new ActionSourceOccurrence("owner-private-reading", "Battlefield", 0, physical) { KnownFace = known };
+        privatelyReadable = privatelyReadable with {
+            Decision = new("owner-private-reading", new(), new PriorityPayload(new("Pass", true))),
+            DecisionOwnerId = 0, PriorityPlayerId = 0, ActionSources = [grant]
+        };
+        check(CardViews.IsCurrentActionSource(privatelyReadable, grant)
+                && CardViews.KnownActionFace(privatelyReadable, physical)?.Type == known.Type
+                && physical is { FaceDown: true, Type: "Creature", Power: 2, Toughness: 2 }
+                && AiWholeSeatEngineCheck.ComparePublicProjection(state, privatelyReadable, directory)
+                && AiWholeSeatEngineCheck.ComparePublicProjection(privatelyReadable, state, directory)
+                && !ForgePublicProjectionFacts.Capture(privatelyReadable).Contains("Private printed Artifact", StringComparison.Ordinal),
+            "A valid current owner grant keeps private printed type readable through KnownFace while the shared facts retain only the masked permanent's public physical type");
         var spectator = state with { ViewerId = -1, Executions = null,
             Stack = state.Stack.Select(item => item with { ExecutionId = "" }).ToImmutableArray() };
         check(AiWholeSeatEngineCheck.ComparePublicProjection(spectator, state, directory)
@@ -210,7 +226,6 @@ internal static class ForgePublicProjectionFactChecks
                 "Battlefield" => zone with { Cards = zone.Cards.Reverse().Select(card => card with {
                     Key = "different-opaque-key", Selectable = true, Highlighted = true, Text = "Localized rules prose",
                     Name = card.FaceDown ? "PRIVATE_NOT_A_PUBLIC_FACT" : card.Name,
-                    Type = card.FaceDown ? "Secret printed type" : card.Type,
                     ManaCost = card.FaceDown ? "{8}" : card.ManaCost,
                     VisualId = card.FaceDown ? "private-morph-visual" : card.VisualId,
                     OtherFace = card.FaceDown ? new("Secret back", "Secret type", "{9}", "Secret text", 9, 9, "Secret art", "back") : card.OtherFace,

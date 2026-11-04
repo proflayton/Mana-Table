@@ -48,6 +48,12 @@ final class RulesScenario implements AutoCloseable {
                 DecisionTempo.Settings.off(), () -> System.nanoTime() / 1_000_000, Map.of(), false, startingHand);
     }
 
+    /** Projection controls can author actual allied players before game start. */
+    static RulesScenario allied(String name, Map<Integer, List<String>> battlefield, String mainCard) throws Exception {
+        return new RulesScenario(name, battlefield, mainCard, List.of("Rhys the Redeemed"), false, 4,
+                DecisionTempo.Settings.off(), () -> System.nanoTime() / 1_000_000, Map.of(), false, 7, List.of(0, 0, 1, 1));
+    }
+
     static RulesScenario automated(String name, Map<Integer, List<String>> battlefield, String mainCard, String commander) throws Exception {
         return automated(name, battlefield, mainCard, commander, false);
     }
@@ -122,6 +128,12 @@ final class RulesScenario implements AutoCloseable {
     private RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, List<String> commanders,
                           boolean enableEtbCounters, int seatCount, DecisionTempo.Settings settings, LongSupplier time,
                           Map<Integer, List<String>> mainDeckOverrides, boolean automated, int startingHand) throws Exception {
+        this(name, battlefield, mainCard, commanders, enableEtbCounters, seatCount, settings, time, mainDeckOverrides, automated, startingHand, List.of());
+    }
+
+    private RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, List<String> commanders,
+                          boolean enableEtbCounters, int seatCount, DecisionTempo.Settings settings, LongSupplier time,
+                          Map<Integer, List<String>> mainDeckOverrides, boolean automated, int startingHand, List<Integer> teams) throws Exception {
         this.seatCount = seatCount;
         this.automated = automated;
         if (StaticData.instance() == null) EngineResources.load(RESOURCES);
@@ -135,6 +147,7 @@ final class RulesScenario implements AutoCloseable {
             for (String commander : commanders)
                 deck.getOrCreate(DeckSection.Commander).add(StaticData.instance().getCommonCards().getCard(commander));
             var player = automated ? MatchTable.automated(deck, "Commander", "Seat " + seat) : MatchTable.human(deck, "Commander", "Seat " + seat);
+            if (!teams.isEmpty()) player.setTeamNumber(teams.get(seat));
             if (seat == 0) player.setStartingHand(startingHand);
             player.setEnableETBCountersEffect(enableEtbCounters);
             List<IPaperCard> extras = new ArrayList<>();

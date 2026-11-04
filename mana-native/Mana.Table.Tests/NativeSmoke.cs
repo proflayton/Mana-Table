@@ -168,6 +168,8 @@ internal static class NativeSmoke
             await engines[0].ReturnToLobbyAsync();
             Check(!(await engines[0].LobbyAsync()).MatchActive, "Return to lobby after game");
             await MixedLobbyEngineJourney.RunAsync(engines, await engines[0].LobbyAsync(), paths.Profile, deadline, Check);
+            await engines[1].LeaveAsync(); await engines[0].LeaveAsync();
+            await PolledMixedLobbyEngineJourney.RunAsync(engines, decks.ToArray(), paths.Profile, deadline, Check);
             await File.WriteAllTextAsync(Path.Combine(paths.Profile, "smoke-results.json"), JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
         } finally { foreach (var engine in engines) await engine.DisposeAsync(); }
     }

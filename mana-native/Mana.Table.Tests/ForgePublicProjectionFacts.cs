@@ -110,7 +110,9 @@ internal static class ForgePublicProjectionFacts
 
     private static object CardFacts(Card card) => new {
         id = Occurrence(card), card.FaceDown,
-        name = card.FaceDown ? "" : card.Name, type = card.FaceDown ? "" : card.Type,
+        // The provider projects the current masked battlefield type here;
+        // any privately known printed type lives only in KnownFace.
+        name = card.FaceDown ? "" : card.Name, type = card.Type,
         manaCost = card.FaceDown ? "" : card.ManaCost,
         piece = card.FaceDown ? "" : card.GamePieceType,
         face = card.FaceDown ? "" : card.ArtFace,

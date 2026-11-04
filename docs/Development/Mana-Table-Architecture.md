@@ -1020,6 +1020,28 @@ and synchronization readers explicitly opt in; legacy readers retain their old
 source-zone schema. This models a decision-bound reading grant, not a general
 permission to inspect hidden cards outside that input's lifetime.
 
+Player and spectator card projections share one detached
+`PublicCardCharacteristics` capture for current physical facts. Commander tax,
+piece category, visible type, counters, stats and combat descriptors cannot gain
+separate formulas in each consumer. The capture uses the caller's existing face,
+stat and audience disclosure inputs and retains no live engine view. Its map and
+nested collections are immutable. Facts keep that audience's privacy scope;
+an entitled private-hand portrait does not become public through this helper.
+Consumers still own visibility admission,
+opaque identities, action keys, selection, private reading grants and attachment
+policy; those permissions are never inferred from the shared characteristics.
+`CombatDefenders` supplies the same guarded current-defender descriptor to both
+readers, while combat's typed player/permanent target topology stays separate.
+Committed stack references likewise use one immutable `StackTargetProjection`
+value for both audiences, including a disclosed card target's controller. Its
+display set deduplicates kind/opaque-ID pairs across subinstances. It does not
+replace target offers, per-effect recipients or divided allocations: three
+effects may still act on the same displayed target.
+`CurrentCardViews` distinguishes exact rules-object membership from a visibility
+refresh's lookup of the current physical card. A committed target must pass the
+exact-view check before receiving an audience identity. Moving a card to a public
+zone cannot rebind an old target to the new object with the same physical ID.
+
 Eligibility probes must not announce a physical change from a last-known card
 copy. `Card.setState` retains local copy/view updates but publishes no global
 characteristic-change event for an LKI card. Morph eligibility checks can
