@@ -19,6 +19,34 @@ public final class AiReleaseFixtureEngine {
         });
     }
 
+    /** Explicit private launcher; no command, deck name or process-global flag
+     * can enable this setup in the production entry point. */
+    public static final class PolledFanout {
+        private PolledFanout() { }
+        public static void main(String[] args) throws Exception {
+            DesktopEngine.run(args, (players, resources, profile) -> {
+                configure(players);
+                return new MatchTable("Commander", players, resources, profile, true);
+            }, AiReleaseFixtureEngine::configurePolledFanout);
+        }
+    }
+
+    static void configurePolledFanout(String format, List<RegisteredPlayer> players) {
+        if (!format.equals("Commander") || players.size() != 4
+                || !(players.get(0).getPlayer() instanceof forge.player.LobbyPlayerHuman) || !(players.get(1).getPlayer() instanceof forge.player.LobbyPlayerHuman)
+                || players.get(0).getPlayer() instanceof AutomatedLobbyPlayer || players.get(1).getPlayer() instanceof AutomatedLobbyPlayer
+                || !(players.get(2).getPlayer() instanceof AutomatedLobbyPlayer) || !(players.get(3).getPlayer() instanceof AutomatedLobbyPlayer))
+            throw new IllegalArgumentException("The private fanout fixture requires two ordinary humans and two host-owned automated seats");
+        // Deliberately controlled registration, not a legal host-deck or natural
+        // campaign qualification. The ordinary library/hand/cast path supplies
+        // the actual spell and enough real cards for its 55 draws.
+        var hostMain = players.get(0).getDeck().getMain();
+        hostMain.clear(); hostMain.add(StaticData.instance().getCommonCards().getCard("Shamanic Revelation"), 99);
+        var extras = new ArrayList<>(List.of("Toothy, Imaginary Friend", "Reliquary Tower"));
+        extras.addAll(Collections.nCopies(54, "Memnite")); extras.addAll(Collections.nCopies(5, "Forest"));
+        addExtras(players.get(0), extras); addExtras(players.get(1), List.of("Mind's Eye"));
+    }
+
     static void configure(List<RegisteredPlayer> players) {
         String name = players.get(0).getDeck().getName();
         if (name.equals("AI terminal-risk current routes")) {

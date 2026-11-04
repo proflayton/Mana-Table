@@ -341,6 +341,7 @@ internal static class HeadlessEngineSmoke
                 await ExecutionEngineJourney.RunAsync(engine, paths.Profile, Check, sourceRevision);
                 await AiResourceQualificationJourney.RunAsync(engine, paths.Profile, Check);
                 await AiRepeatedCadenceEngineJourney.RunAsync(engine, paths.Profile, Check);
+                await PolledFanoutEngineJourney.RunAsync(paths, verifiedRuntime!, Check);
                 await AiReleaseGoldens.RunAsync(engine, paths.Profile, Check);
                 await CooperativeEncounterEngineJourney.RunAsync(engine, paths.Profile, deck.Id, Check);
                 await ConfiguredSimulationEngineJourney.RunAsync(engine, paths.Profile, deck.Id, Check);

@@ -748,6 +748,39 @@ superseded and null replies across a new world and its fresh command scope.
 These checks do not establish arbitrary independent same-world multi-reader
 merging of automated authority; cancellation and retirement still belong to the
 single composition owner.
+
+The fixture-backed `--smoke-headless-engine` lane also invokes
+`PolledFanoutEngineJourney` with separate fixed45-second setup and workload
+budgets. Setup ends once the actual110-trigger queue is captured; the workload
+clock starts exactly once and never resets as work progresses. Its test-only
+pregame bootstrap supplies Toothy,54Memnites and five Forests to the host,
+Mind's Eye with no funding to the real TCP guest, and two distinct legal quiet
+AI lists. The deterministic host library is a controlled fixture, not a legal
+deck or deck-qualification witness. Both humans retain default `ClientSession`
+polling; the real background AI host shares the host provider. One ordinary
+Shamanic Revelation cast must draw55 cards, publish110 distinct triggers and
+resolve the exact queue through two independently armed `FiniteResolutionIntent`
+owners. Every unpayable optional cost uses its current certified offer; a
+previously answered command is rejected against a later real offer without
+another RPC. Exact hand/library changes,55Toothy counters,55 declined costs,
+220 certified human passes,220 accepted bot passes and typed spell-payment
+history are checked separately from trigger outcomes, which must all resolve.
+The scenario selects the existing1024-record per-seat AI history option to
+retain its complete bounded receipt window; the production128-record default
+is unchanged. Aggregate ACK totals cannot be compared against an evicted ring.
+This composition fixture installs no timed AI presentation pacing; the existing
+real cadence journey covers the clock-based presentation policy separately.
+`polled-fanout/result.json` records the bounded result and runtime provenance;
+hands, current handles, bot history and full audience snapshots remain in its
+private evidence files. The nested fixture launcher is derived only after
+verifying the original fixture/production dependency, retains byte-identical
+allowlisted fixture classes and records both original and derived manifests and
+hashes. It never enters the shipping package or substitutes its hash for the
+original source receipt. The local `--smoke-polled-fanout` flag invokes this
+same maintained journey. These checks establish this declared mass-trigger
+composition, not natural-game completion, strategy quality, all interactions or
+human gameplay approval.
+
 The required native verification `engine` case now runs this existing `--smoke`
 route after the headless engine suite, using the verified **production** engine
 JAR and resources. It keeps the four warmed clients and original four-minute

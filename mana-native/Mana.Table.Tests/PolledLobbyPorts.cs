@@ -1,0 +1,90 @@
+using System.Collections.Concurrent;
+using System.Collections.Immutable;
+using System.Diagnostics;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Mana.AI;
+using Mana.Contracts;
+
+namespace Mana.Table;
+
+// Transparent receipt counters shared by real ordinary-polled lobby journeys.
+// Bot observations never enter a connected human reader.
+internal static class PolledLobbyPorts
+{
+    internal sealed class ReadPort(IMatchConnection inner) : IMatchConnection
+    {
+        private readonly ConcurrentDictionary<string, GameSnapshot> decisions = new(StringComparer.Ordinal);
+        internal Action<GameSnapshot?>? Observed { get; init; }
+        internal Action<GameCommand, GameSnapshot?>? Acknowledged { get; init; }
+        private int hold;
+        private int reads, accepted, failures;
+        internal int Reads => Volatile.Read(ref reads);
+        internal int Accepted => Volatile.Read(ref accepted);
+        internal int Failures => Volatile.Read(ref failures);
+        internal GameSnapshot? Held { get; private set; }
+        internal int AcceptedAtCapture { get; private set; }
+        internal TaskCompletionSource Captured { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal void Arm() => Interlocked.Exchange(ref hold, 1);
+        public async Task<GameSnapshot?> ObserveAsync()
+        {
+            Interlocked.Increment(ref reads);
+            var state = await inner.ObserveAsync();
+            if (state?.Decision is { } decision) decisions[decision.Id] = state;
+            Observed?.Invoke(state);
+            if (Interlocked.Exchange(ref hold, 0) == 1) {
+                Held = state; AcceptedAtCapture = Accepted; Captured.TrySetResult(); await Release.Task;
+            }
+            return state;
+        }
+        public async Task ExecuteAsync(GameCommand command)
+        {
+            try {
+                var before = command is DecisionCommand decision ? decisions.GetValueOrDefault(decision.DecisionId) : null;
+                await inner.ExecuteAsync(command); Interlocked.Increment(ref accepted);
+                Acknowledged?.Invoke(command, before);
+            }
+            catch { Interlocked.Increment(ref failures); throw; }
+        }
+        public Task ConcedeAsync(string gameId) => throw new InvalidOperationException("The polled prefix never forces concession.");
+    }
+
+    internal sealed class BotPort(IAutomatedSeatProvider inner) : IAutomatedSeatProvider, IAiHostDiagnostics
+    {
+        internal sealed record Receipt(int Seat, [property: JsonIgnore] GameCommand Command, ImmutableArray<string> StackExecutions)
+        {
+            public long MonotonicTicks { get; } = Stopwatch.GetTimestamp();
+            public string Kind => Command.GetType().Name;
+            public JsonElement Answer => JsonSerializer.SerializeToElement(Command, Command.GetType());
+        }
+        private readonly ConcurrentDictionary<(int Seat, string Decision), ImmutableArray<string>> decisions = new();
+        internal ConcurrentQueue<Receipt> Receipts { get; } = new();
+        private int reads, accepted, executing;
+        internal ConcurrentQueue<object> Faults { get; } = new();
+        internal int Reads => Volatile.Read(ref reads);
+        internal int Accepted => Volatile.Read(ref accepted);
+        internal int Executing => Volatile.Read(ref executing);
+        public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) => inner.EnableAutomatedSeatsAsync(cancellation);
+        public async Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default)
+        {
+            var state = await inner.ObserveAutomatedSeatsAsync(cancellation);
+            foreach (var item in state) if (item.State.Decision is { } decision)
+                decisions[(item.SeatId, decision.Id)] = item.State.Stack.Select(stack => stack.ExecutionId).ToImmutableArray();
+            Interlocked.Increment(ref reads); return state;
+        }
+        public async Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default)
+        {
+            Interlocked.Increment(ref executing);
+            try {
+                var stack = command is DecisionCommand decision ? decisions.GetValueOrDefault((seatId, decision.DecisionId), []) : [];
+                await inner.ExecuteAutomatedAsync(seatId, command, cancellation); Interlocked.Increment(ref accepted);
+                Receipts.Enqueue(new(seatId, command, stack));
+            }
+            finally { Interlocked.Decrement(ref executing); }
+        }
+        public Task ReportAutomationFaultAsync(string gameId, int seatId, string reason, CancellationToken cancellation = default)
+            => inner.ReportAutomationFaultAsync(gameId, seatId, reason, cancellation);
+        public void Report(AiHostFault fault, Exception? error) => Faults.Enqueue(new { fault, error = error?.ToString() });
+    }
+}

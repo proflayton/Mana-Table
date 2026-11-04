@@ -40,6 +40,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-ai-team-goldens");
         testRun |= args.Contains("--smoke-ai-resources");
         testRun |= args.Contains("--smoke-polled-mixed");
+        testRun |= args.Contains("--smoke-polled-fanout");
         testRun |= args.Contains("--smoke-whole-seat-ai");
         testRun |= args.Contains("--replay-ai-decision");
         testRun |= args.Contains("--replay-projection");
@@ -207,6 +208,8 @@ internal static class Program
                 Arg("--source-manifest")).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke")) { NativeSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-polled-mixed")) { PolledMixedLobbyEngineJourney.RunStandaloneAsync(paths).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--smoke-polled-fanout")) { PolledFanoutEngineJourney.RunStandaloneAsync(paths,
+                Arg("--production-engine-jar") ?? throw new ArgumentException("The polled fanout fixture requires its actual production engine dependency.")).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-ai")) { AiSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-cleanup")) { CleanupSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-analysis-adapter")) { AnalysisRegression.RunAsync(paths).GetAwaiter().GetResult(); return 0; }

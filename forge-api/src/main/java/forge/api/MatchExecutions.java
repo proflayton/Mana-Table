@@ -27,6 +27,10 @@ final class MatchExecutions {
     private String finiteGrantId = "";
     private Set<String> finiteRoots = Set.of();
     private final Set<String> finiteDescendants = new HashSet<>();
+    // A missing originally-private caller is different from admitted evidence
+    // lost at capacity. Keep that gap with its referring row so new consent
+    // cannot silently reinterpret a truncated lineage as originally parentless.
+    private final Set<String> incompleteAncestry = new HashSet<>();
     private boolean finiteOverflow;
     private volatile Frame latest = new Frame(1, 0, List.of(), List.of());
     @FunctionalInterface interface HistorySink { void accept(Occurrence occurrence, Transition transition, boolean publicSource); }
@@ -64,15 +68,31 @@ final class MatchExecutions {
     private void trim() {
         long first = rules.firstSequence();
         while (!transitions.isEmpty() && transitions.peekFirst().sequence() < first) transitions.removeFirst();
-        Set<String> retained = new HashSet<>();
+        Set<String> retained = new LinkedHashSet<>();
         for (var occurrence : rules.occurrences()) retained.add(occurrence.id());
         retained.addAll(pinnedStack);
         retained.addAll(finiteDescendants);
-        for (String id : List.copyOf(retained)) {
+        var pending = new ArrayDeque<>(retained);
+        int ancestors = 0;
+        while (!pending.isEmpty()) {
+            String id = pending.removeFirst();
             var occurrence = admitted.get(id);
-            if (occurrence != null) retained.add(occurrence.budgetRootId());
+            if (occurrence == null) continue;
+            if (incompleteAncestry.contains(id)) finiteOverflow = true;
+            // Only close over this audience's earlier admission. Never fetch a
+            // private/missing caller from the global rules tracker. Triggers
+            // have independent budget roots but still retain their real cause.
+            for (String dependency : new String[] { occurrence.parentId(), occurrence.budgetRootId() }) {
+                if (dependency == null || retained.contains(dependency) || !admitted.containsKey(dependency)) continue;
+                if (ancestors >= MatchActivity.MAXIMUM_FINITE_ENTRIES) {
+                    incompleteAncestry.add(id); finiteOverflow = true;
+                } else {
+                    retained.add(dependency); pending.addLast(dependency); ancestors++;
+                }
+            }
         }
         admitted.keySet().removeIf(id -> !retained.contains(id));
+        incompleteAncestry.retainAll(admitted.keySet());
         readable = Map.copyOf(admitted);
     }
 

@@ -43,7 +43,7 @@ internal static class PolledMixedLobbyEngineJourney
         void Require(bool condition, string message) {
             check(condition, message); checks.Add(message);
         }
-        var botPort = new BotPort(engines[0]);
+        var botPort = new PolledLobbyPorts.BotPort(engines[0]);
         var ai = new AiTableHost(botPort, _ => new CasualCommanderPolicy(), 261104,
             new(TimeSpan.FromSeconds(3), 2048), diagnostics: botPort);
         var players = engines.Take(2).Select((engine, index) => new PlayerOwner(engine, index)).ToArray();
@@ -184,7 +184,7 @@ internal static class PolledMixedLobbyEngineJourney
     private sealed class PlayerOwner
     {
         internal readonly int Index;
-        internal readonly ReadPort Port;
+        internal readonly PolledLobbyPorts.ReadPort Port;
         internal readonly ClientSession Client;
         internal readonly List<object> Receipts = [];
         internal int ClientAdmissions, PollCallbacks, Publications, HeldPublications;
@@ -267,55 +267,4 @@ internal static class PolledMixedLobbyEngineJourney
         }
     }
 
-    private sealed class ReadPort(IMatchConnection inner) : IMatchConnection
-    {
-        private int hold;
-        private int reads, accepted, failures;
-        internal int Reads => Volatile.Read(ref reads);
-        internal int Accepted => Volatile.Read(ref accepted);
-        internal int Failures => Volatile.Read(ref failures);
-        internal GameSnapshot? Held { get; private set; }
-        internal int AcceptedAtCapture { get; private set; }
-        internal TaskCompletionSource Captured { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        internal void Arm() => Interlocked.Exchange(ref hold, 1);
-        public async Task<GameSnapshot?> ObserveAsync()
-        {
-            Interlocked.Increment(ref reads);
-            var state = await inner.ObserveAsync();
-            if (Interlocked.Exchange(ref hold, 0) == 1) {
-                Held = state; AcceptedAtCapture = Accepted; Captured.TrySetResult(); await Release.Task;
-            }
-            return state;
-        }
-        public async Task ExecuteAsync(GameCommand command)
-        {
-            try { await inner.ExecuteAsync(command); Interlocked.Increment(ref accepted); }
-            catch { Interlocked.Increment(ref failures); throw; }
-        }
-        public Task ConcedeAsync(string gameId) => throw new InvalidOperationException("The polled prefix never forces concession.");
-    }
-
-    private sealed class BotPort(IAutomatedSeatProvider inner) : IAutomatedSeatProvider, IAiHostDiagnostics
-    {
-        private int reads, accepted, executing;
-        internal ConcurrentQueue<object> Faults { get; } = new();
-        internal int Reads => Volatile.Read(ref reads);
-        internal int Accepted => Volatile.Read(ref accepted);
-        internal int Executing => Volatile.Read(ref executing);
-        public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) => inner.EnableAutomatedSeatsAsync(cancellation);
-        public async Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default)
-        {
-            var state = await inner.ObserveAutomatedSeatsAsync(cancellation); Interlocked.Increment(ref reads); return state;
-        }
-        public async Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default)
-        {
-            Interlocked.Increment(ref executing);
-            try { await inner.ExecuteAutomatedAsync(seatId, command, cancellation); Interlocked.Increment(ref accepted); }
-            finally { Interlocked.Decrement(ref executing); }
-        }
-        public Task ReportAutomationFaultAsync(string gameId, int seatId, string reason, CancellationToken cancellation = default)
-            => inner.ReportAutomationFaultAsync(gameId, seatId, reason, cancellation);
-        public void Report(AiHostFault fault, Exception? error) => Faults.Enqueue(new { fault, error = error?.ToString() });
-    }
 }
