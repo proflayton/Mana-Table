@@ -28,6 +28,7 @@ public final class DesktopEngine implements AutoCloseable {
     private final AiDeckCatalog aiDecks;
     private final DeckPlaytests playtests;
     private final SimulationTableFactory simulationTables;
+    private final SyncLobby.PregameSetup pregameSetup;
     private Path resources;
     private SeatConnection match;
     private MatchSession localMatch;
@@ -46,8 +47,13 @@ public final class DesktopEngine implements AutoCloseable {
     }
 
     DesktopEngine(CardCatalog catalog, Path directory, SimulationTableFactory simulationTables) throws Exception {
+        this(catalog, directory, simulationTables, SyncLobby.PregameSetup.NONE);
+    }
+
+    DesktopEngine(CardCatalog catalog, Path directory, SimulationTableFactory simulationTables, SyncLobby.PregameSetup pregameSetup) throws Exception {
         this.catalog = catalog;
         this.simulationTables = java.util.Objects.requireNonNull(simulationTables);
+        this.pregameSetup = java.util.Objects.requireNonNull(pregameSetup);
         this.directory = directory.toAbsolutePath().normalize();
         Files.createDirectories(this.directory);
         playtests = new DeckPlaytests(this.directory);
@@ -60,12 +66,16 @@ public final class DesktopEngine implements AutoCloseable {
     }
 
     static void run(String[] args, SimulationTableFactory simulationTables) throws Exception {
+        run(args, simulationTables, SyncLobby.PregameSetup.NONE);
+    }
+
+    static void run(String[] args, SimulationTableFactory simulationTables, SyncLobby.PregameSetup pregameSetup) throws Exception {
         if (args.length != 2) { throw new IllegalArgumentException("Expected resource and deck directories"); }
         PrintStream protocol = System.out;
         System.setOut(System.err); // Forge diagnostics must never corrupt the JSON protocol.
         protocol.println(JSON.toJson(Map.of("event", "loading", "message", "Loading Forge card library…")));
         var data = EngineResources.load(Path.of(args[0]));
-        var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]), simulationTables);
+        var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]), simulationTables, pregameSetup);
         engine.resources = Path.of(args[0]);
         engine.documents.loadAnalysisFormats(engine.resources);
         protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", PROTOCOL_VERSION, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo", "automated-seats", "certified-one-step-undo", "match-history", "match-setup", "durable-encounter-admission", "simulation-match-setup", "automated-match-history", "owned-decision-observation", "private-action-faces"))));
@@ -389,7 +399,7 @@ public final class DesktopEngine implements AutoCloseable {
     private SyncLobby multiplayer() {
         if (multiplayer == null) {
             if (resources == null) { throw new IllegalStateException("Engine resources are still loading"); }
-            multiplayer = new SyncLobby(resources, directory.getParent(), automated, aiDecks);
+            multiplayer = new SyncLobby(resources, directory.getParent(), automated, aiDecks, pregameSetup);
         }
         return multiplayer;
     }
