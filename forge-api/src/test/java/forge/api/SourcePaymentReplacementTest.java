@@ -80,7 +80,7 @@ public class SourcePaymentReplacementTest {
                 assertFalse(actual.isPaymentActive(), "A child cost confirmation is not producer completion");
                 return null;
             });
-            var child = game.until(input -> input.seat() == 0 && text(input.prompt(), "context").equals("colorChoice"));
+            var child = awaitColorChoice(game);
             assertTrue(game.answer(child, Map.of("action", "choice", "choices", List.of(red(child)))));
             var remaining = game.until(input -> input.seat() == 0 && payment(input));
             assertEquals(remaining.prompt().getAsJsonArray("unpaidManaParts"), JSON.toJsonTree(List.of(Map.of("symbol", "{U}", "count", 1))));
@@ -239,6 +239,19 @@ public class SourcePaymentReplacementTest {
     }
     private static int red(Input child) { return child.prompt().getAsJsonArray("choices").asList().stream().map(value -> value.getAsJsonObject())
             .filter(value -> text(value, "mana").equals("{R}")).findFirst().orElseThrow().get("index").getAsInt(); }
+    private static Input awaitColorChoice(RulesScenario game) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        do {
+            var state = game.state(0);
+            var value = state.get("prompt");
+            if (value != null && !value.isJsonNull() && text(value.getAsJsonObject(), "context").equals("colorChoice"))
+                return new Input(0, state, value.getAsJsonObject());
+            // The confirmation was completed directly by its real owner.
+            // Await its successor without answering a retired publication.
+            Thread.sleep(5);
+        } while (System.nanoTime() < deadline);
+        throw new AssertionError("The real producer did not publish its required color choice: " + game.state(0));
+    }
     private static boolean priority(Input input) { return text(input.prompt(), "inputType").equals("InputPassPriority"); }
     private static int genericBill(Input input) {
         var bill = input.prompt().getAsJsonArray("unpaidManaParts");
