@@ -50,6 +50,20 @@ from viewer. Generated Blitz and additional-mode graphs are controls. These
 source-query cases do not certify purity of all legacy static helpers or every
 possible generated route.
 
+The next resilience checks compose these boundaries. `ReadAudienceLifecycleRegression`
+holds source-action and private-history replies across viewer ABA, clearing and
+resetting through `ClientSession`, in both completion orders. It checks late
+success, failure and unsupported results, then requires usable fresh reads.
+`SourcePaymentReplacementTest` uses real payment inputs and checks resource
+outcomes separately from stale child/catalog authority. A canceled cast can
+refund reversible mana abilities through Forge; it cannot be treated as a full
+rules rollback. These tests belong to the existing client executable and Java
+API collection, respectively.
+`PaymentTaskOwnershipTest` also injects producer and Auto faults under the real
+game owner, checks lock release and the remaining bill, then waits for lawful
+parent cleanup. Catching these controlled faults does not establish recovery
+from arbitrary engine failures.
+
 Mana Table has one client: the Windows MonoGame app. Use the smallest check that
 covers the change. Reuse the existing Java and native harnesses; do not add a
 second client or rules simulator to test the shipping app.
@@ -408,7 +422,7 @@ non-cost evidence and the existing mana-side-effect controls retain ordinary
 announcement timing. These authored journeys do not measure the user's session.
 
 `ForgeRequestCancellationProtocolProbe` belongs to the existing
-`configured-simulation` group and full headless lane. Its five real child-process
+`configured-simulation` group and full headless lane. Its real child-process
 cases cover cancellation while queued at the write gate, interrupted large
 writes, one virtual 45-second budget spanning gate and reply, late canceled
 observations, and late command receipts. The shared-budget case spends 30 virtual
@@ -419,6 +433,13 @@ These protocol cases need no additional CI lane or Java rules run. The optional
 `TimeProvider` seams make the existing deadline deterministic without sleeping
 for 45 seconds or changing production timing. Client/protocol correctness is
 separate from a natural game's progress and mixed human/AI experience approval.
+Three local-command journeys also compose the production adapter with
+`ClientSession`: live recovery, Reset and Close retain a withheld command reply
+through 44 virtual seconds, finish at the existing 45-second deadline, reject
+replay and reconcile a late acknowledgement with a fresh current scope. A new
+owner starts only after the prior provider operation returns. This verifies the
+shipping adapter's deadline; it does not promise safe abandonment of an arbitrary
+provider that never completes or honors cancellation.
 
 The existing `--smoke-headless-engine` process runs a short scripted AI-framework
 continuation through real starting-player selection, keeping a hand and playing

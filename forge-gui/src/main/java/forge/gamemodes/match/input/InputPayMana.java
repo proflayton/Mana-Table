@@ -424,22 +424,25 @@ public abstract class InputPayMana extends InputSyncronizedBase {
         game.getAction().invoke(() -> {
             historyOrigin = gestureOrigin;
             try (var provenance = game.getExecutions().enterPaymentOrigin(gestureOrigin)) {
-                if (PlaySpellAbility.playSpellAbility(getController(), chosen.getActivatingPlayer(), chosen)) {
-                    final List<AbilityManaPart> manaAbilities = chosen.getAllManaParts();
-                    boolean restrictionsMet = true;
+                try {
+                    if (PlaySpellAbility.playSpellAbility(getController(), chosen.getActivatingPlayer(), chosen)) {
+                        final List<AbilityManaPart> manaAbilities = chosen.getAllManaParts();
+                        boolean restrictionsMet = true;
 
-                    for (AbilityManaPart sa : manaAbilities) {
-                        if (!sa.meetsManaRestrictions(saPaidFor)) {
-                            restrictionsMet = false;
-                            break;
+                        for (AbilityManaPart sa : manaAbilities) {
+                            if (!sa.meetsManaRestrictions(saPaidFor)) {
+                                restrictionsMet = false;
+                                break;
+                            }
+                        }
+
+                        if (restrictionsMet && !player.getController().isFullControl(FullControlFlag.NoPaymentFromManaAbility)) {
+                            player.getManaPool().payManaFromAbility(saPaidFor, manaCost, chosen);
                         }
                     }
-
-                    if (restrictionsMet && !player.getController().isFullControl(FullControlFlag.NoPaymentFromManaAbility)) {
-                        player.getManaPool().payManaFromAbility(saPaidFor, manaCost, chosen);
-                    }
+                } finally {
+                    locked = false;
                 }
-                // Need to call this to unlock
                 onStateChanged();
             }
         });
@@ -477,7 +480,8 @@ public abstract class InputPayMana extends InputSyncronizedBase {
             game.getAction().invoke(() -> {
                 historyOrigin = "auto";
                 try (var provenance = game.getExecutions().enterPaymentOrigin("auto")) {
-                    runAsAi(proc);
+                    try { runAsAi(proc); }
+                    finally { locked = false; }
                     onStateChanged();
                 }
             });
@@ -497,7 +501,9 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     }
 
     protected final void updateMessage() {
-        locked = false;
+        // Display restoration does not finish the producer or Auto task that
+        // owns this payment, nor consume its delayed source-selection queue.
+        if (isFinished() || locked) return;
         if (activateDelayedCard()) {
             return;
         }
@@ -510,13 +516,14 @@ public abstract class InputPayMana extends InputSyncronizedBase {
 
     @Override
     public void showMessage() {
-        if (isFinished()) { return; }
+        if (isFinished() || locked) { return; }
         getController().pushActionableCards(true);
         updateButtons(false);
         onStateChanged();
     }
 
     protected void onStateChanged() {
+        if (isFinished() || locked) return;
         if (isAlreadyPaid()) {
             recordPaymentEnd("completed");
             done();

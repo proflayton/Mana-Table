@@ -156,6 +156,15 @@ Unavailable announcement metadata remains `numeric: null`; unrelated integer
 dialogs do not acquire numeric metadata. Missing or stale captures are rejected
 rather than interpreted as zero resources. The dialog's existing scope and
 number bounds own its answer; funding facts grant no payment commands.
+
+A required mana/convoke color dialog also retains its captured parent input.
+Its response is refused while that input is displaced, even if the published
+prompt ID still matches. Other dialogs retain their exact unfinished response
+future; ambient cost-stack entries do not establish inferred ancestry. Restoring
+a parent payment's display does not complete its running producer operation or
+authorize a second one. These are live admission rules, not additional wire
+fields or a promise to roll back committed costs.
+
 Current mana-bearing action semantics also carry `prospectiveFunding`, using that exact
 bounded funding projection before a payment starts. It contains no future
 decision or action handles. Policies can compare the same source restrictions

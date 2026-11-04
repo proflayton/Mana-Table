@@ -848,9 +848,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private boolean selectionOwnerCurrent(Pending current) {
         if (!selectionDialog(current)) return selectionInputCurrent(current);
         // Synchronous dialogs can suspend queued actions and parent inputs.
-        // Their exact unfinished response, not the queue/proxy, owns this scope.
-        return !closed && error == null && !conceded && !viewer.getHasLost() && !game.isGameOver()
-                && pending == current && !current.response.isDone();
+        // A bound payment child also retains its actual parent input owner.
+        return decisionOwnerCurrent(current);
     }
 
     private boolean decisionOwnerCurrent(Pending current) {
@@ -1045,6 +1044,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     || !Objects.equals(next.prompt.get("quietYieldToken"), yieldToken) || !permitsQuietYield(next, yieldToken)))
                 throw new IllegalArgumentException("The table has changed. Review the current decision before passing for now.");
             if (!next.kind.equals("input")) {
+                if (!decisionOwnerCurrent(next))
+                    throw new IllegalArgumentException("That choice has changed. Use the current prompt.");
                 validateDialog(next, request);
                 table.invalidateUndo("accepted-choice");
                 if (playerDriven) table.tempo.activity(viewer.getId());

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Mana.Client;
 using Mana.Contracts;
 using Mana.Forge;
 
@@ -27,8 +28,8 @@ internal static class ForgeRequestCancellationProtocolProbe
         Console.WriteLine(JsonSerializer.Serialize(new { @event = "ready", protocolVersion = ForgeProtocol.Version,
             capabilities = ForgeProtocol.RequiredCapabilities.Add("automated-seats") }));
         Console.Out.Flush();
-        int enables = 0, observations = 0, actions = 0;
-        long? heldObservation = null, heldCommand = null;
+        int enables = 0, observations = 0, actions = 0, localObservations = 0, localActions = 0;
+        long? heldObservation = null, heldCommand = null, heldLocalCommand = null;
         string? line;
         while ((line = Console.ReadLine()) != null) {
             using var document = JsonDocument.Parse(line);
@@ -52,6 +53,20 @@ internal static class ForgeRequestCancellationProtocolProbe
                 continue;
             }
             if (method == "import") { Reply(id, new { id = "authored-bulk-deck", name = "Transport bytes only" }); continue; }
+            if (method == "matchState") {
+                if (heldLocalCommand is { } oldCommand) {
+                    Reply(oldCommand, new { accepted = true }); heldLocalCommand = null;
+                    Signal("late-local-command-sent.txt");
+                }
+                bool replacement = mode is "local-deadline-reset" or "local-deadline-close";
+                Reply(id, LocalState(++localObservations, replacement)); continue;
+            }
+            if (method == "matchAction") {
+                if (++localActions == 1 && mode.StartsWith("local-deadline-", StringComparison.Ordinal)) {
+                    heldLocalCommand = id; Signal("held-local-command.txt"); continue;
+                }
+                Reply(id, new { accepted = true }); continue;
+            }
             if (method == "automatedState") {
                 observations++;
                 if (observations == 2 && mode is "late-observation" or "blocked-shared-budget") {
@@ -86,6 +101,18 @@ internal static class ForgeRequestCancellationProtocolProbe
             ["semantics"] = new JsonObject() });
     }
 
+    private static JsonNode LocalState(int observation, bool replacement)
+    {
+        var state = ConfiguredSimulationWireChecks.State();
+        state["id"] = replacement && observation > 1 ? Game + "-replacement" : Game;
+        state["viewerId"] = Seat; state["revision"] = observation;
+        state["turn"] = 1; state["phase"] = "Main phase"; state["phaseKey"] = "MAIN1";
+        state["decisionOwnerId"] = Seat; state["priorityPlayerId"] = Seat;
+        state["prompt"] = JsonSerializer.SerializeToNode(new {
+            id = observation == 1 ? "local-before" : "local-current", kind = "input", task = "priority", ok = "Pass", okEnabled = true });
+        return state;
+    }
+
     internal static async Task RunAsync(string profile, Action<bool, string> check)
     {
         await CheckQueuedCancellation(profile, check);
@@ -93,6 +120,82 @@ internal static class ForgeRequestCancellationProtocolProbe
         await CheckSharedDeadline(profile, check);
         await CheckLateObservation(profile, check);
         await CheckLateCommand(profile, check);
+        foreach (string retirement in new[] { "recover", "reset", "close" })
+            await CheckLocalCommandDeadline(profile, retirement, check);
+    }
+
+    private static async Task CheckLocalCommandDeadline(string profile, string retirement, Action<bool, string> check)
+    {
+        await using var probe = await Probe.Start(profile, "local-deadline-" + retirement);
+        var port = new TrackedConnection(probe.Engine);
+        var session = new ClientSession(port, clock: probe.Clock);
+        var initial = await port.ObserveAsync() ?? throw new IOException("The protocol fixture did not publish its local audience.");
+        session.Accept(initial);
+        int failures = 0, publications = 0;
+        session.Failed += _ => failures++;
+        session.Changed += (_, _) => publications++;
+        var oldCommand = new PassPriority(initial.Id, initial.Decision!.Id);
+        check(session.Submit(oldCommand), "A local " + retirement + " journey dispatches its currently observed command");
+        await Until(() => probe.Signal("held-local-command.txt"), "the local command reaching the child before its withheld reply");
+        if (retirement == "reset") session.Reset();
+        else if (retirement == "close") session.Close();
+        int retiredPublications = publications;
+        probe.Clock.Advance(TimeSpan.FromSeconds(44));
+        session.Pump();
+        check(!port.ExecutionFinished.Task.IsCompleted && !session.Submit(oldCommand)
+                && probe.Count("matchAction") == 1 && probe.Count("matchState") == 1,
+            "An unanswered local " + retirement + " command retains one lane through 44 virtual seconds without a read or replay");
+        probe.Clock.Advance(TimeSpan.FromSeconds(1));
+        await port.ExecutionFinished.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if (retirement != "close") await Drain(session);
+        else session.Pump();
+        check(port.Failure is EngineRequestTimeoutException { Operation: "engine-request", Phase: EngineRequestPhase.Reply }
+                && probe.Clock.PendingTimers == 0 && probe.Count("matchAction") == 1,
+            "The existing 45-second provider deadline releases the local " + retirement + " request with its actual Reply uncertainty and no retained timer");
+        check(retirement == "recover"
+                ? failures == 1 && session.NeedsRecovery && session.UncertainCommand && session.State == initial
+                : failures == 0 && !session.NeedsRecovery && publications == retiredPublications
+                    && (retirement == "reset" ? session.State == null : session.Closed),
+            "A local " + retirement + " deadline preserves live uncertainty or keeps its retired failure and publication inert");
+
+        // A fresh owner is admitted only after the original provider operation
+        // returned. Reset and Close do not abort a committed rules command.
+        var current = retirement == "close" ? new ClientSession(port, clock: probe.Clock) : session;
+        current.Poll(false, _ => { }); await Drain(current);
+        check(probe.Signal("late-local-command-sent.txt") && current.State is { Revision: 2, Decision.Id: "local-current" }
+                && current.State.Id == (retirement == "recover" ? Game : Game + "-replacement")
+                && !current.NeedsRecovery && !current.UncertainCommand && !current.Submit(oldCommand)
+                && probe.Count("matchAction") == 1 && probe.Count("matchState") == 2,
+            "Reobserving after local " + retirement + " admits the current scope once while the late command acknowledgement revives no old authority");
+        var observed = current.State!;
+        check(current.Submit(new PassPriority(observed.Id, observed.Decision!.Id)),
+            "An explicit fresh local " + retirement + " command remains usable after reconciliation");
+        await Drain(current);
+        check(probe.Count("matchAction") == 2 && probe.Count("matchState") == 3 && !current.NeedsRecovery
+                && current.State is { Revision: 3, ViewerId: Seat, Decision.Id: "local-current" }
+                && current.State.Id == observed.Id
+                && (retirement != "close" || !session.Submit(oldCommand) && failures == 0 && publications == retiredPublications),
+            "The local " + retirement + " journey sends only the old uncertain command and one explicit fresh command, with no closed-owner callback");
+        current.Close();
+    }
+
+    private static async Task Drain(ClientSession session)
+    {
+        await Until(() => { session.Pump(); return !session.Busy && !session.Polling; }, "the local session's owner completions");
+    }
+
+    private sealed class TrackedConnection(ForgeEngine engine) : IMatchConnection
+    {
+        internal TaskCompletionSource ExecutionFinished { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal Exception? Failure;
+        public Task<GameSnapshot?> ObserveAsync() => engine.ObserveAsync();
+        public Task ConcedeAsync(string gameId) => engine.ConcedeAsync(gameId);
+        public async Task ExecuteAsync(GameCommand command)
+        {
+            try { await engine.ExecuteAsync(command); }
+            catch (Exception error) { Failure = error; throw; }
+            finally { ExecutionFinished.TrySetResult(); }
+        }
     }
 
     private static async Task CheckQueuedCancellation(string profile, Action<bool, string> check)

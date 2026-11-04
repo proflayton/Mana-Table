@@ -92,12 +92,35 @@ human acceptance.
 
 ## Remaining risks and next work
 
+The resilience follow-up after 0.2.378 treats each invariant as a release
+contract, with a negative sequence and a usable-current-owner control:
+
+| Contract | Existing test owner | Observable result |
+| --- | --- | --- |
+| A mana color choice retains its captured parent. | Java `SourcePaymentReplacementTest` | A displaced payment cannot authorize its retained required color reply. Restoring its actual parent leaves the choice and cast usable. |
+| Display restoration cannot finish a producer. | Java `SourcePaymentReplacementTest` | Closing a producer's cost confirmation and refreshing its parent cannot reopen payment before the producer continuation finishes. |
+| Payment cancellation follows rules receipts. | Java `SourcePaymentReplacementTest` | Replacement casts cannot reuse old source offers; reversible mana refunds and irreversible costs follow Forge's actual state. |
+| Returning context values do not revive old reads. | Client `ReadAudienceLifecycleRegression` | Old source actions, private history and failure/support state remain retired across viewer ABA, null and reset; fresh reads succeed. |
+| Retirement does not replay uncertain execution. | Native `ForgeRequestCancellationProtocolProbe` | The shipping provider deadline ends a withheld reply wait; recovery, Reset and Close keep old results inert and permit only explicit freshly observed commands. |
+
+These cases run in the existing Java, graphics-free client and headless native
+lanes. No new test service or rules simulator is involved. A displaced-parent
+test restores only its temporary input, then completes the original required
+choice and cast. It does not add a player-facing command to cancel a required
+child. Legal parent cancellation and resource outcomes are exercised separately.
+
 1. **Query purity extends below published snapshots.** Live ability enumeration
    can assign an activating player while discovering actions. Pool/board purity
    comparisons do not establish that every ability-local field is unchanged.
    The source-action query boundary above addresses its exercised paths; legacy
    static helpers and planners still require separate purity checks. Do not
    generalize its claim to every engine read.
+   Cost copies also retain mutable aliases below the ability graph:
+   `CostPart.copy()` is shallow, including list/zone-table state in
+   `CostPartWithList` and the counter table in `CostPutCounter`. The existing
+   `CardZoneTable` copy constructor does not detach every nested collection.
+   This is an isolation risk, not a reproduced cause of resource loss. Audit
+   those payment containers before claiming whole-cost detachment or rollback.
 2. **Funding work needs a shared examination budget.** Source discovery can
    repeat scans for several cards and routes. Current accepted-source/route caps
    do not bound all rejected candidates examined. Measure actual visits and

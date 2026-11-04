@@ -170,6 +170,7 @@ await FiniteYieldLifecycleRegression.RunAsync(Check);
 await SourceActionSessionRegression.RunAsync(Check);
 ExecutionRegression.Run(Check);
 await MatchHistoryRegression.RunAsync(Check);
+await ReadAudienceLifecycleRegression.RunAsync(Check);
 await AiFrameworkRegression.RunAsync(Check);
 AiSemanticRegression.Run(Check);
 await AiHostRegression.RunAsync(Check);
