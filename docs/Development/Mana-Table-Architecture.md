@@ -58,6 +58,26 @@ collections, raw snapshots, live command handles, chat and free text are exclude
 Identical polling does not append another accepted-publication record. Diagnostic
 subscribers cannot change command admission, recovery, replay or presentation.
 
+Source queries use this same diagnostic pipeline. `SourceActionSession` captures
+an immutable numeric request stamp before dispatch, then classifies completion
+after posting to its session owner. `ClientSession` supplies its central exact
+`CurrentSourceContext` predicate; diagnostics never inspect mutable replicas on
+the provider worker. Source-read records carry only closed reasons and captured/
+current generations, epochs, viewer IDs and revisions. Retired requests cannot
+borrow a replacement viewer's facts, and the journal strips all portraits,
+handles, rule text and exception messages from this event family. Logging or
+subscriber failures cannot interrupt read admission or coalescing.
+
+Only the method-specific `source-read-superseded` signal from
+`matchSourceActions` makes the current catalog stale without actions. A
+`source-read-changed` response after discovery began remains a failed read.
+Unexpected query-work exceptions use `source-read-failed` with fixed wire text;
+their original cause remains in private provider diagnostics.
+Generic rejection, unavailable transport and unexpected failures keep distinct
+closed diagnostic categories. Neither result retries the same context or proves
+that a gameplay command failed, succeeded or should be replayed. A later ordinary
+observation may admit a new source context through the existing reader lifecycle.
+
 Shipping composition supplies a `ClientDiagnosticJournal` callback through
 `TableServices`; neither the renderer nor the rules provider owns file storage.
 Its bounded queue keeps writes off the game loop. The callback may run on the

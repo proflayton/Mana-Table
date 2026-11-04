@@ -185,6 +185,35 @@ changed the displayed revision. A superseded outer read preserves a newer nested
 result and its handles. These are read-only descriptions; accepting and executing
 an action still requires its current live authority. No wire fields or command
 scopes change.
+
+`matchSourceActions` has three optional, method-scoped failure codes. A well-formed
+older `expectedRevision` produces `source-read-superseded` only after the current
+session, prompt, input capture and source disclosure still validate, and before
+enumeration or preview starts. It returns no catalog. Changes discovered after
+the read starts produce `source-read-changed`; discovery and preview failures
+remain failures, never safe pre-read supersession. Both paths preserve the
+existing version, ownership and publication fences. Malformed/future revisions,
+foreign owners/prompts and unavailable source handles remain ordinary rejections;
+unexpected runtime query exceptions become `source-read-failed` with fixed wire text,
+retaining the exact original exception as a private cause rather than returning
+its message. Unexpected non-validation dispatch failures use the same fixed
+source-method outcome. Ordinary validation and legacy unknown-command replies
+retain their existing behavior. No failure permits an
+action resend or an automatic retry of the same query. A client can observe a new
+frame and create a separately scoped read through its normal lifecycle.
+
+These codes are forwarded only for `matchSourceActions`, including through the
+existing synchronization failure envelope. Other methods do not interpret them.
+Older hosts omit them and keep their existing generic failure behavior; no
+message-text matching supplies a missing code. Unexpected source failures retain
+one private diagnostic per seat and one process fallback, each capped at 8 KiB of
+UTF-8, four causes and 16 frames per cause. Nested seat captures wait until the
+rules/table owner scope has returned before emitting; logging failures cannot
+replace its original cause. The unexpected-query boundary wrapper is intentional;
+it preserves the original cause without publishing it. These diagnostics are outside the match protocol
+and game history. This classification does not identify the cause of a separately
+observed intermittent revision rejection. Fatal `Error` values retain their
+existing propagation and are not converted into recoverable protocol exceptions.
 Priority and mana-payment source enumeration detach query graphs before binding
 their actor or expanding alternative routes. Query variants cannot execute
 directly. After current-input/source validation, command execution creates an

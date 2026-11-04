@@ -34,9 +34,10 @@ public sealed partial class ClientSession
         this.connection = connection;
         this.setup = setup;
         time = clock ?? TimeProvider.System;
-        diagnostics = new(RecordDiagnostic, () => replica.Epoch, () => DiagnosticRecorded != null);
+        diagnostics = new(RecordDiagnostic, () => replica.Epoch, () => DiagnosticRecorded != null,
+            context => CurrentSourceContext(State, context.SourceCardKey) == context);
         advance = new(connection, diagnostics);
-        SourceActions = new(sourceActions, Post);
+        SourceActions = new(sourceActions, Post) { Diagnostics = diagnostics };
         History = new(history, Post);
         ObservationDelivery = observationDelivery;
     }

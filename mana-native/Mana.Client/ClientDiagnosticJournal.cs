@@ -190,6 +190,27 @@ public sealed class ClientDiagnosticJournal : IDisposable, IAsyncDisposable
             || !Enum.IsDefined(diagnostic.Command) || !Enum.IsDefined(diagnostic.Failure)
             || facts == null || !Enum.IsDefined(facts.Decision)
             || (facts.ExecutionStep is { } step && !Enum.IsDefined(step))) return null;
+        if (diagnostic.Origin == ClientDiagnosticOrigin.SourceRead) {
+            var read = diagnostic.SourceRead;
+            if (read == null || !Enum.IsDefined(read.Reason) || diagnostic.AttemptId is not > 0
+                || read.Generation < 1 || read.CurrentGeneration < read.Generation || read.Epoch < 0 || read.CurrentEpoch < read.Epoch
+                || read.ViewerId is < 0 || read.Revision is < 0
+                || read.Current && (read.ViewerId == null || read.Revision == null
+                    || read.Generation != read.CurrentGeneration || read.Epoch != read.CurrentEpoch)
+                || diagnostic.Stage is not (ClientDiagnosticStage.SourceReadStarted or ClientDiagnosticStage.SourceReadAccepted
+                    or ClientDiagnosticStage.SourceReadStale or ClientDiagnosticStage.SourceReadUnsupported
+                    or ClientDiagnosticStage.SourceReadFailed or ClientDiagnosticStage.SourceReadDiscarded)
+                || diagnostic.Stage == ClientDiagnosticStage.SourceReadDiscarded && read.Current
+                || diagnostic.Stage == ClientDiagnosticStage.SourceReadAccepted && !read.Current) return null;
+            // Source diagnostics never inherit a decision portrait, mana bill,
+            // selected target or arbitrary free text from another event shape.
+            truncated = facts.DecisionSourceName != null || !facts.RemainingMana.IsDefaultOrEmpty
+                || diagnostic.Command != ClientDiagnosticCommand.Unknown || diagnostic.SubmittedNumber != null;
+            return diagnostic with { Command = ClientDiagnosticCommand.Unknown, SubmittedNumber = null,
+                Facts = new(read.Current, read.Current ? read.ViewerId : null, read.Current ? read.Revision : null,
+                    ClientDiagnosticDecision.Undisclosed, null, null, null, null, null, null, [], false) };
+        }
+        if (diagnostic.SourceRead != null) return null;
         string? name = facts.DecisionSourceName;
         truncated = name != null && (name.Length > 160 || name.Any(char.IsControl));
         if (truncated) name = null;

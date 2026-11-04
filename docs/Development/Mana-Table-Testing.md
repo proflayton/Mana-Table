@@ -750,9 +750,22 @@ merging of automated authority; cancellation and retirement still belong to the
 single composition owner.
 
 The fixture-backed `--smoke-headless-engine` lane also invokes
-`PolledFanoutEngineJourney` with separate fixed45-second setup and workload
-budgets. Setup ends once the actual110-trigger queue is captured; the workload
-clock starts exactly once and never resets as work progresses. Its test-only
+`PolledFanoutEngineJourney` with fixed45-second setup and90-second workload
+budgets (135 seconds combined, separate from teardown), plus a15-second
+semantic-progress stall watchdog. These are qualification deadlines checked at
+owner boundaries, not forced cancellation of an in-flight provider call.
+The earlier45-second workload cut off an
+actual CI run at90 of110 resolved triggers with no provider or AI fault; its
+largest observed queue-front receipt gap was conservatively under1.81 seconds.
+This is a test case budget correction, not a game-speed fix or a job/opening
+watchdog change. Setup ends once the actual110-trigger queue is captured; the
+workload clock starts exactly once and never resets as work progresses. Only
+new captured terminal execution receipts observed by both ordinary humans reset
+the stall timer; polls and board revisions do not. Neither late progress nor
+late completion can qualify an expired workload. Fake-clock checks in the
+existing configured-simulation/full headless lane retain the old healthy-prefix
+counterexample and absolute/stall deadline controls. The result records maximum
+observed semantic-progress gap. Its test-only
 pregame bootstrap supplies Toothy,54Memnites and five Forests to the host,
 Mind's Eye with no funding to the real TCP guest, and two distinct legal quiet
 AI lists. The deterministic host library is a controlled fixture, not a legal
@@ -2627,9 +2640,40 @@ an event never proves that nothing happened.
 `ProviderReturned` describes dispatch acknowledgement, not an applied effect.
 `ProviderObservationReturned` is not replica acceptance. Accepted/discarded
 publications are separate, uncorrelated facts, and identical polling is coalesced.
-Only a rejection from dispatch is labelled a provider rejection; a later failed
+Only a rejection from dispatch receives the command-stage `ProviderRejected`; a later failed
 observation cannot retroactively reject an acknowledged command. Observations
 returned after their epoch retires do not supply new decision/source facts.
+
+Source reads now reach this same journal through `SourceRead` events. Their
+payload contains a closed outcome reason and numeric request/current generation,
+epoch, viewer and revision stamps. No source face, game/decision/action handle,
+query result or provider exception text is recorded. `SourceActionSession` owns
+its query generation; `ClientSession` checks the central exact current-source
+context on the owner thread. Completion for a retired read preserves its old
+numeric attribution with `Current=false` and cannot describe the new viewer's
+decision. Throwing listeners and journal failures cannot alter read state,
+capabilities, command admission or recovery.
+
+The existing client runner includes `SourceReadDiagnosticRegression`. Controlled
+requests cover current unsupported/rejected/timeout/cancelled/unavailable/
+unexpected results, empty and malformed catalogs, response-context mismatch and
+the three method-specific source signals. Actual `ClientSession` viewer ABA,
+Reset and null transitions combine held success/failures with a fresh reader;
+privacy canaries, exact occurrence negatives, sink isolation and the real bounded
+journal writer are checked separately. A safe `source-read-superseded` signal
+makes only the catalog stale; `source-read-changed` remains failed. Neither
+starts another query for an unchanged context or dispatches a command.
+Unexpected query work uses fixed-text `source-read-failed` and an unexpected
+failure category; private cause details never enter this journal.
+
+The configured-simulation native group also runs the existing child-process
+probe's source-read cases. Actual IPC checks distinguish both typed source
+outcomes and old untyped rejection, then require an ordinary fresh observation
+before one explicit current source command. The same codes on command,
+ordinary observation and history methods remain rejections. These authored
+envelopes test process/session boundaries, not a Magic source mutation or the
+cause of the earlier intermittent Forest revision rejection; that cause remains
+unclassified. No source-read retry or fence relaxation is inferred from it.
 
 The existing `Mana.Client.Tests` runner includes `ClientDiagnosticRegression`
 and `ClientDiagnosticJournalRegression`. They cover command stages, unchanged

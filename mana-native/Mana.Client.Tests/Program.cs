@@ -168,6 +168,7 @@ FiniteResolutionProgressRegression.Run(Check);
 await CombatAssignmentRegression.RunAsync(Check);
 await FiniteYieldLifecycleRegression.RunAsync(Check);
 await SourceActionSessionRegression.RunAsync(Check);
+await SourceReadDiagnosticRegression.RunAsync(Check);
 ExecutionRegression.Run(Check);
 await MatchHistoryRegression.RunAsync(Check);
 await ReadAudienceLifecycleRegression.RunAsync(Check);

@@ -79,6 +79,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private volatile Pending pending;
     private boolean inputActionQueued;
     private final AtomicLong sourceActionVersion = new AtomicLong();
+    private final SourceReadFailureCapture sourceReadFailure = new SourceReadFailureCapture();
     private long publishedSourceActionVersion = -1;
     private final Map<Input, String> inputEpisodes = new WeakHashMap<>();
     private final Map<Object, Boolean> resolutionEpisodes = new WeakHashMap<>();
@@ -622,15 +623,19 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     @Override
     public Map<String, Object> sourceActions(JsonObject request) {
         // Never hold the table gate while waiting for its input owner.
-        return HeadlessPlatform.query(table, () -> {
+        var discoveryStarted = new java.util.concurrent.atomic.AtomicBoolean();
+        try { return HeadlessPlatform.query(table, () -> {
             synchronized (gate) {
                 requireSession(request);
                 long observedRevision = revision;
+                Long expectedRevision = null;
                 if (request.has("expectedRevision")) {
                     var expected = request.get("expectedRevision");
                     try {
-                        if (!expected.isJsonPrimitive() || !expected.getAsJsonPrimitive().isNumber()
-                                || expected.getAsBigDecimal().longValueExact() != observedRevision)
+                        if (!expected.isJsonPrimitive() || !expected.getAsJsonPrimitive().isNumber())
+                            throw new IllegalArgumentException("The table changed. Read the current card again.");
+                        expectedRevision = expected.getAsBigDecimal().longValueExact();
+                        if (expectedRevision < 0 || expectedRevision > observedRevision)
                             throw new IllegalArgumentException("The table changed. Read the current card again.");
                     } catch (ArithmeticException | NumberFormatException invalid) {
                         throw new IllegalArgumentException("The table changed. Read the current card again.");
@@ -647,6 +652,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 CardView view = current.cards.containsKey(key) ? current.cards.get(key) : current.additionalCards.get(key);
                 Card source = sourceCard(view);
                 if (source == null) throw new IllegalArgumentException("Card is not visible in this prompt");
+                // An old number alone is not supersession evidence. The
+                // session, current input/capture and source disclosure must
+                // still validate before any discovery or preview can begin.
+                if (expectedRevision != null && expectedRevision < observedRevision) throw SourceReadException.superseded();
+                discoveryStarted.set(true);
                 long version = sourceActionVersion.get();
                 var observedCatalog = current.sourceActions.get(key);
                 var catalog = observedCatalog;
@@ -654,22 +664,39 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     catalog = view.isFaceDown() && !view.canFaceDownBeShownTo(viewer) ? SourceActions.empty(source, key, version)
                             : SourceActions.describe(current.input, source, key, version, this::actionHostVisible);
                     if (!sourceInputCurrent(current) || sourceActionVersion.get() != version)
-                        throw new IllegalArgumentException("The source actions changed. Read the current card again.");
+                        throw SourceReadException.changed(SourceReadException.Stage.DISCOVERY);
                 }
                 var result = sourceCatalogState(current, catalog, true);
-                if (revision != observedRevision) throw new IllegalArgumentException("The table changed. Read the current card again.");
+                if (revision != observedRevision) throw SourceReadException.changed(SourceReadException.Stage.PREVIEW);
                 // Preview/funding queries can yield after the catalog itself
                 // was checked. The complete reply must retain that same owner.
                 Card currentSource = sourceCard(current.cards.containsKey(key) ? current.cards.get(key) : current.additionalCards.get(key));
                 if (pending != current || !sourceInputCurrent(current) || sourceActionVersion.get() != version
                         || !decisionCaptureCurrent(current, captured)
                         || current.sourceActions.get(key) != observedCatalog || !catalog.matches(currentSource, version))
-                    throw new IllegalArgumentException("The source actions changed. Read the current card again.");
+                    throw SourceReadException.changed(SourceReadException.Stage.PREVIEW);
                 var frozen = PublishedDecisionFacts.freeze(result);
                 current.sourceActions.put(key, catalog);
                 return frozen;
             }
         });
+        } catch (SourceReadException classified) {
+            throw classified;
+        } catch (RuntimeException | Error unexpected) {
+            try {
+                if (discoveryStarted.get() || !(unexpected instanceof IllegalArgumentException)) sourceReadFailure.capture(unexpected);
+            } catch (Throwable diagnosticFailure) { /* Diagnostic work must not replace the original failure. */ }
+            // Fatal Errors keep their existing propagation. Only serializable
+            // runtime query failures acquire the fixed-text protocol wrapper.
+            if (discoveryStarted.get() && unexpected instanceof RuntimeException) throw SourceReadException.failed(unexpected);
+            throw unexpected;
+        } finally {
+            // A nested rules caller may still hold an outer owner scope. Keep
+            // its first private diagnostic pending until a safe completion.
+            try {
+                if (GameAction.currentGame() == null && !Thread.holdsLock(gate)) sourceReadFailure.emit(System.err);
+            } catch (Throwable diagnosticFailure) { /* Keep the original read outcome even if diagnostic admission fails. */ }
+        }
     }
 
     private Map<String, Object> sourceCatalogState(Pending current, SourceActions.Catalog catalog, boolean readOnlyFacts) {

@@ -23,6 +23,7 @@ public sealed class SourceActionSession(ISourceActions? source, Action<Action> p
     private readonly CancellationTokenSource lifetime = new();
     private bool inFlight, closed;
     private bool? observedSupport;
+    internal ClientCommandDiagnostics? Diagnostics { get; init; }
     public SourceActionView View { get; private set; } = new(null, 0, SourceActionStatus.Idle, Array.Empty<SourceAction>(), "");
     public bool Supported => !closed && source is { SupportsSourceActions: true };
 
@@ -77,6 +78,7 @@ public sealed class SourceActionSession(ISourceActions? source, Action<Action> p
         }
         inFlight = true;
         long generation = view.Generation;
+        var attempt = Diagnostics?.BeginSourceRead(context, generation);
         var cancellation = lifetime.Token;
         _ = Task.Run(async () => {
             SourceActionSet? result = null;
@@ -87,7 +89,10 @@ public sealed class SourceActionSession(ISourceActions? source, Action<Action> p
             post(() => {
                 inFlight = false;
                 if (closed) return;
-                if (View.Generation == generation && View.Context == context) Complete(context, result, failure);
+                bool current = View.Generation == generation && View.Context == context;
+                var reason = FailureReason(failure);
+                if (current) reason = Complete(context, result, failure);
+                Diagnostics?.CompleteSourceRead(attempt, context, View.Generation, current, View.Status, reason);
                 // Coalesce intermediate sources into the latest still-disclosed one.
                 // Failed/unsupported reads are never retried by this continuation.
                 StartIfNeeded();
@@ -95,9 +100,11 @@ public sealed class SourceActionSession(ISourceActions? source, Action<Action> p
         });
     }
 
-    private void Complete(SourceActionContext context, SourceActionSet? result, Exception? failure)
+    private ClientSourceReadReason Complete(SourceActionContext context, SourceActionSet? result, Exception? failure)
     {
+        var reason = FailureReason(failure);
         var status = failure is NotSupportedException || !Supported ? SourceActionStatus.Unsupported
+            : failure is EngineSourceReadException { Reason: EngineSourceReadFailure.Superseded } ? SourceActionStatus.Stale
             : failure != null || result == null ? SourceActionStatus.Failed
             : result.GameId != context.GameId || result.DecisionId != context.DecisionId
                 || result.SourceCardKey != context.SourceCardKey
@@ -111,11 +118,30 @@ public sealed class SourceActionSession(ISourceActions? source, Action<Action> p
                 || action.CostPreview != null && result.Revision == null)
             || result.Actions.Select(action => action.Id).Distinct(StringComparer.Ordinal).Count() != result.Actions.Length))
             status = SourceActionStatus.Failed;
+        if (failure == null) reason = status switch {
+            SourceActionStatus.Unsupported => ClientSourceReadReason.Unsupported,
+            SourceActionStatus.Stale => ClientSourceReadReason.ContextMismatch,
+            SourceActionStatus.Failed => result == null ? ClientSourceReadReason.EmptyResult : ClientSourceReadReason.InvalidResult,
+            _ => ClientSourceReadReason.None
+        };
         var actions = status == SourceActionStatus.Ready ? Array.AsReadOnly(result!.Actions!.ToArray()) : (IReadOnlyList<SourceAction>)Array.Empty<SourceAction>();
         View = new(context, View.Generation, status, actions, status switch {
             SourceActionStatus.Unsupported => "This table does not expose card actions.",
             SourceActionStatus.Stale => "These actions changed. Try again.",
             SourceActionStatus.Failed => "Couldn't load this card's actions.", _ => ""
         });
+        return reason;
     }
+    private static ClientSourceReadReason FailureReason(Exception? failure) => failure switch {
+        null => ClientSourceReadReason.None,
+        EngineSourceReadException { Reason: EngineSourceReadFailure.Superseded } => ClientSourceReadReason.Superseded,
+        EngineSourceReadException { Reason: EngineSourceReadFailure.Changed } => ClientSourceReadReason.Changed,
+        EngineSourceReadException => ClientSourceReadReason.Unexpected,
+        NotSupportedException => ClientSourceReadReason.Unsupported,
+        EngineCommandRejectedException => ClientSourceReadReason.Rejected,
+        TimeoutException => ClientSourceReadReason.Timeout,
+        OperationCanceledException => ClientSourceReadReason.Cancelled,
+        IOException => ClientSourceReadReason.Unavailable,
+        _ => ClientSourceReadReason.Unexpected
+    };
 }
