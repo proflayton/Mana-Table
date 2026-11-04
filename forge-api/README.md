@@ -176,6 +176,13 @@ changed the displayed revision. A superseded outer read preserves a newer nested
 result and its handles. These are read-only descriptions; accepting and executing
 an action still requires its current live authority. No wire fields or command
 scopes change.
+Priority and mana-payment source enumeration detach query graphs before binding
+their actor or expanding alternative routes. Query variants cannot execute
+directly. After current-input/source validation, command execution creates an
+ordinary invocation retaining the selected variant parameters and original
+activation-ledger lineage. Its actor comes from the admitted input; a mana
+payment's payer can differ from the viewer answering it. This changes no wire
+shape and does not make legacy execution enumeration globally read-only.
 Each owned
 mana-payment prompt freshly publishes actual `payerId`, `unpaidManaParts`, `fundingContext` and
 `usablePoolManaColors`, so manual payments shrink the displayed bill and consumed

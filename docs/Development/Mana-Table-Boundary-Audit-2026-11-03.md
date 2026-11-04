@@ -49,13 +49,55 @@ increased interaction deadline. First failures and candidate results must be
 recorded separately in the PR; these authored checks do not supply human UX
 approval.
 
+## Follow-up sequence audit from 0.2.375
+
+The next pass composes lifecycle changes while transport work is held. Thirty
+direct/Auto/poll receipt and failure cases include viewer ABA, chained games,
+reset followed by a game, explicit null followed by a game and closing after a
+handoff. Eight finite-yield cases combine clearing/resetting with a prospective
+grant or held revocation, followed by continuation or closing. The oracle checks
+the final audience, late-failure isolation, exact negative capability and absence
+of duplicate dispatch. These are bounded controlled sequences, not a model of
+all rules interactions.
+
+Two released-source failures required ownership beyond the visible replica.
+`Accept(null)` must retire the action epoch and stop continuation before clearing
+state. Pending negative consent must survive that empty replica and block
+foreign binding until the original owner's acknowledgement arrives. Rendering
+no match does not prove that old asynchronous work or consent ended.
+
+Three bootstrap cases hold a poll started with no bound audience, explicitly
+accept a game, then return another game, null or an error from the old poll.
+Those callbacks must be inert once another source binds the replica. Initial
+binding does not advance the global epoch: queued initial and subsequent frames
+from the same admitted ingress retain their existing ordered-prefix contract.
+
+Real Java input probes exposed another failure class: an unoffered read could
+rebind a live ability's activating player, and a retained source action could then
+be admitted without producing the intended tap and mana. The candidate separates
+detached source-action queries from ordinary invocation. Query alternatives
+retain their query purpose and original activation lineage; the current input
+admits and materializes an invocation at execution. Legacy execution enumeration
+remains separate. Purity and once-per-turn limits need real engine tests together;
+a board-only before/after comparison cannot establish this boundary.
+
+The startup harness can now explicitly use `Automated=false` with isolated
+services, profile and clock. Its 26 checks load saved Auto off/on through normal
+initialization, use physical Hold and finished-table Return, reopen the profile,
+and hold the first dispatch to check its fresh scope and lack of replay.
+The normal manual harness remains a separate negative control. Return restores
+the accepted in-memory preference; reopening independently reloads the profile.
+These tests add no production startup policy and do not establish live-table or
+human acceptance.
+
 ## Remaining risks and next work
 
 1. **Query purity extends below published snapshots.** Live ability enumeration
    can assign an activating player while discovering actions. Pool/board purity
    comparisons do not establish that every ability-local field is unchanged.
-   Introduce a read-only enumeration boundary only after testing which execution
-   handles and caches the current inputs require.
+   The source-action query boundary above addresses its exercised paths; legacy
+   static helpers and planners still require separate purity checks. Do not
+   generalize its claim to every engine read.
 2. **Funding work needs a shared examination budget.** Source discovery can
    repeat scans for several cards and routes. Current accepted-source/route caps
    do not bound all rejected candidates examined. Measure actual visits and
@@ -64,7 +106,8 @@ approval.
 3. **Startup fixtures can mask saved preferences.** `PresentationRun` uses the
    automated harness mode, which deliberately starts with Auto disabled. Tests
    that save Auto on must explicitly exercise the shipping startup path before
-   claiming saved-preference coverage.
+   claiming saved-preference coverage. The follow-up above adds that path without
+   changing the manual harness default.
 4. **Observed outcomes remain separate from test counts.** Controlled scripted
    journeys check the invariants they exercise. They do not establish full rules
    coverage, human discovery, readable timing or natural AI game completion.

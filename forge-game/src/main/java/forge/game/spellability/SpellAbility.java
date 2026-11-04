@@ -93,6 +93,7 @@ public abstract class SpellAbility extends CardTraitBase implements ISpellAbilit
     private String originalStackDescription = "", stackDescription = "";
 
     private Player activatingPlayer;
+    private boolean queryCopy;
     private Player targetingPlayer;
     private Player choosingPlayer;
     private Pair<Long, Player> controlledByPlayer;
@@ -1270,6 +1271,35 @@ public abstract class SpellAbility extends CardTraitBase implements ISpellAbilit
     public SpellAbility copy() {
         return copy(hostCard, false);
     }
+    /** Detached eligibility/description graph; never an executable invocation.
+     * Derived alternative costs retain this purpose and the actual rules ledger key. */
+    public SpellAbility copyForQuery(Player actor) {
+        SpellAbility result = copy(hostCard, actor, true);
+        result.setQueryPurpose(true);
+        if (result.getOriginalAbility() == null) result.setOriginalAbility(this);
+        return result;
+    }
+
+    public boolean isQueryCopy() { return queryCopy; }
+
+    /** Materialize only after the owning input has rechecked its current offer. */
+    public SpellAbility copyForInvocation(Player actor) {
+        if (!queryCopy) throw new IllegalStateException("Only a detached query variant can become a new invocation");
+        SpellAbility owned = copy(hostCard, actor, true);
+        // Only this newly copied graph changes purpose. Original/grantor lineage
+        // is a rules ledger reference and is deliberately never traversed.
+        owned.setQueryPurpose(false);
+        return owned.copy(hostCard, actor, false, true);
+    }
+
+    private void setQueryPurpose(boolean value) {
+        queryCopy = value;
+        if (subAbility != null) ((SpellAbility)subAbility).setQueryPurpose(value);
+        for (SpellAbility ability : additionalAbilities.values()) ability.setQueryPurpose(value);
+        for (List<AbilitySub> list : additionalAbilityLists.values())
+            for (SpellAbility ability : list) ability.setQueryPurpose(value);
+    }
+
     public SpellAbility copy(Player activ) {
         return copy(hostCard, activ, false);
     }
@@ -1284,23 +1314,24 @@ public abstract class SpellAbility extends CardTraitBase implements ISpellAbilit
     }
     public SpellAbility copy(Card host, Player activ, final boolean lki, final boolean keepTextChanges) {
         SpellAbility clone = null;
+        final boolean detached = lki || queryCopy;
         try {
             clone = (SpellAbility) clone();
-            clone.id = lki ? id : nextId();
-            clone.executionId = lki ? executionId : null;
+            clone.id = detached ? id : nextId();
+            clone.executionId = detached ? executionId : null;
 
             // don't use setHostCard to not trigger the not copied parts yet
 
-            copyHelper(clone, host, lki || keepTextChanges);
+            copyHelper(clone, host, detached || keepTextChanges);
 
             // need CardState before View
-            clone.view = new SpellAbilityView(clone, lki || host.getGame() == null ? null : host.getGame().getTracker());
+            clone.view = new SpellAbilityView(clone, detached || host.getGame() == null ? null : host.getGame().getTracker());
 
             // always set this to false, it is only set in CopyEffect
             clone.mayChooseNewTargets = false;
 
             clone.triggeringObjects = AbilityKey.newMap(this.triggeringObjects);
-            if (!lki) {
+            if (!detached) {
                 clone.replacingObjects = AbilityKey.newMap();
             }
 
@@ -1338,7 +1369,7 @@ public abstract class SpellAbility extends CardTraitBase implements ISpellAbilit
             clone.additionalAbilities = Maps.newHashMap();
             clone.additionalAbilityLists = Maps.newHashMap();
             // run special copy Ability to make a deep copy
-            CardFactory.copySpellAbility(this, clone, host, activ, lki, keepTextChanges);
+            CardFactory.copySpellAbility(this, clone, host, activ, detached, keepTextChanges);
         } catch (final CloneNotSupportedException e) {
             System.err.println(e);
         }

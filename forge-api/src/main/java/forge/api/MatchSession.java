@@ -1060,6 +1060,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             Integer placementHandId = null;
             SourceActions.Catalog sourceCatalog = null;
             SourceActions.Action sourceAction = null;
+            Player invocationActor = null;
             ManaOutputChoice manaOutput = ManaOutputChoice.parse(request.get("manaOutput"));
             if (manaOutput != null && !action.equals("useSourceAction"))
                 throw new IllegalArgumentException("A mana output belongs to an exact current source action");
@@ -1100,6 +1101,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 }
                 case "useSourceAction" -> {
                     if (!sourceInputCurrent(next)) throw new IllegalArgumentException("Source actions are not available in this decision");
+                    invocationActor = next.input instanceof InputPayMana payment ? payment.getPayer() : human.getPlayer();
                     sourceCatalog = next.sourceActions.get(string(request, "key"));
                     String actionId = string(request, "actionId");
                     if (sourceCatalog != null) sourceAction = sourceCatalog.actions().stream()
@@ -1174,6 +1176,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             String chosenYieldToken = yieldToken;
             SourceActions.Catalog chosenSourceCatalog = sourceCatalog;
             SourceActions.Action chosenSourceAction = sourceAction;
+            Player chosenInvocationActor = invocationActor;
             List<Card> chosenHandReductionCards = handReductionCards;
             Long chosenStackVersion = stackVersion;
             String chosenFiniteGrant = automaticGrant;
@@ -1245,7 +1248,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                             synchronized (gate) {
                                 restorePriority = !sourceActionCurrent(next, chosenSourceCatalog, chosenSourceAction);
                                 if (!restorePriority) {
-                                    var ability = chosenSourceAction.ability();
+                                    var ability = chosenSourceAction.invocation(chosenInvocationActor).ability();
                                     var output = manaOutput == null ? null : ManaProductionProjection.outputChoices(ability, manaOutput.colors());
                                     restorePriority = manaOutput != null && output == null;
                                     if (!restorePriority) restorePriority = !(next.input instanceof InputPayMana payment

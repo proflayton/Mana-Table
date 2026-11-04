@@ -382,7 +382,7 @@ public class InputPassPriority extends InputSyncronizedBase {
 
     @Override
     public List<SpellAbility> getSourceActions(final Card card) {
-        return isFinished() ? List.of() : card.getAllPossibleAbilities(getController().getPlayer(), true);
+        return isFinished() ? List.of() : card.getSourceActionAbilities(getController().getPlayer());
     }
 
     @Override
@@ -437,6 +437,7 @@ public class InputPassPriority extends InputSyncronizedBase {
     }
 
     public boolean selectAbility(final SpellAbility ab, final Map<AbilityManaPart, String> outputChoices) {
+        if (ab != null && ab.isQueryCopy()) return false;
     	if (ab != null) {
             if (ab.isManaAbility()) {
                 for (var part : ab.getAllManaParts()) part.clearExpressChoice();

@@ -112,10 +112,21 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     }
 
     protected List<SpellAbility> getAllManaAbilities(Card card) {
+        return getAllManaAbilities(card, false);
+    }
+
+    private List<SpellAbility> getAllManaAbilities(Card card, boolean query) {
         List<SpellAbility> result = Lists.newArrayList();
-        for (SpellAbility sa : card.getManaAbilities()) {
+        for (SpellAbility original : card.getManaAbilities()) {
+            SpellAbility sa = query ? original.copyForQuery(player) : original;
             result.add(sa);
             result.addAll(GameActionUtil.getAlternativeCosts(sa, player, false));
+        }
+        if (query) {
+            // Query variants retain the original ID. Equality-based removal
+            // would also delete a playable alternative with that same lineage.
+            result.removeIf(ability -> !ability.canPlay(true));
+            return result;
         }
         final Collection<SpellAbility> toRemove = Lists.newArrayListWithCapacity(result.size());
         for (final SpellAbility sa : result) {
@@ -131,7 +142,7 @@ public abstract class InputPayMana extends InputSyncronizedBase {
 
     @Override
     public List<SpellAbility> getSourceActions(Card card) {
-        return isPaymentActive() ? getAllManaAbilities(card) : List.of();
+        return isPaymentActive() ? getAllManaAbilities(card, true) : List.of();
     }
 
     public boolean isPaymentActive() { return !isFinished() && !locked; }
@@ -218,6 +229,7 @@ public abstract class InputPayMana extends InputSyncronizedBase {
 
     /** An exact output witness has already been checked by the owning adapter. */
     public boolean selectAbility(final SpellAbility ab, final Map<AbilityManaPart, String> outputChoices) {
+        if (ab != null && ab.isQueryCopy()) return false;
         if (ab != null && ab.isManaAbility()) {
             return activateManaAbility(ab.getHostCard(), ab, outputChoices, true);
         }

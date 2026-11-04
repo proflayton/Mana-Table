@@ -164,6 +164,21 @@ The game projects those preferences onto the actual source and reader controls.
 
 ## Published decision facts
 
+Source-action enumeration separates detached query graphs from executable
+invocations. Query purpose propagates through derived alternatives; current
+source/input validation precedes invocation materialization. The invocation
+retains the selected route's current parameters and original activation-ledger
+lineage. Payment uses the input's actual payer, captured at admission, which can
+differ from the viewer answering it. Raw query graphs cannot be submitted to
+the priority/payment execution inputs. This boundary does not make every legacy
+ability enumeration or static helper pure.
+
+Client lifecycle ownership also survives an empty displayed replica. Explicit
+null retires match work before clearing state; outstanding negative yield consent
+keeps its old owner until acknowledgement. An unbound bootstrap poll can bind only
+while the replica remains unbound. It cannot replace a match accepted through
+another source, and initial binding preserves the existing ordered ingress prefix.
+
 Every current decision has one publication owner. After all seats reconcile
 visibility, `MatchSession` stages a `CurrentDecisionProjection.Capture` for the
 exact decision, board cohort, source-action version and execution step. Human

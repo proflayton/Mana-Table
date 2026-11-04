@@ -48,6 +48,8 @@ internal static class ExternalObservationRegression
         CapacityAndRevocation(check);
         LifetimeAndScope(check);
         await AudienceCommandLifetime(check);
+        await ComposedAudienceLifetimes(check);
+        await BootstrapObservationAdmission(check);
         await TransportAudience(check);
         await ConcurrentProducer(check);
         check(Rejected(() => _ = new ClientSession(connection, observationDelivery: (ObservationDeliveryMode)99))
@@ -235,6 +237,86 @@ internal static class ExternalObservationRegression
         }
     }
 
+    private static async Task ComposedAudienceLifetimes(Action<bool, string> check)
+    {
+        foreach (string operation in new[] { "direct", "automatic", "poll" })
+        foreach (string sequence in new[] { "viewer-roundtrip", "game-chain", "reset-newgame", "clear-newgame", "viewer-close" })
+        foreach (bool lateFailure in new[] { false, true }) {
+            var before = State(1);
+            before = before with { Decision = before.Decision! with {
+                Payload = ((PriorityPayload)before.Decision.Payload) with { CanAutoPass = true } } };
+            // A higher late revision and an ABA return to viewer 0 ensure that
+            // revision ordering or changed identity alone cannot hide the bug.
+            var late = before with { Revision = 99, Decision = before.Decision with { Id = "retired-next" } };
+            var port = new HeldConnection(late) { HoldObservation = operation == "poll",
+                ExecuteError = lateFailure && operation != "poll" ? new IOException("Retired command failed.") : null,
+                ObserveError = lateFailure && operation == "poll" ? new IOException("Retired observation failed.") : null };
+            var clock = new Clock(); var session = new ClientSession(port, clock: clock); session.Accept(before);
+            string journey = operation + "/" + sequence + "/" + (lateFailure ? "failure" : "receipt");
+            if (operation == "poll") {
+                session.Poll(false, _ => { }); await port.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            } else {
+                check(operation == "automatic" ? session.Advance(_ => true, (_, _) => false)
+                    : session.Submit(new PassPriority(before.Id, before.Decision.Id)), "Begin composed lifetime: " + journey);
+                await port.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            if (operation == "poll" && sequence == "game-chain") {
+                clock.Now += TimeSpan.FromSeconds(6);
+                check(session.NeedsRecovery, "The held poll is stale before its two explicit audience transitions: " + journey);
+            }
+            var first = before with { ViewerId = 1, Revision = 2, DecisionOwnerId = 1, PriorityPlayerId = 1,
+                Decision = before.Decision with { Id = "first-owner" } };
+            GameSnapshot final;
+            if (sequence is "clear-newgame" or "reset-newgame") {
+                if (sequence == "clear-newgame") check(session.Accept(null), "Explicitly clear the first audience: " + journey);
+                else session.Reset();
+                final = before with { Id = "after-clear", Revision = 3, Decision = before.Decision with { Id = "after-clear-current" } };
+                check(session.State == null && session.Accept(final), "Accept a new game after retiring the visible replica: " + journey);
+            } else {
+                if (sequence == "game-chain") first = first with { Id = "second-game", ViewerId = 0, DecisionOwnerId = 0, PriorityPlayerId = 0 };
+                check(session.Accept(first), "Accept the first audience transition: " + journey);
+                final = sequence == "game-chain" ? first with { Id = "third-game", Revision = 3 }
+                    : before with { Revision = 3, Decision = before.Decision with { Id = "roundtrip-current" } };
+                if (sequence == "viewer-close") { final = first; session.Close(); }
+                else check(session.Accept(final), "Accept the second audience transition: " + journey);
+            }
+            port.Release.TrySetResult(); port.ReleaseObservation.TrySetResult();
+            if (!session.Closed) await Drain(session);
+            else {
+                await (lateFailure && operation != "poll" ? port.ExecuteReturned.Task : port.ObservationReturned.Task).WaitAsync(TimeSpan.FromSeconds(5));
+                session.Pump();
+            }
+            check(session.State == final && !session.NeedsRecovery && !session.IsAdvancing
+                    && port.Commands == (operation == "poll" ? 0 : 1)
+                    && port.Reads == (lateFailure && operation != "poll" ? 0 : 1),
+                "Two lifecycle transitions keep old work from replacing, faulting or acting for the final owner: " + journey);
+            if (!session.Closed) session.Close();
+        }
+    }
+
+    private static async Task BootstrapObservationAdmission(Action<bool, string> check)
+    {
+        foreach (string result in new[] { "foreign", "missing", "failure" }) {
+            var bound = State(1) with { Id = "explicitly-bound-game" };
+            var old = State(99) with { Id = "bootstrap-old-game" };
+            var port = new HeldConnection(result == "missing" ? null : old) { HoldObservation = true,
+                ObserveError = result == "failure" ? new IOException("Old bootstrap read failed.") : null };
+            var session = new ClientSession(port); int failures = 0, callbacks = 0;
+            session.Failed += _ => failures++;
+            session.Poll(false, _ => callbacks++);
+            await port.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            check(session.State == null && session.Polling && port.Commands == 0,
+                "A held bootstrap poll starts without an accepted audience: " + result);
+            check(session.Accept(bound) && session.State == bound,
+                "Explicit acceptance binds a game while its prior bootstrap poll is outstanding: " + result);
+            port.ReleaseObservation.TrySetResult(); await Drain(session);
+            check(session.State == bound && !session.NeedsRecovery && failures == 0 && callbacks == 0
+                    && port.Reads == 1 && port.Commands == 0,
+                "A bootstrap " + result + " cannot replace, retire or fault a subsequently bound audience");
+            session.Close();
+        }
+    }
+
     private static bool Rejected(Action action)
     {
         try { action(); return false; }
@@ -265,16 +347,30 @@ internal static class ExternalObservationRegression
         public Task ExecuteAsync(GameCommand command) { Interlocked.Increment(ref Commands); return Task.CompletedTask; }
         public Task ConcedeAsync(string gameId) => throw new InvalidOperationException("An observation test must never concede a game.");
     }
-    private sealed class HeldConnection(GameSnapshot state) : IMatchConnection
+    private sealed class HeldConnection(GameSnapshot? state) : IMatchConnection
     {
         internal int Reads, Commands;
         internal Exception? ExecuteError;
+        internal Exception? ObserveError;
+        internal bool HoldObservation;
         internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public Task<GameSnapshot?> ObserveAsync() { Interlocked.Increment(ref Reads); return Task.FromResult<GameSnapshot?>(state); }
+        internal TaskCompletionSource ExecuteReturned { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource ObservationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource ReleaseObservation { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource ObservationReturned { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public async Task<GameSnapshot?> ObserveAsync() {
+            Interlocked.Increment(ref Reads); ObservationStarted.TrySetResult();
+            try {
+                if (HoldObservation) await ReleaseObservation.Task;
+                if (ObserveError != null) throw ObserveError;
+                return state;
+            } finally { ObservationReturned.TrySetResult(); }
+        }
         public async Task ExecuteAsync(GameCommand command) {
-            Interlocked.Increment(ref Commands); Started.TrySetResult(); await Release.Task;
-            if (ExecuteError != null) throw ExecuteError;
+            Interlocked.Increment(ref Commands); Started.TrySetResult();
+            try { await Release.Task; if (ExecuteError != null) throw ExecuteError; }
+            finally { ExecuteReturned.TrySetResult(); }
         }
         public Task ConcedeAsync(string gameId) => throw new InvalidOperationException("An audience lifetime check must never concede.");
     }
