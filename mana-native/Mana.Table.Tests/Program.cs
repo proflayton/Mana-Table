@@ -201,7 +201,11 @@ internal static class Program
             if (args.Contains("--smoke-ai-campaign")) { AiEngineCampaign.RunStandaloneAsync(paths,
                 AiCampaignLimits.ForProfile(Arg("--campaign-profile")), Arg("--production-engine-jar")).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--qualify-mixed-game")) { MixedGameCampaign.RunAsync(paths,
-                Arg("--campaign-profile") ?? "release").GetAwaiter().GetResult(); return 0; }
+                Arg("--campaign-profile") ?? "release", Arg("--mixed-game-mode") switch {
+                    null or "manual-stepped" => MixedGameDriveMode.ManualStepped,
+                    "polled-background" => MixedGameDriveMode.PolledBackground,
+                    var mode => throw new ArgumentException("Unknown mixed-game mode: " + mode)
+                }).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--evaluate-ai-release")) { AiReleaseEvaluation.RunAsync(paths,
                 Arg("--production-engine-jar") ?? throw new ArgumentException("Release evaluation requires --production-engine-jar for exact production provenance."),
                 Arg("--source-revision") ?? throw new ArgumentException("Release evaluation requires --source-revision for the exact tested source."),

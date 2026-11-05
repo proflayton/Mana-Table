@@ -41,6 +41,7 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "public-projection") ForgePublicProjectionChecks.Run(profile, Check);
                 else if (group == "known-action-faces") CheckKnownActionFaces(profile, Check, trace, performance);
                 else if (group == "configured-simulation") {
+                    PolledFullGameContractChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     SmokeSourceReadChecks.RunAsync(Check).GetAwaiter().GetResult();
                     JourneyProgressClockChecks.Run(Check);
                     ConfiguredSimulationWireChecks.Run(Check);
@@ -91,6 +92,7 @@ internal static partial class HeadlessPresentationSmoke
             MatchOutcomeWireChecks.Run(Check);
             MatchSetupWireChecks.Run(Check);
             ConfiguredSimulationWireChecks.Run(Check);
+            PolledFullGameContractChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             SmokeSourceReadChecks.RunAsync(Check).GetAwaiter().GetResult();
             JourneyProgressClockChecks.Run(Check);
             AiCampaignQualificationChecks.Run(Check);

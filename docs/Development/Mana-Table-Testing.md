@@ -512,26 +512,51 @@ own-land return is legitimate. Policy seeds do not control Forge's rules RNG.
 
 ### Connected two-player/two-AI qualification
 
-`--qualify-mixed-game --campaign-profile natural` launches an ordinary four-seat
-lobby with a real host, separate TCP guest, and two independent host-owned AI
-seats. Four rotations put each existing versioned campaign deck in every seat.
+`--qualify-mixed-game --mixed-game-mode polled-background --campaign-profile natural`
+launches an ordinary four-seat lobby with a real host, separate TCP guest, and
+two independent host-owned AI seats. Both player sessions use default ordinary
+polling, and one production `AiTableHost.StartAsync` worker owns the bot port.
+Four rotations put each existing versioned campaign deck in every seat.
 Each game retains the existing natural-campaign ceiling of 160 turns/180 seconds;
 setup and transport operations have their own bounded waits. The `smoke` profile
 is one 16-turn/45-second prefix and never claims natural completion. `release`
 uses the same full rotations and additionally requires the causal-mechanic and
 role qualification gate to pass; missing evidence makes it inconclusive, even
-when a natural winner was observed. Unknown
+when a natural winner was observed. `natural-single` samples one varied-deck game
+under the same 160-turn/180-second limits. The legacy default mode,
+`--mixed-game-mode manual-stepped`, uses externally admitted owned observations
+and explicit bot stepping; its full-game evidence does not establish the
+polled/background composition. Unknown
 profiles fail. Use the normal `--engine-resources`, `--engine-jar`, and disposable
 `--profile` arguments; manifests record the exact launch jar and native/policy
 assembly hashes. A local overlay remains an overlay, not a clean release build.
 
 The two scripted player drivers receive only their own connection's optional
 owned-decision observations, query current source offers, and submit through
-`ClientSession` and ordinary `matchAction`. Their policies never borrow the
+`ClientSession` and ordinary `matchAction`. In polled mode, a rich read can supply
+policy knowledge only while its full ordinary payload matches the accepted
+replica. Additional rich action-source descriptions never replace that replica
+or its physical card data. Changed private faces, source keys, audiences and
+decision payloads retire the proposal. Their policies never borrow the
 host's bot observations. Client admission, provider acceptance and resolved
 effects are recorded separately. Scripted human seats do not supply actual
 human UX acceptance. The ordinary CI mixed-lobby prefix and its deadline remain
-unchanged; the longer natural qualification is a separate manual release gate.
+unchanged. The same engine job additionally runs the existing 16-turn/45-second
+campaign smoke in polled/background mode, requiring all four roles to develop and
+accept commands, public cohorts to agree, and evidence owners to drain and retire.
+The longer natural qualification is a separate manual release gate.
+
+One bounded, ordered inbox transfers immutable policy, observation and receipt
+events to the campaign's evidence owner. No-match polls before the first owned
+batch update scalar idle counters without filling the queue. Empty batches after
+owned activity withdraw prior bot views and remain visible lifecycle losses.
+A returned bot batch becomes processed evidence only on the sole worker's next
+observation entry, once per return sequence. Overflow is an explicit evidence
+failure. Final captures precede AI cancellation and join, client retirement and
+connection disposal; guarded trace closure precedes the saved result. The new
+mode does not configure the shipping presentation delay and does not qualify
+visual tempo. Focused configured/full checks exercise these actual driver and
+inbox paths, including held reads, source queries, rejection and retirement.
 
 Public checkpoints compare exact game/board cohorts across all audiences,
 including turn/phase, identities and attachments, graveyard/exile contents,
