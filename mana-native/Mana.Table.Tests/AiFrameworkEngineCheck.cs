@@ -39,17 +39,16 @@ internal static class AiFrameworkEngineCheck
                 if (decision.Payload is PriorityPayload) {
                     if (state.ActivePlayerId == state.ViewerId && state.PhaseKey == "MAIN1" && state.Stack.IsEmpty) {
                         var land = state.Viewer!.Zone("Hand").Cards.First();
-                        SourceActionSet offers;
-                        try { offers = await engine.SourceActionsAsync(state.Id, decision.Id, land.Key); }
-                        catch (EngineCommandRejectedException error) when (error.Message is
-                            "The table changed. Read the current card again."
-                            or "The source actions changed. Read the current card again."
-                            or "The source action context changed. Select the current card again.") {
+                        var offers = await SmokeSourceReads.TryReadAsync(() => engine.SourceActionsAsync(state.Id, decision.Id, land.Key),
+                            "The table changed. Read the current card again.",
+                            "The source actions changed. Read the current card again.",
+                            "The source action context changed. Select the current card again.");
+                        if (offers == null) {
                             // A queued display publication can refresh the same
                             // unanswered priority between observation and query.
                             // Discard the read and observe again within the same
                             // deadline; no accepted command is replayed.
-                            if (++expiredSourceReads > 16) throw new InvalidOperationException("Too many expired conformance source reads.", error);
+                            if (++expiredSourceReads > 16) throw new InvalidOperationException("Too many expired conformance source reads.");
                             expiredSourceObservation = state;
                             session.Observe(null);
                             await Task.Delay(5); continue;

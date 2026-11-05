@@ -61,17 +61,7 @@ internal static class NativeSmoke
                         if (source != null) {
                             Check(state.Players.All(player => player.Zone("Battlefield").Cards.All(card => card.Name == "Mountain")),
                                 "The TCP guest reversal runs on a quiet basic-land battlefield before commanders introduce unrelated traits");
-                            try {
-                                var actions = await engines[i].SourceActionsAsync(state.Id, d.Id, source.Key);
-                                var mana = actions.Actions.Single(action => action.Kind == "activate");
-                                await engines[i].ExecuteAsync(new UseOfferedAction(state.Id, d.Id, source.Key, mana.Id));
-                            } catch (EngineCommandRejectedException error) when (error.Message == "The table changed. Read the current card again."
-                                || error.Message == "That command does not answer the currently observed decision. Observe the table again.") {
-                                // A TCP publication can replace these current
-                                // keys before the query/dispatch. Reobserve within
-                                // the same deadline; never reuse the stale offer.
-                                continue;
-                            }
+                            if (!await TryActivateManaAsync(engines[i], engines[i], state.Id, d.Id, source.Key)) continue;
                             GameSnapshot? tapped = null;
                             while (DateTime.UtcNow < deadline && UndoFacts.Command(tapped ?? state) == null) {
                                 tapped = await engines[i].ObserveAsync();
@@ -173,6 +163,22 @@ internal static class NativeSmoke
             await File.WriteAllTextAsync(Path.Combine(paths.Profile, "smoke-results.json"), JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
         } finally { foreach (var engine in engines) await engine.DisposeAsync(); }
     }
+    internal static async Task<bool> TryActivateManaAsync(ISourceActions sources, IMatchConnection connection,
+        string gameId, string decisionId, string sourceKey)
+    {
+        var actions = await SmokeSourceReads.TryReadAsync(() => sources.SourceActionsAsync(gameId, decisionId, sourceKey),
+            "The table changed. Read the current card again.");
+        if (actions == null) return false;
+        var mana = actions.Actions.Single(action => action.Kind == "activate");
+        try { await connection.ExecuteAsync(new UseOfferedAction(gameId, decisionId, sourceKey, mana.Id)); }
+        catch (EngineCommandRejectedException error) when (error.Message == "That command does not answer the currently observed decision. Observe the table again.") {
+            // This definite dispatch rejection applied nothing. Observe afresh;
+            // do not reuse this offer or classify other execution errors as reads.
+            return false;
+        }
+        return true;
+    }
+
     private static async Task Wait(Func<Task<bool>> condition)
     {
         var deadline = DateTime.UtcNow.AddSeconds(30);
