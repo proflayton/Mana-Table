@@ -162,6 +162,7 @@ HandPlacementRegression.Run(Check);
 AudioMixerRegression.Run(Check);
 await QuietPriorityRegression.RunAsync(Check);
 await StackResolutionRegression.RunAsync(Check);
+await FiniteServerObservationRegression.RunAsync(Check);
 await FiniteResolutionRegression.RunAsync(Check);
 await OptionalPaymentRegression.RunAsync(Check);
 FiniteResolutionProgressRegression.Run(Check);

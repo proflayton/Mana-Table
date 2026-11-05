@@ -466,6 +466,15 @@ publication checks still use system time. The first four-window observation and
 receipt evidence is written before its unchanged assertion, so future failures
 retain a measured prefix. The earlier CI failure lacked that evidence; elapsed
 slice expiry is a testable explanation, not an established cause of that incident.
+Finite policies distinguish a command, a current-input observation and an
+acknowledged server-owned progress wait. Only the last case uses a minimum50 ms
+read start-to-start interval, identified by the same policy and original grant
+terms across worker slices. Actual command readbacks and newly observed required
+choices remain immediate; a prospective grant and legacy client-driven waits do
+not acquire that cadence. The session's existing injected `TimeProvider` also
+governs continuation elapsed time and the cancellable passive delay. This limits
+snapshot pressure while the server keeps passing independently; it does not add
+a delay to rules execution or change the350 ms /32-command limit.
 Ordinary polls and external
 provider ingress use that same narrow admission guard; direct acceptance still
 throws and presentation callback failures are not swallowed. The existing

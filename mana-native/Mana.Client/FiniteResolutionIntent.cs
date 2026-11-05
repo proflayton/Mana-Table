@@ -310,29 +310,36 @@ public sealed class FiniteResolutionIntent : IFiniteDecisionPolicy
     private static (string Kind, string Id, int? Player) Target(StackTarget target) => (target.Kind, target.Id, target.PlayerId);
     private bool End(string reason) { if (active) { active = false; stopReason = reason; } return false; }
 
-    DecisionCommand? IFiniteDecisionPolicy.NextCommand(GameSnapshot state)
+    FiniteNextStep IFiniteDecisionPolicy.NextStep(GameSnapshot state)
     {
         lock (gate) {
-            if (paused || !Continue(state) || state.Revision < revision || state.Decision is not { } decision) return null;
-            if (submittedScope == decision.Id) return null;
+            if (paused || !Continue(state) || state.Revision < revision) return FiniteNextStep.Observe;
+            // Continue validated current audience, original members and terms.
+            // A merely proposed ID is not an acknowledgement from the server.
+            if (!revokeRequested && serverGrantId.Length > 0
+                && state.FiniteStackYield is { Status: FiniteStackYieldStatus.Active } acknowledged && acknowledged.GrantId == serverGrantId
+                && (state.Decision == null || OwnPriority(state)))
+                return new FiniteNextStep.AwaitAcknowledgedServerProgress(new(game, viewer, serverGrantId,
+                    serverMembers, actionVersion, choiceVersion));
+            if (state.Decision is not { } decision || submittedScope == decision.Id) return FiniteNextStep.Observe;
             if (OwnPriority(state)) {
-                if (serverGrantId.Length > 0) return null;
+                if (serverGrantId.Length > 0) return FiniteNextStep.Observe;
                 if (state.FiniteStackYield != null && state.Stack.Length <= FiniteStackYieldFacts.MaximumMembers
                     && state.Stack.All(item => selectedStack.Contains(item.Id))) {
                     serverGrantId = Guid.NewGuid().ToString("N");
                     serverMembers = state.Stack.Select(item => item.ExecutionId).ToImmutableArray();
                     var grant = new GrantFiniteStackYield(game, decision.Id, serverGrantId, serverMembers, actionVersion, choiceVersion);
-                    if (GameCommandPermissions.Allows(state, grant)) return grant;
+                    if (GameCommandPermissions.Allows(state, grant)) return new FiniteNextStep.DispatchCommand(grant);
                     serverGrantId = ""; serverMembers = [];
                 }
                 string progress = string.Join('\n', state.Stack.Select(item => item.Id)) + ":" + outcomes.Count + ":" + answered.Count;
-                if (submittedPriority == progress) { End("priority-without-progress"); return null; }
+                if (submittedPriority == progress) { End("priority-without-progress"); return FiniteNextStep.Observe; }
                 var pass = new PassPriority(game, decision.Id) { StackInterruptionVersion = state.StackInterruptionVersion };
-                return GameCommandPermissions.Allows(state, pass) ? pass : null;
+                return FiniteNextStep.FromCommand(GameCommandPermissions.Allows(state, pass) ? pass : null);
             }
-            return decision.Payload is PaymentPayload { OptionalDecline: { } offer } && (decline != null || UnpayableCapturedOffer(state) != null)
+            return FiniteNextStep.FromCommand(decision.Payload is PaymentPayload { OptionalDecline: { } offer } && (decline != null || UnpayableCapturedOffer(state) != null)
                 && !answered.Contains(offer.ProducingTriggerExecutionId)
-                ? new CancelPayment(game, decision.Id) : null;
+                ? new CancelPayment(game, decision.Id) : null);
         }
     }
 

@@ -2171,7 +2171,8 @@ see the [experience review](Mana-Table-Experience-Review.md).
 Simulations inject elapsed/total time and pointer/keyboard state into the same
 application methods used by the window. Recovery checks and recovery text share
 an injectable `TimeProvider`; use a controlled provider when replaying connection
-failures. Background engine completion order and artwork availability are inputs,
+failures. That same session clock governs bounded continuation elapsed time and
+acknowledged server-progress read cadence. Background engine completion order and artwork availability are inputs,
 not promises of deterministic asynchronous scheduling. Controlled projection
 scenarios check scoped input and projection behavior; separate real-Forge journeys
 check rules and transport behavior. Both support human review of the experience.

@@ -131,30 +131,33 @@ internal static class FiniteYieldLifecycleRegression
         var state = new Port(3, automatic: false).State;
         var intent = FiniteResolutionRegression.Arm(state)!;
         var policy = (IFiniteDecisionPolicy)intent;
-        var proposed = (GrantFiniteStackYield)policy.NextCommand(state)!;
+        var proposed = (GrantFiniteStackYield)Command(policy, state)!;
         // Deterministically pause at the runner's cancellation check between
         // obtaining the command and ExecuteAsync: no command was dispatched.
         intent.Pause();
         var revoke = intent.RequestServerRevocation()!;
         intent.Resume();
-        check(intent.CanContinue(state) && policy.NextCommand(state) == null,
+        check(intent.CanContinue(state) && Command(policy, state) == null,
             "An ordinary Idle projection cannot erase a proposed finite grant while its negative acknowledgement remains pending");
         intent.AcknowledgeServerRevocation(state, revoke with { GrantId = "other-proposal" });
-        check(policy.NextCommand(state) == null,
+        check(Command(policy, state) == null,
             "A different proposal's negative acknowledgement cannot clear the captured prospective grant");
         var active = state with { FiniteStackYield = new(proposed.GrantId, FiniteStackYieldStatus.Active,
             proposed.ExecutionIds, proposed.ExecutionIds, proposed.StackActionVersion, proposed.ResolutionChoiceVersion) };
         intent.AcknowledgeServerRevocation(active, revoke);
-        check(policy.NextCommand(state) == null,
+        check(Command(policy, state) == null,
             "An acknowledgement still advertising the exact active grant cannot permit another grant or local pass");
         FiniteStackYieldFacts.Validate(state);
         intent.AcknowledgeServerRevocation(state, revoke);
-        var resumed = policy.NextCommand(state) as GrantFiniteStackYield;
+        var resumed = Command(policy, state) as GrantFiniteStackYield;
         check(resumed != null && resumed.GrantId != proposed.GrantId && resumed.ExecutionIds.SequenceEqual(proposed.ExecutionIds)
                 && resumed.StackActionVersion == proposed.StackActionVersion && resumed.ResolutionChoiceVersion == proposed.ResolutionChoiceVersion
                 && intent.Progress is { CapturedCount: 3, CompletedCount: 0, RemainingCount: 3 },
             "A validated Idle revoke receipt clears an unsent proposal so deliberate resume creates a fresh grant for the same finite members and fences, without inventing outcomes");
     }
+
+    private static DecisionCommand? Command(IFiniteDecisionPolicy policy, GameSnapshot state)
+        => policy.NextStep(state) is FiniteNextStep.DispatchCommand dispatch ? dispatch.Command : null;
 
     private static async Task MatchOperationReset(Action<bool, string> check)
     {
