@@ -17,6 +17,8 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     private readonly StreamWriter decisions;
     private readonly string directory;
     private AiDecisionReplayCase? latestCase;
+    private readonly Dictionary<int, AiDecisionReplayCase> latestBySeat = [];
+    private bool disposed;
     private readonly Dictionary<int, (AiDecisionReplayCase Case, string SourceId)> initiations = [];
     private readonly Dictionary<int, AiDecisionReplayCase> confirmations = [];
     private readonly HashSet<(int Seat, long Event)> observedEvents = [];
@@ -40,7 +42,66 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     private readonly List<string> diagnosticErrors = [];
     private bool rawObservationsCaptured;
     private AiCampaignQualificationTracker? qualification;
+    private AiCampaignEvidenceInbox? inbox;
     internal AiCausalMechanicEvidence? QualificationEvidence => qualification?.CausalEvidence;
+    internal CampaignEvidenceHandoffStatus? HandoffStatus => inbox?.Status;
+    internal bool HasOrderedHandoff => inbox != null;
+    internal AiHostFault? CapturedHostFault { get; private set; }
+
+    internal AiCampaignEvidenceInbox EnableOrderedHandoff(int capacity = 256, TimeProvider? clock = null)
+    {
+        if (inbox != null || capacity < 1) throw new InvalidOperationException("Configure one bounded campaign evidence handoff before starting its producers.");
+        return inbox = new(this, capacity, clock);
+    }
+    internal void DrainPending() => inbox?.Drain();
+    internal void RetireHandoff() => inbox?.Retire();
+    internal bool OwnsHandoff(AiCampaignEvidenceInbox handoff) => ReferenceEquals(inbox, handoff);
+
+    internal void ApplyHandoff(CampaignEvidenceStamp stamp, CampaignEvidenceEvent value)
+    {
+        // This small ordered envelope captures event time, not drain time. The
+        // existing private proposal/receipt schema and replay files stay intact;
+        // idle batch events do not serialize another entire private snapshot.
+        long? returnedBatchSequence = value switch {
+            CampaignEvidenceEvent.Batch item => item.ReturnSequence,
+            CampaignEvidenceEvent.StepCompleted item => item.ReturnedBatchSequence,
+            _ => null
+        };
+        decisions.WriteLine(JsonSerializer.Serialize(new { kind = "evidence-handoff", stamp, returnedBatchSequence }));
+        switch (value) {
+            case CampaignEvidenceEvent.Owned item: ObserveCore(item.Observation); break;
+            case CampaignEvidenceEvent.Batch item:
+                ValidatePublicBatchCore(item.Observations);
+                foreach (var observation in item.Observations) ObserveCore(observation);
+                break;
+            case CampaignEvidenceEvent.ValidateBatch item: ValidatePublicBatchCore(item.Observations); break;
+            case CampaignEvidenceEvent.Public item: ObservePublicCore(item.State); break;
+            case CampaignEvidenceEvent.PolicyStarted item: SetLatestCase(item.Replay); break;
+            case CampaignEvidenceEvent.Proposal item: Proposal(item.Replay, item.Frame, item.Result); break;
+            case CampaignEvidenceEvent.PolicyFailure item: PreserveExceptionText(item.Replay, item.Error, item.Stage); break;
+            case CampaignEvidenceEvent.Receipt item: ReceiptCore(item.Observation, item.Command, item.Accepted, item.Error); break;
+            case CampaignEvidenceEvent.StaleProbe item: RecordStaleProbeCore(item.Result, item.Command); break;
+            case CampaignEvidenceEvent.HostFault item:
+                CapturedHostFault ??= item.Fault;
+                diagnosticErrors.Add("background-host-fault: " + item.Fault.ReasonCode);
+                decisions.WriteLine(JsonSerializer.Serialize(new { kind = "background-host-fault", item.Fault, item.Error }));
+                break;
+            case CampaignEvidenceEvent.StepCompleted: break;
+            default: throw new InvalidDataException("Unknown campaign evidence handoff event.");
+        }
+    }
+
+    internal void RecordHandoffFailure(Exception error)
+        => diagnosticErrors.Add("evidence-handoff: " + AiCampaignEvidenceInbox.ErrorText(error));
+
+    private void SetLatestCase(AiDecisionReplayCase replay)
+    {
+        latestCase = replay;
+        if (inbox == null) return;
+        if (!latestBySeat.ContainsKey(replay.State.ViewerId) && latestBySeat.Count >= 8)
+            throw new InvalidDataException("Ordered campaign replay attribution exceeded its bounded participant count.");
+        latestBySeat[replay.State.ViewerId] = replay;
+    }
 
     internal AiCampaignDiagnostics(string directory)
     {
@@ -48,24 +109,30 @@ internal sealed class AiCampaignDiagnostics : IDisposable
         decisions = new(new GZipStream(File.Create(Path.Combine(directory, "private-decisions.jsonl.gz")), CompressionLevel.Fastest));
     }
 
-    internal IAiPolicy Record(IAiPolicy inner) => new RecordingPolicy(inner, this);
+    internal IAiPolicy Record(IAiPolicy inner) => new RecordingPolicy(inner, this, inbox);
     internal void BindQualification(AiCampaignQualificationTracker tracker)
     {
         if (qualification != null) throw new InvalidOperationException("Campaign qualification is already bound.");
         qualification = tracker;
     }
 
-    internal void ValidatePublicBatch(ImmutableArray<AutomatedSeatObservation> observations) =>
-        ForgePublicProjectionChecks.ValidateBatch(observations, directory);
+    internal void ValidatePublicBatch(ImmutableArray<AutomatedSeatObservation> observations)
+    {
+        if (inbox != null) inbox.Post(new CampaignEvidenceEvent.ValidateBatch(observations));
+        else ValidatePublicBatchCore(observations);
+    }
+    private void ValidatePublicBatchCore(ImmutableArray<AutomatedSeatObservation> observations)
+        => ForgePublicProjectionChecks.ValidateBatch(observations, directory);
 
-    private sealed class RecordingPolicy(IAiPolicy inner, AiCampaignDiagnostics evidence) : IAiPolicy
+    private sealed class RecordingPolicy(IAiPolicy inner, AiCampaignDiagnostics evidence, AiCampaignEvidenceInbox? handoff) : IAiPolicy
     {
         public AiPolicyDescriptor Descriptor => inner.Descriptor;
         public async Task<AiProposal> EvaluateAsync(AiDecisionRequest request, CancellationToken cancellation)
         {
             var recorded = AiDecisionReplayCase.Capture(request.Frame.Stamp.SeatId + "-" + request.Frame.Stamp.DecisionId
                 + "-" + request.Frame.Stamp.Revision, inner.Descriptor.Id, request);
-            evidence.latestCase = recorded;
+            if (handoff != null) handoff.Post(new CampaignEvidenceEvent.PolicyStarted(recorded));
+            else evidence.latestCase = recorded;
             AiProposal proposal;
             try {
                 proposal = await inner.EvaluateAsync(request, cancellation);
@@ -73,12 +140,19 @@ internal sealed class AiCampaignDiagnostics : IDisposable
                 // The normal session deliberately redacts model exceptions.
                 // Preserve this exact request and the original exception only
                 // in the campaign's private diagnostics before rethrowing.
-                evidence.PreserveException(recorded, error, "policy");
+                if (handoff == null) evidence.PreserveException(recorded, error, "policy");
+                else try { handoff.Post(new CampaignEvidenceEvent.PolicyFailure(recorded, AiCampaignEvidenceInbox.ErrorText(error), "policy")); }
+                    catch { /* The inbox retains its fault; preserve the original policy exception. */ }
                 throw;
             }
-            try { evidence.Proposal(recorded, request, proposal); }
+            try {
+                if (handoff != null) handoff.Post(new CampaignEvidenceEvent.Proposal(recorded, request.Frame, proposal));
+                else evidence.Proposal(recorded, request.Frame, proposal);
+            }
             catch (Exception error) {
-                evidence.PreserveException(recorded, error, "diagnostic");
+                if (handoff == null) evidence.PreserveException(recorded, error, "diagnostic");
+                else try { handoff.Post(new CampaignEvidenceEvent.PolicyFailure(recorded, AiCampaignEvidenceInbox.ErrorText(error), "diagnostic")); }
+                    catch { /* Preserve the first handoff failure. */ }
                 throw;
             }
             return proposal;
@@ -87,25 +161,30 @@ internal sealed class AiCampaignDiagnostics : IDisposable
 
     private void PreserveException(AiDecisionReplayCase recorded, Exception error, string stage)
     {
+        try { PreserveExceptionText(recorded, error.ToString(), stage); }
+        catch { /* Even an unusual exception formatter cannot replace the original policy failure. */ }
+    }
+
+    private void PreserveExceptionText(AiDecisionReplayCase recorded, string error, string stage)
+    {
         try {
             ExportCase("last-before-mechanical-failure", recorded);
             File.WriteAllText(Path.Combine(directory, "private-" + stage + "-exception.json"),
-                JsonSerializer.Serialize(new { recorded.Id, stage, error = error.ToString() }));
+                JsonSerializer.Serialize(new { recorded.Id, stage, error }));
         } catch (Exception evidenceError) {
             // A failing diagnostic write must never replace the original
             // exception that the caller is about to rethrow.
             try {
                 File.WriteAllText(Path.Combine(directory, "private-diagnostic-write-exception.json"),
-                    JsonSerializer.Serialize(new { recorded.Id, stage, originalError = error.ToString(),
+                    JsonSerializer.Serialize(new { recorded.Id, stage, originalError = error,
                         evidenceError = evidenceError.ToString() }));
             } catch (Exception) { }
         }
     }
 
-    private void Proposal(AiDecisionReplayCase recorded, AiDecisionRequest request, AiProposal proposal)
+    private void Proposal(AiDecisionReplayCase recorded, AiDecisionFrame frame, AiProposal proposal)
     {
-        latestCase = recorded;
-        var frame = request.Frame;
+        SetLatestCase(recorded);
         var answer = proposal as AiProposal.Answer;
         decisions.WriteLine(JsonSerializer.Serialize(new {
             kind = "proposal", frame.Stamp, replay = recorded,
@@ -165,6 +244,11 @@ internal sealed class AiCampaignDiagnostics : IDisposable
 
     internal void Receipt(AutomatedSeatObservation? observation, GameCommand command, bool accepted, string? error)
     {
+        if (inbox != null) inbox.Post(new CampaignEvidenceEvent.Receipt(observation, command, accepted, error));
+        else ReceiptCore(observation, command, accepted, error);
+    }
+    private void ReceiptCore(AutomatedSeatObservation? observation, GameCommand command, bool accepted, string? error)
+    {
         qualification?.Receipt(observation, command, accepted, error);
         decisions.WriteLine(JsonSerializer.Serialize(new { kind = "receipt", seat = observation?.SeatId,
             command.GameId, decision = (command as DecisionCommand)?.DecisionId, accepted, error,
@@ -183,7 +267,8 @@ internal sealed class AiCampaignDiagnostics : IDisposable
         }
         if (!accepted || observation == null) return;
         Accepted++;
-        if (latestCase is { } captured && captured.State.ViewerId == observation.SeatId
+        var latest = inbox == null ? latestCase : latestBySeat.GetValueOrDefault(observation.SeatId);
+        if (latest is { } captured && captured.State.ViewerId == observation.SeatId
                 && captured.State.Decision?.Id == (command as DecisionCommand)?.DecisionId) {
             if (captured.State.Decision?.Payload is PriorityPayload && command is UseOfferedAction route
                 && observation.Domain.Actions.Any(action => action.ActionId == route.ActionId && !action.ManaAbility
@@ -206,6 +291,11 @@ internal sealed class AiCampaignDiagnostics : IDisposable
 
     internal void RecordStaleProbe(AiCampaignStaleProbe result, DecisionCommand command)
     {
+        if (inbox != null) inbox.Post(new CampaignEvidenceEvent.StaleProbe(result, command));
+        else RecordStaleProbeCore(result, command);
+    }
+    private void RecordStaleProbeCore(AiCampaignStaleProbe result, DecisionCommand command)
+    {
         StaleAuthorityProbes.Add(result);
         try {
             decisions.WriteLine(JsonSerializer.Serialize(new { kind = "stale-authority-probe", result,
@@ -217,6 +307,11 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     }
 
     internal void Observe(AutomatedSeatObservation observation)
+    {
+        if (inbox != null) inbox.Post(new CampaignEvidenceEvent.Owned(observation));
+        else ObserveCore(observation);
+    }
+    private void ObserveCore(AutomatedSeatObservation observation)
     {
         qualification?.ObserveOwned(observation);
         foreach (var investment in numericInvestments.Values) investment.ObserveOwned(observation);
@@ -247,6 +342,11 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     }
 
     internal void ObservePublic(GameSnapshot state)
+    {
+        if (inbox != null) inbox.Post(new CampaignEvidenceEvent.Public(state));
+        else ObservePublicCore(state);
+    }
+    private void ObservePublicCore(GameSnapshot state)
     {
         qualification?.ObservePublic(state);
         foreach (var investment in numericInvestments.Values) investment.ObservePublic(state);
@@ -403,58 +503,117 @@ internal sealed class AiCampaignDiagnostics : IDisposable
             "declared-combat", "reported-damage", "multiple-stack-targets" }.Except(BoardWitnesses).ToImmutableArray(),
         "Offers, chosen commands, authoritative board/event witnesses and review findings are separate. Numeric evidence separates proposed/accepted values from subsequent exact-source payment inputs and owned-seat event reports; public stack and actual statistics are observed independently through the spectator. A source correlation does not prove X caused every later effect. Earlier-same-source replay links do not identify which cast, ability or optional payment was cancelled. A resolved source does not prove every intended effect occurred. TargetRecipients counts player choices and attacks only; their distribution does not establish social quality.");
 
-    public void Dispose() => decisions.Dispose();
+    public void Dispose()
+    {
+        if (disposed) return;
+        disposed = true;
+        if (inbox?.RetireForDisposal() is { } failure) RecordHandoffFailure(failure);
+        decisions.Dispose();
+    }
 }
 
 internal sealed class AiCampaignProvider(IAutomatedSeatProvider inner, AiCampaignDiagnostics diagnostics,
-    Func<int, GameSnapshot, GameSnapshot, DecisionCommand, string, Task>? staleReplay = null) : IAutomatedSeatProvider
+    Func<int, GameSnapshot, GameSnapshot, DecisionCommand, string, Task>? staleReplay = null,
+    AiCampaignEvidenceInbox? inbox = null) : IAutomatedSeatProvider
 {
     private readonly AiCampaignStaleAuthority? stale = staleReplay == null ? null : new();
     private ConfiguredSimulationStart? configured;
     private readonly AiCausalHistoryReader history = new();
+    private ImmutableArray<AutomatedSeatObservation> last = [];
+    private int executing;
     internal void BindConfigured(ConfiguredSimulationStart start)
     {
         if (configured != null) throw new InvalidOperationException("The campaign provider is already bound to a configured game.");
         ConfiguredSimulationFacts.ValidateState(start, start.State);
         configured = start;
     }
-    internal ImmutableArray<AutomatedSeatObservation> Last { get; private set; } = [];
-    public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) => inner.EnableAutomatedSeatsAsync(cancellation);
-    public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode, CancellationToken cancellation = default) => inner.ReportAutomationFaultAsync(gameId, seatId, reasonCode, cancellation);
+    internal ImmutableArray<AutomatedSeatObservation> Last => SnapshotObservations;
+    internal ImmutableArray<AutomatedSeatObservation> SnapshotObservations => inbox?.SnapshotObservations ?? last;
+    internal ImmutableArray<AutomatedSeatObservation> ProcessedObservations => inbox?.ProcessedObservations
+        ?? throw new InvalidOperationException("Processed-cycle evidence requires the explicit background handoff.");
+    internal ImmutableDictionary<int, int> AcceptedBySeat => inbox?.AcceptedBySeat ?? ImmutableDictionary<int, int>.Empty;
+    internal int Executing => Volatile.Read(ref executing);
+    private void RequireHandoff()
+    {
+        if (inbox == null) return;
+        if (!diagnostics.OwnsHandoff(inbox)) throw new InvalidOperationException("The background provider belongs to another evidence owner.");
+        inbox.EnsureActive();
+    }
+    public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default)
+    {
+        RequireHandoff();
+        return inner.EnableAutomatedSeatsAsync(cancellation);
+    }
+    public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode, CancellationToken cancellation = default)
+    {
+        RequireHandoff();
+        return inner.ReportAutomationFaultAsync(gameId, seatId, reasonCode, cancellation);
+    }
     public async Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default)
     {
-        Last = await inner.ObserveAutomatedSeatsAsync(cancellation);
         cancellation.ThrowIfCancellationRequested();
-        foreach (var observation in Last)
+        RequireHandoff();
+        if (inbox != null && stale != null) throw new InvalidOperationException("Background evidence cannot inject manual stale-command probes.");
+        inbox?.BeginNextCycle();
+        var received = await inner.ObserveAutomatedSeatsAsync(cancellation);
+        if (inbox == null) last = received;
+        cancellation.ThrowIfCancellationRequested();
+        foreach (var observation in received)
             if (observation.State.ViewerId != observation.SeatId
                 || !AiCampaignVisibility.PrivateWindowsAreDisclosed(observation.State, observation.Semantics, observation.Domain))
                 throw new InvalidDataException("An automated observation disclosed another player's private hand or library before policy evaluation.");
         if (configured is { } setup) {
-            if (Last.Length != setup.Participants.Length || Last.Select(item => item.SeatId).Distinct().Count() != Last.Length
-                || !Last.Select(item => item.SeatId).Order().SequenceEqual(setup.Participants.Select(item => item.PlayerId).Order()))
+            if (received.Length != setup.Participants.Length || received.Select(item => item.SeatId).Distinct().Count() != received.Length
+                || !received.Select(item => item.SeatId).Order().SequenceEqual(setup.Participants.Select(item => item.PlayerId).Order()))
                 throw new InvalidDataException("Configured automated observations changed their actual player mapping.");
-            foreach (var observation in Last) {
+            foreach (var observation in received) {
                 if (observation.SeatId != observation.State.ViewerId)
                     throw new InvalidDataException("A configured bot received a different player's observation.");
                 ConfiguredSimulationFacts.ValidateOwnedState(setup, observation.State);
             }
         }
-        diagnostics.ValidatePublicBatch(Last);
-        foreach (var observation in Last) diagnostics.Observe(observation);
-        await history.DrainAsync(inner, Last, diagnostics.QualificationEvidence);
-        if (stale != null) await stale.ObserveAsync(Last, staleReplay!, diagnostics.RecordStaleProbe);
+        if (inbox != null) inbox.Returned(received);
+        else {
+            diagnostics.ValidatePublicBatch(received);
+            foreach (var observation in received) diagnostics.Observe(observation);
+            await history.DrainAsync(inner, received, diagnostics.QualificationEvidence);
+            if (stale != null) await stale.ObserveAsync(received, staleReplay!, diagnostics.RecordStaleProbe);
+        }
         cancellation.ThrowIfCancellationRequested();
-        return Last;
+        return received;
     }
+
+    // Only the campaign owner calls this, after draining ordered observations
+    // and receipts. Reading history does not observe/drive a second AI scope.
+    internal async Task DrainHistoryAsync(bool force = false)
+    {
+        if (inbox == null) throw new InvalidOperationException("Background history requires the explicit evidence handoff.");
+        RequireHandoff();
+        diagnostics.DrainPending();
+        await history.DrainAsync(inner, ProcessedObservations, diagnostics.QualificationEvidence, force);
+    }
+
     public async Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default)
     {
         cancellation.ThrowIfCancellationRequested();
-        var observation = Last.FirstOrDefault(item => item.SeatId == seatId);
-        try { await inner.ExecuteAutomatedAsync(seatId, command, cancellation); }
-        catch (Exception error) { diagnostics.Receipt(observation, command, false, error.GetType().Name); throw; }
-        diagnostics.Receipt(observation, command, true, null);
-        if (observation != null)
-            await history.DrainAsync(inner, [observation], diagnostics.QualificationEvidence, force: true);
-        if (observation != null) stale?.Remember(observation, command);
+        RequireHandoff();
+        var observation = SnapshotObservations.FirstOrDefault(item => item.SeatId == seatId);
+        Interlocked.Increment(ref executing);
+        try {
+            try { await inner.ExecuteAutomatedAsync(seatId, command, cancellation); }
+            catch (Exception error) {
+                if (inbox == null) diagnostics.Receipt(observation, command, false, error.GetType().Name);
+                else try { inbox.Receipt(observation, command, false, error.GetType().Name); }
+                    catch { /* Preserve the actual provider failure; the inbox retains its own first fault. */ }
+                throw;
+            }
+            if (inbox != null) inbox.Receipt(observation, command, true, null);
+            else {
+                diagnostics.Receipt(observation, command, true, null);
+                if (observation != null)
+                    await history.DrainAsync(inner, [observation], diagnostics.QualificationEvidence, force: true);
+                if (observation != null) stale?.Remember(observation, command);
+            }
+        } finally { Interlocked.Decrement(ref executing); }
     }
 }
