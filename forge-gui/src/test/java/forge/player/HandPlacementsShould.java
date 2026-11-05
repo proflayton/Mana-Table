@@ -76,7 +76,8 @@ public class HandPlacementsShould {
     @Test public void cachedPairsAreImmutableAndIncompleteScansOrMovedSourcesCannotDispatch() {
         Position p = new Position(); Card forest = p.hand("Forest", "Basic Land Forest");
         SpellAbility ability = p.ability(SIMPLE);
-        p.pass.refresh(p.game.human, new AvailableActions.ActionScan(Set.of(p.source.getView()), List.of(ability), false, true));
+        long observedGeneration = p.pass.rulesGeneration();
+        p.pass.refresh(p.game.human, new AvailableActions.ActionScan(Set.of(p.source.getView()), List.of(ability), false, true), observedGeneration);
         var view = p.pass.legal(p.game.human).get(0);
         assertEquals(view.eligibleHandCardIds(), List.of(forest.getId()));
         assertTrue(p.pass.hasHandPlacement(view.id(), forest.getId()));
@@ -90,7 +91,8 @@ public class HandPlacementsShould {
         p.game.human.getZone(ZoneType.Battlefield).add(forest);
         assertNull(p.pass.resolveHandPlacement(p.game.human, view.id(), forest.getId()), "An old hand membership cannot dispatch after moving");
         assertEquals(view.eligibleHandCardIds(), List.of(forest.getId()), "A previously published view never mutates");
-        p.pass.refresh(p.game.human, new AvailableActions.ActionScan(Set.of(), List.of(ability), false, false));
+        long incompleteGeneration = p.pass.rulesGeneration();
+        p.pass.refresh(p.game.human, new AvailableActions.ActionScan(Set.of(), List.of(ability), false, false), incompleteGeneration);
         assertTrue(p.pass.legal(p.game.human).isEmpty());
         assertFalse(p.pass.hasHandPlacement(view.id(), forest.getId()));
         p.pass.clearScan();

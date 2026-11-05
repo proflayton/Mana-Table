@@ -54,9 +54,10 @@ public class PriorityAbilityPassShould {
         }
 
         void refresh(boolean otherActions, boolean complete, SpellAbility... abilities) {
+            long observedGeneration = pass.rulesGeneration();
             Set<CardView> highlights = java.util.Arrays.stream(abilities)
                     .map(ability -> ability.getHostCard().getView()).collect(java.util.stream.Collectors.toSet());
-            pass.refresh(player, new AvailableActions.ActionScan(highlights, List.of(abilities), otherActions, complete));
+            pass.refresh(player, new AvailableActions.ActionScan(highlights, List.of(abilities), otherActions, complete), observedGeneration);
         }
 
         String idFor(int cardId) {
