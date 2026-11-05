@@ -992,6 +992,26 @@ the next ordinary poll can discover fresh authority. A command or post-command
 readback still uses the normal uncertain-receipt failure path. Catching a safe
 read at this owner must not turn a possibly executed command into a retry.
 
+`CommandExchange` owns the phase of each serial game-command operation,
+independently of diagnostic subscriptions. Only a first Execute-time rejection
+with no earlier applied command is a definite rejection. Read-only observation
+failure requires recovery without inventing a submitted command; failed
+post-dispatch readback requires recovery and uncertainty even if its exception
+type normally represents rejection. Each batch read validates the existing
+execution-history progress rules against its immutable preceding frame, then
+awaits the session owner's current-cursor admission before another command.
+That acknowledgement commits the model once; it waits for no animation or
+render clock. A later definite dispatch rejection can retain safe controls only
+against the newly admitted frame, while a standalone batch without an owner
+acknowledgement retains earlier unpublished dispatch uncertainty. Neither
+failure replays work. Final and streamed publication suppress snapshots already
+admitted by this boundary. Hold still reconciles an already-sent result before
+stopping; Reset and Close release a retired admission wait even without another
+pump. The session rechecks the same rules before any final posted observation.
+Only pre-commit contract failures enter this phase-aware recovery path; public
+direct acceptance and post-commit presentation callback exceptions keep their
+existing explicit failure behavior.
+
 `IOwnedDecisionObservations` is the corresponding narrow on-demand read port for
 an ordinary connection. The provider chooses its bound audience; the caller
 cannot name a player. Java shares the immutable fenced publication builder with

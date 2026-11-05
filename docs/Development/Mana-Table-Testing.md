@@ -441,6 +441,26 @@ owner starts only after the prior provider operation returns. This verifies the
 shipping adapter's deadline; it does not promise safe abandonment of an arbitrary
 provider that never completes or honors cancellation.
 
+`CommandExchangeRegression` covers dispatch, readback and pure-observation
+failures through the existing direct/source, Auto, quiet, finite and optional
+payment paths, with diagnostic subscriptions both enabled and absent. An
+Execute-time rejection remains definite; the same exception during readback
+quarantines old controls until an ordinary observation reconciles them, followed
+by one explicit fresh command. Partial batches cannot discard an earlier applied
+command behind a later rejection: either the owner has published its actual
+result, or the standalone batch retains uncertainty. Changed-prompt
+execution-history rollback must fail before a second command, including a held
+read valid against its worker prefix but behind a newer owner-thread cursor.
+The owner acknowledgement commits each model frame once without waiting for
+rendering. Hold admits its already-sent result once; Reset and unpumped Close
+release the retired wait and retain the exact serialized negative grant cleanup.
+Ordinary polls and external
+provider ingress use that same narrow admission guard; direct acceptance still
+throws and presentation callback failures are not swallowed. The existing
+source-read protocol child also sends a successful command ACK followed by a
+rejected state read, verifies uncertainty without a diagnostic listener and then
+reconciles through ordinary polling with no command replay.
+
 The existing `--smoke-headless-engine` process runs a short scripted AI-framework
 continuation through real starting-player selection, keeping a hand and playing
 an exact offered land route before its normal application journey. It verifies

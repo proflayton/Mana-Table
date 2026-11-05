@@ -28,6 +28,14 @@ public sealed class ExecutionCursor
     }
 
     internal void Validate(GameSnapshot? state)
+        => ValidateProgress(gameId, viewerId, sequence, state);
+
+    // The same rule can validate a worker's immutable last-read prefix before
+    // another command, without reading or mutating the owner-thread cursor.
+    internal static void ValidateProgress(GameSnapshot? previous, GameSnapshot? state)
+        => ValidateProgress(previous?.Id ?? "", previous?.ViewerId ?? -1, previous?.Executions?.LastSequence ?? 0, state);
+
+    private static void ValidateProgress(string gameId, int viewerId, long sequence, GameSnapshot? state)
     {
         if (state == null) return;
         ExecutionFrames.Validate(state);

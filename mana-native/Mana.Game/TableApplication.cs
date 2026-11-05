@@ -300,7 +300,8 @@ internal sealed partial class TableApplication : IDisposable
     private void SavePreferences() { StopQuietPriority(); StopStackResolution(); StopGroupBlocks(); session.CancelAdvance(); try { preferences.Save(profile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Could not save settings: " + ex.Message; } }
     private bool Send(DecisionCommand? command, bool confirmedTurnPass = false)
     {
-        if (command == null || fixture != null || session.NeedsRecovery || match?.Id != command.GameId || match.Decision?.Id != command.DecisionId) return false;
+        if (command == null || fixture != null || session.Busy || session.NeedsRecovery
+            || match?.Id != command.GameId || match.Decision?.Id != command.DecisionId) return false;
         if (AwaitingFinitePublication) return false;
         if (CurrentOptionalPayment?.Availability == OptionalManaPaymentAvailability.Unpayable && command is not CancelPayment) return false;
         if (command is UndoLastAction) return false;

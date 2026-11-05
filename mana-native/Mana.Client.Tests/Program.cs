@@ -204,6 +204,7 @@ await InteractionContractMatrix.RunAsync(Check);
 AllocationRegression.Run(Check);
 await RecoveryRegression.RunAsync(Check);
 await ClientDiagnosticRegression.RunAsync(Check);
+await CommandExchangeRegression.RunAsync(Check);
 await ClientDiagnosticJournalRegression.RunAsync(Check);
 await MatchHistoryArchiveRegression.RunAsync(Check);
 await MatchCompletionRegression.RunAsync(Check);

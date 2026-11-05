@@ -95,6 +95,9 @@ internal static class ClientDiagnosticRegression
                 && observedEvents.Any(item => item is { Stage: ClientDiagnosticStage.OutcomeUnknown, Failure: ClientDiagnosticFailure.ObservationFailure })
                 && !observedEvents.Any(item => item.Stage == ClientDiagnosticStage.ProviderRejected) && observedFailure.Commands == 1,
             "A rejected-exception type thrown by observation cannot retroactively label the returned command as rejected");
+        check(session.NeedsRecovery && session.UncertainCommand && session.State == initial
+                && !session.Submit(new PassPriority(initial.Id, initial.Decision!.Id)) && observedFailure.Commands == 1,
+            "A failed post-dispatch readback quarantines its old controls even when the observation exception has a rejection type");
     }
 
     private static async Task RetiredAndForeignReceipts(Action<bool, string> check)

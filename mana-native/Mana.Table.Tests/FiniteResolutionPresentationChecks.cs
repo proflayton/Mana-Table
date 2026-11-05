@@ -170,17 +170,18 @@ internal static class FiniteResolutionPresentationChecks
             if (delayedPublication) {
                 Until(() => port.StopPublicationReady.Task.IsCompleted, "provider's held terminal observation");
                 var intent = run.View.FiniteResolution!;
-                // Pump takes a bounded FIFO prefix. Release the worker while
-                // processing that prefix so its terminal receipt is pending
-                // for the next update, but its shared policy is already ended.
+                // Pump takes a bounded FIFO prefix. Release the provider while
+                // processing that prefix, then wait only for its read to return.
+                // The worker requires the next owner's model ACK before it can
+                // consume that stop; waiting for the policy here blocks its owner.
                 run.View.Post(() => {
                     port.ReleaseStopPublication.TrySetResult();
-                    if (!SpinWait.SpinUntil(() => !intent.IsActive, TimeSpan.FromSeconds(2)))
-                        throw new InvalidOperationException("The held server stop did not end its worker policy.");
+                    if (!SpinWait.SpinUntil(() => port.StopPublicationReturned.Task.IsCompleted, TimeSpan.FromSeconds(2)))
+                        throw new InvalidOperationException("The held provider stop read did not return.");
                 });
                 Tick(); Capture("deferred-worker-before-publication");
-                check(!intent.IsActive && run.View.Match?.FiniteStackYield?.Status != FiniteStackYieldStatus.Revoked,
-                    "The controlled worker stop precedes its accepted revoked publication without inventing another authoritative snapshot at " + viewport);
+                check(intent.IsActive && run.View.Match?.FiniteStackYield?.Status != FiniteStackYieldStatus.Revoked,
+                    "The returned provider stop waits for its owner model ACK before changing policy or accepted publication at " + viewport);
                 var stop = run.Frame.Hits.SingleOrDefault(hit => hit.Id == "stack-resolution-stop");
                 check(run.View.ResolvingCapturedStack && run.View.FiniteResolution != null
                         && run.View.FiniteResolutionProgress is { CompletedCount: 0, RemainingCount: 55 }
@@ -221,16 +222,23 @@ internal static class FiniteResolutionPresentationChecks
             } else {
                 Until(() => run.View.Match?.FiniteStackYield?.Status == FiniteStackYieldStatus.Active, "advertised granted queue");
                 var current = run.View.Match!;
+                var intent = run.View.FiniteResolution;
+                var granted = current.FiniteStackYield!;
                 bool sent = run.View.SubmitCurrent(new PassPriority(current.Id, current.Decision!.Id));
+                var stop = run.Frame.Hits.Single(hit => hit.Id == "stack-resolution-stop");
+                check(!sent && run.View.Busy && ReferenceEquals(run.View.FiniteResolution, intent)
+                        && run.View.Match?.FiniteStackYield == granted && !run.View.Held
+                        && port.Commands.Count == 1 && run.View.HitAt(stop.Bounds.Center)?.Id == stop.Id,
+                    "A busy retained manual action preserves its captured queue, grant and visible Take control without changing consent or sending a command at " + viewport);
+                pointer = stop.Bounds.Center;
+                Tick(ButtonState.Pressed); Tick(); pointer = new(20, 60);
                 Tick();
-                string text = string.Join(" ", run.Frame.Drawing.Commands.Select(item => item switch {
-                    DrawCommand.Text line => line.Value, DrawCommand.CenterText line => line.Value, _ => "" }));
                 Until(() => !run.View.Busy && port.State.FiniteStackYield?.Status == FiniteStackYieldStatus.Revoked, "withdraw manual grant");
                 for (int i = 0; i < 30; i++) Tick();
-                check(!sent && text.Contains("Taking control") && run.View.Held
-                        && port.Commands.OfType<RevokeFiniteStackYield>().Count() == 1
+                check(run.View.Held && port.Commands.OfType<RevokeFiniteStackYield>().SingleOrDefault()
+                            == new RevokeFiniteStackYield(current.Id, granted.GrantId)
                         && !port.Commands.OfType<PassPriority>().Any() && run.View.FiniteResolution == null,
-                    "A manual commit during a live server yield visibly takes control, withdraws the exact grant and requires a fresh action instead of silently dropping or replaying the old command at " + viewport);
+                    "The explicit Take control gesture withdraws the exact live grant, stays held and requires a fresh action instead of replaying the rejected command at " + viewport);
             }
             File.WriteAllText(Path.Combine(path, "final.json"), JsonSerializer.Serialize(new { frame = run.Frame.Observe(),
                 progress = ObserveProgress(run.View.FiniteResolutionProgress), commands = port.Commands.Select(command => command.GetType().Name) },
@@ -250,6 +258,7 @@ internal static class FiniteResolutionPresentationChecks
         internal ConcurrentQueue<int> RevokedAt { get; } = new();
         internal TaskCompletionSource StopPublicationReady { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource ReleaseStopPublication { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource StopPublicationReturned { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task ExecuteAsync(GameCommand command)
         {
             lock (gate) {
@@ -267,7 +276,18 @@ internal static class FiniteResolutionPresentationChecks
             }
             return Task.CompletedTask;
         }
-        public async Task<GameSnapshot?> ObserveAsync()
+        public Task<GameSnapshot?> ObserveAsync()
+        {
+            var returned = ReadAsync();
+            if (holdStopPublication)
+                _ = returned.ContinueWith(reply => {
+                    if (reply.Result?.FiniteStackYield is { Status: FiniteStackYieldStatus.Revoked, ReasonCode: "history-overflow" })
+                        StopPublicationReturned.TrySetResult();
+                }, CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            return returned;
+        }
+        private async Task<GameSnapshot?> ReadAsync()
         {
             await Task.Delay(15);
             GameSnapshot observed;

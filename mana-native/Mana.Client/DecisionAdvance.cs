@@ -9,12 +9,22 @@ public sealed class DecisionAdvance
 {
     private readonly IMatchConnection connection;
     private readonly ClientCommandDiagnostics? diagnostics;
-    private long diagnosticEpoch;
+    private long operationEpoch;
+    private readonly Func<GameSnapshot, CommandFailurePhase, long, CancellationToken, Task<ObservationAdmission>>? admit;
+    internal CommandFailurePhase ObservationFailurePhase { get; private set; } = CommandFailurePhase.Observation;
+    internal GameSnapshot? LastAdmittedObservation { get; private set; }
+    internal bool SuppressFinalObservation { get; private set; }
     private string? automaticSubmitted, quietSubmitted;
     public DecisionAdvance(IMatchConnection connection) => this.connection = connection;
-    internal DecisionAdvance(IMatchConnection connection, ClientCommandDiagnostics diagnostics)
-        : this(connection) => this.diagnostics = diagnostics;
-    internal void SetDiagnosticEpoch(long epoch) => diagnosticEpoch = epoch;
+    internal DecisionAdvance(IMatchConnection connection, ClientCommandDiagnostics diagnostics,
+        Func<GameSnapshot, CommandFailurePhase, long, CancellationToken, Task<ObservationAdmission>> admit)
+        : this(connection) { this.diagnostics = diagnostics; this.admit = admit; }
+    internal void SetOperationEpoch(long epoch)
+    {
+        operationEpoch = epoch;
+        ObservationFailurePhase = CommandFailurePhase.Observation;
+        LastAdmittedObservation = null; SuppressFinalObservation = false;
+    }
 
     public Task<GameSnapshot?> RunAsync(GameSnapshot initial, Func<GameSnapshot, bool> canPass,
         Func<GameSnapshot, GameSnapshot, bool> shouldPresent, CancellationToken cancellation = default)
@@ -38,8 +48,10 @@ public sealed class DecisionAdvance
         ArgumentNullException.ThrowIfNull(intent);
         var clock = Stopwatch.StartNew();
         var state = initial;
-        var audience = new ObservationAudience(initial);
         int passes = 0;
+        var exchange = new CommandExchange(connection, diagnostics);
+        ObservationFailurePhase = CommandFailurePhase.Observation;
+        LastAdmittedObservation = null; SuppressFinalObservation = false;
         try {
             while (!cancellation.IsCancellationRequested) {
                 if (UndoFacts.RestoredSince(initial, state)) { intent.Stop(); return state; }
@@ -50,20 +62,19 @@ public sealed class DecisionAdvance
                 if (command != null) {
                     if (!GameCommandPermissions.Allows(state, command)) { intent.Stop(); return state; }
                     if (cancellation.IsCancellationRequested) return state;
-                    attempt = diagnostics?.Begin(state, command, ClientDiagnosticOrigin.Finite, diagnosticEpoch);
-                    if (attempt == null) await connection.ExecuteAsync(command);
-                    else await diagnostics!.ExecuteAsync(connection, command, attempt);
+                    attempt = diagnostics?.Begin(state, command, ClientDiagnosticOrigin.Finite, operationEpoch);
+                    await exchange.ExecuteAsync(command, attempt);
                     intent.Submitted(state, command); passes++;
                 }
                 // Cancellation never hides the result of a pass already sent.
-                var next = diagnostics == null ? await connection.ObserveAsync() : await diagnostics.ObserveAsync(connection, attempt);
-                audience.Validate(next);
+                ObservationFailurePhase = exchange.ObservationFailurePhase;
+                var next = await exchange.ObserveAsync(state, attempt);
+                if (next != null && admit != null && await AdmitAsync(next, exchange, cancellation) != ObservationAdmission.Accepted) return next;
                 if (next == null) { intent.Stop(); return null; }
                 if (next.Revision >= state.Revision) {
-                    UndoFacts.ValidateProgress(state, next);
                     bool changed = next.Revision > state.Revision || next.ViewerId != state.ViewerId || next.Decision?.Id != state.Decision?.Id;
                     state = next;
-                    if (changed) observed?.Invoke(state);
+                    if (changed && admit == null) observed?.Invoke(state);
                 }
                 // The caller owns visible checkpoints. Ordinary stack passing
                 // keeps every effect beat; explicit finite presentation can
@@ -85,8 +96,10 @@ public sealed class DecisionAdvance
     {
         var clock = Stopwatch.StartNew();
         var state = initial;
-        var audience = new ObservationAudience(initial);
         int passes = 0;
+        var exchange = new CommandExchange(connection, diagnostics);
+        ObservationFailurePhase = CommandFailurePhase.Observation;
+        LastAdmittedObservation = null; SuppressFinalObservation = false;
         long activity = quietToken == null ? 0 : initial.Activity.Select(entry => entry.Id).DefaultIfEmpty().Max();
         while (!cancellation.IsCancellationRequested) {
             if (UndoFacts.RestoredSince(initial, state)) return state;
@@ -106,17 +119,17 @@ public sealed class DecisionAdvance
                     : new PassForNow(state.Id, decision.Id, quietToken);
                 if (!GameCommandPermissions.Allows(state, command)) return state;
                 if (cancellation.IsCancellationRequested) return state;
-                attempt = diagnostics?.Begin(state, command, quietToken == null ? ClientDiagnosticOrigin.Automatic : ClientDiagnosticOrigin.Quiet, diagnosticEpoch);
-                if (attempt == null) await connection.ExecuteAsync(command);
-                else await diagnostics!.ExecuteAsync(connection, command, attempt);
+                attempt = diagnostics?.Begin(state, command, quietToken == null ? ClientDiagnosticOrigin.Automatic : ClientDiagnosticOrigin.Quiet, operationEpoch);
+                await exchange.ExecuteAsync(command, attempt);
                 if (quietToken == null) automaticSubmitted = scope; else quietSubmitted = scope;
                 submitted = scope; passes++;
             }
             // Always reconcile an already submitted command, even if Hold was pressed in flight.
-            var next = diagnostics == null ? await connection.ObserveAsync() : await diagnostics.ObserveAsync(connection, attempt);
-            audience.Validate(next);
+            ObservationFailurePhase = exchange.ObservationFailurePhase;
+            var next = await exchange.ObserveAsync(state, attempt);
+            if (next != null && admit != null && await AdmitAsync(next, exchange, cancellation) != ObservationAdmission.Accepted) return next;
             if (next == null) return null;
-            if (next.Revision >= state.Revision) { UndoFacts.ValidateProgress(state, next); state = next; }
+            if (next.Revision >= state.Revision) state = next;
             // Yield periodically to present progress and avoid owning the connection indefinitely.
             if (clock.ElapsedMilliseconds >= 350 || passes >= 32) return state;
             if (state.Decision == null || submitted == state.Id + ":" + state.Decision.Id) {
@@ -125,5 +138,15 @@ public sealed class DecisionAdvance
             }
         }
         return state;
+    }
+
+    private async Task<ObservationAdmission> AdmitAsync(GameSnapshot state, CommandExchange exchange, CancellationToken cancellation)
+    {
+        var result = await admit!(state, ObservationFailurePhase, operationEpoch, cancellation);
+        if (result == ObservationAdmission.Accepted) {
+            LastAdmittedObservation = state;
+            exchange.AcknowledgeObservation();
+        } else if (result == ObservationAdmission.Retired) SuppressFinalObservation = true;
+        return result;
     }
 }
