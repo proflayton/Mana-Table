@@ -1903,6 +1903,18 @@ for local artwork review; uncached images use the deterministic fixture pattern.
 These controlled-provider checks preserve command authority without simulating
 land rules or supplying human approval of the action hierarchy.
 
+Quick mana checks in the client and headless presentation lanes follow a real
+single-click inspection with a second click on the same battlefield occurrence.
+They cover one-output dispatch, pointer-local multi-output selection, no menu
+click-through, stale publications, grouped copies, required choices, focus loss
+and admitted-but-not-consumed input. `SourceActionSessionRegression` rejects
+invented bundles and malformed shortcut descriptors while retaining legacy
+manual actions. Java `QuickManaSourceTest` checks provider-authored eligibility
+on actual source catalogs and follows Forest activation into floating mana and
+an explicit phase change with and without Omnath. Native controlled snapshots
+do not prove those mana rules; the Java journey does not approve the gesture's
+visual clarity. Inspect the current chooser at both window sizes separately.
+
 The presentation lane also runs the existing `AdvanceRegression` cases and writes
 `advance-results.json`: required decisions, visible checkpoints, stale/duplicate
 observations, bounded waiting, cancellation and retired-session results. They

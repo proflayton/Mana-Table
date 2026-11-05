@@ -15,6 +15,7 @@ internal static class ManaFundingWireChecks
 
     internal static void Run(Action<bool, string> check)
     {
+        QuickManaWire(check);
         var original = Observation();
         string originalText = original.ToJsonString();
         var state = Decode(original);
@@ -168,6 +169,36 @@ internal static class ManaFundingWireChecks
         bool staleOutput = false;
         try { scope.Encode(intent); } catch (EngineCommandRejectedException) { staleOutput = true; }
         check(staleOutput, "A valid output bundle cannot revive its consumed decision or bypass the current native command scope");
+    }
+
+    private static void QuickManaWire(Action<bool, string> check)
+    {
+        var catalog = new SourceActionSet("mana-wire", "priority", "source-key", "occurrence",
+            [new("route", "activate", "Tap for mana") { QuickMana = new([
+                new(ImmutableDictionary<string, int>.Empty.Add("U", 1)),
+                new(ImmutableDictionary<string, int>.Empty.Add("G", 1))]) }]) { Revision = 31 };
+        var wire = (JsonObject)JsonSerializer.SerializeToNode(catalog, Wire)!;
+        var decoded = ForgeEngine.DecodeSourceActions(JsonSerializer.SerializeToElement(wire));
+        check(decoded.Revision == 31 && decoded.Actions.Single().QuickMana is { } quick && quick.IsValid()
+                && quick.Outputs.Length == 2 && quick.Outputs[0].Colors.GetValueOrDefault("U") == 1
+                && quick.Outputs[1].Colors.GetValueOrDefault("G") == 1,
+            "The ordinary source wire retains two exact mana outputs on one action without creating another action or color default");
+        var repeat = ForgeEngine.DecodeSourceActions(JsonSerializer.SerializeToElement(wire.DeepClone()));
+        check(HeadlessEngineSmoke.SameSourceActions(decoded.Actions, repeat.Actions),
+            "Independent source reads compare quick mana bundles by content rather than immutable collection identity");
+        var changed = (JsonObject)wire.DeepClone(); changed["actions"]![0]!["quickMana"]!["outputs"]![0]!["colors"]!["U"] = 2;
+        check(!HeadlessEngineSmoke.SameSourceActions(decoded.Actions,
+                ForgeEngine.DecodeSourceActions(JsonSerializer.SerializeToElement(changed)).Actions),
+            "An unchanged opaque action handle cannot hide a changed quick mana amount from catalog purity checks");
+        foreach (string forbidden in new[] { "sourceCardKey", "actionId", "target" }) {
+            var unsafeWire = (JsonObject)wire.DeepClone(); unsafeWire["actions"]![0]!["quickMana"]![forbidden] = "invented";
+            check(RejectSource(unsafeWire), "A shortcut descriptor cannot smuggle additional authority through the ordinary wire: " + forbidden);
+        }
+        var missing = (JsonObject)wire.DeepClone(); ((JsonObject)missing["actions"]![0]!["quickMana"]!).Remove("outputs");
+        check(RejectSource(missing), "A present shortcut descriptor must explicitly supply its exact output domain");
+        var legacy = (JsonObject)wire.DeepClone(); ((JsonObject)legacy["actions"]![0]!).Remove("quickMana");
+        check(ForgeEngine.DecodeSourceActions(JsonSerializer.SerializeToElement(legacy)).Actions.Single().QuickMana == null,
+            "An older ordinary catalog omitting quick mana remains a manual action rather than receiving a guessed tap shortcut");
     }
 
     private static JsonObject Observation(int payer = 0)

@@ -76,7 +76,7 @@ internal sealed partial class TableApplication
         if (card == null) return;
         var options = SourceReaderOptions(card);
         string state = IsStudyBattlefieldReader(entry) ? "" : SourceReaderState(card, entry.Zone);
-        state = string.Join("\n", new[] { PlayAccessState(card), state }.Where(part => part.Length > 0));
+        state = string.Join("\n", new[] { PlayAccessState(card), state, QuickManaHint(card) }.Where(part => part.Length > 0));
         if (sourceActions.View is { Context: { } current, Status: SourceActionStatus.Unsupported } unavailable
             && current == ReaderActionContext(card))
             state = string.Join(" · ", new[] { state, unavailable.Error }.Where(part => part.Length > 0));

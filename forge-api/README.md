@@ -1115,6 +1115,14 @@ engine-owned actions without answering priority or payment. Results carry
 `gameId`, `decisionId`, `sourceCardKey`, `sourceCardId` and `actions`; each action
 has an opaque `id`, `kind` (`play`, `cast`, `activate`) and engine `text`.
 An action may additionally include `card` and `zone` for a disclosed linked spell.
+An `activate` offer may include `quickMana: {outputs: [{colors: {"G": 1}}]}`
+when the provider certifies a supported tap-only mana ability with finite exact
+output choices and no extra payment, recipient choice or unsupported effect.
+This descriptor requires the reply's exact `revision`. Each nonempty output uses
+canonical positive W/U/B/R/G/C counts, with a total at most 1024. Clients may use
+it for an explicit quick-tap gesture; multiple action/output pairs remain a
+player choice. Missing metadata retains ordinary inspection and activation.
+It never authorizes a different source, arbitrary output or later revision.
 That preview has no action key or selection permission. Invoke the original
 source using `matchAction {sessionId, promptId, action: "useSourceAction", key,
 actionId}`. An exact mana action may additionally supply

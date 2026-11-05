@@ -87,6 +87,7 @@ internal sealed partial class TableApplication
         DrawCardCollection();
         DrawManaPoolHover();
         DrawExperienceLabHeader();
+        DrawQuickMana();
     }
     private void DrawGameHeader()
     {

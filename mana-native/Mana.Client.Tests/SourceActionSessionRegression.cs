@@ -8,6 +8,8 @@ internal static class SourceActionSessionRegression
     internal static async Task RunAsync(Action<bool, string> check)
     {
         await CurrentCostFacts(check);
+        await CurrentQuickMana(check);
+        await SubmitQuickManaValue(check);
         CurrentPaymentPool(check);
         var first = new SourceActionContext("game", "priority", 4, 0, "source-key", "public-occurrence");
         var action = new SourceAction("opaque-action", "cast", "Cast Toothy, Imaginary Friend");
@@ -248,6 +250,127 @@ internal static class SourceActionSessionRegression
         await current.Until(() => current.Session.View.Status == SourceActionStatus.Stale);
         check(current.Session.TryCreateCommand(next, offered.Id) == null,
             "A provider response cannot refresh old cost metadata merely by retaining the same decision and source strings");
+    }
+
+    private static async Task CurrentQuickMana(Action<bool, string> check)
+    {
+        var context = new SourceActionContext("manual-mana", "priority", 19, 0, "forest-copy-2-key", "forest-copy-2");
+        var green = ImmutableDictionary<string, int>.Empty.Add("G", 1);
+        var blue = ImmutableDictionary<string, int>.Empty.Add("U", 1);
+        var offered = new SourceAction("tap-route", "activate", "Tap for mana") { QuickMana = new([new(green), new(blue)]) };
+        var current = new Driver(); current.Session.Observe(context);
+        (await current.Request(1)).Result.SetResult(Catalog(context, offered) with { Revision = context.Revision });
+        await current.Until(() => current.Session.View.Status == SourceActionStatus.Ready);
+        var chosen = current.Session.TryCreateCommand(context, offered.Id, blue);
+        check(chosen is { Card: "forest-copy-2-key", ActionId: "tap-route", ManaOutput: { } output }
+                && output.Colors.Count == 1 && output.Colors.GetValueOrDefault("U") == 1,
+            "Quick mana selects an exact current output on that physical source rather than a group head or first color");
+        check(current.Session.TryCreateCommand(context, offered.Id)?.ManaOutput == null,
+            "The ordinary source action still leaves a real color choice to the engine when no quick output was chosen");
+        check(current.Session.TryCreateCommand(context, offered.Id, green) != null
+                && current.Session.TryCreateCommand(context, offered.Id, green.Add("U", 1)) == null
+                && current.Session.TryCreateCommand(context, offered.Id, green.SetItem("G", 2)) == null
+                && current.Session.TryCreateCommand(context, offered.Id, ImmutableDictionary<string, int>.Empty.Add("C", 1)) == null
+                && current.Session.TryCreateCommand(context, "another-action", green) == null,
+            "A color palette cannot authorize a mixed bundle, larger amount, invented color or different action");
+        check(new[] { context with { Revision = 20 }, context with { ViewerId = 1 }, context with { DecisionId = "payment" },
+                context with { SourceCardKey = "forest-copy-1-key" }, context with { SourceCardId = "forest-copy-1" } }
+                .All(changed => current.Session.TryCreateCommand(changed, offered.Id, green) == null),
+            "Chosen mana remains bound to the current publication, owner, input, handle and occurrence");
+        current.Provider.Supported = false;
+        check(current.Session.TryCreateCommand(context, offered.Id, green) == null,
+            "Revoked source support immediately fences a pending quick mana choice");
+        current.Provider.Supported = true;
+        var next = context with { Revision = 20 };
+        current.Session.Observe(next);
+        (await current.Request(2)).Result.SetResult(Catalog(next, offered with { QuickMana = new([new(green)]) }) with { Revision = 20 });
+        await current.Until(() => current.Session.View.Status == SourceActionStatus.Ready);
+        check(current.Session.TryCreateCommand(context, offered.Id, blue) == null
+                && current.Session.TryCreateCommand(next, offered.Id, blue) == null
+                && current.Session.TryCreateCommand(next, offered.Id, green) != null,
+            "Refreshing the same action text and opaque ID cannot retain an expired color choice");
+
+        var legacy = new Driver(); legacy.Session.Observe(context);
+        (await legacy.Request(1)).Result.SetResult(Catalog(context, offered with { QuickMana = null }));
+        await legacy.Until(() => legacy.Session.View.Status == SourceActionStatus.Ready);
+        check(legacy.Session.TryCreateCommand(context, offered.Id) != null
+                && legacy.Session.TryCreateCommand(context, offered.Id, green) == null,
+            "An older provider retains manual activation and cannot acquire shortcut authority from action text");
+
+        foreach (var invalid in new[] {
+            new QuickMana([]), new QuickMana(default), new QuickMana([new(green), new(green)]),
+            new QuickMana([new(ImmutableDictionary<string, int>.Empty)]),
+            new QuickMana([new(green.Add("U", 0))]), new QuickMana([new(green.SetItem("G", -1))]),
+            new QuickMana([new(green.SetItem("G", 1025))]), new QuickMana([new(green.Add("neutral", 1))]) }) {
+            var malformed = new Driver(); malformed.Session.Observe(context);
+            (await malformed.Request(1)).Result.SetResult(Catalog(context, offered with { QuickMana = invalid }) with { Revision = 19 });
+            await malformed.Until(() => malformed.Session.View.Status == SourceActionStatus.Failed);
+            check(malformed.Session.TryCreateCommand(context, offered.Id, green) == null,
+                "Malformed, duplicate, empty or unbounded quick outputs fail closed rather than becoming a best-effort tap");
+            malformed.Session.Close();
+        }
+        foreach (var bad in new[] { Catalog(context, offered), Catalog(context, offered with { Kind = "cast" }) with { Revision = 19 },
+                Catalog(context, offered with { Card = new Card { VisualId = "linked", Name = "Another face" }, Zone = "Exile" }) with { Revision = 19 } }) {
+            var invalid = new Driver(); invalid.Session.Observe(context);
+            (await invalid.Request(1)).Result.SetResult(bad);
+            await invalid.Until(() => invalid.Session.View.Status == SourceActionStatus.Failed);
+            check(invalid.Session.TryCreateCommand(context, offered.Id, green) == null,
+                "Quick mana metadata cannot omit its revision, attach to a cast or borrow a linked face's source authority");
+            invalid.Session.Close();
+        }
+        current.Session.Close(); legacy.Session.Close();
+    }
+
+    private static async Task SubmitQuickManaValue(Action<bool, string> check)
+    {
+        var source = new Card { Key = "physical-mana-key", VisualId = "physical-mana", Name = "Forest", Type = "Land", Selectable = true };
+        var state = new GameSnapshot("composed-mana", "playing", null, null, 0, 4, "Main", "MAIN1", 0,
+            [new(0, "Viewer", 40, true, false, ImmutableDictionary<string, int>.Empty,
+                [new("Battlefield", 1, [source], null)])], [], null,
+            new("priority", new(), new PriorityPayload(new("Pass", true), CanAutoPass: false))) {
+                Revision = 19, BoardRevision = 19, DecisionOwnerId = 0, PriorityPlayerId = 0 };
+        var green = ImmutableDictionary<string, int>.Empty.Add("G", 1);
+        var port = new QuickManaCommandPort(state, new(state.Id, state.Decision!.Id, source.Key, source.VisualId,
+            [new("tap-route", "activate", "Tap for mana") { QuickMana = new([new(green)]) }]) { Revision = 19 });
+        var client = new ClientSession(port, sourceActions: port);
+        try {
+            check(client.Accept(state), "The composed mana command test accepts an actual owned battlefield observation");
+            var context = new SourceActionContext(state.Id, state.Decision.Id, state.Revision, 0, source.Key, source.VisualId);
+            client.SourceActions.Observe(context);
+            async Task Until(Func<bool> ready) {
+                var deadline = DateTime.UtcNow.AddSeconds(5);
+                while (!ready()) {
+                    client.Pump();
+                    if (DateTime.UtcNow > deadline) throw new TimeoutException("The composed quick mana command did not settle.");
+                    await Task.Delay(1);
+                }
+            }
+            await Until(() => client.SourceActions.View.Status == SourceActionStatus.Ready);
+            var canonical = client.SourceActions.TryCreateCommand(context, "tap-route", green)!;
+            check(!client.Submit(canonical with { ManaOutput = new(green.SetItem("G", 2)) })
+                    && !client.Submit(canonical with { ManaOutput = new(green.Add("U", 1)) }) && port.Commands.IsEmpty,
+                "The composed session refuses an invented amount or mixed output before invoking its match connection");
+            var copied = ImmutableDictionary.CreateRange(green.Select(pair => new KeyValuePair<string, int>(pair.Key, pair.Value)));
+            check(!ReferenceEquals(copied, canonical.ManaOutput!.Colors)
+                    && client.Submit(canonical with { ManaOutput = new(copied) }),
+                "A typed mana command is authorized by its current scoped output value rather than collection reference identity");
+            await Until(() => !client.Busy && port.Commands.Count == 1);
+            check(port.Commands.Single() is UseOfferedAction { Card: "physical-mana-key", ActionId: "tap-route", ManaOutput: { } output }
+                    && output.Colors.Count == 1 && output.Colors.GetValueOrDefault("G") == 1
+                    && !client.Submit(canonical),
+                "The independently constructed valid bundle reaches the ordinary connection exactly once and loses authority on its fresh observation");
+        } finally { client.Close(); }
+    }
+
+    private sealed class QuickManaCommandPort(GameSnapshot state, SourceActionSet catalog) : IMatchConnection, ISourceActions
+    {
+        internal readonly ConcurrentQueue<GameCommand> Commands = new();
+        public Task ExecuteAsync(GameCommand command) { Commands.Enqueue(command); return Task.CompletedTask; }
+        public Task<GameSnapshot?> ObserveAsync() => Task.FromResult<GameSnapshot?>(state with {
+            Revision = state.Revision + 1, Decision = state.Decision! with { Id = "fresh-priority" }
+        });
+        public Task ConcedeAsync(string gameId) => throw new InvalidOperationException("This command test does not concede.");
+        public Task<SourceActionSet> SourceActionsAsync(string gameId, string decisionId, string sourceCardKey) => Task.FromResult(catalog);
     }
 
     private static void CurrentPaymentPool(Action<bool, string> check)

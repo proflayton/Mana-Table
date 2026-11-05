@@ -707,6 +707,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (readOnlyFacts) {
                 var costPreview = ManaCostPreviewProjection.describe(action.ability(), human.getPlayer(), this::semanticCardId);
                 if (costPreview != null) description.put("costPreview", costPreview);
+                var quickMana = action.ability().getActivatingPlayer() == human.getPlayer()
+                        ? ManaProductionProjection.quickMana(action.ability()) : null;
+                if (quickMana != null) description.put("quickMana", quickMana);
             }
             if (action.host() != catalog.source()) {
                 var preview = cardState(action.host().getView(), null);

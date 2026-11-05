@@ -2722,6 +2722,19 @@ reply cannot paint a funding witness or retain current execution authority.
 scoped reply creation; `TableApplication.SourceActions` supplies the current
 readable occurrence and presents that session's state. Action hits include their query
 generation and binding so a held press cannot activate a refreshed first option.
+An optional provider-authored `SourceAction.QuickMana` describes only supported
+tap-only mana outputs on that same offered action. The native double-click
+gesture and pointer chooser use this ordinary catalog, never the automated-seat
+port or a rules-text parser. A selected output must equal a current advertised
+bundle and uses the existing `UseOfferedAction.ManaOutput`; provider admission
+and execution still validate the exact input, source, action and output. Missing
+or unknown metadata keeps ordinary inspection. A pending gesture remains bound
+to its physical occurrence and publication. A bounded retired click can consume
+the matching second release without retaining action authority; it cannot fall
+through into an unrelated current activation. An accepted submission fences the
+whole publication, including other grouped copies, until a concrete fresh
+context arrives. A request acknowledgement cannot authorize replay. Manual
+tapping takes control before gathering floating mana.
 The selected canonical occurrence is composed by `SourceActions.View` using its
 complete original face, with current counters, P/T, damage and authorized action
 rows alongside it. Rare overflow scrolls without replacing the face or paging

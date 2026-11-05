@@ -6,6 +6,41 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Tap mana at its source: source candidate
+
+**Source candidate; exact-candidate human review pending.** Manually floating
+mana for Omnath currently requires opening and choosing an action on every land.
+The intent is to activate one particular resource without starting a spell or
+passing priority. Magic Online documents clicking a controlled mana source to
+tap it, with a menu when it can produce multiple colors ([Activate Mana
+Abilities](https://www.mtgo.com/getting-started/getting-started-gameplay)).
+Its shortcut can choose the first listed option while paying. We retain explicit
+color choice instead. The double-click gesture and pointer-local chooser are our
+adaptation of that direct source interaction, following the player's suggestion;
+the reference does not establish Arena's exact gesture or implementation.
+
+Single-click still reads the card. Double-click the same physical battlefield
+source to request its current ordinary source actions. One certified tap-only
+action/output pair activates directly; several pairs open a small mana chooser
+beside the pointer. Choosing a bundle submits that exact current action and
+output through the ordinary engine input. The source turns and floating mana
+changes only after the authoritative result. Manual tapping takes control so
+Auto cannot immediately leave the phase while the player is gathering mana.
+Each copy in a land group remains its own source; this does not tap the group.
+
+The provider certifies the shortcut's bounded eligibility and exact output
+bundles. A single action may still offer several colors or quantities. Unknown
+production, extra payments, sacrifice, other recipients and unrelated actions
+retain the full source reader. Printed text, a land type or a single catalog
+entry cannot certify a shortcut. Older providers omit the optional fact and keep
+the normal reader. Revisions, occurrence identity, decision ownership and input
+focus fence the pending gesture and menu; the release that opens a menu cannot
+also choose its first item. If the source changes between clicks, the matching
+second click cancels the gesture rather than activating a different current
+action. An accepted request is not proof of a consumed input.
+Review single and grouped basics, dual lands, any-color sources, payment, a
+crowded table, keyboard dismissal and focus loss at both supported window sizes.
+
 ## Light a card only with current funding evidence: source candidate
 
 **Source candidate; exact-candidate human review pending.** The player reports

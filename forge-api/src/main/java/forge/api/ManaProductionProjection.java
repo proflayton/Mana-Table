@@ -21,6 +21,21 @@ final class ManaProductionProjection {
                 .map(value -> Map.of("colors", value.colors())).toList());
     }
 
+    /** Optional ordinary-source shortcut facts. Presence describes an exact
+     * tap-only route, never another action handle or permission to skip costs. */
+    static Map<String, Object> quickMana(SpellAbility ability) {
+        if (!simpleTapSourceIsStable(ability)) return null;
+        var alternatives = alternatives(ability);
+        if (alternatives == null || alternatives.isEmpty()) return null;
+        for (var alternative : alternatives) {
+            long units = alternative.colors().values().stream().mapToLong(Integer::longValue).sum();
+            if (alternative.colors().isEmpty() || alternative.colors().values().stream().anyMatch(count -> count <= 0)
+                    || units > 1024 || alternative.choices().values().stream()
+                        .anyMatch(choice -> choice.values().stream().mapToLong(Integer::longValue).sum() > 1024)) return null;
+        }
+        return Map.of("outputs", alternatives.stream().map(value -> Map.of("colors", value.colors())).toList());
+    }
+
     /** Null is unsupported/mismatched; an empty map is a valid fixed-output witness. */
     static Map<AbilityManaPart, String> outputChoices(SpellAbility ability, Map<String, Integer> desired) {
         var alternatives = alternatives(ability);

@@ -59,6 +59,8 @@ public class SourcePaymentActorTest {
                         "payerId", payment.getPayer().getId())));
                 return null;
             });
+            assertFalse(catalog.getAsJsonArray("actions").get(0).getAsJsonObject().has("quickMana"),
+                    "A foreign payer's manual action must not claim the viewer-owned shortcut scope");
         }
     }
 }

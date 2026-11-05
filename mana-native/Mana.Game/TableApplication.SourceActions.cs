@@ -13,7 +13,7 @@ internal sealed partial class TableApplication
     {
         if (!SourceActionsSupported || busy || session.NeedsRecovery || match is not { Decision: { } decision }
             || decision.Payload is not (PriorityPayload or PaymentPayload)) return null;
-        var current = ReleasedPlaySource() ?? (matchPresentation.Cards.Pinned is { ChoiceSlot: < 0, Zone: not "Stack" } entry && CardContext.CanRetainPinned(entry)
+        var current = (manaGesture is { } gesture ? CurrentQuickManaSource(gesture.Context) : null) ?? ReleasedPlaySource() ?? (matchPresentation.Cards.Pinned is { ChoiceSlot: < 0, Zone: not "Stack" } entry && CardContext.CanRetainPinned(entry)
             ? CardContext.CurrentOccurrence(entry) : dragging && dragSource != null ? CurrentDragCard(dragSource) : HoverManaSource());
         return current is { Key.Length: > 0 } && match is { } state
             && CardViews.CanReadActionSource(state, current.Key) ? current : null;
@@ -29,6 +29,7 @@ internal sealed partial class TableApplication
 
     private void UpdateReaderActions()
     {
+        ReconcileQuickMana();
         var card = ReaderActionSource();
         sourceActions.Observe(card == null ? null : ReaderActionContext(card));
     }
