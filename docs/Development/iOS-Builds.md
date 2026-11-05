@@ -26,6 +26,17 @@ First run bootstraps third-party jars (JvmDowngrader, streamsupport,
 ThreeTen) into `tmp/jvmdg/` automatically. Device IDs / signing identity are
 env-overridable — see the header of `ios-pipeline.sh`.
 
+Bootstrap validates cached and downloaded JAR archives with the JDK's `jar tf`.
+A valid cached file needs no network request. Missing or corrupt files are
+downloaded to a temporary neighbor and renamed into place only after validation;
+a failed transfer never replaces the cache. HTTP errors, incomplete transfers
+and invalid archives fail after three attempts with one-second retry delays.
+Each attempt has a ten-second connection limit and sixty-second overall request limit.
+For local checks these can be overridden with
+`IOS_JAR_CONNECT_TIMEOUT_SECONDS` (1–30) and `IOS_JAR_MAX_TIME_SECONDS` (1–120).
+Overrides use integer seconds without leading zeros.
+These checks validate archive structure, not a publisher signature or version.
+
 ## Key facts
 
 - JvmDowngrader `-c 51` (true Java 7 target) is a dead end: its 8→7 stub
