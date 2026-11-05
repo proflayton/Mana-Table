@@ -78,7 +78,7 @@ internal static class MixedGameCampaign
             limits.PolicySeed + match, new(TimeSpan.FromSeconds(10), 4096), diagnostics: inbox);
         using var host = new ConnectedPlayerDriver(engines[0], evidence, limits.PolicySeed + match, mode);
         using var guest = new ConnectedPlayerDriver(engines[1], evidence, limits.PolicySeed + match + 100, mode);
-        await using var trace = new StreamWriter(new GZipStream(File.Create(Path.Combine(paths.Profile, "public-facts.jsonl.gz")), CompressionLevel.Fastest));
+        var trace = new StreamWriter(new GZipStream(File.Create(Path.Combine(paths.Profile, "public-facts.jsonl.gz")), CompressionLevel.Fastest));
         var elapsed = Stopwatch.StartNew();
         var cohorts = new Dictionary<(string Game, long Board), (string Facts,
             ForgePublicProjectionFacts.ExecutionCorrelation Correlations, HashSet<int> Viewers)>();
@@ -290,6 +290,7 @@ internal static class MixedGameCampaign
             await ProtectCleanup("Close host client", () => { host.Dispose(); return Task.CompletedTask; });
             foreach (var engine in mode == MixedGameDriveMode.PolledBackground ? engines.Reverse() : engines)
                 await ProtectCleanup("Connection teardown", () => engine.DisposeAsync().AsTask());
+            await ProtectCleanup("Close public facts trace", () => trace.DisposeAsync().AsTask());
             await ProtectCleanup("Close evidence trace", () => { evidence.Dispose(); return Task.CompletedTask; });
         }
         var result = new MixedGameResult(match, stop, failure, verified, state?.Turn ?? 0, steps,
