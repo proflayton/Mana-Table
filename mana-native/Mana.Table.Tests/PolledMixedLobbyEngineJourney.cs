@@ -51,6 +51,7 @@ internal static class PolledMixedLobbyEngineJourney
             ForgePublicProjectionFacts.ExecutionCorrelation Correlations, HashSet<int> Viewers)>();
         int coherent = 0, steps = 0, guestReadsAtHold = 0, botReadsAtHold = 0, hostCommandsAtHold = 0;
         bool captured = false, released = false, completed = false;
+        PolledLobbyPorts.BotPort.ProcessingSnapshot? completedBotProcessing = null;
         Exception? failure = null;
         var cleanupErrors = new List<string>();
         try {
@@ -111,16 +112,17 @@ internal static class PolledMixedLobbyEngineJourney
                     bool humansDeveloped = players.All(player => player.Client.State!.Viewer!.Zone("Battlefield").Cards.Any(card => card.Type.Contains("Land", StringComparison.Ordinal))
                         && player.Client.State.Viewer.Zone("Battlefield").Cards.Any(card => card.Name == "Rograkh, Son of Rohgahh")
                         && player.Port.Accepted >= 3);
+                    var botProcessing = botPort.CaptureProcessing();
                     bool botsDeveloped = bots.Length == 2 && bots.All(bot => bot.Zone("Battlefield").Cards.Any(card => card.Type.Contains("Land", StringComparison.Ordinal))
-                        && ai.Histories.Any(history => history.Decisions.Any(record => record.Stamp.SeatId == bot.Id
-                            && record.Outcome == AiDecisionOutcome.Accepted && record.Command is nameof(UseOfferedAction) or nameof(PlayCard))));
+                        && botProcessing.ProcessedNonPassBySeat.GetValueOrDefault(bot.Id) > 0);
                     bool sameBoard = host.BoardRevision == guest.BoardRevision
                         && cohorts.TryGetValue((host.Id, host.BoardRevision), out var shared) && shared.Viewers.Count == 2;
                     if (sameBoard && humansDeveloped && botsDeveloped) coherent++;
-                    int botReceipts = ai.Histories.Sum(history => history.Decisions.Count(record => record.Outcome == AiDecisionOutcome.Accepted));
                     completed = released && !players[0].Client.Polling && humansDeveloped && botsDeveloped && coherent > 0
-                        && players.All(player => !player.Client.Busy) && botPort.Executing == 0 && botReceipts == botPort.Accepted
+                        && players.All(player => !player.Client.Busy) && botProcessing.Executing == 0
+                        && botProcessing.ProcessedAccepted == botProcessing.Accepted && botPort.Faults.IsEmpty
                         && players.Any(player => player.Client.State?.Decision?.Payload is PriorityPayload);
+                    if (completed) completedBotProcessing = botProcessing;
                 }
                 if (!completed) foreach (var player in players) player.Step();
                 await Task.Delay(1);
@@ -132,7 +134,8 @@ internal static class PolledMixedLobbyEngineJourney
                     && players[1].PollCallbacks > guestReadsAtHold && botPort.Reads > botReadsAtHold,
                 "A held real host poll overlaps guest polling and the background AI observer, then cannot overwrite its later command readback");
             Require(coherent > 0 && players.All(player => player.Publications > 0 && player.Port.Failures == 0)
-                    && ai.LastFault == null && ai.Histories.All(history => history.Decisions.All(record => record.Outcome != AiDecisionOutcome.ExecutionUnknown)),
+                    && ai.LastFault == null && botPort.Faults.IsEmpty
+                    && ai.Histories.All(history => history.Decisions.All(record => record.Outcome != AiDecisionOutcome.ExecutionUnknown)),
                 "Both polled humans and both background bots develop the actual table with monotonic private-safe audiences and coherent public state, without unknown command receipts");
         } catch (Exception error) { failure = error; }
         finally {
@@ -141,6 +144,8 @@ internal static class PolledMixedLobbyEngineJourney
             var stoppedPlayers = players.Select(player => new { state = player.Client.State,
                 source = player.Client.SourceActions.View, receipts = player.Receipts.ToArray() }).ToArray();
             var stoppedHistories = ai.Histories;
+            var stoppedBotProcessing = botPort.CaptureProcessing();
+            var reportedBotProcessing = completedBotProcessing ?? stoppedBotProcessing;
             players[0].Port.Release.TrySetResult();
             try {
                 var settle = DateTime.UtcNow.AddSeconds(3); if (deadline < settle) settle = deadline;
@@ -160,17 +165,19 @@ internal static class PolledMixedLobbyEngineJourney
             }
             if (failure == null && cleanupErrors.Count > 0) failure = new IOException("Polled prefix cleanup failed: " + string.Join("\n", cleanupErrors));
             await File.WriteAllTextAsync(Path.Combine(directory, "private-final-observations.json"), JsonSerializer.Serialize(new {
-                audience = "host-private", players = stoppedPlayers, histories = stoppedHistories, faults = botPort.Faults.ToArray()
+                audience = "host-private", players = stoppedPlayers, histories = stoppedHistories,
+                completedBotProcessing, preCleanupBotProcessing = stoppedBotProcessing, faults = botPort.Faults.ToArray()
             }));
             await File.WriteAllTextAsync(Path.Combine(directory, "prefix-results.json"), JsonSerializer.Serialize(new {
-                formatVersion = 1, scope = "Real default-polled host/TCP guest and background AI prefix; no human UX, natural outcome or deck qualification claim.",
+                formatVersion = 2, scope = "Real default-polled host/TCP guest and background AI prefix; no human UX, natural outcome or deck qualification claim.",
                 passed = failure == null && completed, failure = failure?.ToString(), cleanupErrors, elapsedSeconds = started.Elapsed.TotalSeconds,
                 steps, checks, coherentPublicCheckpoints = coherent, captured, released, guestReadsAtHold, botReadsAtHold, hostCommandsAtHold,
-                backgroundReads = botPort.Reads, backgroundAcceptedCommands = botPort.Accepted,
-                recordedBotReceipts = stoppedHistories.Sum(history => history.Decisions.Count(record => record.Outcome == AiDecisionOutcome.Accepted)),
-                botNonPassAcceptances = stoppedHistories.SelectMany(history => history.Decisions).Where(record => record.Outcome == AiDecisionOutcome.Accepted
-                    && record.Command is nameof(UseOfferedAction) or nameof(PlayCard)).GroupBy(record => record.Stamp.SeatId)
-                    .Select(group => new { seat = group.Key, accepted = group.Count() }),
+                backgroundReads = botPort.Reads, backgroundAcceptedCommands = reportedBotProcessing.Accepted,
+                recordedBotReceipts = reportedBotProcessing.ProcessedAccepted,
+                botReceiptAccounting = "Cumulative provider ACK receipts confirmed at the next real serialized host Observe entry; retained histories remain bounded diagnostics. Successful accounting is frozen at qualification before cleanup.",
+                botProcessingAtQualification = completedBotProcessing, preCleanupBotProcessing = stoppedBotProcessing,
+                botNonPassAcceptances = reportedBotProcessing.ProcessedNonPassBySeat.OrderBy(pair => pair.Key)
+                    .Select(pair => new { seat = pair.Key, accepted = pair.Value }),
                 players = players.Select(player => new { player.Index, player.ClientAdmissions, providerAcceptances = player.Port.Accepted,
                     ordinaryReads = player.Port.Reads, player.PollCallbacks, player.Publications, player.HeldPublications,
                     player.Port.Failures, viewer = player.Client.State?.ViewerId, board = player.Client.State?.BoardRevision })

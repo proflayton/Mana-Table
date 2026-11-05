@@ -40,7 +40,9 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "cooperative-opening") CooperativeOpeningChecks.Run(Check);
                 else if (group == "public-projection") ForgePublicProjectionChecks.Run(profile, Check);
                 else if (group == "known-action-faces") CheckKnownActionFaces(profile, Check, trace, performance);
+                else if (group == "polled-receipt-processing") PolledReceiptProcessingChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                 else if (group == "configured-simulation") {
+                    PolledReceiptProcessingChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     PolledFullGameContractChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     SmokeSourceReadChecks.RunAsync(Check).GetAwaiter().GetResult();
                     JourneyProgressClockChecks.Run(Check);
@@ -95,6 +97,7 @@ internal static partial class HeadlessPresentationSmoke
             MatchOutcomeWireChecks.Run(Check);
             MatchSetupWireChecks.Run(Check);
             ConfiguredSimulationWireChecks.Run(Check);
+            PolledReceiptProcessingChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             PolledFullGameContractChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             SmokeSourceReadChecks.RunAsync(Check).GetAwaiter().GetResult();
             JourneyProgressClockChecks.Run(Check);

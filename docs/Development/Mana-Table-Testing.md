@@ -806,6 +806,14 @@ frames and coherent public boards, then releases the gate and tears down the
 owners. `polled-mixed-lobby/prefix-results.json` records this bounded concurrency
 evidence; its snapshots and policy receipts remain private. The local
 `--smoke-polled-mixed` route invokes the same helper, not an alternative gate.
+Its format2 receipt totals are cumulative: a provider ACK is confirmed only
+when the sole serialized AI host enters its next ordinary observation, after
+processing the prior batch. Neither ACK alone nor zero executing calls is that
+confirmation. The default128-record per-seat history remains a bounded
+diagnostic ring; its eviction cannot erase a prior processed nonpass witness or
+be compared with lifetime ACK totals. Successful counters are frozen at the
+qualification check, with a separate pre-cleanup sample. This evidence does not
+mean that an input was consumed or authorize reusing an earlier offer.
 Background discovery is serialized by one `AiTableHost` per provider. Same
 healthy-process world replacement supersedes a read without faulting that host;
 engine-process failure, malformed current data and command failures remain

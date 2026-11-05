@@ -60,14 +60,36 @@ internal static class PolledLobbyPorts
         }
         private readonly ConcurrentDictionary<(int Seat, string Decision), ImmutableArray<string>> decisions = new();
         internal ConcurrentQueue<Receipt> Receipts { get; } = new();
+        internal sealed record ProcessingSnapshot(int Accepted, int ProcessedAccepted, int Executing,
+            ImmutableDictionary<int, int> ProcessedNonPassBySeat);
+        private readonly object receiptGate = new();
+        private readonly Queue<Receipt> pendingProcessing = new();
+        private ImmutableDictionary<int, int> processedNonPassBySeat = ImmutableDictionary<int, int>.Empty;
+        private int processedAccepted;
         private int reads, accepted, executing;
         internal ConcurrentQueue<object> Faults { get; } = new();
         internal int Reads => Volatile.Read(ref reads);
         internal int Accepted => Volatile.Read(ref accepted);
         internal int Executing => Volatile.Read(ref executing);
+        internal ProcessingSnapshot CaptureProcessing()
+        {
+            lock (receiptGate) return new(accepted, processedAccepted, executing, processedNonPassBySeat);
+        }
         public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) => inner.EnableAutomatedSeatsAsync(cancellation);
         public async Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default)
         {
+            // This port has one AiTableHost reader. Its step semaphore spans the
+            // prior batch's Execute returns and session.Report calls. Only this
+            // next real entry confirms that downstream processing, not the ACK
+            // itself, Executing==0, or the next read's eventual return.
+            lock (receiptGate) {
+                while (pendingProcessing.TryDequeue(out var receipt)) {
+                    processedAccepted++;
+                    if (receipt.Command is UseOfferedAction or PlayCard)
+                        processedNonPassBySeat = processedNonPassBySeat.SetItem(receipt.Seat,
+                            processedNonPassBySeat.GetValueOrDefault(receipt.Seat) + 1);
+                }
+            }
             var state = await inner.ObserveAutomatedSeatsAsync(cancellation);
             foreach (var item in state) if (item.State.Decision is { } decision)
                 decisions[(item.SeatId, decision.Id)] = item.State.Stack.Select(stack => stack.ExecutionId).ToImmutableArray();
@@ -75,13 +97,17 @@ internal static class PolledLobbyPorts
         }
         public async Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default)
         {
-            Interlocked.Increment(ref executing);
+            lock (receiptGate) Interlocked.Increment(ref executing);
             try {
                 var stack = command is DecisionCommand decision ? decisions.GetValueOrDefault((seatId, decision.DecisionId), []) : [];
-                await inner.ExecuteAutomatedAsync(seatId, command, cancellation); Interlocked.Increment(ref accepted);
-                Receipts.Enqueue(new(seatId, command, stack));
+                await inner.ExecuteAutomatedAsync(seatId, command, cancellation);
+                lock (receiptGate) {
+                    var receipt = new Receipt(seatId, command, stack);
+                    Receipts.Enqueue(receipt); pendingProcessing.Enqueue(receipt);
+                    Interlocked.Increment(ref accepted);
+                }
             }
-            finally { Interlocked.Decrement(ref executing); }
+            finally { lock (receiptGate) Interlocked.Decrement(ref executing); }
         }
         public Task ReportAutomationFaultAsync(string gameId, int seatId, string reason, CancellationToken cancellation = default)
             => inner.ReportAutomationFaultAsync(gameId, seatId, reason, cancellation);

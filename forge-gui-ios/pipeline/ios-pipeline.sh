@@ -142,17 +142,15 @@ ROBOVM_CT="$M2/com/mobidevelop/robovm/robovm-cocoatouch/2.3.24/robovm-cocoatouch
 GDXB="$M2/com/badlogicgames/gdx/gdx-backend-robovm/1.14.2/gdx-backend-robovm-1.14.2.jar"
 
 # ---------------------------------------------------------------- bootstrap
+. "$PIPE/download-jar.sh"
+
 bootstrap() {
     mkdir -p "$JV/tools"
 
-    [ -f "$JVMDG_JAR" ] || curl -sL -o "$JVMDG_JAR" \
-        "https://github.com/unimined/JvmDowngrader/releases/download/$JVMDG_VER/jvmdowngrader-$JVMDG_VER-all.jar"
-    [ -f "$SS_JAR" ] || curl -sL -o "$SS_JAR" \
-        "https://repo1.maven.org/maven2/net/sourceforge/streamsupport/streamsupport/$SS_VER/streamsupport-$SS_VER.jar"
-    [ -f "$SSCF_JAR" ] || curl -sL -o "$SSCF_JAR" \
-        "https://repo1.maven.org/maven2/net/sourceforge/streamsupport/streamsupport-cfuture/$SS_VER/streamsupport-cfuture-$SS_VER.jar"
-    [ -f "$THREETEN_JAR" ] || curl -sL -o "$THREETEN_JAR" \
-        "https://repo1.maven.org/maven2/org/threeten/threetenbp/$THREETEN_VER/threetenbp-$THREETEN_VER.jar"
+    ensure_jar "https://github.com/unimined/JvmDowngrader/releases/download/$JVMDG_VER/jvmdowngrader-$JVMDG_VER-all.jar" "$JVMDG_JAR"
+    ensure_jar "https://repo1.maven.org/maven2/net/sourceforge/streamsupport/streamsupport/$SS_VER/streamsupport-$SS_VER.jar" "$SS_JAR"
+    ensure_jar "https://repo1.maven.org/maven2/net/sourceforge/streamsupport/streamsupport-cfuture/$SS_VER/streamsupport-cfuture-$SS_VER.jar" "$SSCF_JAR"
+    ensure_jar "https://repo1.maven.org/maven2/org/threeten/threetenbp/$THREETEN_VER/threetenbp-$THREETEN_VER.jar" "$THREETEN_JAR"
     if [ ! -f "$ASM" ]; then
         mvn -q --settings "$SETTINGS" dependency:get -Dartifact=org.ow2.asm:asm:$ASM_VER
         mvn -q --settings "$SETTINGS" dependency:get -Dartifact=org.ow2.asm:asm-commons:$ASM_VER
