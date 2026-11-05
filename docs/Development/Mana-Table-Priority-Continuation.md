@@ -41,6 +41,12 @@ per-prompt commands. Java supplies verified `canAutoPass` permission and the
 `QuietYieldBaseline` token; ignored activated abilities are already seat-owned
 server preferences. These are different facts from the player's standing intent.
 
+The current source adds a controller-owned scan generation and an input/resource
+lease for automatic passes. An intervening rules event invalidates absence
+evidence, including when the same input is republished. Queued dispatch rechecks
+the lease and holds the unanswered input if it has expired. This safety boundary
+is implemented; registering standing Auto intent remains the proposed next step.
+
 `TimedAiHostPacing` is a separate presentation owner. The fast full-game campaign
 does not test its timing. The existing real 110-trigger fixture is being extended
 to use the shipping 2.4-second pacer, retaining real AI evaluations and all
@@ -64,9 +70,9 @@ There must never be two active dispatch owners during migration.
 
 After a coherent publication, queue at most one actual priority operation. At
 execution, recheck the same input, consent epoch, stop conditions and verified
-engine permission, including the scan/publication generation. The current
-`canAutoPass` flag alone is not a versioned scan lease: a same-input resource or
-public-state change must invalidate the earlier proof. Consume the current
+engine permission, including the scan/publication generation. A transported
+`canAutoPass` flag alone cannot prove that no intervening mutation occurred;
+the current source's input and scan leases supply that separate recheck. Consume the current
 priority scan; do not launch a new funding query under the publication lock or
 rescan all four players on every tick. Other seats acquire their current scan
 when they own a window. Current planning can borrow and refund the

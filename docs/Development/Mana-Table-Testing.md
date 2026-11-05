@@ -1308,6 +1308,16 @@ visible stack announcement, rather than assuming the earlier shorter animation
 duration. The existing headless arrival check separately verifies that unchanged
 observations do not restart that announcement.
 
+`PriorityAvailabilityLeaseTest` covers the controller-owned availability scan and
+actual queued `passIfNoResponse` input. Its seven cases retain a verified empty
+window, reject a queued resource change or lost verification, prevent same-input
+republication from renewing a stale scan, and complete the newly funded real
+cast. A mutation during the scan remains uncertified until a clean scan; ordinary
+unpayable-color and exact floating-mana preview controls remain usable. Existing
+ability-ignore, quiet-yield, finite-yield and source-publication tests run beside
+it. This does not certify every legacy discovery query as pure or implement
+standing server Auto intent.
+
 `VisibleAutoPriorityChecks` exercises the physical Auto pass, Take control and
 Resume Auto journey from a saved-off profile in the existing headless
 presentation lane. Its first start holds presentation time fixed while a

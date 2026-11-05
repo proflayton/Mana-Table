@@ -1431,9 +1431,16 @@ plays, affordable spells, activated abilities, and commanders. Required decision
 `matchAction {action: "passIfNoResponse", sessionId, promptId}` checks this
 published permission and passes priority through the normal engine input;
 ineligible or stale requests are rejected without advancing the game.
+The source candidate also binds absence evidence to the controller's actual scan
+generation. Republishing the same input cannot renew an old scan. Admission
+captures its input sequence and source version; queued execution rechecks those
+and the scan before passing. An intervening mutation leaves the still-owned
+question unanswered with an Auto-stopped notice. Publication and dispatch do not
+run a new availability scan. Explicit quiet and finite consent stay independent.
 The desktop remembers Auto/Full control and optional own-turn phase stops,
-including both main phases. It briefly pauses before each pass and stops when
-a play becomes available. Hold this turn resets at the next turn; saved mode
+including both main phases. Meaningful actions retain their reading beat; empty
+phases add no presentation delay. Auto stops when a play becomes available.
+Hold this turn resets at the next turn; saved mode
 and phase stops persist across games. These client preferences can suppress an
 eligible pass but never authorize one the engine has rejected.
 This is an additive protocol change: existing manual actions remain valid, and
