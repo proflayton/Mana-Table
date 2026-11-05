@@ -12,6 +12,13 @@ import java.util.UUID;
 final class QuietYieldBaseline {
     private static final List<String> PUBLIC_STATE = List.of("turn", "activePlayerId", "players", "stack", "combat", "states", "result");
     private static final List<String> PLAYER_STATS = List.of("life", "maxHandSize", "landPlaysUsed", "landPlayLimit", "counters", "states");
+    private static final List<String> CARD_OCCURRENCE = List.of("visualId", "combatId", "artName", "artFace", "artSet",
+            "edition", "collectorNumber", "artIndex", "foil");
+    private static final List<String> CARD_REFERENCE = List.of("id", "name", "type");
+    private static final List<String> CARD_FACE = List.of("name", "type", "manaCost", "oracleText", "power", "toughness", "artName", "artFace");
+    private record PublicCard(String id, Map<String, Object> facts) {
+        PublicCard { facts = PublishedDecisionFacts.freeze(facts); }
+    }
     private final Map<String, Object> entities = new LinkedHashMap<>();
     private Object state;
     private long eventEpoch;
@@ -84,8 +91,11 @@ final class QuietYieldBaseline {
     }
 
     private void seedEntities(Object value) {
+        if (value instanceof PublicCard card) {
+            entities.put(card.id(), card);
+            return;
+        }
         if (value instanceof Map<?, ?> source) {
-            if (source.containsKey("visualId") && source.containsKey("faceDown")) entities.put(cardId(source), source);
             if (source.containsKey("zones") && source.containsKey("id")) {
                 entities.put("player:" + source.get("id"), playerStats(source));
                 entities.put("mana:" + source.get("id"), source.get("mana"));
@@ -97,6 +107,33 @@ final class QuietYieldBaseline {
     }
 
     private static String cardId(Map<?, ?> card) { return "card:" + card.get("combatId"); }
+
+    /** The baseline and event refresh use exactly the same disclosed public
+     * card value, never an extensible private decision portrait. */
+    private static PublicCard publicCard(Map<?, ?> source) {
+        var facts = new LinkedHashMap<>(PublicCardCharacteristics.projected(source));
+        select(source, facts, CARD_OCCURRENCE);
+        if (source.containsKey("attachedTo")) facts.put("attachedTo", reference(source.get("attachedTo"), CARD_REFERENCE));
+        if (source.containsKey("attachments")) {
+            var attachments = new ArrayList<>();
+            if (source.get("attachments") instanceof List<?> values)
+                for (Object value : values) attachments.add(reference(value, CARD_REFERENCE));
+            facts.put("attachments", attachments);
+        }
+        if (source.containsKey("otherFace")) facts.put("otherFace", reference(source.get("otherFace"), CARD_FACE));
+        return new PublicCard(cardId(source), facts);
+    }
+
+    private static Object reference(Object value, List<String> fields) {
+        if (!(value instanceof Map<?, ?> source)) return null;
+        var result = new LinkedHashMap<String, Object>();
+        select(source, result, fields);
+        return result;
+    }
+
+    private static void select(Map<?, ?> source, Map<String, Object> target, List<String> fields) {
+        for (String field : fields) if (source.containsKey(field)) target.put(field, source.get(field));
+    }
 
     private static Map<String, Object> playerStats(Map<?, ?> player) {
         var result = new LinkedHashMap<String, Object>();
@@ -124,14 +161,12 @@ final class QuietYieldBaseline {
 
     private static Object copy(Object value) {
         if (value instanceof Map<?, ?> source) {
+            if (source.containsKey("visualId") && source.containsKey("faceDown")) return publicCard(source);
             var result = new LinkedHashMap<String, Object>();
-            boolean card = source.containsKey("visualId") && source.containsKey("faceDown");
             boolean player = source.containsKey("zones") && source.containsKey("id");
             for (var entry : source.entrySet()) {
                 String key = (String) entry.getKey();
-                // Only presentation/input fields are omitted. In particular a
-                // public mechanic descriptor's "key" remains meaningful state.
-                if (card && (key.equals("key") || key.equals("selectable") || key.equals("highlighted"))) continue;
+                // A public mechanic descriptor's "key" remains meaningful state.
                 if (player && key.equals("priority")) continue;
                 result.put(key, copy(entry.getValue()));
             }

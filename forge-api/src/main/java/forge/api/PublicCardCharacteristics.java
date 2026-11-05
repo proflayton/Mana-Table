@@ -18,6 +18,18 @@ import java.util.Objects;
  * actions. Its values retain that caller's disclosure and privacy scope; they
  * contain no live engine views, action handles or KnownFace permission grant. */
 final class PublicCardCharacteristics {
+    private static final List<String> FIELDS = List.of("name", "type", "gamePieceType", "manaCost", "commanderTax",
+            "power", "toughness", "text", "tapped", "phasedOut", "sick", "damage", "attacking", "blocking", "counters",
+            "defenderId", "defender", "faceDown", "combatKeywords", "blockingCapacity", "states");
+
+    /** Select this owner's physical facts from an already disclosed portrait.
+     * Audience input metadata and future private fields are not characteristics. */
+    static Map<String, Object> projected(Map<?, ?> card) {
+        var facts = new LinkedHashMap<String, Object>();
+        for (String field : FIELDS) if (card.containsKey(field)) facts.put(field, card.get(field));
+        return facts;
+    }
+
     static Map<String, Object> capture(CardView card, PlayerView viewer, CombatView combat, boolean hidden, boolean publicStats) {
         var face = card.getCurrentState();
         var defender = CombatDefenders.card(combat, card, viewer);

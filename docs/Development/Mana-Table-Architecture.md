@@ -940,6 +940,14 @@ Card-level funding describes at least one route and must not be copied onto an
 unassessed face or alternative cost. No renderer cost arithmetic, new planner or
 per-card query loop supplies this cue.
 
+Quiet consent compares a closed immutable public-card value at both initial
+capture and card-refresh callbacks. Its physical fields come from
+`PublicCardCharacteristics`, with explicit public occurrence, relationship,
+alternate-face and printing descriptors. Private input metadata cannot enter
+that value through later portrait enrichment. Public mechanic keys and real
+transient changes remain meaningful; a refresh that only changes funding
+knowledge does not revoke the original quiet permission.
+
 Stack entries now carry `StackActionKind` from the actual owned ability: spell,
 activation, trigger or an otherwise unclassified ability. Native `Ability` is
 derived from that closed kind. The private version-2 wire adds `kind`; older jars

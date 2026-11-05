@@ -1333,6 +1333,15 @@ foreign occurrence facts cannot create that paint; MDFC route costs remain
 independent of a card-level witness. These tests do not establish human approval
 of the availability cue.
 
+`QuietPublicCardProjectionTest` keeps private and future input fields outside
+quiet consent at both snapshot and event refresh. It also checks all declared
+public card fields, identities, relationships, nested mechanic keys and detached
+containers, including a public change that returns to its prior value.
+The existing `QuietYieldTest` retains its original token-continuity and real
+interruption assertions; adding a private presentation fact must not weaken them.
+`PublicCardCharacteristicsTest` also requires the selector to retain every
+captured physical field, so a future public field cannot be silently omitted.
+
 `ScalingManaPaymentTest` exercises real The Eternity Elevator abilities through
 the human `InputPayMana` Auto path at 19, 20 and 32 charge counters. It checks a
 small generic bill, a bill larger than the base output, colored and explicit
