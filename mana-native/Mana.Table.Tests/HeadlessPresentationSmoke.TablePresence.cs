@@ -137,7 +137,7 @@ internal static partial class HeadlessPresentationSmoke
         {
             var basis = Example();
             var state = basis with { Id = name, Revision = 100, BoardRevision = 10, ActivePlayerId = actor,
-                PriorityPlayerId = actor, DecisionOwnerId = actor,
+                PriorityPlayerId = actor, DecisionOwnerId = actor, ActionClass = "priority",
                 Decision = actor == 0 ? basis.Decision! with { Id = "inspection-priority" } : null,
                 PublicInspection = new("inspection-context", 10, actor),
                 Stack = stack ? [new("Ability A", "Draw a card.", StackActionKind.ActivatedAbility, basis.Viewer!.Zone("Battlefield").Cards[0]) { Id = "stack-a", ControllerId = 1 },

@@ -307,6 +307,31 @@ final class RulesScenario implements AutoCloseable {
     static int count(JsonObject player, String zone) { return zone(player, zone).get("count").getAsInt(); }
     static String text(JsonObject object, String key) { var value = object.get(key); return value == null || value.isJsonNull() ? "" : value.getAsString(); }
 
+    /** A display publication changes its authority fence, not the rules board.
+     * Validate that new authority before normalizing only its transient fields. */
+    static void assertSameBoardAcrossInspectionPublication(JsonObject current, JsonObject prior) {
+        for (var state : List.of(prior, current)) {
+            var context = state.getAsJsonObject("publicInspection");
+            assertNotNull(context, "A current ordinary-priority publication retains its public inspection context");
+            assertEquals(text(state, "status"), "playing");
+            assertEquals(text(state, "actionClass"), "priority");
+            assertEquals(context.get("boardRevision"), state.get("boardRevision"), "Inspection authority binds its own actual publication");
+            assertEquals(context.get("playerId"), state.get("priorityPlayerId"));
+            assertEquals(context.get("playerId"), state.get("decisionOwnerId"));
+            assertFalse(text(context, "id").isBlank());
+        }
+        assertTrue(current.get("boardRevision").getAsLong() > prior.get("boardRevision").getAsLong());
+        assertNotEquals(text(current.getAsJsonObject("publicInspection"), "id"), text(prior.getAsJsonObject("publicInspection"), "id"),
+                "A new queued publication retires the old public-inspection nonce");
+        var now = current.deepCopy(); var before = prior.deepCopy();
+        for (var state : List.of(now, before)) {
+            state.remove("revision"); state.remove("boardRevision");
+            state.getAsJsonObject("publicInspection").remove("id");
+            state.getAsJsonObject("publicInspection").remove("boardRevision");
+        }
+        assertEquals(now, before, "Publishing without a game action preserves every other context, board, mana, prompt and card-key fact");
+    }
+
     /** A concession receipt admits a departure; its rules cleanup completes later. */
     static JsonObject awaitConcession(MatchTable table, MatchSession session) throws InterruptedException {
         long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();

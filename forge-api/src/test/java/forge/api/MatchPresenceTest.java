@@ -12,6 +12,34 @@ public class MatchPresenceTest {
     private static final MatchPresence.Subject CARD = new MatchPresence.Subject(MatchPresence.Kind.CARD, "public-card");
     private static final MatchPresence.Subject STACK = new MatchPresence.Subject(MatchPresence.Kind.STACK, "7");
 
+    @Test public void eachAudienceProjectsInspectionOnlyForItsOwnCoherentPlayingPriorityFrame() {
+        var context = new MatchPresence.Context("context", 9, 29);
+        var observer = new HashMap<String, Object>(Map.of("status", "playing", "actionClass", "priority", "boardRevision", 9L,
+                "priorityPlayerId", 29, "decisionOwnerId", 29, "viewerId", 47, "players", List.of(Map.of("id", 29), Map.of("id", 47))));
+        assertSame(MatchPresence.projectContext(observer, context), context, "A nonacting observer may follow the actual current actor");
+        var actor = new HashMap<>(observer); actor.put("viewerId", 29); actor.put("prompt", Map.of("task", "priority"));
+        assertSame(MatchPresence.projectContext(actor, context), context, "The real acting audience retains its current priority context");
+        for (String status : List.of("starting", "resolving", "finished", "error")) {
+            var frame = new HashMap<>(observer); frame.put("status", status);
+            assertNull(MatchPresence.projectContext(frame, context), "A copied " + status + " frame cannot borrow another audience's playing grant");
+        }
+        for (String task : List.of("resolving", "selection", "simultaneous", "mana", "attack")) {
+            var frame = new HashMap<>(observer); frame.put("actionClass", task);
+            assertNull(MatchPresence.projectContext(frame, context));
+        }
+        for (String field : List.of("boardRevision", "priorityPlayerId", "decisionOwnerId")) {
+            var frame = new HashMap<>(observer); frame.put(field, 100L);
+            assertNull(MatchPresence.projectContext(frame, context), "The public context must match " + field);
+        }
+        for (Object prompt : List.of(Map.of(), Map.of("task", "selection"), Map.of("task", "mana"))) {
+            var frame = new HashMap<>(actor); frame.put("prompt", prompt);
+            assertNull(MatchPresence.projectContext(frame, context), "An actor cannot publish through a required or absent semantic priority task");
+        }
+        var missingActor = new HashMap<>(observer); missingActor.put("players", List.of(Map.of("id", 47)));
+        assertNull(MatchPresence.projectContext(missingActor, context));
+        assertSame(MatchPresence.projectContext(observer, context), context, "Negative projection checks cannot mutate the valid observer frame");
+    }
+
     @Test public void latestInspectionExpiresCoalescesAndCannotBeReplayedOrAttributedToAnotherPlayer() {
         var clock = new AtomicLong(1000);
         var presence = new MatchPresence("game", clock::get);

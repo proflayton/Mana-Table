@@ -57,7 +57,7 @@ public class SourceReadBoundaryTest {
                 var current = game.state(0);
                 assertTrue(current.get("revision").getAsLong() > before.get("revision").getAsLong());
                 assertEquals(current.get("prompt"), before.get("prompt"));
-                assertBoardExceptRevision(current, before);
+                assertSameBoardAcrossInspectionPublication(current, before);
                 var fresh = query(game, current, card(current, "Hand", "Manalith"));
                 var oldFacts = original.deepCopy(); oldFacts.remove("revision");
                 var newFacts = fresh.deepCopy(); newFacts.remove("revision"); assertEquals(newFacts, oldFacts);
@@ -283,11 +283,6 @@ public class SourceReadBoundaryTest {
     private static Throwable rejected(org.testng.Assert.ThrowingRunnable work) {
         try { work.run(); } catch (Throwable failure) { return failure; }
         throw new AssertionError("The retired/invalid/faulting read must not return a catalog");
-    }
-    private static void assertBoardExceptRevision(JsonObject current, JsonObject prior) {
-        var now = current.deepCopy(); var before = prior.deepCopy();
-        for (var value : List.of(now, before)) { value.remove("revision"); value.remove("boardRevision"); }
-        assertEquals(now, before);
     }
     private static RulesScenario game(String name) throws Exception {
         return new RulesScenario(name, Map.of(0, List.of("Forest", "Forest", "Forest")), "Manalith", "Rhys the Redeemed");

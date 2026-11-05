@@ -70,6 +70,7 @@ internal static class TablePresenceWireChecks
 
     internal static async Task RunAsync(string profile, Action<bool, string> check)
     {
+        CheckSnapshotContext(check);
         var valid = Frame();
         check(ForgeEngine.DecodeTablePresence(JsonSerializer.SerializeToElement(valid), Game).Cues.Single().Subject.Kind
             == TableInspectionKind.BattlefieldCard, "Public presence has one closed battlefield subject kind");
@@ -151,6 +152,38 @@ internal static class TablePresenceWireChecks
             var fresh = await engine.ObserveAsync() ?? throw new InvalidOperationException();
             await engine.ExecuteAsync(new PassPriority(Game, fresh.Decision!.Id));
             check(Count(directory, "matchAction") >= 1, "Rules commands remain usable after the optional presence journey: " + mode);
+        }
+    }
+
+    private static void CheckSnapshotContext(Action<bool, string> check)
+    {
+        var valid = State(29);
+        var issued = ForgeSnapshotDecoder.Decode(JsonSerializer.SerializeToElement(valid))!;
+        check(PublicInspectionFacts.IsCurrent(issued), "The ordinary-priority snapshot retains its valid public inspection context");
+        var older = valid.DeepClone(); older["publicInspection"] = null;
+        var legacy = ForgeSnapshotDecoder.Decode(JsonSerializer.SerializeToElement(older))!;
+        check(PublicInspectionFacts.Violation(legacy) == PublicInspectionViolation.None && !PublicInspectionFacts.IsCurrent(legacy),
+            "An older host's omitted public context remains a valid snapshot without granting shared inspection");
+        var observer = valid.DeepClone(); observer["viewerId"] = 47; observer["prompt"] = null;
+        check(PublicInspectionFacts.IsCurrent(ForgeSnapshotDecoder.Decode(JsonSerializer.SerializeToElement(observer))!),
+            "A foreign viewing seat may retain the current public priority context without borrowing its private prompt");
+        foreach (var (reason, corrupt) in new (PublicInspectionViolation, Action<JsonNode>)[] {
+            (PublicInspectionViolation.InvalidContextId, node => node["publicInspection"]!["id"] = "PRIVATE-NONCE-CANARY\n"),
+            (PublicInspectionViolation.InvalidContextId, node => node["publicInspection"]!["id"] = new string('x', 129)),
+            (PublicInspectionViolation.BoardRevisionMismatch, node => node["publicInspection"]!["boardRevision"] = 11),
+            (PublicInspectionViolation.UnknownPlayer, node => node["publicInspection"]!["playerId"] = 999),
+            (PublicInspectionViolation.DecisionOwnerMismatch, node => { node["prompt"] = null; node["decisionOwnerId"] = 47; }),
+            (PublicInspectionViolation.PriorityPlayerMismatch, node => { node["prompt"] = null; node["priorityPlayerId"] = 47; }),
+            (PublicInspectionViolation.NonPriorityAction, node => node["actionClass"] = "payment"),
+            (PublicInspectionViolation.NotPlaying, node => { node["prompt"] = null; node["status"] = "resolving"; }),
+            (PublicInspectionViolation.MissingLocalPriority, node => node["prompt"] = null)
+        }) {
+            var invalid = valid.DeepClone(); corrupt(invalid);
+            string? message = null;
+            try { ForgeSnapshotDecoder.Decode(JsonSerializer.SerializeToElement(invalid)); }
+            catch (IOException error) { message = error.Message; }
+            check(message == "The rules provider published an invalid match snapshot (public inspection: " + reason + ").",
+                "Invalid public context retains only its fixed closed violation reason: " + reason);
         }
     }
     private static int Count(string directory, string method) => File.Exists(Path.Combine(directory, "methods.txt"))

@@ -37,8 +37,7 @@ public sealed class TablePresenceSession(ITablePresence? provider, Action<Action
         if (!active || !Supported || inFlight || !transportAvailable || now < nextExchange
             || state is not { Status: "playing", Viewer: { Eliminated: false } } current) return;
         var context = current.PublicInspection;
-        bool ownsContext = context != null && context.PlayerId == current.ViewerId
-            && context.BoardRevision == current.BoardRevision && !string.IsNullOrEmpty(context.Id);
+        bool ownsContext = context != null && context.PlayerId == current.ViewerId && PublicInspectionFacts.IsCurrent(current);
         if (!ownsContext || !PublicSubject(current, desired)) desired = null;
         var request = new TablePresenceUpdate(current.Id, current.BoardRevision, ++sequence,
             ownsContext ? context!.Id : null, desired);
@@ -90,7 +89,7 @@ public sealed class TablePresenceSession(ITablePresence? provider, Action<Action
     }
 
     private static bool CurrentCue(GameSnapshot current, TableInspectionCue cue)
-        => current.Status == "playing" && current.PublicInspection is { } context
+        => PublicInspectionFacts.IsCurrent(current) && current.PublicInspection is { } context
             && context.BoardRevision == current.BoardRevision && context.PlayerId == cue.PlayerId
             && context.Id == cue.ContextId && cue.PlayerId != current.ViewerId
             && current.Players.Any(player => player.Id == cue.PlayerId && !player.Eliminated)

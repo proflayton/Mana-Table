@@ -293,9 +293,7 @@ public class SourceActionsTest {
                 assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).sourceActions(stalePreview));
                 var currentPreview = request(input, Map.of("key", text(commander, "key"), "expectedRevision", afterPublication.get("revision").getAsLong()));
                 assertEquals(JSON.toJsonTree(game.table.seat(0).sourceActions(currentPreview)), interleavedCatalog);
-                var beforeFacts = before.deepCopy(); beforeFacts.remove("revision"); beforeFacts.remove("boardRevision");
-                var afterFacts = afterPublication.deepCopy(); afterFacts.remove("revision"); afterFacts.remove("boardRevision");
-                assertEquals(afterFacts, beforeFacts, "Publishing without a game action preserves every board, mana, prompt and card-key fact");
+                assertSameBoardAcrossInspectionPublication(afterPublication, before);
 
                 HeadlessPlatform.query(game.table, () -> null);
                 var settled = game.state(0);

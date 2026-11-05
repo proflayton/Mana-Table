@@ -24,6 +24,42 @@ public class PublicInspectionExperienceTest {
     private static final Gson JSON = new Gson();
 
     @Test(timeOut = 90000)
+    public void aBusyConcedingAudienceCannotRetainAnotherPlayersInspectionContext() throws Exception {
+        try (var game = new RulesScenario("public-inspection-concession", Map.of(0, List.of("Forest"), 1, List.of("Island")))) {
+            main(game);
+            var captured = HeadlessPlatform.query(game.table, () -> {
+                var actor = game.state(0); var observer = game.state(1);
+                var request = new JsonObject(); request.addProperty("sessionId", game.table.id);
+                // The ordinary rules boundary holds the queued concession's
+                // continuation until the actual admission return is copied.
+                var admitted = JSON.toJsonTree(game.session(1).concede(request));
+                return Map.of("actorBefore", actor, "observerBefore", observer, "admitted", admitted,
+                        "observerDuring", game.state(1), "actorDuring", game.state(0));
+            });
+            Files.writeString(game.evidence.resolve("concession-admission.json"), JSON.toJson(captured));
+            var actorContext = captured.get("actorBefore").getAsJsonObject().get("publicInspection");
+            assertNotNull(actorContext); assertFalse(actorContext.isJsonNull());
+            assertEquals(captured.get("observerBefore").getAsJsonObject().get("publicInspection"), actorContext);
+            assertEquals(captured.get("actorDuring").getAsJsonObject().get("publicInspection"), actorContext,
+                    "Another player's concession cannot disable the still-acting peer's valid public context");
+            for (String name : List.of("admitted", "observerDuring")) {
+                var busy = captured.get(name).getAsJsonObject();
+                assertEquals(text(busy, "status"), "resolving");
+                assertTrue(busy.get("prompt") == null || busy.get("prompt").isJsonNull());
+                assertTrue(busy.get("publicInspection") == null || busy.get("publicInspection").isJsonNull(),
+                        "A resolving audience cannot retain a playing-priority inspection grant: " + name);
+            }
+            awaitConcession(game.table, game.session(1));
+            var departed = JSON.toJsonTree(game.session(1).state()).getAsJsonObject();
+            Files.writeString(game.evidence.resolve("concession-complete.json"), JSON.toJson(departed));
+            assertTrue(viewer(departed).get("eliminated").getAsBoolean());
+            assertTrue(departed.get("publicInspection") == null || departed.get("publicInspection").isJsonNull(),
+                    "A departed audience cannot regain current inspection authority from a survivor's publication");
+            assertNotNull(game.state(0).getAsJsonObject("publicInspection"));
+        }
+    }
+
+    @Test(timeOut = 90000)
     public void aNewHostsInactiveMatchIsSupersededRatherThanAnAbsentPresenceCapability() throws Exception {
         var resources = Path.of("../forge-gui/res");
         if (StaticData.instance() == null) EngineResources.load(resources);

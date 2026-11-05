@@ -136,6 +136,25 @@ internal static class TablePresenceRegression
             check(run.Session.Supported && run.Session.Visible(.6).Length == 1,
                 "Provider transport retirement with identical public context stays superseded rather than permanently disabling presence");
         }
+        foreach (var invalid in new Func<GameSnapshot, GameSnapshot>[] {
+            state => state with { ActionClass = "payment" },
+            state => state with { PriorityPlayerId = 2 },
+            state => state with { DecisionOwnerId = 2 }
+        }) {
+            using (var ownerRun = new Run(invalid(State(0)))) {
+                ownerRun.Session.Update(0, publicA, true, true);
+                var request = await ownerRun.Request();
+                check(request.Update.Subject == null && request.Update.ContextId == null,
+                    "A non-Forge port cannot publish inspection through an inconsistent public-priority context");
+                request.Reply.SetResult(new TablePresenceResult.Current(new(ownerRun.State.Id, 10, 1, []))); await ownerRun.Drain();
+            }
+            using (var viewerRun = new Run(invalid(State(1)))) {
+                viewerRun.Session.Update(0, null, true, true); var request = await viewerRun.Request();
+                request.Reply.SetResult(Frame(viewerRun.State, publicA)); await viewerRun.Drain();
+                check(viewerRun.Session.Visible(.1).Length == 0,
+                    "A non-Forge port cannot display an otherwise matching cue through inconsistent priority context");
+            }
+        }
     }
 
     private static TablePresenceResult Frame(GameSnapshot state, TableInspectionSubject subject)
@@ -145,8 +164,10 @@ internal static class TablePresenceRegression
         Enumerable.Range(0, 4).Select(id => new Player(id, "Player " + id, 40, id == 0, false, ImmutableDictionary<string, int>.Empty, [
             new("Battlefield", id == 0 ? 2 : 0, id == 0 ? [new Card { VisualId = "public-a", Name = "Public A" }, new Card { VisualId = "public-b", Name = "Public B" }] : [], null),
             new("Hand", 1, id == viewer ? [new Card { VisualId = "private-hand", Name = "Private" }] : [], null)
-        ])).ToImmutableArray(), [], null, null) {
-            BoardRevision = 10, Revision = 30, PublicInspection = new("inspection-context", 10, 0)
+        ])).ToImmutableArray(), [], null, viewer == 0 ? new("priority", new DecisionContext(),
+            new PriorityPayload(new("Pass", true))) : null) {
+            BoardRevision = 10, Revision = 30, PublicInspection = new("inspection-context", 10, 0),
+            PriorityPlayerId = 0, DecisionOwnerId = 0, ActionClass = "priority"
         };
 
     private sealed class Run(GameSnapshot state) : IDisposable

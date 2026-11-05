@@ -25,6 +25,26 @@ final class MatchPresence {
 
     MatchPresence(String gameId, LongSupplier clock) { this.gameId = gameId; this.clock = clock; }
 
+    /** A global acting context is not automatically a capability of every
+     * audience's intermediate frame. Inspect only detached publication facts. */
+    static Context projectContext(Map<String, Object> frame, Context context) {
+        if (context == null || context.id() == null || !validId(context.id()) || context.playerId() < 0 || context.boardRevision() < 0
+                || !"playing".equals(frame.get("status")) || !"priority".equals(frame.get("actionClass"))
+                || !sameNumber(frame.get("boardRevision"), context.boardRevision())
+                || !sameNumber(frame.get("priorityPlayerId"), context.playerId())
+                || !sameNumber(frame.get("decisionOwnerId"), context.playerId())
+                || !(frame.get("viewerId") instanceof Number)
+                || !(frame.get("players") instanceof List<?> players)
+                || players.stream().noneMatch(value -> value instanceof Map<?, ?> player && sameNumber(player.get("id"), context.playerId()))) return null;
+        if (sameNumber(frame.get("viewerId"), context.playerId()) && (!(frame.get("prompt") instanceof Map<?, ?> prompt)
+                || !"priority".equals(prompt.get("task")))) return null;
+        return context;
+    }
+
+    private static boolean sameNumber(Object value, long expected) {
+        return value instanceof Number number && number.longValue() == expected && number.doubleValue() == expected;
+    }
+
     void disconnected(int player) {
         if (cues.remove(player) != null) revision++;
         sequences.remove(player); lastUpdates.remove(player);

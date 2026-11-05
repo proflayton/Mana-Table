@@ -66,11 +66,9 @@ internal static class ForgeSnapshotDecoder
                 Encounter = wire.PartyId == null && wire.EncounterId == null ? null
                     : new EncounterIdentity(wire.PartyId ?? "", wire.EncounterId ?? "")
             };
-            if (snapshot.PublicInspection is { } inspection && (string.IsNullOrWhiteSpace(inspection.Id) || inspection.Id.Length > 128
-                || inspection.Id.Any(char.IsControl) || inspection.BoardRevision != snapshot.BoardRevision
-                || !players.Contains(inspection.PlayerId) || snapshot.DecisionOwnerId != inspection.PlayerId
-                || snapshot.PriorityPlayerId != inspection.PlayerId || snapshot.ActionClass != "priority" || snapshot.Status != "playing"
-                || inspection.PlayerId == snapshot.ViewerId && snapshot.Decision?.Payload is not PriorityPayload)) throw Invalid();
+            var inspectionViolation = PublicInspectionFacts.Violation(snapshot);
+            if (inspectionViolation != PublicInspectionViolation.None)
+                throw new IOException("The rules provider published an invalid match snapshot (public inspection: " + inspectionViolation + ").");
             ValidateActionSources(snapshot, spectator);
             EncounterFacts.Validate(snapshot);
             MatchOutcomeFacts.Validate(snapshot);

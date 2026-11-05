@@ -70,6 +70,12 @@ Camera navigation and dragging suppress outgoing inspection rather than retire
 the receiving audience; received marks follow the same moving physical poses.
 Covered board surfaces hide their paint without changing transport ownership.
 Presence changes never replace a game publication or become a command receipt.
+`PublicInspectionFacts` supplies the same pure context predicate to every native
+provider consumer and the Forge snapshot decoder. Its closed violation reasons
+identify a refused field relationship without retaining context IDs, action
+handles, card faces or prompts. The decoder's fixed exception includes only that
+reason; it does not dump the rejected observation or add a journal/API. An
+absent legacy context remains a valid snapshot, without authorizing inspection.
 The shared ordered transport can still impose head-of-line latency; `Task.Run`
 and an independent fake port are not evidence of transport latency isolation.
 
