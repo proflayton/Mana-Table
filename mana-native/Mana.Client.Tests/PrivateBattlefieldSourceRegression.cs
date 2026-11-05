@@ -58,6 +58,8 @@ internal static class PrivateBattlefieldSourceRegression
             current with { ActionSources = [Row(known with { DefenderId = 1 })] },
             current with { ActionSources = [Row(known with { Selectable = true })] },
             current with { ActionSources = [Row(known with { Highlighted = true })] },
+            current with { ActionSources = [Row(known with { PlayAffordability = ActionAffordability.Payable })] },
+            current with { ActionSources = [Row(known with { PlayAffordability = ActionAffordability.Unavailable })] },
             current with { ActionSources = [Row(known with { FaceDown = true })] }
         }) check(!CardViews.IsCurrentActionSource(invalid, invalid.ActionSources[0])
                 && CardViews.KnownActionFace(invalid, physical) == null && !CardViews.CanReadActionSource(invalid, physical.Key),

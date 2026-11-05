@@ -183,7 +183,7 @@ internal sealed partial class TableApplication
             var pose = new Pose(new(x + 74, 409), new(148, 207));
             DrawTableCard("zone:" + zonePlayer + ":" + displayedZone + ":" + CardIdentity(card),
                 card, pose, displayedZone, zonePlayer, "card:" + card.Key + ":" + card.VisualId, new MatchIntent.InspectCard(card),
-                (displayed, focused) => PaintCard(card, displayed, card.Highlighted, IsCardActionable(card), focused));
+                (displayed, focused) => PaintCard(card, displayed, card.Highlighted, CanPaintCardAction(card, displayedZone), focused));
             if (zoneName == "Command") PaintCommanderTax(card, pose);
             canvas.Text(card.Name, x, 533, Ink, .68f, 155, 3, true);
             canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, x, 600, Gold, .62f, 156, 2);

@@ -201,7 +201,7 @@ public sealed record OptionsPayload(ChoiceSelection Selection, CounterPaymentCho
             || selection.Choices.Length != context.HandSize
             || selection.Choices.Select(choice => choice.CardId).Distinct(StringComparer.Ordinal).Count() != context.HandSize
             || selection.Choices.Any(choice => string.IsNullOrWhiteSpace(choice.CardId) || choice.Mana.Length != 0
-                || choice.Card is not { Key.Length: 0, Selectable: false, Highlighted: false } card
+                || choice.Card is not { Key.Length: 0, Selectable: false, Highlighted: false, PlayAffordability: ActionAffordability.Unknown } card
                 || CardViews.Identity(card) != choice.CardId)))
             throw new ArgumentException("A hand reduction describes the whole current hand and exactly its required discard count.", nameof(context));
     }

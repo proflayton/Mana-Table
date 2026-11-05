@@ -2541,6 +2541,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         result.put("selectable", selectable.contains(card) || actionable.contains(card) || linkedSourceActionable(card, prompt)
                 || prompt != null && prompt.input instanceof InputLondonMulligan && card.getController().equals(viewer) && card.getZone() == ZoneType.Hand);
         result.put("highlighted", highlighted.contains(card));
+        // This is this audience's current cached payment evidence. Legal source
+        // offers and conservative highlights do not certify affordability.
+        result.put("playAffordability", prompt != null && prompt.input instanceof InputPassPriority priority
+                && viewer.equals(priority.getOwner()) && card.canBeShownTo(viewer)
+                && priority.hasVerifiedFundingFor(card) ? "Payable" : "Unknown");
         AttachmentProjection.add(result, card, viewer, combatIds);
         addCardFaces(result, card, !hidden && card.canBeShownTo(viewer));
         addCardPrinting(result, card, !hidden && card.canBeShownTo(viewer));

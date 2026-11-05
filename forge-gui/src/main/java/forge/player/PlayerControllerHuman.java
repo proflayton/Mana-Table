@@ -1636,6 +1636,12 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         return cachedPriorityInput == input && isCurrentPriorityInput() && priorityAbilityPass.scanCurrent();
     }
 
+    /** A positive payment witness from this input's existing scan, never the
+     * conservative actionable-card fallback or an on-demand funding query. */
+    public boolean hasCurrentPriorityFunding(InputPassPriority input, CardView card) {
+        return cachedPriorityInput == input && isCurrentPriorityInput() && priorityAbilityPass.hasCurrentFunding(card);
+    }
+
     private boolean hasCertifiedManualCorrection() {
         if (isExternallyAutomated()) return false;
         var offer = getGame().getReversibleManaAction().current();

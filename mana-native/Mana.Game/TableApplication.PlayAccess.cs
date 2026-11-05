@@ -43,7 +43,8 @@ internal sealed partial class TableApplication
         foreach (var group in plan.Groups) foreach (var item in group.Cards) {
             var node = item.Scene;
             if (SpreadContains(node.Id) || dragging && dragSource?.Card is { } held && CardViews.Same(held, node.Card)) continue;
-            bool legal = CanStartPlayAccess(item.Access) && !busy && !session.NeedsRecovery;
+            bool legal = CardAffordability.CanHighlight(match!, node.Card, node.Zone,
+                CanStartPlayAccess(item.Access) && !busy && !session.NeedsRecovery);
             var displayed = DrawTableCard(node.Id, node.Card, node.Pose, node.Zone, node.Owner,
                 "card:" + node.Card.Key + ":" + node.Card.VisualId, new MatchIntent.UseCard(node.Card),
                 (pose, focused) => PaintCard(node.Card, pose, false, legal, focused));

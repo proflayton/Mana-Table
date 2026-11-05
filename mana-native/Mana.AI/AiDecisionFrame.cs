@@ -111,6 +111,7 @@ public sealed class AiDecisionFrame
                 || set.Actions.IsDefault || set.Actions.Any(action => action == null || string.IsNullOrWhiteSpace(action.Id)
                     || string.IsNullOrWhiteSpace(action.Kind) || string.IsNullOrWhiteSpace(action.Text)
                     || action.Card is { } linked && (linked.FaceDown || linked.Key.Length > 0 || linked.Selectable || linked.Highlighted
+                        || linked.PlayAffordability != ActionAffordability.Unknown
                         || string.IsNullOrWhiteSpace(linked.Name) || string.IsNullOrWhiteSpace(action.Zone)))
                 || set.Actions.Select(action => action.Id).Distinct().Count() != set.Actions.Length)
                 throw new ArgumentException("Source catalogs must name this observation's exact disclosed source and offers.", nameof(sourceActions));

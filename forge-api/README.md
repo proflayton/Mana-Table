@@ -183,8 +183,8 @@ publication and catalog/query ownership. Human previews recheck that ownership
 after their final funding query, even when an input replacement has not yet
 changed the displayed revision. A superseded outer read preserves a newer nested
 result and its handles. These are read-only descriptions; accepting and executing
-an action still requires its current live authority. No wire fields or command
-scopes change.
+an action still requires its current live authority. These query-lifetime checks
+add no wire fields or command scopes.
 
 `matchSourceActions` has three optional, method-scoped failure codes. A well-formed
 older `expectedRevision` produces `source-read-superseded` only after the current
@@ -388,6 +388,19 @@ Visible card snapshots add `artSet` (the edition's Scryfall code), `edition` and
 `collectorNumber`. Hidden cards omit these fields. Native image caches include
 set/collector number and face; old name-only caches remain valid for unspecified
 art requests. An unavailable exact image uses the readable card fallback.
+
+**Source candidate:** optional card `playAffordability` describes only the current
+audience's positive funding evidence. `Payable` means at least one route on that
+physical card had a payment witness in the current viewer's rules-controller scan,
+still bound to the active input and rules generation. A positively assessed card
+does not require an unrelated remainder of the scan to complete; unassessed and
+manual fallback cards remain unknown. Other cases are `Unknown`;
+missing, invalid or legacy values also default to `Unknown`. This is private
+decision metadata, like `selectable`, not a public characteristic or history fact.
+An offered cast, `selectable`, a nominal cost preview or `canStart` alone does not
+prove funding. A card-level witness does not certify every MDFC face or alternate
+cost. Source catalogs and manual attempts remain available under their existing
+authority; this field supplies no action handle and causes no additional scan.
 
 Optional match `playAccesses` describes only the current viewer's retained plays
 from already disclosed external zones. Entries contain `playerId` (the physical

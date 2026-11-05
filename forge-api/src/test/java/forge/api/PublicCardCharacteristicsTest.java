@@ -51,6 +51,7 @@ public class PublicCardCharacteristicsTest {
                                 kind.equals("speed") ? "Start Your Engines!" : "Emblem - projection")).findFirst().orElseThrow();
                 var facts = PublicCardCharacteristics.capture(physical.getView(), actor.getView(), scenario.table.game.getView().getCombat(), false, true);
                 assertEquals(facts.keySet(), FIELDS, "The complete scalar schema carries no audience identities, private reading or action authority");
+                assertEquals(PublicCardCharacteristics.projected(facts), facts, "Every captured characteristic belongs to the shared public selector");
                 assertFrozen(facts);
                 var json = new GsonBuilder().serializeNulls().setPrettyPrinting().create();
                 var states = new ArrayList<JsonObject>();

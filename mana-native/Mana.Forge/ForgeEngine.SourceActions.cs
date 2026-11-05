@@ -59,6 +59,7 @@ public sealed partial class ForgeEngine
         if (result.SourceCardId == null || result.Actions.IsDefault || result.Actions.Any(action => action == null || string.IsNullOrWhiteSpace(action.Id)
                 || action.Kind is not ("activate" or "cast" or "play") || string.IsNullOrWhiteSpace(action.Text)
                 || action.Card is { } linked && (linked.FaceDown || linked.Key != "" || linked.Selectable || linked.Highlighted
+                    || linked.PlayAffordability != ActionAffordability.Unknown
                     || string.IsNullOrWhiteSpace(linked.Name) || string.IsNullOrWhiteSpace(action.Zone)))
             || result.Actions.Select(action => action.Id).Distinct(StringComparer.Ordinal).Count() != result.Actions.Length)
             throw new IOException("The rules adapter returned an invalid source action list.");

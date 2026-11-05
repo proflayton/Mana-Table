@@ -102,10 +102,12 @@ public static class ConfiguredSimulationFacts
         if (state.ViewerId != -1 || state.Decision != null || !state.ActionSources.IsEmpty || !state.PlayAccesses.IsEmpty
             || !state.Activity.IsEmpty || !state.Notices.IsEmpty
             || state.Players.Any(player => player == null || player.Zones.IsDefault
-                || player.Zones.Any(zone => zone.Name is "Hand" or "Library" && (!zone.Cards.IsEmpty || zone.TopCard != null)))
+                || player.Zones.Any(zone => zone.Name is "Hand" or "Library" && (!zone.Cards.IsEmpty || zone.TopCard != null)
+                    || zone.TopCard is { } top && top.PlayAffordability != ActionAffordability.Unknown))
             || state.Players.SelectMany(player => player.Zones).SelectMany(zone => zone.Cards)
                 .Concat(state.Stack.Select(item => item.Card).OfType<Card>())
-                .Any(card => card.Key.Length > 0 || card.Selectable || card.Highlighted)) throw Invalid();
+                .Any(card => card.Key.Length > 0 || card.Selectable || card.Highlighted
+                    || card.PlayAffordability != ActionAffordability.Unknown)) throw Invalid();
     }
 
     private static InvalidOperationException Invalid() => new("Invalid configured simulation facts.");

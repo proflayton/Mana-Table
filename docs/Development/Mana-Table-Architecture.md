@@ -924,6 +924,30 @@ spending restrictions still execute through the current engine input. Victory
 Chimes' choose-player-before-mana chain is the real regression: a deliberate AI
 planner exclusion had incorrectly hidden a human payment route.
 
+**Source candidate:** a positive card availability cue consumes separate cached
+funding evidence from that same scan. Conservative actionable-card fallback and
+timing-legal source offers continue to support inspection and manual attempts;
+neither establishes affordability. An assessed route with its original rules
+generation and still-owned priority input can publish private `playAffordability`
+as `Payable`. Unlike complete absence evidence for Auto, a positive witness may
+remain useful while an unrelated remainder is incomplete; fallback or manual
+cards without that witness stay unknown. Native `CardAffordability` reads the
+current physical occurrence and
+requires that positive fact for priority play-card paint. Unknown, old-provider
+or retired evidence stays unlit; choice, combat and payment selection retain their
+own cues. The fact remains outside shared public characteristics and history.
+Card-level funding describes at least one route and must not be copied onto an
+unassessed face or alternative cost. No renderer cost arithmetic, new planner or
+per-card query loop supplies this cue.
+
+Quiet consent compares a closed immutable public-card value at both initial
+capture and card-refresh callbacks. Its physical fields come from
+`PublicCardCharacteristics`, with explicit public occurrence, relationship,
+alternate-face and printing descriptors. Private input metadata cannot enter
+that value through later portrait enrichment. Public mechanic keys and real
+transient changes remain meaningful; a refresh that only changes funding
+knowledge does not revoke the original quiet permission.
+
 Stack entries now carry `StackActionKind` from the actual owned ability: spell,
 activation, trigger or an otherwise unclassified ability. Native `Ability` is
 derived from that closed kind. The private version-2 wire adds `kind`; older jars

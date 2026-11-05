@@ -198,6 +198,10 @@ public sealed record Card
     public bool Sick { get; init; }
     public bool FaceDown { get; init; }
     public bool Selectable { get; init; }
+    // Viewer/input-specific positive payment evidence, separate from permission
+    // to inspect or attempt a timing-legal route. Older providers leave it unknown.
+    [System.Text.Json.Serialization.JsonConverter(typeof(PlayAffordabilityConverter))]
+    public ActionAffordability PlayAffordability { get; init; } = ActionAffordability.Unknown;
     public bool Highlighted { get; init; }
     public bool Attacking { get; init; }
     public bool Blocking { get; init; }

@@ -168,13 +168,15 @@ internal static class SourceActionSessionRegression
         await linkedViewer.Until(() => linkedViewer.Session.View.Status == SourceActionStatus.Ready);
 
         foreach (var unsafePreview in new[] { spell with { Key = "another-action-handle" }, spell with { Selectable = true },
-                     spell with { Highlighted = true }, spell with { FaceDown = true } }) {
+                     spell with { Highlighted = true }, spell with { FaceDown = true },
+                     spell with { PlayAffordability = ActionAffordability.Payable },
+                     spell with { PlayAffordability = ActionAffordability.Unavailable } }) {
             var invalidLink = new Driver();
             invalidLink.Session.Observe(first);
             (await invalidLink.Request(1)).Result.SetResult(Catalog(first, linkedAction with { Card = unsafePreview }));
             await invalidLink.Until(() => invalidLink.Session.View.Status == SourceActionStatus.Failed);
             check(invalidLink.Session.View.Actions.Count == 0 && invalidLink.Session.TryCreateCommand(first, action.Id) == null,
-                "A linked preview cannot carry another action handle, selection authority or a concealed face");
+                "A linked preview cannot carry another action handle, selection authority, private funding fact or a concealed face");
         }
 
         var timed = new Driver(TimeSpan.FromMilliseconds(250));

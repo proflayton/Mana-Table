@@ -158,7 +158,7 @@ internal sealed partial class TableApplication
     {
         int? choice = match == null ? null : TableChoices.Index(match, card);
         bool selected = choice is { } index ? decisions.Selections.Contains(index) : card.Highlighted || GroupBlockSelected(card) || card.CombatId.Length > 0 && selectedCombat == card.CombatId;
-        bool legal = IsCardActionable(card);
+        bool legal = CanPaintCardAction(card, zone);
         bool scanFace = zone == "Battlefield" && !focus && pose.Size.X < 300
             && tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) is { ScanFace: true };
         if (zone == "Battlefield") PaintAbilityEffects(card, pose);

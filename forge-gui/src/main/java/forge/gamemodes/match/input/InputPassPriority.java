@@ -20,6 +20,7 @@ package forge.gamemodes.match.input;
 import forge.game.Game;
 import forge.game.GameView;
 import forge.game.card.Card;
+import forge.game.card.CardView;
 import forge.game.phase.PhaseType;
 import forge.game.player.Player;
 import forge.game.player.PlayerView;
@@ -68,6 +69,12 @@ public class InputPassPriority extends InputSyncronizedBase {
     public boolean canAutoPass() {
         return availabilityVerified && !isFinished() && getController().isPriorityAvailabilityCurrent(this)
                 && !getOwner().hasAvailableActions();
+    }
+
+    /** Any positively funded route on this card, not permission for a particular
+     * face or alternative cost. Missing or expired scan evidence stays unknown. */
+    public boolean hasVerifiedFundingFor(CardView card) {
+        return availabilityVerified && !isFinished() && getController().hasCurrentPriorityFunding(this, card);
     }
 
     public boolean isPriorityActive() {

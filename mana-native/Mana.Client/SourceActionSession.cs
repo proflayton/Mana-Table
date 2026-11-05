@@ -114,6 +114,7 @@ public sealed class SourceActionSession(ISourceActions? source, Action<Action> p
         if (status == SourceActionStatus.Ready && (result!.Actions.IsDefault
             || result.Actions.Any(action => action == null || string.IsNullOrWhiteSpace(action.Id) || string.IsNullOrWhiteSpace(action.Text)
                 || action.Card is { } linked && (linked.FaceDown || linked.Key != "" || linked.Selectable || linked.Highlighted
+                    || linked.PlayAffordability != ActionAffordability.Unknown
                     || string.IsNullOrWhiteSpace(linked.Name) || string.IsNullOrWhiteSpace(action.Zone))
                 || action.CostPreview != null && result.Revision == null)
             || result.Actions.Select(action => action.Id).Distinct(StringComparer.Ordinal).Count() != result.Actions.Length))

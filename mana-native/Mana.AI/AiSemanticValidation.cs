@@ -69,7 +69,7 @@ internal static class AiSemanticValidation
             if (state.Decision.Context.Source is not { } owner || owner.CardId != numeric.SourceCardId
                 && (owner.Card == null || CardViews.Identity(owner.Card) != numeric.SourceCardId)) throw Invalid();
             if (owner.Card is { } portrait && (portrait.FaceDown || !string.IsNullOrEmpty(portrait.Key)
-                || portrait.Selectable || portrait.Highlighted)) throw Invalid();
+                || portrait.Selectable || portrait.Highlighted || portrait.PlayAffordability != ActionAffordability.Unknown)) throw Invalid();
             ManaFundingFacts.ValidateCosts(numeric.Costs);
             ManaFundingFacts.Validate(state, numeric.Funding);
         }
@@ -83,7 +83,7 @@ internal static class AiSemanticValidation
             if (state.Decision.Context.Source is not { } owner || owner.CardId != payment.SourceCardId
                 && (owner.Card == null || CardViews.Identity(owner.Card) != payment.SourceCardId)) throw Invalid();
             if (owner.Card is { } portrait && (portrait.FaceDown || !string.IsNullOrEmpty(portrait.Key)
-                || portrait.Selectable || portrait.Highlighted)) throw Invalid();
+                || portrait.Selectable || portrait.Highlighted || portrait.PlayAffordability != ActionAffordability.Unknown)) throw Invalid();
         }
 
         internal void CostPayment(GameSnapshot state, DecisionSemantics semantics, CostPaymentFunding payment)
@@ -95,7 +95,7 @@ internal static class AiSemanticValidation
             if (state.Decision.Context.Source is not { } owner || owner.CardId != payment.SourceCardId
                 && (owner.Card == null || CardViews.Identity(owner.Card) != payment.SourceCardId)) throw Invalid();
             if (owner.Card is { } portrait && (portrait.FaceDown || !string.IsNullOrEmpty(portrait.Key)
-                || portrait.Selectable || portrait.Highlighted)) throw Invalid();
+                || portrait.Selectable || portrait.Highlighted || portrait.PlayAffordability != ActionAffordability.Unknown)) throw Invalid();
             ManaFundingFacts.ValidateCosts(payment.RemainingCosts);
             if (payment.CurrentCostIndex is { } index && (index < 0 || index >= payment.RemainingCosts.Length)) throw Invalid();
             ManaFundingFacts.Validate(state, payment.Funding, payment.PayerId);
