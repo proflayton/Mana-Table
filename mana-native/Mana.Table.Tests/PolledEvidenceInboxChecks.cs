@@ -13,6 +13,8 @@ internal static class PolledEvidenceInboxChecks
         OrderedCapture(profile, check);
         Overflow(profile, check);
         await ReturnedIsNotProcessed(profile, check);
+        await PregameIdleIsScalar(profile, check);
+        await ActiveEmptyWithdrawsAuthority(profile, check);
     }
 
     private static void OrderedCapture(string profile, Action<bool, string> check)
@@ -128,6 +130,52 @@ internal static class PolledEvidenceInboxChecks
     private static MixedGameQualificationAssessment AssessCutoff(AiCampaignDiagnostics evidence) => MixedGameQualification.Assess(
         new(0, "time-budget", null, false, 20, 1, 0, [], 0, 0, 0, 0, null, evidence.Summary(), []), []);
 
+    private static async Task PregameIdleIsScalar(string profile, Action<bool, string> check)
+    {
+        using var evidence = new AiCampaignDiagnostics(DirectoryFor(profile, "empty-pregame"));
+        var inbox = evidence.EnableOrderedHandoff(1);
+        var port = new IdlePort();
+        var provider = new AiCampaignProvider(port, evidence, inbox: inbox);
+        await provider.EnableAutomatedSeatsAsync();
+        for (int i = 0; i < 1001; i++) await provider.ObserveAutomatedSeatsAsync();
+        var status = inbox.Status;
+        check(port.Reads == 1001 && port.Commands == 0 && status.Capacity == 1
+                && status.Pending == 0 && status.Enqueued == 0 && status.Applied == 0 && status.HighWater == 0
+                && status.IdleReturnedBatches == 1001 && status.IdleProcessedBatches == 1000
+                && status.SubstantiveReturnedBatches == 0 && status.SubstantiveProcessedBatches == 0
+                && !status.OwnedBatchSeen && !status.MissingOwnedBatch && status.Failure == null
+                && provider.SnapshotObservations.IsEmpty && provider.ProcessedObservations.IsEmpty,
+            "A thousand pregame empty provider cycles retain scalar idle counts at capacity one without queued snapshots, command authority or evidence overflow");
+        evidence.RetireHandoff();
+    }
+
+    private static async Task ActiveEmptyWithdrawsAuthority(string profile, Action<bool, string> check)
+    {
+        using var evidence = new AiCampaignDiagnostics(DirectoryFor(profile, "active-to-empty"));
+        var inbox = evidence.EnableOrderedHandoff(8);
+        var terminal = PresentationSmoke.Example() with { Status = "finished", Revision = 30, BoardRevision = 30,
+            Decision = null, Outcome = new("presentation", MatchOutcomeKind.Draw, [], [], "AllPlayersDrew") };
+        MatchOutcomeFacts.Validate(terminal);
+        var row = new AutomatedSeatObservation(0, terminal, DecisionActionDomain.None, new());
+        var port = new BotPort([row]);
+        var provider = new AiCampaignProvider(port, evidence, inbox: inbox);
+        await provider.ObserveAutomatedSeatsAsync(); evidence.DrainPending();
+        var pending = provider.ObserveAutomatedSeatsAsync();
+        await port.SecondStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        bool priorWasProcessed = provider.ProcessedObservations is [var prior] && ReferenceEquals(prior.State, terminal);
+        port.SecondReply.TrySetResult([]);
+        await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        bool clearedBeforeDrain = provider.SnapshotObservations.IsEmpty && provider.ProcessedObservations.IsEmpty;
+        evidence.DrainPending();
+        check(priorWasProcessed && clearedBeforeDrain && provider.SnapshotObservations.IsEmpty
+                && provider.ProcessedObservations.IsEmpty && inbox.Status.OwnedBatchSeen && inbox.Status.MissingOwnedBatch
+                && inbox.Status.SubstantiveReturnedBatches == 2 && inbox.Status.IdleReturnedBatches == 0
+                && inbox.Status.Enqueued >= 3 && inbox.Status.Applied == inbox.Status.Enqueued
+                && inbox.Status.Pending == 0 && port.Commands == 0,
+            "An empty return after owned play stays visible and withdraws both returned and previously processed terminal authority before owner drain");
+        evidence.RetireHandoff();
+    }
+
     private static string DirectoryFor(string profile, string name)
     {
         string path = Path.Combine(profile, "polled-full-game-contracts", name);
@@ -168,5 +216,20 @@ internal static class PolledEvidenceInboxChecks
         }
         public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode, CancellationToken cancellation = default)
             => throw new InvalidOperationException("The bounded provider fixture does not report a real rules fault.");
+    }
+    private sealed class IdlePort : IAutomatedSeatProvider
+    {
+        internal int Reads, Commands;
+        public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) => Task.CompletedTask;
+        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default)
+        {
+            Reads++; return Task.FromResult(ImmutableArray<AutomatedSeatObservation>.Empty);
+        }
+        public Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default)
+        {
+            Commands++; throw new InvalidOperationException("An empty pregame batch grants no command.");
+        }
+        public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode, CancellationToken cancellation = default)
+            => throw new InvalidOperationException("The idle fixture has no bound game fault.");
     }
 }

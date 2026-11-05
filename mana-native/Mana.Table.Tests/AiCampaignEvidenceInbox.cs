@@ -29,6 +29,14 @@ internal sealed record CampaignEvidenceHandoffStatus(int Capacity, int Pending, 
     string? Failure, ImmutableDictionary<int, int> AcceptedBySeat)
 {
     public long TimestampFrequency { get; init; } = Stopwatch.Frequency;
+    public long TotalReturnedBatches => ReturnedBatches;
+    public long TotalProcessedBatches => ProcessedBatches;
+    public long IdleReturnedBatches { get; init; }
+    public long IdleProcessedBatches { get; init; }
+    public long SubstantiveReturnedBatches => ReturnedBatches - IdleReturnedBatches;
+    public long SubstantiveProcessedBatches => ProcessedBatches - IdleProcessedBatches;
+    public bool OwnedBatchSeen { get; init; }
+    public bool MissingOwnedBatch { get; init; }
     public string Bounds => "Pending event count, not a measured retained-byte limit; snapshots are private immutable values.";
 }
 
@@ -42,13 +50,17 @@ internal sealed class AiCampaignEvidenceInbox(AiCampaignDiagnostics owner, int c
     private readonly Dictionary<int, int> accepted = [];
     private ImmutableArray<AutomatedSeatObservation> returned = [], processed = [];
     private long enqueued, applied, returnedBatches, processedBatches, processedReturnSequence, discarded;
+    private long idleReturnedBatches, idleProcessedBatches;
     private int highWater, draining;
     private bool retired, faultRecorded;
+    private bool ownedBatchSeen, lastReturnIdle;
     private Exception? fault;
 
     internal CampaignEvidenceHandoffStatus Status { get { lock (gate) return new(capacity, pending.Count, highWater,
         enqueued, applied, returnedBatches, processedBatches, processedReturnSequence, discarded, retired, fault?.Message, accepted.ToImmutableDictionary()) {
-            TimestampFrequency = time.TimestampFrequency }; } }
+            TimestampFrequency = time.TimestampFrequency, IdleReturnedBatches = idleReturnedBatches,
+            IdleProcessedBatches = idleProcessedBatches, OwnedBatchSeen = ownedBatchSeen,
+            MissingOwnedBatch = ownedBatchSeen && returned.IsEmpty }; } }
     internal ImmutableArray<AutomatedSeatObservation> SnapshotObservations { get { lock (gate) return returned; } }
     internal ImmutableArray<AutomatedSeatObservation> ProcessedObservations { get { lock (gate) return processed; } }
     internal ImmutableDictionary<int, int> AcceptedBySeat { get { lock (gate) return accepted.ToImmutableDictionary(); } }
@@ -90,7 +102,11 @@ internal sealed class AiCampaignEvidenceInbox(AiCampaignDiagnostics owner, int c
             // A superseded/failed next read can enter again without returning a
             // new batch. A completion marker names that prior return only once.
             if (returnedBatches == processedReturnSequence) return;
-            PostInState(new CampaignEvidenceEvent.StepCompleted(returnedBatches));
+            // Before any seat exists, an empty no-match poll carries no
+            // audience, policy fact or authority worth retaining in the FIFO.
+            // Its next-cycle completion still has exact scalar accounting.
+            if (lastReturnIdle) idleProcessedBatches++;
+            else PostInState(new CampaignEvidenceEvent.StepCompleted(returnedBatches));
             processed = returned; processedBatches++; processedReturnSequence = returnedBatches;
         }
     }
@@ -99,8 +115,20 @@ internal sealed class AiCampaignEvidenceInbox(AiCampaignDiagnostics owner, int c
     {
         if (observations.IsDefault) throw new InvalidDataException("A campaign batch must be an immutable initialized value.");
         lock (gate) {
+            if (retired) throw new InvalidOperationException("The campaign evidence handoff has retired.");
+            if (fault != null) throw fault;
+            if (observations.IsEmpty && !ownedBatchSeen) {
+                returned = observations; lastReturnIdle = true;
+                returnedBatches++; idleReturnedBatches++;
+                return;
+            }
+            // Empty after an owned audience is a visible lifecycle loss, never
+            // pregame idle. Withdraw prior positive processed evidence at once,
+            // including if recording this loss subsequently overflows the FIFO.
+            if (observations.IsEmpty) { returned = []; processed = []; }
             PostInState(new CampaignEvidenceEvent.Batch(observations, returnedBatches + 1));
-            returned = observations; returnedBatches++;
+            returned = observations; returnedBatches++; lastReturnIdle = false;
+            ownedBatchSeen |= !observations.IsEmpty;
         }
     }
 

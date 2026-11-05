@@ -92,7 +92,7 @@ internal static class MixedGameCampaign
         int steps = 0, comparisons = 0;
         string stage = "initialize", stop = "not-started";
         string? failure = null;
-        bool verified = false;
+        bool verified = false, audiencesBound = false;
         ImmutableArray<AiSeatHistory> stoppedHistories = [];
         AiCampaignQualificationTracker? qualification = null;
         string configurationId = "mixed-lobby-rotation-" + match, configurationHash = "";
@@ -170,9 +170,10 @@ internal static class MixedGameCampaign
                 last = new[] { host.Last, guest.Last }.OfType<AutomatedSeatObservation>().Concat(botObservations).ToImmutableArray();
                 steps++;
                 stage = "shared-state-and-visibility";
-                if (mode == MixedGameDriveMode.PolledBackground && last.Length < 4) { await Task.Delay(1); continue; }
+                if (mode == MixedGameDriveMode.PolledBackground && last.Length < 4 && !audiencesBound) { await Task.Delay(1); continue; }
                 if (last.Length != 4 || last.Select(item => item.SeatId).Distinct().Count() != 4)
                     throw new InvalidDataException("The mixed table lost one of its four disjoint owned audiences.");
+                audiencesBound = true;
                 if (last.Any(item => item.State.Status == "starting")) {
                     foreach (var item in last.Where(item => item.State.Status == "starting"))
                         if (item.State.Decision != null || item.State.Players.Length is not (0 or 4)
@@ -273,6 +274,8 @@ internal static class MixedGameCampaign
                 evidence.DrainPending();
                 if (mode == MixedGameDriveMode.PolledBackground && (bots.LastFault != null || evidence.CapturedHostFault != null))
                     throw new InvalidDataException("The background AI host faulted before its owner joined.");
+                if (mode == MixedGameDriveMode.PolledBackground && evidence.HandoffStatus?.MissingOwnedBatch == true)
+                    throw new InvalidDataException("The background AI host lost its owned audiences before its owner joined.");
                 return Task.CompletedTask;
             });
             if (mode == MixedGameDriveMode.PolledBackground)
