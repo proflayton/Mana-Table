@@ -5,10 +5,12 @@ import forge.card.MagicColor;
 import forge.game.mana.Mana;
 import forge.game.player.Player;
 import forge.game.zone.ZoneType;
+import forge.gamemodes.match.input.InputPayMana;
 import forge.gamemodes.match.input.InputPassPriority;
 import forge.player.PlayerControllerHuman;
 import org.testng.annotations.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -141,14 +143,78 @@ public class RulesScenarioPriorityRefusalTest {
             var current = current(game);
             assertTrue(game.answer(current, Map.of("action", "card", "key", text(card(current.state(), "Hand", "Manalith"), "key"))));
             var payment = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").startsWith("InputPayMana"));
+            var before = paymentSnapshot(game);
+            assertEquals(before.pool().size(), 1); assertEquals(before.tappedForests(), 0L);
+            assertTrue(before.payingMana().isEmpty());
             assertFalse(game.answer(old, Map.of("action", "passIfNoResponse")));
             var waiting = current(game);
             assertEquals(text(waiting.prompt(), "id"), text(payment.prompt(), "id"));
             assertTrue(text(waiting.prompt(), "inputType").startsWith("InputPayMana"));
-            assertEquals(actor(game).getManaPool().totalMana(), 1);
-            assertEquals(actor(game).getCardsIn(ZoneType.Battlefield).stream().filter(c -> c.getName().equals("Forest") && c.isTapped()).count(), 0L);
+            assertEquals(paymentSnapshot(game), before, "The retired reply must not alter the replacement payment or its resources");
             assertTrue(game.answer(payment, Map.of("action", "cancel")));
         }
+    }
+
+    @Test(timeOut = 90000)
+    public void aPaymentSnapshotWaitsForAnOwnedPreviewToRefundItsTemporaryBorrow() throws Exception {
+        try (var game = scenario("scenario-payment-preview-snapshot")) {
+            main(game);
+            HeadlessPlatform.query(game.table, () -> { addGreen(game); game.table.publish(); return null; });
+            var current = current(game);
+            assertTrue(game.answer(current, Map.of("action", "card", "key", text(card(current.state(), "Hand", "Manalith"), "key"))));
+            var payment = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").startsWith("InputPayMana"));
+            var before = paymentSnapshot(game);
+            assertEquals(before.pool().size(), 1); assertEquals(before.tappedForests(), 0L);
+            var borrowed = new CountDownLatch(1); var release = new CountDownLatch(1);
+            var reading = new AtomicReference<Thread>();
+            var workers = Executors.newFixedThreadPool(2);
+            try {
+                var preview = workers.submit(() -> HeadlessPlatform.query(game.table, () -> {
+                    var pool = actor(game).getManaPool(); var spent = new ArrayList<Mana>();
+                    try {
+                        assertFalse(pool.payManaCostFromPool(before.owner().getRemainingManaCost(),
+                                before.owner().getPaidForAbility(), true, spent));
+                        assertEquals(spent.size(), 1); borrowed.countDown();
+                        if (!release.await(5, TimeUnit.SECONDS)) throw new AssertionError("Held preview did not release");
+                    } finally { pool.refundMana(spent); }
+                    return null;
+                }));
+                assertTrue(borrowed.await(5, TimeUnit.SECONDS));
+                // The old outside-owner assertion can observe this legitimate intermediate state.
+                assertEquals(actor(game).getManaPool().totalMana(), 0);
+                var snapshot = workers.submit(() -> { reading.set(Thread.currentThread()); return paymentSnapshot(game); });
+                assertPaymentSnapshotWaits(snapshot, reading);
+                release.countDown(); preview.get(5, TimeUnit.SECONDS);
+                assertEquals(snapshot.get(5, TimeUnit.SECONDS), before);
+                assertTrue(game.answer(payment, Map.of("action", "cancel")));
+            } finally { release.countDown(); workers.shutdownNow(); assertTrue(workers.awaitTermination(5, TimeUnit.SECONDS)); }
+        }
+    }
+
+    private record PaymentSnapshot(InputPayMana owner, List<Mana> pool, List<Mana> payingMana,
+                                   String originalBill, String remainingBill, long tappedForests) { }
+    private static PaymentSnapshot paymentSnapshot(RulesScenario game) {
+        return HeadlessPlatform.query(game.table, () -> capturePayment(game));
+    }
+    private static PaymentSnapshot capturePayment(RulesScenario game) {
+        var input = (InputPayMana) controller(game).getInputQueue().getInput();
+        assertTrue(input.isPaymentActive());
+        var pool = new ArrayList<Mana>(); actor(game).getManaPool().forEach(pool::add);
+        return new PaymentSnapshot(input, List.copyOf(pool), List.copyOf(input.getPaidForAbility().getPayingMana()),
+                input.getOriginalManaCost().toString(), input.getRemainingManaCost().toString(),
+                actor(game).getCardsIn(ZoneType.Battlefield).stream().filter(c -> c.getName().equals("Forest") && c.isTapped()).count());
+    }
+    private static void assertPaymentSnapshotWaits(Future<PaymentSnapshot> snapshot, AtomicReference<Thread> reader) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            assertFalse(snapshot.isDone(), "A coherent snapshot must wait for the preview owner to refund its borrow");
+            var thread = reader.get();
+            if (thread != null && thread.getState() == Thread.State.TIMED_WAITING
+                    && java.util.Arrays.stream(thread.getStackTrace()).anyMatch(frame ->
+                        frame.getClassName().equals(HeadlessPlatform.class.getName()) && frame.getMethodName().equals("query"))) return;
+            Thread.sleep(1);
+        }
+        fail("The payment snapshot did not enter its actual owner query wait");
     }
 
     private static RulesScenario scenario(String name) throws Exception {
