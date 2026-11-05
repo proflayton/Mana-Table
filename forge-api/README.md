@@ -1729,6 +1729,32 @@ not certify every remembered object in an augmented stack description. Typed
 results and admitted cause rules remain available; private or unknown cause
 correlation IDs are removed from public copies.
 
+The optional `history-announcements` capability accepts
+`historySchemaVersion: 2` on these same history reads. Version 2 adds a fourth
+`announcement` payload for actual stack commitments and retargeting. Default
+version 1 retains the original field set and substitutes a small activity fact
+at the same ledger sequence, so older readers neither receive unknown fields
+nor acquire artificial cursor gaps. A newer desktop relaying an older TCP host
+explicitly returns that host's version 1; missing target data remains unreported.
+
+An announcement supplies `kind` (`announced` or `retargeted`), `stackId`, an
+optional already-public `causeExecutionId`, `targetKnowledge` (`Known` or
+`Unknown`), `targets`, and optional actual `announcedX`. The record's execution
+identifies the affected stack occurrence; a redirect's execution is its cause.
+Targets retain their actual `groupIndex`/`targetIndex`, multiplicity and optional
+`allocatedAmount`. Card, player and stack descriptors copy only admitted
+historical IDs and event-time name, type, zone, controller and owner where
+available. They contain no action keys or current card permissions. Submode
+targets are captured from the committed chain, not from the targetless modal
+root or unused modes. Retargeting appends another fact and preserves the
+original; constructors, normal refreshes and unchanged selections add none.
+Names, characteristics and audience disclosure are frozen when the rules emit
+the receipt. Later reveal, control or zone changes cannot rewrite it. Hidden
+hand/library and face-down identities are omitted, making the target set
+`Unknown` rather than a fabricated known-empty result. The receipt bounds its
+capture to 128 groups and 4096 targets; a partial capture remains `Unknown`, and
+the existing record-byte and ledger retention fences still apply.
+
 `payment` supplies `kind` (`opened`, `produced`, `spent`, `completed`, `cancelled`,
 or `restored`), `payerId`, `origin` (`manual`, `auto`, or `unknown`), optional
 `producerExecutionId`/`producerMode`, symbolic `{symbol,count}` arrays

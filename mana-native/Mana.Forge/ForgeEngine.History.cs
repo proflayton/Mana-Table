@@ -15,9 +15,11 @@ public sealed partial class ForgeEngine : IMatchHistory
         var owner = current;
         if (owner is not { HistoryAvailable: true, Failure: null })
             throw new NotSupportedException("This provider does not expose match history.");
-        var raw = await Request("matchHistory", new { gameId, afterSequence, limit });
+        int requestedVersion = owner.HistoryAnnouncementsAvailable ? HistoryFacts.SchemaVersion : HistoryFacts.LegacySchemaVersion;
+        var raw = await Request("matchHistory", owner.HistoryAnnouncementsAvailable
+            ? new { gameId, afterSequence, limit, historySchemaVersion = requestedVersion } : (object)new { gameId, afterSequence, limit });
         if (current != owner || owner.Failure != null) throw new IOException("The history provider changed.");
-        var batch = ForgeHistoryDecoder.Decode(raw);
+        var batch = ForgeHistoryDecoder.Decode(raw, requestedVersion);
         if (batch.GameId != gameId || batch.NextSequence < afterSequence)
             throw new IOException("The provider returned a different history scope or an older cursor.");
         return batch;
@@ -30,10 +32,11 @@ internal static class ForgeHistoryDecoder
     private static readonly JsonSerializerOptions Json = new() {
         PropertyNameCaseInsensitive = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
     };
-    internal static HistoryBatch Decode(JsonElement raw)
+    internal static HistoryBatch Decode(JsonElement raw, int maximumVersion = HistoryFacts.SchemaVersion)
     {
         try {
             var batch = raw.Deserialize<HistoryBatch>(Json) ?? throw new JsonException("Missing history batch.");
+            if (batch.SchemaVersion > maximumVersion) throw new JsonException("The provider used an unrequested history schema.");
             HistoryFacts.Validate(batch);
             return batch;
         } catch (Exception error) when (error is JsonException or ArgumentException or InvalidOperationException or OverflowException) {

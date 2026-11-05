@@ -43,10 +43,12 @@ internal static class PolledFanoutEngineJourney
             check(value, message); checks.Add(message);
         }
         var botPort = new PolledLobbyPorts.BotPort(engines[0]);
+        var pacingDuration = TimeSpan.FromSeconds(2.4);
+        var pacing = new TimedAiHostPacing(pacingDuration);
         var ai = new AiTableHost(botPort, _ => new CasualCommanderPolicy(), 261104,
             // This declared workload needs its full receipt window (~480
             // records per seat), rather than production's128-record ring.
-            new(TimeSpan.FromSeconds(3), 2048, historyCapacity: 1024), diagnostics: botPort);
+            new(TimeSpan.FromSeconds(3), 2048, historyCapacity: 1024), diagnostics: botPort, pacing: pacing);
         var players = engines.Select((engine, index) => new Player(engine, index)).ToArray();
         var cohorts = new Dictionary<(string Game, long Board), (string Facts,
             ForgePublicProjectionFacts.ExecutionCorrelation Correlations, HashSet<int> Viewers)>();
@@ -56,7 +58,7 @@ internal static class PolledFanoutEngineJourney
         int steps = 0, coherent = 0;
         var stages = new List<object>();
         void Stage(string name) => stages.Add(new { name, seconds = elapsed.Elapsed.TotalSeconds });
-        bool complete = false;
+        bool complete = false, startingPlayerVerified = false;
         Exception? failure = null;
         var cleanupErrors = new List<string>();
         object? stopped = null;
@@ -64,6 +66,7 @@ internal static class PolledFanoutEngineJourney
         try {
             await Task.WhenAll(engines.Select(engine => engine.InitializeAsync()));
             Stage("providers-ready");
+            clock.BeginJourney();
             // Enable before the first lobby operation, exactly as app startup.
             await ai.StartAsync();
             var host = await Import(engines[0], "Polled fanout host", "99 Island", "Toothy, Imaginary Friend");
@@ -151,6 +154,16 @@ internal static class PolledFanoutEngineJourney
                             player.Client.AdvanceFinite(player.Intent, player.PauseForRetiredPaymentProbe);
                         }
                     } else if (!player.Client.Busy && !player.Client.Polling) {
+                        if (!startingPlayerVerified && player.Index == 0 && beforeCast == null
+                                && state.Decision?.Payload is PriorityPayload && state.ActivePlayerId == state.ViewerId
+                                && state.PhaseKey == "MAIN1" && state.Stack.IsEmpty) {
+                            Require(state.Turn == 1
+                                    && state.Viewer!.Zone("Command").Cards.Count(card => card.Name == "Power Play") == 1
+                                    && state.Players.Sum(participant => participant.Zone("Command").Cards.Count(card => card.Name == "Power Play")) == 1,
+                                "The declared Power Play conspiracy makes the ordinary host the actual turn-one starting player before its cast");
+                            startingPlayerVerified = true;
+                            facts["hostStartingTurn"] = state.Turn;
+                        }
                         bool casting = player.Step(beforeCast == null);
                         if (casting) {
                             beforeCast = state;
@@ -251,7 +264,7 @@ internal static class PolledFanoutEngineJourney
             clock.Complete();
         } catch (Exception error) {
             failure = error;
-            failurePhase = clock.InWorkload ? "workload" : "setup";
+            failurePhase = clock.InWorkload ? "queue-resolution" : clock.InActiveJourney ? "active-preparation" : "provider-readiness";
             File.WriteAllText(Path.Combine(directory, "primary-error.txt"), error.ToString());
         }
         finally {
@@ -289,15 +302,21 @@ internal static class PolledFanoutEngineJourney
                 failure ??= new IOException("Fanout evidence could not be preserved.", error);
             }
             File.WriteAllText(Path.Combine(directory, "result.json"), JsonSerializer.Serialize(new {
-                formatVersion = 1, scenario = "real-polled-tcp-fifty-five-draws", passed = complete && failure == null,
+                formatVersion = 2, scenario = "real-polled-tcp-fifty-five-draws", passed = complete && failure == null,
                 failure = failure?.ToString(), failurePhase, cleanupErrors, checks, facts, stages, steps, elapsedSeconds = elapsed.Elapsed.TotalSeconds,
-                setupSeconds = clock.SetupElapsed.TotalSeconds, workloadSeconds = clock.WorkloadElapsed.TotalSeconds,
-                setupBudgetSeconds = 45, workloadBudgetSeconds = 90, semanticStallBudgetSeconds = 15,
+                providerReadinessSeconds = clock.ReadinessElapsed.TotalSeconds, activeJourneySeconds = clock.ActiveElapsed.TotalSeconds,
+                queueResolutionSeconds = clock.WorkloadElapsed.TotalSeconds,
+                providerReadinessBudgetSeconds = 45, activeJourneyBudgetSeconds = 90, totalEnvelopeBudgetSeconds = 135,
+                semanticStallBudgetSeconds = 15,
                 commonTerminalReceipts = clock.Progress, maximumSemanticProgressGapSeconds = clock.MaximumProgressGap.TotalSeconds,
+                hostPacing = new { policy = pacing.GetType().Name, announcementSeconds = pacingDuration.TotalSeconds,
+                    scope = "Shipping timed pacing with fresh real AI policy decisions; not a diagnostic bypass or proof of a live slowdown's cause." },
+                startingPlayer = new { rule = "Power Play conspiracy", testOnly = true, verified = startingPlayerVerified,
+                    purpose = "The actual pregame rule puts the host's controlled cast on turn one without changing AI strategy or pacing." },
                 aiHistoryCapacity = 1024,
                 capturedTriggers = captured.Count, optionalPaymentTriggers = eyeTriggers.Count, coherentPublicCheckpoints = coherent,
                 runtime, launch = new { fixture = Hash(paths.Jar), derivedFixture = Hash(launch.Jar), bootstrap = "forge.api.AiReleaseFixtureEngine$PolledFanout" },
-                scope = "Controlled pregame resources; actual ordinary TCP, default polling, finite consent and background AI. No host deck legality, natural-outcome, strategic-quality or human UX claim."
+                scope = "Controlled pregame resources; actual ordinary TCP, default polling, finite consent and background AI with shipping timed pacing. No host deck legality, natural-outcome, strategic-quality or human UX claim."
             }, new JsonSerializerOptions { WriteIndented = true }));
         }
         if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();

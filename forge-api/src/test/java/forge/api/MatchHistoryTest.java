@@ -201,7 +201,8 @@ public class MatchHistoryTest {
     private static List<MatchHistory.Record> history(MatchEndpoint endpoint, String id) {
         var result = new ArrayList<MatchHistory.Record>(); long after = 0;
         for (;;) {
-            var chunk = endpoint.history(query(id, after, 128));
+            var request = query(id, after, 128); request.addProperty("historySchemaVersion", 2);
+            var chunk = endpoint.history(request);
             @SuppressWarnings("unchecked") var records = (List<MatchHistory.Record>) chunk.get("records");
             result.addAll(records); after = ((Number) chunk.get("nextSequence")).longValue();
             if (!Boolean.TRUE.equals(chunk.get("hasMore"))) return List.copyOf(result);

@@ -176,6 +176,29 @@ internal sealed partial class TableApplication
                 text.AppendLine("Counters at production: " + string.Join(", ", counters.Select(item => item.Value + " " + item.Key.ToLowerInvariant())));
             if (payment.ProducerMode is { Length: > 0 } mode) text.AppendLine(mode);
         }
+        var announcements = records.Where(item => item.Announcement != null).OrderBy(item => item.Sequence).ToArray();
+        if (announcements.Length == 0 && action.Kind is ExecutionKind.Spell or ExecutionKind.Activation or ExecutionKind.Trigger)
+            text.AppendLine("\nANNOUNCED TARGETS\nNot reported in this retained history.");
+        foreach (var record in announcements) {
+            var announcement = record.Announcement!;
+            text.AppendLine(announcement.Kind == "retargeted" ? "\nTARGETS CHANGED" : "\nANNOUNCED TARGETS");
+            if (announcement.CauseExecutionId is { } cause && model.Actions.FirstOrDefault(item => item.Id == cause) is { } redirect)
+                text.AppendLine("Changed by " + redirect.SourceName + ".");
+            if (announcement.AnnouncedX is { } x) text.AppendLine("Announced X: " + x + ".");
+            if (announcement.Targets.IsEmpty && announcement.TargetKnowledge == "Known") text.AppendLine("No targets.");
+            foreach (var target in announcement.Targets) {
+                var details = new List<string>();
+                if (target.Type != null) details.Add(target.Type);
+                if (target.Zone != null) details.Add(target.Zone + " at announcement");
+                if (target.ControllerId is { } controller) details.Add("controlled by player " + controller + " at announcement");
+                if (target.AllocatedAmount is { } amount) details.Add("assigned " + amount);
+                string name = target.Name ?? (target.Kind == "player" ? "Player " + target.PlayerId
+                    : target.Kind == "stack" ? "Recorded spell or ability" : "Undisclosed card");
+                text.AppendLine("Group " + (target.GroupIndex + 1) + ", target " + (target.TargetIndex + 1) + ": " + name
+                    + (details.Count == 0 ? "." : " — " + string.Join(" · ", details) + "."));
+            }
+            if (announcement.TargetKnowledge == "Unknown") text.AppendLine("Some target information was not disclosed at announcement.");
+        }
         string section = "";
         foreach (var record in records.Where(item => item.Activity != null)) {
             var activity = record.Activity!;
@@ -189,7 +212,7 @@ internal sealed partial class TableApplication
                 if (activity.Detail.Length > 0 && activity.Detail != activity.Message) text.AppendLine(activity.Detail);
             }
         }
-        if (payments.Length == 0 && !records.Any(item => item.Activity != null))
+        if (payments.Length == 0 && announcements.Length == 0 && !records.Any(item => item.Activity != null))
             text.AppendLine("The engine has recorded this action's stage. No committed payment or result was reported in this retained segment.");
         var origins = payments.Select(item => item.Payment!.Origin).Where(origin => origin is "manual" or "auto")
             .Distinct(StringComparer.Ordinal).Select(origin => origin == "auto" ? "Auto" : "manual input").ToArray();

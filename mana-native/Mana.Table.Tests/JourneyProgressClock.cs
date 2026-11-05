@@ -5,32 +5,42 @@ namespace Mana.Table;
 internal sealed class JourneyProgressClock
 {
     private readonly TimeProvider time;
-    private readonly TimeSpan setupBudget, workloadBudget, stallBudget;
+    private readonly TimeSpan readinessBudget, activeBudget, stallBudget;
     private readonly long started;
-    private long? workStarted, stopped;
+    private long? activeStarted, workStarted, stopped;
     private long lastProgress;
     private int progress, progressLimit;
 
-    internal JourneyProgressClock(TimeSpan setupBudget, TimeSpan workloadBudget, TimeSpan stallBudget,
+    internal JourneyProgressClock(TimeSpan readinessBudget, TimeSpan activeBudget, TimeSpan stallBudget,
         TimeProvider? time = null)
     {
-        if (setupBudget <= TimeSpan.Zero || workloadBudget <= TimeSpan.Zero || stallBudget <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(setupBudget));
+        if (readinessBudget <= TimeSpan.Zero || activeBudget <= TimeSpan.Zero || stallBudget <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(readinessBudget));
         this.time = time ?? TimeProvider.System;
-        this.setupBudget = setupBudget; this.workloadBudget = workloadBudget; this.stallBudget = stallBudget;
+        this.readinessBudget = readinessBudget; this.activeBudget = activeBudget; this.stallBudget = stallBudget;
         started = this.time.GetTimestamp();
     }
 
+    internal bool InActiveJourney => activeStarted.HasValue;
     internal bool InWorkload => workStarted.HasValue;
     internal int Progress => progress;
-    internal TimeSpan SetupElapsed => time.GetElapsedTime(started, workStarted ?? Now);
+    internal TimeSpan ReadinessElapsed => time.GetElapsedTime(started, activeStarted ?? Now);
+    internal TimeSpan ActiveElapsed => activeStarted is { } start ? time.GetElapsedTime(start, Now) : TimeSpan.Zero;
     internal TimeSpan WorkloadElapsed => workStarted is { } start ? time.GetElapsedTime(start, Now) : TimeSpan.Zero;
     internal TimeSpan MaximumProgressGap { get; private set; }
     private long Now => stopped ?? time.GetTimestamp();
 
+    internal void BeginJourney()
+    {
+        if (activeStarted.HasValue || stopped.HasValue) throw new InvalidOperationException("A journey admits provider readiness only once.");
+        long now = Now; CheckAt(now);
+        activeStarted = now;
+    }
+
     internal void BeginWork(int expectedProgress)
     {
-        if (workStarted.HasValue || stopped.HasValue) throw new InvalidOperationException("A journey starts its workload only once.");
+        if (!activeStarted.HasValue || workStarted.HasValue || stopped.HasValue)
+            throw new InvalidOperationException("A live active journey captures its workload only once.");
         if (expectedProgress <= 0) throw new ArgumentOutOfRangeException(nameof(expectedProgress));
         long now = Now; CheckAt(now);
         workStarted = lastProgress = now; progressLimit = expectedProgress;
@@ -51,11 +61,16 @@ internal sealed class JourneyProgressClock
 
     private void CheckAt(long now)
     {
-        if (workStarted is not { } start) {
-            if (time.GetElapsedTime(started, now) >= setupBudget) throw new TimeoutException("The journey exceeded its fixed setup budget.");
+        if (time.GetElapsedTime(started, now) >= readinessBudget + activeBudget)
+            throw new TimeoutException("The journey exceeded its fixed total envelope.");
+        if (activeStarted is not { } active) {
+            if (time.GetElapsedTime(started, now) >= readinessBudget) throw new TimeoutException("The journey exceeded its fixed provider-readiness budget.");
             return;
         }
-        if (time.GetElapsedTime(start, now) >= workloadBudget) throw new TimeoutException("The journey exceeded its fixed workload budget.");
+        if (time.GetElapsedTime(active, now) >= activeBudget) throw new TimeoutException("The journey exceeded its fixed active-journey budget.");
+        // Initial preparation has no declared terminal set. Capturing it arms
+        // this watchdog, while the active deadline retains its original owner.
+        if (!workStarted.HasValue) return;
         if (time.GetElapsedTime(lastProgress, now) >= stallBudget) throw new TimeoutException("The journey made no new captured terminal progress within its stall budget.");
     }
 

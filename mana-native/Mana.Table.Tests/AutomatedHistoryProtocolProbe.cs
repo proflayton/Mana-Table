@@ -19,6 +19,9 @@ internal static class AutomatedHistoryProtocolProbe
         Directory.CreateDirectory(profile);
         var capabilities = ForgeProtocol.RequiredCapabilities.Add("automated-seats").Add("simulation-match-setup");
         if (mode != "legacy") capabilities = capabilities.Add("automated-match-history");
+        bool announcements = mode.StartsWith("history-announcements-", StringComparison.Ordinal);
+        if (announcements) capabilities = capabilities.Add("match-history");
+        if (mode is "history-announcements-modern" or "history-announcements-downgrade") capabilities = capabilities.Add("history-announcements");
         Console.WriteLine(JsonSerializer.Serialize(new { @event = "ready", protocolVersion = ForgeProtocol.Version, capabilities }));
         Console.Out.Flush();
         string game = "configured-game";
@@ -40,6 +43,16 @@ internal static class AutomatedHistoryProtocolProbe
                     || method == "automatedSimulationStartConfigured" && starts > 0 || method == "matchStart")) {
                 Console.WriteLine(JsonSerializer.Serialize(new { id, error = "The replacement request was rejected." }));
                 Console.Out.Flush(); continue;
+            }
+            if (announcements && (method is "matchHistory" or "automatedMatchHistory")) {
+                bool requested = args.TryGetProperty("historySchemaVersion", out var schema);
+                File.AppendAllText(Path.Combine(profile, "probe-history-requests.jsonl"), JsonSerializer.Serialize(new {
+                    method, hasSchemaVersion = requested, historySchemaVersion = requested ? schema.GetInt32() : (int?)null
+                }) + "\n");
+                int seat = method == "matchHistory" ? 0 : args.GetProperty("seatId").GetInt32();
+                Reply(id, mode is "history-announcements-modern" or "history-announcements-unnegotiated"
+                    ? AnnouncementBatch(game, seat) : Batch(game, seat));
+                continue;
             }
             if (method == "automatedMatchHistory") {
                 reads++;
@@ -87,6 +100,16 @@ internal static class AutomatedHistoryProtocolProbe
             sequence = 1, turn = 1, phaseKey = "MAIN1", exposure = "seatPrivate", executionId = "owned-payment",
             payment = new { kind = "opened", payerId = seat, origin = "manual",
                 billBefore = new[] { new { symbol = "{C}", count = 1 } } }
+        } }
+    };
+
+    private static object AnnouncementBatch(string game, int seat) => new {
+        schemaVersion = 2, gameId = game, viewerId = seat, firstSequence = 1, lastSequence = 1,
+        nextSequence = 1, hasMore = false, records = new[] { new {
+            sequence = 1, turn = 1, phaseKey = "MAIN1", exposure = "public", executionId = "historical-announcement",
+            announcement = new { kind = "announced", stackId = "historical-stack", targetKnowledge = "Known",
+                targets = new[] { new { kind = "card", groupIndex = 0, targetIndex = 0, cardId = "historical-target",
+                    name = "Departed target", zone = "Battlefield", ownerId = 1, controllerId = 2, allocatedAmount = 3 } } }
         } }
     };
 
@@ -195,6 +218,47 @@ internal static class AutomatedHistoryProtocolProbe
                 new PassPriority(observation.State.Id, observation.State.Decision!.Id));
             check(Methods(directory).Contains("automatedAction"),
                 "Reading, malformed history or a late former callback cannot revoke the current gameplay scope: " + mode);
+        }
+        await AnnouncementNegotiation(profile, check);
+    }
+
+    private static async Task AnnouncementNegotiation(string profile, Action<bool, string> check)
+    {
+        string executable = Path.Combine(AppContext.BaseDirectory, "Mana.Table.Tests.exe");
+        foreach (string mode in new[] { "history-announcements-modern", "history-announcements-legacy",
+                "history-announcements-downgrade", "history-announcements-unnegotiated" }) {
+            string directory = Path.Combine(profile, mode); Directory.CreateDirectory(directory);
+            await using var engine = new ForgeEngine(new(executable, Marker, mode, directory));
+            await engine.InitializeAsync();
+            await engine.StartConfiguredSimulationAsync(ConfiguredSimulationWireChecks.Setup());
+            var observation = (await engine.ObserveAutomatedSeatsAsync()).Single();
+            HistoryBatch? ordinary = null, automated = null;
+            bool ordinaryRejected = false, automatedRejected = false;
+            try { ordinary = await engine.HistoryAsync(observation.State.Id, 0); } catch (IOException) { ordinaryRejected = true; }
+            try { automated = await engine.AutomatedHistoryAsync(observation.State.Id, observation.SeatId, 0); } catch (IOException) { automatedRejected = true; }
+            bool reject = mode == "history-announcements-unnegotiated";
+            check(reject ? ordinaryRejected && automatedRejected && ordinary == null && automated == null
+                    : !ordinaryRejected && !automatedRejected && ordinary is { ViewerId: 0, Records.Length: 1 }
+                        && automated is { ViewerId: 29, Records.Length: 1 },
+                "Both actual history ports enforce the negotiated announcement response version: " + mode);
+            if (!reject) check(mode == "history-announcements-modern"
+                    ? ordinary!.SchemaVersion == 2 && automated!.SchemaVersion == 2
+                        && automated.Records[0].Announcement?.Targets.Single() is { CardId: "historical-target", OwnerId: 1, ControllerId: 2, AllocatedAmount: 3 }
+                    : ordinary!.SchemaVersion == 1 && automated!.SchemaVersion == 1
+                        && ordinary.Records[0].Announcement == null && automated.Records[0].Announcement == null,
+                "Modern announcements and explicit legacy or downgrade responses preserve distinct historical knowledge: " + mode);
+            var requestLines = File.ReadAllLines(Path.Combine(directory, "probe-history-requests.jsonl"));
+            bool opted = mode is "history-announcements-modern" or "history-announcements-downgrade";
+            var requests = requestLines.Select(line => JsonNode.Parse(line)!).ToArray();
+            check(requests.Length == 2 && requests.Select(row => row["method"]!.GetValue<string>()).ToHashSet().SetEquals(["matchHistory", "automatedMatchHistory"])
+                && requests.All(row => row["hasSchemaVersion"]!.GetValue<bool>() == opted
+                    && (opted ? row["historySchemaVersion"]!.GetValue<int>() == 2 : row["historySchemaVersion"] == null))
+                && Methods(directory).All(method => method is not ("matchAction" or "automatedAction" or "matchSourceActions" or "automatedSourceActions")),
+                "The real ready handshake adds historySchemaVersion2 only when negotiated and each readonly port sends exactly once: " + mode);
+            await engine.ExecuteAutomatedAsync(observation.SeatId,
+                new PassPriority(observation.State.Id, observation.State.Decision!.Id));
+            check(Methods(directory).Count(method => method == "automatedAction") == 1,
+                "Accepted or rejected historical announcements neither grant new commands nor retire the original gameplay scope: " + mode);
         }
     }
 }

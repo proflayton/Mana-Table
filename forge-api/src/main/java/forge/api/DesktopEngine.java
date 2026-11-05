@@ -79,7 +79,7 @@ public final class DesktopEngine implements AutoCloseable {
         var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]), simulationTables, pregameSetup);
         engine.resources = Path.of(args[0]);
         engine.documents.loadAnalysisFormats(engine.resources);
-        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", PROTOCOL_VERSION, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo", "automated-seats", "certified-one-step-undo", "match-history", "match-setup", "durable-encounter-admission", "simulation-match-setup", "automated-match-history", "owned-decision-observation", "private-action-faces"))));
+        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", PROTOCOL_VERSION, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo", "automated-seats", "certified-one-step-undo", "match-history", "history-announcements", "match-setup", "durable-encounter-admission", "simulation-match-setup", "automated-match-history", "owned-decision-observation", "private-action-faces"))));
         try (engine; var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = input.readLine()) != null) {

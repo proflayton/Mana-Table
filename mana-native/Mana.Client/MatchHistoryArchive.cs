@@ -111,7 +111,8 @@ public sealed partial class MatchHistoryArchive : IMatchHistoryArchive, IDisposa
         var records = scope == HistoryExportScope.IncludeOwnPrivate ? document.Records : PublicRecords(document.Records);
         long? selectedRecordSequence = focusSequence is { } selected && records.Any(record => record.Sequence == selected) ? selected : null;
         // A purpose-built document, never a ZIP of the profile or a serialized snapshot.
-        var export = new { schemaVersion = 1, scope = scope == HistoryExportScope.Public ? "public" : "includeOwnPrivate",
+        var export = new { schemaVersion = records.Any(record => record.Announcement != null) ? 2 : 1,
+            scope = scope == HistoryExportScope.Public ? "public" : "includeOwnPrivate",
             summary = document.Summary, issues = document.Issues, omittedRecords = document.Records.Length - records.Length,
             authority = "none", selectedRecordSequence, focusOmitted = focusSequence.HasValue && selectedRecordSequence == null, records };
         await JsonSerializer.SerializeAsync(destination, export, Json, cancellation).ConfigureAwait(false);

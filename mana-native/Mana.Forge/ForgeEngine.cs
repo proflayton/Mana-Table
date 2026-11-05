@@ -33,6 +33,7 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         public bool ConfiguredSimulationAvailable { get; set; }
         public bool CertifiedUndoAvailable { get; set; }
         public bool HistoryAvailable { get; set; }
+        public bool HistoryAnnouncementsAvailable { get; set; }
         public bool AutomatedHistoryAvailable { get; set; }
         public bool MatchSetupAvailable { get; set; }
         public bool EncounterStartAvailable { get; set; }
@@ -82,6 +83,7 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
                             owner.ConfiguredSimulationAvailable = capabilities.Contains("simulation-match-setup");
                             owner.CertifiedUndoAvailable = capabilities.Contains("certified-one-step-undo");
                             owner.HistoryAvailable = capabilities.Contains("match-history");
+                            owner.HistoryAnnouncementsAvailable = capabilities.Contains("history-announcements");
                             owner.AutomatedHistoryAvailable = capabilities.Contains("automated-match-history");
                             owner.MatchSetupAvailable = capabilities.Contains("match-setup");
                             owner.EncounterStartAvailable = capabilities.Contains("durable-encounter-admission");

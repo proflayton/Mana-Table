@@ -21,8 +21,11 @@ public sealed partial class ForgeEngine : IAutomatedMatchHistory
             generation = worldGeneration;
             RequireAudience();
         }
-        var raw = await Request("automatedMatchHistory", new { gameId, seatId, afterSequence, limit });
-        var batch = DecodeAutomatedHistory(raw, gameId, seatId, afterSequence, limit);
+        int requestedVersion = owner.HistoryAnnouncementsAvailable ? HistoryFacts.SchemaVersion : HistoryFacts.LegacySchemaVersion;
+        var raw = await Request("automatedMatchHistory", owner.HistoryAnnouncementsAvailable
+            ? new { gameId, seatId, afterSequence, limit, historySchemaVersion = requestedVersion }
+            : (object)new { gameId, seatId, afterSequence, limit });
+        var batch = DecodeAutomatedHistory(raw, gameId, seatId, afterSequence, limit, requestedVersion);
         lock (worldScopeGate) RequireAudience();
         return batch;
 
@@ -34,9 +37,10 @@ public sealed partial class ForgeEngine : IAutomatedMatchHistory
         }
     }
 
-    internal static HistoryBatch DecodeAutomatedHistory(JsonElement raw, string gameId, int seatId, long afterSequence, int limit)
+    internal static HistoryBatch DecodeAutomatedHistory(JsonElement raw, string gameId, int seatId, long afterSequence, int limit,
+        int maximumVersion = HistoryFacts.SchemaVersion)
     {
-        var batch = ForgeHistoryDecoder.Decode(raw);
+        var batch = ForgeHistoryDecoder.Decode(raw, maximumVersion);
         if (batch.GameId != gameId || batch.ViewerId != seatId || batch.NextSequence < afterSequence
             || batch.Records.Length > limit || batch.Records.Any(record => record.Sequence <= afterSequence))
             throw new IOException("The provider returned a different automated history audience or cursor.");

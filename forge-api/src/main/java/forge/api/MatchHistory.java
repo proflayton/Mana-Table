@@ -7,6 +7,7 @@ import com.google.gson.JsonObject;
 import forge.game.Game;
 import forge.game.card.CardView;
 import forge.game.event.ManaPaymentReceipt;
+import forge.game.event.StackAnnouncementReceipt;
 import forge.game.player.PlayerView;
 
 import java.nio.charset.StandardCharsets;
@@ -28,7 +29,13 @@ final class MatchHistory {
                    Map<String, Integer> sourceCounters, String restoredExecutionId) { }
     record Record(long sequence, int turn, String phaseKey, String exposure,
                   String executionId, String parentId, String sourceCardId, String sourceName,
-                  MatchActivity.Entry activity, Execution execution, Payment payment) { }
+                  MatchActivity.Entry activity, Execution execution, Payment payment,
+                  HistoryAnnouncementProjection.Announcement announcement) {
+        Record(long sequence, int turn, String phaseKey, String exposure, String executionId, String parentId,
+               String sourceCardId, String sourceName, MatchActivity.Entry activity, Execution execution, Payment payment) {
+            this(sequence, turn, phaseKey, exposure, executionId, parentId, sourceCardId, sourceName, activity, execution, payment, null);
+        }
+    }
     record Chunk(int schemaVersion, String gameId, int viewerId, long firstSequence, long lastSequence,
                  long nextSequence, boolean hasMore, List<Record> records) { }
     private record Stored(Record record, int bytes) { }
@@ -105,6 +112,29 @@ final class MatchHistory {
         }
     }
 
+    @Subscribe public void announcement(StackAnnouncementReceipt receipt) {
+        // Reaching the public stack is the disclosure of this occurrence, not
+        // its private preparation or the identity of an unadmitted caller.
+        String publicCause;
+        synchronized (this) {
+            admittedExecutions.add(receipt.executionId());
+            publicExecutions.add(receipt.executionId());
+            while (admittedExecutions.size() > MAXIMUM_RECORDS) admittedExecutions.remove(admittedExecutions.iterator().next());
+            while (publicExecutions.size() > MAXIMUM_RECORDS) publicExecutions.remove(publicExecutions.iterator().next());
+            publicCause = publicReference(receipt.causeExecutionId());
+        }
+        // Activity admission may take its own monitor. Never invert the
+        // Activity -> History ordering used by ordinary committed events.
+        var announced = HistoryAnnouncementProjection.describe(receipt, viewer.getId(), activity::announcementIdentity, publicCause);
+        var source = receipt.source();
+        boolean disclosed = source != null && source.disclosedTo(viewer.getId());
+        String sourceId = disclosed ? activity.announcementIdentity(source) : null;
+        synchronized (this) {
+            append(new Record(++sequence, turn(), phase(), "public", receipt.executionId(), null,
+                    sourceId, disclosed ? source.name() : null, null, null, null, announced));
+        }
+    }
+
     synchronized void restored(int actorId, String executionId, Map<String, Integer> pool) {
         var payment = new Payment("restored", actorId, "manual", null, null, null, null, null, null, pool, null,
                 publicReference(executionId));
@@ -117,6 +147,7 @@ final class MatchHistory {
             throw new IllegalArgumentException("History belongs to another match");
         long after = number(request, "afterSequence", 0);
         long limit = number(request, "limit", MAXIMUM_CHUNK);
+        int schema = requestedSchema(request);
         if (after < 0 || after > sequence || limit < 1 || limit > MAXIMUM_CHUNK)
             throw new IllegalArgumentException("Invalid history cursor or chunk limit");
         var result = new ArrayList<Record>();
@@ -126,10 +157,35 @@ final class MatchHistory {
             result.add(stored.record()); chunkBytes += stored.bytes();
         }
         long next = result.isEmpty() ? sequence : result.get(result.size() - 1).sequence();
-        var chunk = new Chunk(1, gameId, viewer.getId(), firstSequence(), sequence, next, next < sequence, List.copyOf(result));
+        var chunk = new Chunk(schema, gameId, viewer.getId(), firstSequence(), sequence, next, next < sequence, List.copyOf(result));
         return Map.of("schemaVersion", chunk.schemaVersion(), "gameId", chunk.gameId(), "viewerId", chunk.viewerId(),
                 "firstSequence", chunk.firstSequence(), "lastSequence", chunk.lastSequence(), "nextSequence", chunk.nextSequence(),
-                "hasMore", chunk.hasMore(), "records", chunk.records());
+                "hasMore", chunk.hasMore(), "records", schema == 2 ? chunk.records() : chunk.records().stream().map(MatchHistory::legacyRecord).toList());
+    }
+
+    static int requestedSchema(JsonObject request) {
+        long schema = number(request, "historySchemaVersion", 1);
+        if (schema != 1 && schema != 2) throw new IllegalArgumentException("Unsupported history schema");
+        return (int) schema;
+    }
+
+    private static Map<String, Object> legacyRecord(Record record) {
+        var activity = record.activity();
+        if (record.announcement() != null) {
+            var announced = record.announcement();
+            // Compatibility facts use this ledger ordinal as their own event
+            // identity. No unrelated live Activity entry is borrowed or edited.
+            activity = new MatchActivity.Entry(record.sequence(), record.turn(), record.phaseKey(), "announcement", null,
+                    announced.kind().equals("retargeted") ? "Targets changed." : "Targets announced.",
+                    record.sourceCardId(), record.sourceName(), "", "", 0, null, null, false,
+                    null, announced.stackId(), record.executionId(), null);
+        }
+        var value = new LinkedHashMap<String, Object>();
+        value.put("sequence", record.sequence()); value.put("turn", record.turn()); value.put("phaseKey", record.phaseKey());
+        value.put("exposure", record.exposure()); value.put("executionId", record.executionId()); value.put("parentId", record.parentId());
+        value.put("sourceCardId", record.sourceCardId()); value.put("sourceName", record.sourceName());
+        value.put("activity", activity); value.put("execution", record.execution()); value.put("payment", record.payment());
+        return Collections.unmodifiableMap(value);
     }
 
     private static long number(JsonObject request, String key, long fallback) {

@@ -17,7 +17,11 @@ public sealed partial class MatchHistoryArchive
         var executions = visible.Select(record => record.Execution?.Occurrence.Id)
             .Where(id => !string.IsNullOrEmpty(id)).ToHashSet(StringComparer.Ordinal);
         string? PublicId(string? id) => id != null && executions.Contains(id) ? id : null;
-        return visible.Select(record => {
+        // A target receipt cannot certify its own affected execution's public
+        // identity. Keep it in the original viewer archive, but explicitly omit
+        // it from this export if its defining public occurrence is unavailable.
+        return visible.Where(record => record.Announcement == null
+                || record.ExecutionId != null && executions.Contains(record.ExecutionId)).Select(record => {
             bool concealedParent = record.ParentId != null && PublicId(record.ParentId) == null;
             var execution = record.Execution;
             if (execution != null) {
@@ -40,8 +44,12 @@ public sealed partial class MatchHistoryArchive
                 Detail = "",
                 Cause = activity.Cause is { } cause ? cause with { Id = PublicId(cause.Id) ?? "" } : null
             };
+            var announcement = record.Announcement;
+            if (announcement != null) announcement = announcement with {
+                CauseExecutionId = PublicId(announcement.CauseExecutionId)
+            };
             return record with { ParentId = PublicId(record.ParentId), ExecutionId = PublicId(record.ExecutionId),
-                Activity = activity, Execution = execution, Payment = payment };
+                Activity = activity, Execution = execution, Payment = payment, Announcement = announcement };
         }).ToImmutableArray();
     }
 }

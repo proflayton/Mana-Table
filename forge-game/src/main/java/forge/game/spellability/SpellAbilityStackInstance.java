@@ -143,7 +143,23 @@ public class SpellAbilityStackInstance implements IIdentifiable, IHasCardView {
                 }
                 distinctObjects.add(tgt);
             }
+            if (!sameTargets(oldTC, ability.getTargets())) {
+                var game = ability.getHostCard().getGame();
+                var root = forge.game.event.StackAnnouncementReceipt.currentStack(game, ability);
+                if (root != null) {
+                    var receipt = forge.game.event.StackAnnouncementReceipt.capture("retargeted", root);
+                    if (receipt != null) game.fireEvent(receipt);
+                }
+            }
         }
+    }
+
+    private static boolean sameTargets(TargetChoices before, TargetChoices after) {
+        if (before.size() != after.size()) return false;
+        for (int index = 0; index < before.size(); index++)
+            if (before.get(index) != after.get(index)
+                    || !java.util.Objects.equals(before.getDividedValue(before.get(index)), after.getDividedValue(after.get(index)))) return false;
+        return true;
     }
 
     public boolean addTriggeringObject(AbilityKey trigObj, Object value) {

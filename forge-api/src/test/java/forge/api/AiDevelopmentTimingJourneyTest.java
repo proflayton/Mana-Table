@@ -189,6 +189,7 @@ public class AiDevelopmentTimingJourneyTest {
         for (int chunkIndex = 0; chunkIndex < 8; chunkIndex++) {
             var request = new JsonObject();
             request.addProperty("gameId", game.table.id); request.addProperty("afterSequence", after); request.addProperty("limit", 128);
+            request.addProperty("historySchemaVersion", 2);
             var chunk = game.session(0).history(request);
             @SuppressWarnings("unchecked") var records = (List<MatchHistory.Record>) chunk.get("records");
             result.addAll(records); after = ((Number) chunk.get("nextSequence")).longValue();

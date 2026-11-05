@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Mana.Contracts;
 using Mana.Forge;
 
 namespace Mana.Table;
@@ -63,7 +64,71 @@ internal static class HistoryWireChecks
             "Automated history cannot substitute another game or player's audience even with otherwise valid typed facts");
         check(RejectOwned(wire, cursor: 3) && RejectOwned(wire, limit: 2),
             "A history provider cannot replay retired cursor records or exceed the caller's narrower chunk budget");
+        Announcements(check);
+    }
+
+    private static void Announcements(Action<bool, string> check)
+    {
+        var wire = JsonNode.Parse("""
+            {"schemaVersion":2,"gameId":"announced-game","viewerId":0,"firstSequence":1,"lastSequence":3,
+             "nextSequence":3,"hasMore":false,"records":[
+              {"sequence":1,"turn":8,"phaseKey":"MAIN1","exposure":"public","executionId":"historical-source",
+               "announcement":{"kind":"announced","stackId":"announced-stack","targetKnowledge":"Known","announcedX":5,
+                "targets":[
+                 {"kind":"card","groupIndex":0,"targetIndex":0,"cardId":"historical-target","name":"Old target","type":"Creature","zone":"Battlefield","controllerId":1,"ownerId":2,"allocatedAmount":2},
+                 {"kind":"card","groupIndex":1,"targetIndex":0,"cardId":"historical-target","name":"Old target","type":"Creature","zone":"Battlefield","controllerId":1,"ownerId":2,"allocatedAmount":3},
+                 {"kind":"player","groupIndex":2,"targetIndex":0,"playerId":3,"name":"Opponent"},
+                 {"kind":"stack","groupIndex":3,"targetIndex":0,"stackId":"older-stack","zone":"Stack"}]}},
+              {"sequence":2,"turn":8,"phaseKey":"MAIN1","exposure":"public","executionId":"historical-source",
+               "announcement":{"kind":"retargeted","stackId":"announced-stack","causeExecutionId":"redirect-effect","targetKnowledge":"Known","targets":[]}},
+              {"sequence":3,"turn":8,"phaseKey":"MAIN1","exposure":"public","executionId":"unknown-source",
+               "announcement":{"kind":"announced","stackId":"unknown-stack","targetKnowledge":"Unknown","targets":[]}}]}
+            """)!;
+        var decoded = ForgeHistoryDecoder.Decode(Element(wire));
+        var announced = decoded.Records[0].Announcement!;
+        check(decoded.SchemaVersion == 2 && announced.AnnouncedX == 5 && announced.Targets.Length == 4
+            && announced.Targets[0] is { CardId: "historical-target", GroupIndex: 0, AllocatedAmount: 2, OwnerId: 2, ControllerId: 1 }
+            && announced.Targets[1] is { CardId: "historical-target", GroupIndex: 1, AllocatedAmount: 3 }
+            && announced.Targets[2].PlayerId == 3 && announced.Targets[3].StackId == "older-stack",
+            "History schema2 preserves ordered target groups, repeated historical targets, allocations, announced X and independent owner/controller facts");
+        check(decoded.Records[1].Announcement is { Kind: "retargeted", CauseExecutionId: "redirect-effect", TargetKnowledge: "Known", Targets.IsEmpty: true }
+            && decoded.Records[2].Announcement is { TargetKnowledge: "Unknown", Targets.IsEmpty: true },
+            "Retargeting and known-empty announcements remain distinct from unknown historical target knowledge");
+        var roundTrip = ForgeHistoryDecoder.Decode(JsonSerializer.SerializeToElement(decoded));
+        check(roundTrip.Records[0].Announcement!.Targets.SequenceEqual(announced.Targets)
+            && roundTrip.Records[1].Announcement is { Kind: "retargeted", CauseExecutionId: "redirect-effect", TargetKnowledge: "Known", Targets.IsEmpty: true },
+            "The typed history round trip retains event-time announcement facts without rebinding a current occurrence");
+        check(Reject(wire, HistoryFacts.LegacySchemaVersion),
+            "A schema2 history response is rejected when its read negotiated only legacy schema1");
+        var legacy = wire.DeepClone(); legacy["schemaVersion"] = 1;
+        check(Reject(legacy), "A legacy history envelope cannot smuggle an announcement record without schema2");
+
+        foreach (string member in new[] { "kind", "stackId", "targetKnowledge", "targets" }) {
+            var malformed = wire.DeepClone(); malformed["records"]![0]!["announcement"]!.AsObject().Remove(member);
+            check(Reject(malformed), "An announcement requires its explicit " + member + " contract");
+        }
+        foreach (string member in new[] { "key", "selectable", "snapshot", "knownFace" }) {
+            var malformed = wire.DeepClone(); malformed["records"]![0]!["announcement"]!["targets"]![0]![member] = "must-not-enter-history";
+            check(Reject(malformed), "An announced target cannot carry current " + member + " authority or raw face data");
+        }
+        foreach (var (name, mutate) in new (string, Action<JsonNode>)[] {
+            ("unknown target kind", n => n["kind"] = "permanent"),
+            ("negative group", n => n["groupIndex"] = -1),
+            ("negative target index", n => n["targetIndex"] = -1),
+            ("negative allocation", n => n["allocatedAmount"] = -1),
+            ("mixed player/card identity", n => n["playerId"] = 1),
+            ("control character identity", n => n["cardId"] = "bad\nidentity") }) {
+            var malformed = wire.DeepClone(); mutate(malformed["records"]![0]!["announcement"]!["targets"]![0]!);
+            check(Reject(malformed), "History rejects an announced target with " + name);
+        }
+        var duplicateSlot = wire.DeepClone(); duplicateSlot["records"]![0]!["announcement"]!["targets"]![1]!["groupIndex"] = 0;
+        check(Reject(duplicateSlot), "Two targets cannot claim the same announcement group and target ordinal");
+        var mixedVariant = wire.DeepClone(); mixedVariant["records"]![0]!["payment"] = new JsonObject { ["kind"] = "completed", ["payerId"] = 0, ["origin"] = "manual" };
+        check(Reject(mixedVariant), "One history record cannot combine an announcement with a second payload variant");
+        var unknownKnowledge = wire.DeepClone(); unknownKnowledge["records"]![0]!["announcement"]!["targetKnowledge"] = "Probably";
+        check(Reject(unknownKnowledge), "Historical target knowledge remains a closed explicit Known or Unknown value");
     }
     private static JsonElement Element(JsonNode value) => JsonSerializer.SerializeToElement(value);
-    private static bool Reject(JsonNode value) { try { ForgeHistoryDecoder.Decode(Element(value)); return false; } catch (IOException) { return true; } }
+    private static bool Reject(JsonNode value, int maximumVersion = HistoryFacts.SchemaVersion)
+    { try { ForgeHistoryDecoder.Decode(Element(value), maximumVersion); return false; } catch (IOException) { return true; } }
 }
