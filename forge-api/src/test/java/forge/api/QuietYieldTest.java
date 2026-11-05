@@ -644,7 +644,7 @@ public class QuietYieldTest {
                 // choice. No card data or fabricated rules action is supplied.
                 game.table.seat(0).action(request(input, Map.of("action", "passUntilPublicAction", "yieldToken", token)));
                 synchronized (game.table.gate) {
-                    game.table.seat(0).updatePublicDecision(null, "selection");
+                    game.table.seat(0).updatePublicDecision(null, "selection", null);
                     game.table.refreshDecisionState();
                 }
             } finally { release.countDown(); }

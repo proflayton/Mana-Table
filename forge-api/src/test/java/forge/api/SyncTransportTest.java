@@ -12,6 +12,19 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.testng.Assert.*;
 
 public class SyncTransportTest {
+    @Test(timeOut = 10000) public void tablePresenceUsesTheActualHostCapabilityInsteadOfTheLocalAdaptersFeatureList() throws Exception {
+        for (boolean supported : List.of(false, true)) {
+            var calls = new AtomicInteger();
+            try (var server = new SyncTransport.Server((seat, method, args) -> {
+                calls.incrementAndGet(); return Map.of("seat", seat);
+            }, () -> 1, ignored -> { }, supported ? Set.of("table-presence") : Set.of());
+                 var remote = new SeatConnection(new SyncTransport.Remote("127.0.0.1:" + server.listen()))) {
+                var frame = remote.presence(new JsonObject());
+                assertEquals(frame != null, supported);
+                assertEquals(calls.get(), supported ? 1 : 0, "An older host receives no unsupported presence method");
+            }
+        }
+    }
     @Test(timeOut = 10000) public void privateFaceProjectionIsExplicitAndForwardedOnlyToAnAdvertisingHost() throws Exception {
         for (boolean supported : List.of(false, true)) {
             Set<String> capabilities = supported ? Set.of("owned-decision-observation", "private-action-faces")

@@ -23,6 +23,7 @@ internal sealed partial class TableApplication
 
     private void CancelLocalInput()
     {
+        tablePresence.Suspend();
         ClearKeywordHelp();
         FinishAudioAdjustment(); audioVolumeFocused = false;
         CancelReleasedPlayIntent();

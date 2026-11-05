@@ -144,7 +144,7 @@ final class SyncLobby {
             conversation = new TableConversation(); conversation.join(0, slots.get(0).name);
             revision = 1;
             long epoch = ++transportEpoch;
-            server = new SyncTransport.Server(this::dispatch, this::joinSeat, seat -> disconnected(epoch, seat), Set.of("match-history", "history-announcements", "match-setup", "durable-encounter-admission", "owned-decision-observation", "private-action-faces")); connection = server.local(0);
+            server = new SyncTransport.Server(this::dispatch, this::joinSeat, seat -> disconnected(epoch, seat), Set.of("match-history", "history-announcements", "match-setup", "durable-encounter-admission", "owned-decision-observation", "private-action-faces", "table-presence")); connection = server.local(0);
             try { port = transport.equals("local") ? 0 : server.listen(); } catch (java.io.IOException e) { close(); throw new IllegalStateException("Could not host the table", e); }
             if (port != 0) {
                 // Endpoint metadata is discovered once, off the command pipe.
@@ -285,6 +285,17 @@ final class SyncLobby {
         return slots.get(seat);
     }
     private Object dispatch(int seat, String method, JsonObject p) {
+        if (method.equals("presence")) {
+            MatchTable owner; long epoch;
+            synchronized (this) { activeSeat(seat); owner = table; epoch = transportEpoch; }
+            if (owner == null) throw MatchPresence.superseded();
+            // Presence never holds the lobby monitor across the match boundary.
+            var result = owner.seat(seat).presence(p);
+            synchronized (this) {
+                if (table != owner || transportEpoch != epoch) throw MatchPresence.superseded();
+                return result;
+            }
+        }
         return method.equals("start") ? startOrdinary(seat) : dispatchInState(seat, method, p);
     }
     private synchronized Object dispatchInState(int seat, String method, JsonObject p) {

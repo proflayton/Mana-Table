@@ -54,7 +54,7 @@ internal static class ForgeSnapshotDecoder
             var snapshot = new GameSnapshot(wire.Id, wire.Status, wire.Error, wire.Result, wire.ViewerId, wire.Turn,
                 wire.Phase ?? "Starting game", wire.PhaseKey ?? "PREGAME", wire.ActivePlayerId, wire.Players,
                 wire.Stack.Select(item => item.Native()).ToImmutableArray(), wire.Combat?.Native(), decision) {
-                Revision = wire.Revision, BoardRevision = wire.BoardRevision,
+                Revision = wire.Revision, BoardRevision = wire.BoardRevision, PublicInspection = wire.PublicInspection,
                 StackInterruptionVersion = wire.StackInterruptionVersion,
                 StackActionVersion = wire.StackActionVersion, ResolutionChoiceVersion = wire.ResolutionChoiceVersion,
                 FiniteStackYield = wire.FiniteStackYield,
@@ -66,6 +66,9 @@ internal static class ForgeSnapshotDecoder
                 Encounter = wire.PartyId == null && wire.EncounterId == null ? null
                     : new EncounterIdentity(wire.PartyId ?? "", wire.EncounterId ?? "")
             };
+            var inspectionViolation = PublicInspectionFacts.Violation(snapshot);
+            if (inspectionViolation != PublicInspectionViolation.None)
+                throw new IOException("The rules provider published an invalid match snapshot (public inspection: " + inspectionViolation + ").");
             ValidateActionSources(snapshot, spectator);
             EncounterFacts.Validate(snapshot);
             MatchOutcomeFacts.Validate(snapshot);
@@ -168,6 +171,7 @@ internal static class ForgeSnapshotDecoder
         public JsonElement Prompt { get; init; }
         public long Revision { get; init; }
         public long BoardRevision { get; init; }
+        public PublicInspectionContext? PublicInspection { get; init; }
         public long? StackInterruptionVersion { get; init; }
         public long? StackActionVersion { get; init; }
         public long? ResolutionChoiceVersion { get; init; }

@@ -429,6 +429,44 @@ The table retains 200 ordered entries, including system activity, across games.
 These commands return `{tableId, revision, localSeat, members, messages}`; social
 revisions are independent of game decisions. Chat sends have a 750 ms per-person
 cooldown and use the existing duplicate-safe receipt transport.
+
+The source candidate adds optional `table-presence` negotiation on both the local
+adapter and the actual table-host handshake. `tablePresence` exchanges one latest
+public inspection, not a rules command or a conversation message. All audiences
+receive the same nullable `publicInspection: {id, boardRevision, playerId}` in
+their game observation. The authority supplies it only for the current,
+unsuspended ordinary-priority input. A public card chosen during a private or
+required choice is insufficient: targeting, costs, search, discard and other
+choice inputs revoke this context.
+
+An update carries `{gameId, boardRevision, sequence, contextId, subject}`; the
+subject is null to clear, `{kind: "card", id: visualId}` for an exact face-up,
+unphased battlefield occurrence, or `{kind: "stack", id: stackItemId}` for an
+exact public stack item with a disclosed face. No actor claim, action key, private
+face or hand position is accepted as presence authority. The authenticated seat
+owns the sender. Sequence numbers increase for that sender's transport lifetime;
+connection replacement retires the old context and receipt sequence.
+
+The response is `{gameId, boardRevision, revision, cues}`. Each cue contains the
+authenticated `playerId`, `contextId`, closed public `subject`, and
+`remainingMilliseconds` (at most 1500). Inspection has a separate ephemeral
+revision and never changes board, history, priority, consent or decision timing.
+Publishers coalesce their latest subject, keep one exchange in flight and send
+at most four updates per second; the host also caps subject updates at that rate.
+The existing ordered transport remains shared with gameplay. Public occurrence
+membership is captured once with the committed board; each admission and audience
+projection rechecks its current board/input/visibility fence under the existing
+rules-state boundary without action discovery or a new rules scan.
+
+An older host lacking the capability receives no presence request and supplies
+explicit unsupported absence. A known host's retired match or transport epoch
+returns `table-presence-superseded` only for this method. The native port keeps
+`Current`, `Unsupported` and `Superseded` results distinct, so a late retired
+response cannot permanently disable a supported table. Recipients match the cue
+against their current public context and exact current occurrence before painting;
+expired or concealed occurrences cannot be recovered from history. Presence is
+neither archived nor replayed, and no persisted-data migration is required.
+
 Catalog construction eagerly indexes the supplied printings. Initialize it once
 on a worker thread; search results include alternate printings rather than grouping
 them into a single card. Color masks are W=1, U=2, B=4, R=8, G=16; zero finds colorless

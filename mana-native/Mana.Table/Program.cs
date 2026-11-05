@@ -56,7 +56,8 @@ internal static class Program
                     MatchSetup = engine as ITableMatchSetup,
                     EncounterStart = engine as ITableEncounterStart,
                     Tempo = engine as ITableTempo,
-                    Social = engine as ITableSocial, Versions = engine as IDeckVersionHistory
+                    Social = engine as ITableSocial, Versions = engine as IDeckVersionHistory,
+                    Presence = engine as ITablePresence
                 };
                 using var game = new TableWindow(services, profile, Arg("--capture"), Arg("--fixture"), size, artSource: art,
                     appUpdates: appUpdates, installUpdate: incremental != null ? update => incremental.StartRestart(update, profile)

@@ -25,6 +25,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     final Game game;
     final String format;
     final MatchIdentities identities = new MatchIdentities();
+    final MatchPresence presence;
     final StackInterruption stackInterruption = new StackInterruption();
     private final Match match;
     private final Map<Integer, MatchSession> seats = new LinkedHashMap<>();
@@ -87,6 +88,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         this.encounter = encounter;
         HeadlessPlatform.initialize(resources, profile);
         tempo = new DecisionTempo(timing, monotonicMillis);
+        presence = new MatchPresence(id, monotonicMillis);
         this.format = format;
         var rules = new GameRules(GameType.Constructed);
         if (format.equals("Commander")) rules.addAppliedVariant(GameType.Commander);
@@ -318,9 +320,30 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
             var decisions = seats.values().stream().map(MatchSession::publicDecision).filter(Objects::nonNull).toList();
             Integer owner = decisions.size() == 1 ? decisions.get(0).ownerId() : null;
             String actionClass = decisions.isEmpty() ? "resolving" : decisions.size() == 1 ? decisions.get(0).actionClass() : "simultaneous";
-            for (var seat : seats.values()) seat.updatePublicDecision(owner, actionClass);
+            var inspection = publicInspectionContext(owner, actionClass);
+            for (var seat : seats.values()) seat.updatePublicDecision(owner, actionClass, inspection);
             for (var seat : seats.values()) seat.observeTempo();
         }
+    }
+
+    private MatchPresence.Context publicInspectionContext(Integer owner, String actionClass) {
+        if (closed || faulted || game.isGameOver() || owner == null || !actionClass.equals("priority")) return null;
+        return seats.values().stream().filter(seat -> seat.publicDecision() != null && seat.publicDecision().ownerId() == owner)
+                .map(seat -> seat.publicInspectionContext(boardRevision)).filter(Objects::nonNull).findFirst().orElse(null);
+    }
+
+    Map<String, Object> exchangePresence(MatchSession recipient, int actor, com.google.gson.JsonObject request) {
+        // Detached membership sets come from the existing committed projection.
+        // Current input/visibility fences still read live rules under their
+        // existing boundary; no action discovery, scan or publication occurs.
+        return game.getAction().readState(() -> { synchronized (gate) {
+            var decisions = seats.values().stream().map(MatchSession::publicDecision).filter(Objects::nonNull).toList();
+            Integer owner = decisions.size() == 1 ? decisions.get(0).ownerId() : null;
+            String actionClass = decisions.size() == 1 ? decisions.get(0).actionClass() : "";
+            var context = publicInspectionContext(owner, actionClass);
+            return presence.exchange(actor, request, boardRevision, context,
+                    recipient.publicInspectionSubjects(boardRevision), recipient.publicInspectionSubjects(boardRevision));
+        } });
     }
 
     /** Admission revokes a reversal before queued work can create a new event.

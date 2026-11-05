@@ -8,7 +8,7 @@ namespace Mana.Forge;
 
 public sealed record ForgePaths(string Java, string Jar, string Resources, string Profile);
 
-public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestClock = null) : ICardEngine, ITableSocial, IDeckWorkshop, ITableSeatSetup, ITableMatchSetup, ITableEncounterStart, ICardPrintings, ISourceActions, ITableTempo, IAutomatedSeatProvider
+public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestClock = null) : ICardEngine, ITableSocial, IDeckWorkshop, ITableSeatSetup, ITableMatchSetup, ITableEncounterStart, ICardPrintings, ISourceActions, ITableTempo, IAutomatedSeatProvider, ITablePresence
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
     private sealed record PendingRequest(string Method, TaskCompletionSource<JsonElement> Completion, CancellationToken Cancellation);
@@ -39,6 +39,7 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         public bool EncounterStartAvailable { get; set; }
         public bool OwnedDecisionAvailable { get; set; }
         public bool PrivateActionFacesAvailable { get; set; }
+        public bool TablePresenceAvailable { get; set; }
         public ForgeCommandScope Commands { get; } = new();
         public volatile Exception? Failure;
         public volatile bool FramingFailed;
@@ -89,6 +90,7 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
                             owner.EncounterStartAvailable = capabilities.Contains("durable-encounter-admission");
                             owner.OwnedDecisionAvailable = capabilities.Contains("owned-decision-observation");
                             owner.PrivateActionFacesAvailable = capabilities.Contains("private-action-faces");
+                            owner.TablePresenceAvailable = capabilities.Contains("table-presence");
                             owner.Ready.TrySetResult();
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
@@ -193,6 +195,8 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     internal static Exception RequestFailure(string method, JsonElement message)
     {
+        if (method == "tablePresence" && Text(message, "errorCode") == "table-presence-superseded")
+            return new EngineObservationSupersededException();
         if (method == "matchSourceActions") {
             if (Text(message, "errorCode") == "source-read-superseded")
                 return new EngineSourceReadException(EngineSourceReadFailure.Superseded);

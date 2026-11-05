@@ -36,6 +36,49 @@ journals; they do not alter shipping rules state or release gate identities.
 Normal accounting and controlled serial/parallel equivalence trials have
 different proof scopes. See the [testing guide](Mana-Table-Testing.md#api-test-process-ownership-ci-and-timing-trial).
 
+## Ephemeral public inspection
+
+The source candidate adds optional `ITablePresence`, supplied by composition in
+`TableServices`. It is distinct from `IMatchConnection` and `ITableSocial`:
+inspection updates contain neither commands nor chat, and do not mutate rules
+state, snapshots, history or decision clocks. `GameSnapshot.PublicInspection`
+is the authority's public context for the current ordinary-priority actor; only
+that actor may publish. A subject is a closed battlefield-card or stack-item
+reference, never a private hand position, action key or remote pointer coordinate.
+The authority and recipient each check current disclosure and occurrence.
+
+`Mana.Client/TablePresenceSession` owns one actual provider operation at a time,
+with at most four dispatches per second and no queued pointer history. The
+native owner yields dispatch to commands, automatic continuation and polling.
+Already dispatched work retains its ownership until the underlying task ends;
+client retirement never cancels shared rules work. Scope generations cover
+game, audience, board, public input context, foreground and close, including
+leaving and returning to identical context values. Returned leases are anchored
+at dispatch so delayed replies shorten their visible lifetime. The provider
+returns a closed current/unsupported/superseded result: transport retirement
+cannot impersonate absent capability when public context values are unchanged.
+Unsupported providers quietly disable the optional feature for that binding;
+joining a new game or audience resets this optional capability decision.
+Superseded work clears activity and its retired revision cursor, permitting a
+fresh exchange. Failures clear activity and
+back off without entering match recovery or an error overlay.
+
+`Mana.Game` resolves a current pointer/reader against prepared public objects,
+then paints returned cues using the current table geometry. A cue cannot revive
+a newly concealed card or borrow another pending ability's physical source.
+Camera navigation and dragging suppress outgoing inspection rather than retire
+the receiving audience; received marks follow the same moving physical poses.
+Covered board surfaces hide their paint without changing transport ownership.
+Presence changes never replace a game publication or become a command receipt.
+`PublicInspectionFacts` supplies the same pure context predicate to every native
+provider consumer and the Forge snapshot decoder. Its closed violation reasons
+identify a refused field relationship without retaining context IDs, action
+handles, card faces or prompts. The decoder's fixed exception includes only that
+reason; it does not dump the rejected observation or add a journal/API. An
+absent legacy context remains a valid snapshot, without authorizing inspection.
+The shared ordered transport can still impose head-of-line latency; `Task.Run`
+and an independent fake port are not evidence of transport latency isolation.
+
 ## Local command diagnostics
 
 The [match history and evidence design](Mana-Table-History.md) distinguishes the
