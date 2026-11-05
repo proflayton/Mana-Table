@@ -518,7 +518,9 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
         sp.getHostCard().getGame().getTriggerHandler().resetActiveTriggers();
 
         game.updateStackForView();
+        var announcement = StackAnnouncementReceipt.capture("announced", si);
         game.fireEvent(new GameEventSpellAbilityCast(sp, si, stackIndex));
+        if (announcement != null) game.fireEvent(announcement);
     }
 
     private void recordUndoableActions(SpellAbility sa) {

@@ -1,6 +1,7 @@
 package forge.api;
 
 import forge.StaticData;
+import forge.deck.DeckSection;
 import forge.game.player.RegisteredPlayer;
 import forge.item.IPaperCard;
 
@@ -42,6 +43,12 @@ public final class AiReleaseFixtureEngine {
         // the actual spell and enough real cards for its 55 draws.
         var hostMain = players.get(0).getDeck().getMain();
         hostMain.clear(); hostMain.add(StaticData.instance().getCommonCards().getCard("Shamanic Revelation"), 99);
+        // Use the real pregame starting-player rule. This keeps the measured
+        // trigger workload on turn one without overriding an AI's choices.
+        var powerPlay = StaticData.instance().getVariantCards().getCard("Power Play");
+        if (powerPlay == null) throw new IllegalArgumentException("Missing fanout fixture card: Power Play");
+        players.get(0).getDeck().getOrCreate(DeckSection.Conspiracy).add(powerPlay);
+        players.get(0).assignConspiracies();
         var extras = new ArrayList<>(List.of("Toothy, Imaginary Friend", "Reliquary Tower"));
         extras.addAll(Collections.nCopies(54, "Memnite")); extras.addAll(Collections.nCopies(5, "Forest"));
         addExtras(players.get(0), extras); addExtras(players.get(1), List.of("Mind's Eye"));

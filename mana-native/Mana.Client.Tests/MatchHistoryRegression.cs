@@ -72,7 +72,7 @@ internal static class MatchHistoryRegression
             "An archived typed record rebuilds the same reading model without cards, action handles, a renderer or a rules process");
 
         foreach (var invalid in new[] {
-            batch with { SchemaVersion = 2 }, batch with { ViewerId = -1 }, batch with { HasMore = true },
+            batch with { SchemaVersion = 3 }, batch with { ViewerId = -1 }, batch with { HasMore = true },
             batch with { Records = [records[0] with { Exposure = "hostPrivate" }] },
             batch with { Records = [records[0] with { Payment = new("opened", 0, "auto") }] },
             batch with { Records = [records[3] with { Payment = new("produced", 0, "auto") { Produced = Mana("neutral", 32) } }] },

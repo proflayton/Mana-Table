@@ -8,7 +8,11 @@ public sealed record HistoryGap(long FirstSequence, long LastSequence, string Re
 public sealed record MatchHistoryAction(string Id, long FirstSequence, long LastSequence, int Turn, string PhaseKey,
     int? ActorPlayerId, string? SourceCardId, string SourceName, string? ParentId, ExecutionKind? Kind,
     ExecutionStep? Step, ExecutionOutcome? Outcome, ImmutableArray<HistoryRecord> Records,
-    ImmutableArray<string> Children, bool HistoryIncomplete);
+    ImmutableArray<string> Children, bool HistoryIncomplete)
+{
+    // Null/absent historical facts never become a known empty target list.
+    public ImmutableArray<HistoryRecord> Announcements => Records.Where(record => record.Announcement != null).ToImmutableArray();
+}
 
 /// <summary>An immutable reading model of admitted historical facts. It does not
 /// retain cards, current decision handles, or commands and needs no live engine.</summary>

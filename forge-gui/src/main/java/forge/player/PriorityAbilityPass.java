@@ -2,6 +2,7 @@ package forge.player;
 
 import com.google.common.eventbus.Subscribe;
 import forge.ai.AvailableActions;
+import forge.game.event.GameEvent;
 import forge.game.event.GameEventCardChangeZone;
 import forge.game.event.GameEventGameFinished;
 import forge.game.card.Card;
@@ -41,9 +42,24 @@ final class PriorityAbilityPass {
     private final Map<String, Policy> ignored = new LinkedHashMap<>();
     private final Map<String, Candidate> candidates = new LinkedHashMap<>();
     private AvailableActions.ActionScan scan;
+    private long rulesGeneration;
+    private long scanGeneration = -1;
+
+    /** Only the actual scan can certify absence. Publishing or ignoring a
+     * candidate does not renew its observation of the rules resources. */
+    @Subscribe public synchronized void rulesChanged(GameEvent event) {
+        rulesGeneration++;
+    }
+
+    synchronized long rulesGeneration() { return rulesGeneration; }
+
+    synchronized boolean scanCurrent() {
+        return scan != null && scan.complete() && scanGeneration == rulesGeneration;
+    }
 
     synchronized void clearScan() {
         scan = null;
+        scanGeneration = -1;
         candidates.clear();
     }
 
@@ -63,7 +79,7 @@ final class PriorityAbilityPass {
         clearScan();
     }
 
-    synchronized void refresh(Player player, AvailableActions.ActionScan next) {
+    synchronized void refresh(Player player, AvailableActions.ActionScan next, long observedGeneration) {
         pruneTurns(player);
         ignored.values().removeIf(policy -> {
             Candidate candidate = policy.candidate();
@@ -81,6 +97,9 @@ final class PriorityAbilityPass {
             candidates.put(id, new Candidate(id, key, source, source.getName(), ability.toUnsuppressedString(),
                     HandPlacements.eligibleCards(player, ability)));
         }
+        // Candidate descriptions can also traverse rules objects. Certify only
+        // after the entire scan and its cached description capture stayed put.
+        scanGeneration = rulesGeneration == observedGeneration ? observedGeneration : -1;
     }
 
     synchronized boolean setIgnored(String id, boolean value, Player player, boolean currentPriority) {
@@ -124,7 +143,7 @@ final class PriorityAbilityPass {
 
     synchronized boolean hasNonIgnoredActions(Player player) {
         pruneTurns(player);
-        if (scan == null || !scan.complete() || scan.hasOtherActions()) return true;
+        if (!scanCurrent() || scan.hasOtherActions()) return true;
         return candidates.keySet().stream().anyMatch(id -> !ignored.containsKey(id));
     }
 

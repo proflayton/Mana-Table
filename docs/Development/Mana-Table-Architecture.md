@@ -123,6 +123,18 @@ retention is 16,384 records/8 MiB, chunks at most 128 records/512 KiB; native re
 is bounded separately by 32,768 records/32 MiB. Exceeding a bound marks missing
 coverage. SHA-256 chains detect local corruption, not signed authenticity.
 
+The announced-target source slice adds `history-announcements` negotiation.
+New clients request `historySchemaVersion: 2` only when advertised; schema-one
+responses remain readable, including an explicit downgrade through an older
+remote host. New hosts preserve every sequence when projecting schema one.
+Schema two adds execution-linked announcement and retarget facts, with copied
+target group/slot, controller, type, zone and divided allocation at the actual
+announcement. The rules event freezes disclosure before any later reveal,
+concealment, control change or movement. Hidden targets make coverage unknown;
+an empty known target set is distinct from unknown and from older unreported
+data. Historical identities never authorize current card reading or commands.
+The existing 64 KiB record and 512 KiB chunk bounds still apply.
+
 Accepted, queued and written states remain distinct. A finished match closes
 after history catches up; leaving earlier marks an unobserved tail. Late accepted
 final chunks can append to a retained closed archive. Unfinished manifests after
@@ -131,6 +143,13 @@ Default JSON exports allowlist public facts and close private causal references;
 including the viewer's private choices requires explicit consent. Unclassified
 raw activity detail is not certified public. No snapshots, live action handles,
 private AI observations, chat or profile-directory bundles are exported.
+Announcement facts remain complete in the original viewer archive and explicit
+own-private export. A public export conservatively omits an announcement whose
+affected execution lacks an independently retained public occurrence, including
+when that defining row was evicted. Existing omitted-record/focus indicators
+report this loss; a reference never certifies its own disclosure. Public redirect
+causes use the same existing reference closure. No current board data backfills
+missing historical targets.
 
 The resource-qualification slice adds the optional `IAutomatedMatchHistory` port
 and `automated-match-history` capability. It reads the same `MatchSession` ledger
@@ -937,6 +956,12 @@ must not reset another seat's timer. Waiting withholds a command and re-observes
 on the next step; it never retains an answer across the beat. Headless campaigns
 use the fast default without this presentation cadence. A local client's Auto
 pause alone cannot govern AI progression or actions inside one rules execution.
+
+The [priority continuation proposal](Mana-Table-Priority-Continuation.md)
+describes the next incremental server consent boundary. It distinguishes the
+already server-owned finite grant from still client-owned ordinary Auto/quiet
+intent, and defines revocation, privacy and paced mixed-table gates. That
+standing-policy extension is not implemented or released.
 
 `AiResolutionProgress` adds read-only public occurrence evidence to that cadence
 port. `TimedAiHostPacing` can retain the initial 2.4-second announcement beat for

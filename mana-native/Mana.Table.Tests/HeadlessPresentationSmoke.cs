@@ -50,6 +50,7 @@ internal static partial class HeadlessPresentationSmoke
                     ResourceEvidenceWireChecks.Run(Check);
                     ConfiguredSimulationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                     AutomatedHistoryProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
+                    HistoryAnnouncementPresentationChecks.Run(profile, Check);
                     ForgeRequestCancellationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                     OwnedDecisionObservationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                 }
@@ -106,6 +107,7 @@ internal static partial class HeadlessPresentationSmoke
             EncounterStartProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             CooperativeOpeningChecks.Run(Check);
             HistoryWireChecks.Run(Check);
+            HistoryAnnouncementPresentationChecks.Run(profile, Check);
             GameplayUndoWireChecks.Run(Check);
             FiniteResolutionWireChecks.Run(Check);
             FiniteStackYieldWireChecks.Run(Check);

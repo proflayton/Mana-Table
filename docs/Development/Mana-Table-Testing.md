@@ -455,6 +455,14 @@ The owner acknowledgement validates continuation without publishing every
 passing frame; the existing `AdvanceRegression` keeps its one-presentation-
 checkpoint contract. Hold publishes its already-sent result once; Reset and unpumped Close
 release the retired wait and retain the exact serialized negative grant cleanup.
+`DecisionAdvance` defaults to `TimeProvider.System` and the same350 ms /
+32-command slice. The immediate four-window fixture supplies a controlled
+monotonic clock; explicit349/350 ms checks verify exact prefix return and fresh
+slice continuation without replay. Real400 ms late-I/O, waiting, Hold and session
+publication checks still use system time. The first four-window observation and
+receipt evidence is written before its unchanged assertion, so future failures
+retain a measured prefix. The earlier CI failure lacked that evidence; elapsed
+slice expiry is a testable explanation, not an established cause of that incident.
 Ordinary polls and external
 provider ingress use that same narrow admission guard; direct acceptance still
 throws and presentation callback failures are not swallowed. The existing
@@ -796,25 +804,45 @@ merging of automated authority; cancellation and retirement still belong to the
 single composition owner.
 
 The fixture-backed `--smoke-headless-engine` lane also invokes
-`PolledFanoutEngineJourney` with fixed45-second setup and90-second workload
-budgets (135 seconds combined, separate from teardown), plus a15-second
-semantic-progress stall watchdog. These are qualification deadlines checked at
+`PolledFanoutEngineJourney` with fixed45-second provider-readiness and90-second
+active-journey budgets (the same135-second maximum, separate from teardown).
+The active clock starts once both providers initialize, before lobby setup,
+fixture preparation and the ordinary cast. Capturing the actual110-trigger queue
+arms a15-second semantic-progress stall watchdog without resetting that active
+deadline. These are qualification deadlines checked at
 owner boundaries, not forced cancellation of an in-flight provider call.
 The earlier45-second workload cut off an
 actual CI run at90 of110 resolved triggers with no provider or AI fault; its
 largest observed queue-front receipt gap was conservatively under1.81 seconds.
 This is a test case budget correction, not a game-speed fix or a job/opening
-watchdog change. Setup ends once the actual110-trigger queue is captured; the
-workload clock starts exactly once and never resets as work progresses. Only
+watchdog change. A later master396 sample completed provider startup at24.526
+seconds, the table at30.631 and its cast at43.641; it was still resolving when
+the former combined startup/preparation cap expired at45.171. That failed sample
+stays preserved. Separating provider startup gives preparation and queue
+resolution one shared90-second cap, rather than extending the total envelope.
+Preparation has that absolute deadline; it cannot report terminal progress before
+the actual queue is captured. Only
 new captured terminal execution receipts observed by both ordinary humans reset
 the stall timer; polls and board revisions do not. Neither late progress nor
 late completion can qualify an expired workload. Fake-clock checks in the
 existing configured-simulation/full headless lane retain the old healthy-prefix
-counterexample and absolute/stall deadline controls. The result records maximum
-observed semantic-progress gap. Its test-only
+counterexample and measured396 prefix, delayed initialization/capture, absolute
+and stall deadline controls. Result format2 records separate provider-readiness,
+active-journey and queue-resolution durations plus the maximum observed terminal
+progress gap. Its original16 assertions and resource receipts are unchanged;
+one additional setup assertion verifies the declared starting-player rule.
+The background host uses the shipping `TimedAiHostPacing` at2.4 seconds, so the
+real optional-payment and counter-trigger cohort must also retain its expected
+cadence. Policies still evaluate fresh actual decisions; this integration gate
+does not attribute a player's slowdown to pacing without separate evidence. Its test-only
 pregame bootstrap supplies Toothy,54Memnites and five Forests to the host,
 Mind's Eye with no funding to the real TCP guest, and two distinct legal quiet
-AI lists. The deterministic host library is a controlled fixture, not a legal
+AI lists. The host also registers the real Power Play conspiracy: its pregame
+rule makes that host the actual turn-one starting player, checked before the
+ordinary cast. The first paced sample reached the host's turn four and exhausted
+preparation after earlier ordinary turns; that failed sample remains preserved.
+This declaration changes neither AI strategy, shipping pacing nor the fixed
+clock envelope. The deterministic host library is a controlled fixture, not a legal
 deck or deck-qualification witness. Both humans retain default `ClientSession`
 polling; the real background AI host shares the host provider. One ordinary
 Shamanic Revelation cast must draw55 cards, publish110 distinct triggers and
@@ -827,8 +855,8 @@ history are checked separately from trigger outcomes, which must all resolve.
 The scenario selects the existing1024-record per-seat AI history option to
 retain its complete bounded receipt window; the production128-record default
 is unchanged. Aggregate ACK totals cannot be compared against an evicted ring.
-This composition fixture installs no timed AI presentation pacing; the existing
-real cadence journey covers the clock-based presentation policy separately.
+The existing real cadence journey also covers the clock-based presentation
+policy separately.
 `polled-fanout/result.json` records the bounded result and runtime provenance;
 hands, current handles, bot history and full audience snapshots remain in its
 private evidence files. The nested fixture launcher is derived only after
@@ -1279,6 +1307,16 @@ set, sharing the AI-seat shard. It waits for the actual automatic pass after a
 visible stack announcement, rather than assuming the earlier shorter animation
 duration. The existing headless arrival check separately verifies that unchanged
 observations do not restart that announcement.
+
+`PriorityAvailabilityLeaseTest` covers the controller-owned availability scan and
+actual queued `passIfNoResponse` input. Its seven cases retain a verified empty
+window, reject a queued resource change or lost verification, prevent same-input
+republication from renewing a stale scan, and complete the newly funded real
+cast. A mutation during the scan remains uncertified until a clean scan; ordinary
+unpayable-color and exact floating-mana preview controls remain usable. Existing
+ability-ignore, quiet-yield, finite-yield and source-publication tests run beside
+it. This does not certify every legacy discovery query as pure or implement
+standing server Auto intent.
 
 `VisibleAutoPriorityChecks` exercises the physical Auto pass, Take control and
 Resume Auto journey from a saved-off profile in the existing headless
@@ -2749,6 +2787,20 @@ card-reading native CI sizes exercise the History reading journey at 130% text,
 including stable selection, card inspection/return, disclosure revocation,
 saved-match navigation and zero game commands. Preserve first failures and
 physical captures; human readability review remains separate.
+
+The announced-target source slice registers `HistoryAnnouncementRegression` in
+the same graphics-free client lane: ordered original/retarget snapshots, legacy
+absence versus known empty/unknown, strict typed bounds, immutable duplicate
+admission, actual archive write/restart, and public/private export closure and
+explicit omission. `HistoryAnnouncementPresentationChecks` runs in the existing
+configured and full headless groups at both maintained window sizes and 130%
+text. It reads the production History detail surface with no current cards and
+proves the recorded names/controller/type/zone and divided allocation cannot
+become a source reader or game reply. The existing wire and actual-child history
+checks cover optional schema-two requests, legacy downgrade and unrequested
+future-schema rejection. These authored checks do not establish that a live
+match which predates this schema retained targets; missing old facts stay
+unreported and are never reconstructed from a later board.
 
 The normal app profile is `%LOCALAPPDATA%\ManaTableNative`. Development and test
 runs use `--profile <fresh-directory>`; never use a player's installed profile

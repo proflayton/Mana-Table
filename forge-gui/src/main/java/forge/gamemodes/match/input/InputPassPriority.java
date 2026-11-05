@@ -66,7 +66,8 @@ public class InputPassPriority extends InputSyncronizedBase {
     }
 
     public boolean canAutoPass() {
-        return availabilityVerified && !isFinished() && !getOwner().hasAvailableActions();
+        return availabilityVerified && !isFinished() && getController().isPriorityAvailabilityCurrent(this)
+                && !getOwner().hasAvailableActions();
     }
 
     public boolean isPriorityActive() {

@@ -238,6 +238,13 @@ public final class MatchActivity {
     boolean historyVisible(CardView card) { return visible(card); }
     boolean historyPublic(CardView card) { return publicOccurrence(card) && visible(card); }
 
+    synchronized String announcementIdentity(StackAnnouncementReceipt.CardSnapshot card) {
+        // Both the emission-time disclosure witness and the ordinary current
+        // identity admission must hold. A later reveal cannot upgrade a hidden
+        // snapshot, and an obsolete receipt cannot allocate a new live handle.
+        return card != null && card.disclosedTo(viewer.getId()) ? visualId(card.identity()) : null;
+    }
+
     private String cardName(CardView card) { return visible(card) ? card.getCurrentState().getName() : "a face-down or hidden card"; }
     private boolean publicFaceDown(CardView card) {
         return card != null && card.isFaceDown() && card.getZone() == ZoneType.Battlefield && card.canBeShownTo(viewer);

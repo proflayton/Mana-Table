@@ -40,6 +40,8 @@ public sealed record HistoryRecord([property: JsonRequired] long Sequence, [prop
     public ActivityEntry? Activity { get; init; }
     public HistoryExecution? Execution { get; init; }
     public HistoryPayment? Payment { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public HistoryAnnouncement? Announcement { get; init; }
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -65,7 +67,8 @@ public sealed record HistoryPayment([property: JsonRequired] string Kind, [prope
 
 public static class HistoryFacts
 {
-    public const int SchemaVersion = 1;
+    public const int LegacySchemaVersion = 1;
+    public const int SchemaVersion = 2;
     public const int MaximumBatchRecords = 128;
     public const int MaximumRecordBytes = 64 * 1024;
     public const int MaximumBatchBytes = 512 * 1024;
@@ -111,7 +114,7 @@ public static class HistoryFacts
     public static void Validate(HistoryBatch batch)
     {
         ArgumentNullException.ThrowIfNull(batch);
-        if (batch.SchemaVersion != SchemaVersion || !Key(batch.GameId) || batch.ViewerId < 0
+        if (batch.SchemaVersion is not (LegacySchemaVersion or SchemaVersion) || !Key(batch.GameId) || batch.ViewerId < 0
             || batch.FirstSequence < 1 || batch.LastSequence < 0 || batch.FirstSequence - 1 > batch.LastSequence
             || batch.NextSequence < batch.FirstSequence - 1 || batch.NextSequence > batch.LastSequence
             || batch.HasMore != (batch.NextSequence < batch.LastSequence)
@@ -122,7 +125,8 @@ public static class HistoryFacts
                 || record.Turn < 0 || !Text(record.PhaseKey, 64) || record.Exposure is not ("public" or "seatPrivate")
                 || !OptionalKey(record.ExecutionId) || !OptionalKey(record.ParentId) || !OptionalKey(record.SourceCardId)
                 || record.SourceName != null && !Text(record.SourceName, 1024)
-                || (record.Activity == null ? 0 : 1) + (record.Execution == null ? 0 : 1) + (record.Payment == null ? 0 : 1) != 1)
+                || (record.Activity == null ? 0 : 1) + (record.Execution == null ? 0 : 1) + (record.Payment == null ? 0 : 1)
+                    + (record.Announcement == null ? 0 : 1) != 1)
                 throw Invalid();
             previous = record.Sequence;
             if (record.Execution is { } execution) Validate(execution, record);
@@ -139,6 +143,10 @@ public static class HistoryFacts
             if (record.Payment is { } payment) {
                 Validate(payment);
                 if (record.Exposure == "seatPrivate" && payment.PayerId != batch.ViewerId) throw Invalid();
+            }
+            if (record.Announcement is { } announcement) {
+                if (batch.SchemaVersion < SchemaVersion || record.ExecutionId == null) throw Invalid();
+                HistoryAnnouncementFacts.Validate(announcement);
             }
             int recordBytes = RecordBytes(record);
             bytes += recordBytes;

@@ -18,7 +18,7 @@ final class SeatConnection implements MatchEndpoint, AutoCloseable {
             case "tempoPresented" -> session.tempoPresented(p);
             case "history" -> session.history(p);
             default -> throw new IllegalArgumentException("Unknown seat command");
-        }, () -> { throw new IllegalStateException("This seat is local"); }, ignored -> { }, Set.of("match-history", "owned-decision-observation", "private-action-faces"));
+        }, () -> { throw new IllegalStateException("This seat is local"); }, ignored -> { }, Set.of("match-history", "history-announcements", "owned-decision-observation", "private-action-faces"));
         return new SeatConnection(server.local(0), () -> { server.close(); session.closeTable(); });
     }
     @SuppressWarnings("unchecked") public Map<String, Object> state() { return (Map<String, Object>)connection.request("observe", new JsonObject()); }
@@ -40,6 +40,11 @@ final class SeatConnection implements MatchEndpoint, AutoCloseable {
     @SuppressWarnings("unchecked") public Map<String, Object> sourceActions(JsonObject command) { return (Map<String, Object>)connection.request("sourceActions", command); }
     @SuppressWarnings("unchecked") public Map<String, Object> history(JsonObject query) {
         if (!connection.capabilities().contains("match-history")) throw new HistoryUnavailableException();
+        if (MatchHistory.requestedSchema(query) == 2 && !connection.capabilities().contains("history-announcements")) {
+            // A new desktop can relay an older TCP host. Explicitly preserve
+            // that host's supported v1 history rather than inventing targets.
+            query = query.deepCopy(); query.remove("historySchemaVersion");
+        }
         return (Map<String, Object>)connection.request("history", query);
     }
     @SuppressWarnings("unchecked") public Map<String, Object> concede(JsonObject command) { return (Map<String, Object>)connection.request("concede", command); }

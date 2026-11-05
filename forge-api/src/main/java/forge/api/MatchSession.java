@@ -161,6 +161,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
     }
 
+    private record PriorityAvailabilityLease(InputPassPriority input, long inputSequence, long sourceVersion) { }
+
     private static final class Pending {
         final String id = UUID.randomUUID().toString();
         final String kind;
@@ -1069,8 +1071,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     throw new IllegalArgumentException("The stack changed. Review the current effects before continuing.");
                 }
             }
-            if (action.equals("passIfNoResponse") && (!Boolean.TRUE.equals(next.prompt.get("canAutoPass")) || !canAutoPass(next.input)))
-                throw new IllegalArgumentException("This response window needs your decision");
+            PriorityAvailabilityLease availabilityLease = action.equals("passIfNoResponse") ? admitNoResponsePass(next) : null;
             String yieldToken = "";
             if (action.equals("passUntilPublicAction")) {
                 var supplied = request.get("yieldToken");
@@ -1267,7 +1268,12 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                                 }
                             }
                         }
-                        case "passIfNoResponse" -> ((InputPassPriority) next.input).passPriority();
+                        case "passIfNoResponse" -> {
+                            synchronized (gate) {
+                                restorePriority = !noResponseLeaseCurrent(next, availabilityLease);
+                                if (!restorePriority) ((InputPassPriority) next.input).passPriority();
+                            }
+                        }
                         case "priorityPassTurn" -> restorePriority = !((InputPassPriority) next.input).passTurn();
                         case "passUntilPublicAction" -> {
                             synchronized (gate) {
@@ -1319,10 +1325,12 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         // A late engine recheck may revoke this exact option. Keep
                         // the unanswered input usable; never choose a replacement.
                         if (restorePriority && !closed && !conceded && !viewer.getHasLost() && !game.isGameOver()
+                                && (!action.equals("passIfNoResponse") || pending == null || pending == next)
                                 && human.getInputQueue().getInput() == next.input && human.getInputProxy().getInput() == next.input) {
                             pending = next;
                             notices.add(action.equals("passUntilPublicAction")
                                     ? "The table changed. Passing for now stopped; review the current decision."
+                                    : action.equals("passIfNoResponse") ? "Available responses changed. Auto stopped; review the current decision."
                                     : chosenStackVersion != null ? "The stack changed. Resolve these stopped; review the current effects."
                                     : chosenFiniteGrant != null ? "Finite yielding stopped; review the current effects."
                                     : action.equals("useSourceAction") ? "That source action changed. Read the current card again."
@@ -1344,6 +1352,25 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             });
             return latest;
         }
+    }
+
+    private PriorityAvailabilityLease admitNoResponsePass(Pending current) {
+        var captured = current.publishedDecision;
+        if (!Boolean.TRUE.equals(current.prompt.get("canAutoPass")) || !canAutoPass(current.input)
+                || !sourceInputCurrent(current) || !decisionCaptureCurrent(current, captured))
+            throw new IllegalArgumentException("This response window needs your decision");
+        return new PriorityAvailabilityLease((InputPassPriority) current.input,
+                human.getInputProxy().getInputSequence(), captured.sourceVersion());
+    }
+
+    private boolean noResponseLeaseCurrent(Pending current, PriorityAvailabilityLease lease) {
+        // Admission consumes the publication via markBusy. Its own view revision
+        // is not a rules change, so retain the certified input/resource stamp
+        // separately and recheck it without reviving the consumed capture.
+        return lease != null && lease.input() == current.input && inputActionQueued && pending == null
+                && lease.inputSequence() == human.getInputProxy().getInputSequence()
+                && lease.sourceVersion() == sourceActionVersion.get() && inputOwnerCurrent(lease.input())
+                && canAutoPass(lease.input());
     }
 
     private boolean currentTargetCard(InputSelectTargets input, CardView view) {
@@ -2271,6 +2298,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             projectedPrompt.put("executionId", captured.executionId());
             projectedPrompt.put("executionStep", captured.executionStep());
             if (prompt.input instanceof InputPassPriority) {
+                projectedPrompt.put("canAutoPass", canAutoPass(prompt.input));
                 projectedPrompt.put("priorityAbilities", priorityAbilities(human.getPriorityAbilities(), prompt));
                 projectPriorityAlternative(projectedPrompt, prompt.input);
             }

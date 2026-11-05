@@ -171,6 +171,7 @@ await SourceActionSessionRegression.RunAsync(Check);
 await SourceReadDiagnosticRegression.RunAsync(Check);
 ExecutionRegression.Run(Check);
 await MatchHistoryRegression.RunAsync(Check);
+await HistoryAnnouncementRegression.RunAsync(Check);
 await ReadAudienceLifecycleRegression.RunAsync(Check);
 await AiFrameworkRegression.RunAsync(Check);
 AiSemanticRegression.Run(Check);

@@ -1623,10 +1623,17 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     }
 
     private void scanPriorityActions() {
+        long observedGeneration = priorityAbilityPass.rulesGeneration();
         AvailableActions.ActionScan scan = AvailableActions.scan(player, computeAvailableActionsBudgetMs(player));
-        priorityAbilityPass.refresh(player, scan);
+        priorityAbilityPass.refresh(player, scan, observedGeneration);
         cachedActionableCards = scan.actionableCards();
         player.getView().setHasAvailableActions(priorityAbilityPass.hasNonIgnoredActions(player));
+    }
+
+    /** A cached empty scan is authority only for the exact still-owned input
+     * and rules generation it inspected. This check never rescans the graph. */
+    public boolean isPriorityAvailabilityCurrent(InputPassPriority input) {
+        return cachedPriorityInput == input && isCurrentPriorityInput() && priorityAbilityPass.scanCurrent();
     }
 
     private boolean hasCertifiedManualCorrection() {

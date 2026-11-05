@@ -10,6 +10,7 @@ internal static class AdvanceRegression
 {
     internal static async Task RunAsync(string profile)
     {
+        Directory.CreateDirectory(profile);
         var checks = new List<string>();
         void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); checks.Add(message); }
         var initial = PresentationSmoke.Example() with { Revision = 10 };
@@ -19,10 +20,56 @@ internal static class AdvanceRegression
         bool CanPass(GameSnapshot s) => TurnGuide.CanAutoPass(s, true, false, new HashSet<string>(), false);
         var response = Next(4) with { Decision = Next(4).Decision! with { Payload = ((PriorityPayload)(Next(4).Decision!).Payload) with { CanAutoPass = false } } };
         var wire = new Scripted(initial, Next(1, "COMBAT_BEGIN"), Next(2, "COMBAT_END"), Next(3, "MAIN2"), response);
-        var result = await new DecisionAdvance(wire).RunAsync(initial, CanPass, PresentationPacing.ShouldPresent);
+        var emptyTime = new AdvanceClock();
+        var emptyWatch = System.Diagnostics.Stopwatch.StartNew();
+        var result = await new DecisionAdvance(wire, emptyTime).RunAsync(initial, CanPass, PresentationPacing.ShouldPresent);
+        var emptyEvidence = new {
+            scenario = "four-empty-phases", elapsedMilliseconds = emptyWatch.Elapsed.TotalMilliseconds,
+            clock = "controlled monotonic; no I/O delay", monotonicMilliseconds = emptyTime.Elapsed.TotalMilliseconds,
+            returnedRevision = result?.Revision, returnedDecision = result?.Decision?.Id, finalResponse = result == response,
+            expectedDecisions = new[] { initial.Decision!.Id, Next(1).Decision!.Id, Next(2).Decision!.Id, Next(3).Decision!.Id },
+            replies = wire.Replies.OfType<DecisionCommand>().Select(reply => new { kind = reply.GetType().Name, reply.GameId, reply.DecisionId }).ToArray(),
+            observations = wire.Observations.ToArray()
+        };
+        File.WriteAllText(Path.Combine(profile, "advance-empty-phases-first.json"),
+            JsonSerializer.Serialize(emptyEvidence, new JsonSerializerOptions { WriteIndented = true }));
         Check(result == response && wire.Replies.Count == 4, "One advance drains empty phases and returns the next playable response");
         Check(wire.Replies.All(r => r is AutoPassPriority) && wire.Replies.OfType<AutoPassPriority>().Select(r => r.DecisionId).Distinct().Count() == 4,
             "Every consumed window uses a distinct, engine-validated AutoPass receipt");
+
+        var nearTime = new AdvanceClock();
+        wire = new(initial, Next(1), Next(2), Next(3), response);
+        wire.BeforeObserve = () => { if (wire.Observations.Count == 0) nearTime.Advance(TimeSpan.FromMilliseconds(349)); return Task.CompletedTask; };
+        result = await new DecisionAdvance(wire, nearTime).RunAsync(initial, CanPass, PresentationPacing.ShouldPresent);
+        File.WriteAllText(Path.Combine(profile, "advance-before-slice-deadline-first.json"), JsonSerializer.Serialize(new {
+            monotonicMilliseconds = nearTime.Elapsed.TotalMilliseconds, returnedRevision = result?.Revision,
+            returnedDecision = result?.Decision?.Id, replies = wire.Replies.OfType<DecisionCommand>().Select(reply => reply.DecisionId),
+            observations = wire.Observations
+        }));
+        Check(result == response && wire.Replies.Count == 4 && nearTime.Elapsed == TimeSpan.FromMilliseconds(349),
+            "A current four-window prefix can drain before the unchanged350ms slice deadline");
+        foreach (int prefix in new[] { 1, 2 }) {
+            var sliceTime = new AdvanceClock();
+            wire = new(initial, Next(1), Next(2), Next(3), response);
+            wire.BeforeObserve = () => {
+                if (wire.Observations.Count == 0) sliceTime.Advance(TimeSpan.FromMilliseconds(prefix == 1 ? 350 : 349));
+                else if (wire.Observations.Count == 1 && prefix == 2) sliceTime.Advance(TimeSpan.FromMilliseconds(1));
+                return Task.CompletedTask;
+            };
+            var runner = new DecisionAdvance(wire, sliceTime);
+            var first = await runner.RunAsync(initial, CanPass, PresentationPacing.ShouldPresent);
+            File.WriteAllText(Path.Combine(profile, "advance-slice-prefix-" + prefix + "-first.json"), JsonSerializer.Serialize(new {
+                prefix, monotonicMilliseconds = sliceTime.Elapsed.TotalMilliseconds, returnedRevision = first?.Revision,
+                returnedDecision = first?.Decision?.Id, replies = wire.Replies.OfType<DecisionCommand>().Select(reply => reply.DecisionId),
+                observations = wire.Observations
+            }));
+            Check(first == Next(prefix) && wire.Replies.Count == prefix && wire.Observations.Count == prefix,
+                "Reaching exactly350ms returns its authoritative " + prefix + "-pass prefix before any further dispatch");
+            result = await runner.RunAsync(first!, CanPass, PresentationPacing.ShouldPresent);
+            Check(result == response && wire.Replies.OfType<AutoPassPriority>().Select(reply => reply.DecisionId)
+                    .SequenceEqual(new[] { initial.Decision!.Id, Next(1).Decision!.Id, Next(2).Decision!.Id, Next(3).Decision!.Id }),
+                "A fresh bounded slice resumes the returned " + prefix + "-pass prefix without replaying its submitted decision");
+        }
 
         var complete = new DecisionReply("Confirm", true);
         var cancel = new DecisionReply("Cancel", false);
@@ -185,6 +232,13 @@ internal static class AdvanceRegression
         var deadline = DateTime.UtcNow.AddSeconds(3);
         while (session.Busy && DateTime.UtcNow < deadline) { await Task.Delay(5); session.Pump(); }
         if (session.Busy) throw new TimeoutException("Client session failed to finish an advance");
+    }
+    private sealed class AdvanceClock : TimeProvider
+    {
+        internal TimeSpan Elapsed { get; private set; }
+        internal void Advance(TimeSpan elapsed) => Elapsed += elapsed;
+        public override long GetTimestamp() => Elapsed.Ticks;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
     }
     private sealed class Scripted(GameSnapshot initial, params GameSnapshot[] observations) : IMatchConnection
     {
