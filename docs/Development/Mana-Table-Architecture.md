@@ -999,15 +999,16 @@ failure requires recovery without inventing a submitted command; failed
 post-dispatch readback requires recovery and uncertainty even if its exception
 type normally represents rejection. Each batch read validates the existing
 execution-history progress rules against its immutable preceding frame, then
-awaits the session owner's current-cursor admission before another command.
-That acknowledgement commits the model once; it waits for no animation or
-render clock. A later definite dispatch rejection can retain safe controls only
-against the newly admitted frame, while a standalone batch without an owner
-acknowledgement retains earlier unpublished dispatch uncertainty. Neither
-failure replays work. Final and streamed publication suppress snapshots already
-admitted by this boundary. Hold still reconciles an already-sent result before
-stopping; Reset and Close release a retired admission wait even without another
-pump. The session rechecks the same rules before any final posted observation.
+awaits the session owner's current-cursor validation before another command.
+This check does not commit a snapshot or notify presentation. Existing observed
+and final checkpoints still publish readable results, so empty passing phases
+do not become visible frames. Earlier unpublished dispatches remain uncertain
+if a later command or read fails; validation alone cannot make the old rendered
+state actionable. Neither failure replays work. Full immutable-record equality
+suppresses unchanged checkpoint copies without confusing equal headers with
+equal payloads. Hold still reconciles an already-sent result before stopping;
+Reset and Close release a retired validation wait even without another pump.
+The session rechecks the same rules before any posted publication.
 Only pre-commit contract failures enter this phase-aware recovery path; public
 direct acceptance and post-commit presentation callback exceptions keep their
 existing explicit failure behavior.

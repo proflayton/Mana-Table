@@ -3,7 +3,7 @@ using Mana.Contracts;
 namespace Mana.Client;
 
 internal enum CommandFailurePhase { DispatchRejected, DispatchUnknown, Observation, ReadbackUnknown }
-internal enum ObservationAdmission { Accepted, Cancelled, Retired }
+internal enum ObservationAdmission { Validated, Cancelled, Retired }
 
 // Carries the actual failed phase to the session owner. The original exception
 // remains the reported cause; its type alone cannot describe a whole exchange.
@@ -21,7 +21,6 @@ internal sealed class CommandExchange(IMatchConnection connection, ClientCommand
 {
     private bool submitted = commandSubmitted;
     internal CommandFailurePhase ObservationFailurePhase => submitted ? CommandFailurePhase.ReadbackUnknown : CommandFailurePhase.Observation;
-    internal void AcknowledgeObservation() => submitted = false;
 
     internal async Task ExecuteAsync(GameCommand command, ClientDiagnosticAttempt? attempt = null)
     {
@@ -40,11 +39,12 @@ internal sealed class CommandExchange(IMatchConnection connection, ClientCommand
     {
         try {
             var next = diagnostics == null ? await connection.ObserveAsync() : await diagnostics.ObserveAsync(connection, attempt);
+            bool currentPrefix = previous == null || next == null || next.Revision >= previous.Revision;
             if (previous != null) {
                 new ObservationAudience(previous).Validate(next);
-                UndoFacts.ValidateProgress(previous, next);
+                if (currentPrefix) UndoFacts.ValidateProgress(previous, next);
             }
-            ExecutionCursor.ValidateProgress(previous, next);
+            ExecutionCursor.ValidateProgress(currentPrefix ? previous : null, next);
             if (next != null) { FiniteResolutionFacts.Validate(next); FiniteStackYieldFacts.Validate(next); }
             validate?.Invoke(next);
             return next;

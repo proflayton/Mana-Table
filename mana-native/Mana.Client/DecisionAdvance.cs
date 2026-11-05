@@ -12,7 +12,6 @@ public sealed class DecisionAdvance
     private long operationEpoch;
     private readonly Func<GameSnapshot, CommandFailurePhase, long, CancellationToken, Task<ObservationAdmission>>? admit;
     internal CommandFailurePhase ObservationFailurePhase { get; private set; } = CommandFailurePhase.Observation;
-    internal GameSnapshot? LastAdmittedObservation { get; private set; }
     internal bool SuppressFinalObservation { get; private set; }
     private string? automaticSubmitted, quietSubmitted;
     public DecisionAdvance(IMatchConnection connection) => this.connection = connection;
@@ -23,7 +22,7 @@ public sealed class DecisionAdvance
     {
         operationEpoch = epoch;
         ObservationFailurePhase = CommandFailurePhase.Observation;
-        LastAdmittedObservation = null; SuppressFinalObservation = false;
+        SuppressFinalObservation = false;
     }
 
     public Task<GameSnapshot?> RunAsync(GameSnapshot initial, Func<GameSnapshot, bool> canPass,
@@ -51,7 +50,7 @@ public sealed class DecisionAdvance
         int passes = 0;
         var exchange = new CommandExchange(connection, diagnostics);
         ObservationFailurePhase = CommandFailurePhase.Observation;
-        LastAdmittedObservation = null; SuppressFinalObservation = false;
+        SuppressFinalObservation = false;
         try {
             while (!cancellation.IsCancellationRequested) {
                 if (UndoFacts.RestoredSince(initial, state)) { intent.Stop(); return state; }
@@ -69,12 +68,13 @@ public sealed class DecisionAdvance
                 // Cancellation never hides the result of a pass already sent.
                 ObservationFailurePhase = exchange.ObservationFailurePhase;
                 var next = await exchange.ObserveAsync(state, attempt);
-                if (next != null && admit != null && await AdmitAsync(next, exchange, cancellation) != ObservationAdmission.Accepted) return next;
+                if (next != null && next.Revision >= state.Revision && admit != null
+                    && await AdmitAsync(next, cancellation) != ObservationAdmission.Validated) return next;
                 if (next == null) { intent.Stop(); return null; }
                 if (next.Revision >= state.Revision) {
-                    bool changed = next.Revision > state.Revision || next.ViewerId != state.ViewerId || next.Decision?.Id != state.Decision?.Id;
+                    bool changed = !Equals(state, next);
                     state = next;
-                    if (changed && admit == null) observed?.Invoke(state);
+                    if (changed) observed?.Invoke(state);
                 }
                 // The caller owns visible checkpoints. Ordinary stack passing
                 // keeps every effect beat; explicit finite presentation can
@@ -99,7 +99,7 @@ public sealed class DecisionAdvance
         int passes = 0;
         var exchange = new CommandExchange(connection, diagnostics);
         ObservationFailurePhase = CommandFailurePhase.Observation;
-        LastAdmittedObservation = null; SuppressFinalObservation = false;
+        SuppressFinalObservation = false;
         long activity = quietToken == null ? 0 : initial.Activity.Select(entry => entry.Id).DefaultIfEmpty().Max();
         while (!cancellation.IsCancellationRequested) {
             if (UndoFacts.RestoredSince(initial, state)) return state;
@@ -127,7 +127,8 @@ public sealed class DecisionAdvance
             // Always reconcile an already submitted command, even if Hold was pressed in flight.
             ObservationFailurePhase = exchange.ObservationFailurePhase;
             var next = await exchange.ObserveAsync(state, attempt);
-            if (next != null && admit != null && await AdmitAsync(next, exchange, cancellation) != ObservationAdmission.Accepted) return next;
+            if (next != null && next.Revision >= state.Revision && admit != null
+                && await AdmitAsync(next, cancellation) != ObservationAdmission.Validated) return next;
             if (next == null) return null;
             if (next.Revision >= state.Revision) state = next;
             // Yield periodically to present progress and avoid owning the connection indefinitely.
@@ -140,13 +141,10 @@ public sealed class DecisionAdvance
         return state;
     }
 
-    private async Task<ObservationAdmission> AdmitAsync(GameSnapshot state, CommandExchange exchange, CancellationToken cancellation)
+    private async Task<ObservationAdmission> AdmitAsync(GameSnapshot state, CancellationToken cancellation)
     {
         var result = await admit!(state, ObservationFailurePhase, operationEpoch, cancellation);
-        if (result == ObservationAdmission.Accepted) {
-            LastAdmittedObservation = state;
-            exchange.AcknowledgeObservation();
-        } else if (result == ObservationAdmission.Retired) SuppressFinalObservation = true;
+        if (result == ObservationAdmission.Retired) SuppressFinalObservation = true;
         return result;
     }
 }

@@ -91,9 +91,9 @@ internal static class CommandExchangeRegression
         var port = new Port(next) { RejectAt = 2 };
         var client = Session(port, diagnostics); client.Accept(initial);
         check(await Start(client, mode), "A two-command " + mode + " batch starts through the current operation owner"); await Drain(client);
-        check(port.Commands.Count == 2 && port.Reads == 1 && client.State == port.Next && !client.NeedsRecovery && !client.UncertainCommand
+        check(port.Commands.Count == 2 && port.Reads == 1 && client.State == initial && client.NeedsRecovery && client.UncertainCommand
                 && !client.Submit(port.Commands[0]) && port.Commands.Count == 2,
-            "The owner publishes the earlier applied " + mode + " command before a later definite dispatch rejection can retain safe controls");
+            "A validated but unpublished " + mode + " result cannot disappear behind a later definite dispatch rejection and leave stale controls actionable");
         port.RejectAt = 0; client.Poll(false, _ => { }); await Drain(client);
         check(client.State == port.Next && !client.NeedsRecovery && !client.UncertainCommand && port.Commands.Count == 2,
             "A partially applied " + mode + " batch reconciles its actual current state without replaying either dispatch");
@@ -194,7 +194,7 @@ internal static class CommandExchangeRegression
         catch (IOException error) { failure = error; }
         check(failure is IOException && ReferenceEquals(failure.InnerException, port.Rejection)
                 && port.Commands.Count == 2 && port.Reads == 1,
-            "A standalone batch without an owner publication ACK retains earlier unpublished dispatch uncertainty rather than exposing a bare final rejection");
+            "A standalone batch without a publication checkpoint retains earlier unpublished dispatch uncertainty rather than exposing a bare final rejection");
     }
 
     private static async Task EqualHeaders(Action<bool, string> check)
@@ -211,8 +211,8 @@ internal static class CommandExchangeRegression
         await Drain(client);
         check(ReferenceEquals(client.State, next) && client.State.Decision!.Payload is PriorityPayload { CanAutoPass: false }
                 && publications == 1 && port.Commands.Count == 1 && port.Reads == 1 && !client.NeedsRecovery,
-            "Owner admission commits a distinct equal-header payload exactly once rather than acting on unaccepted data or suppressing it as a duplicate");
-        client.Pump(); check(publications == 1, "The exact already-admitted read is never reposted by the final continuation");
+            "The final checkpoint commits a distinct equal-header payload exactly once rather than suppressing changed data as a duplicate");
+        client.Pump(); check(publications == 1, "The final checkpoint is never posted twice for the same read");
         client.Close();
     }
 

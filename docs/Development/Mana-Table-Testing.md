@@ -447,12 +447,13 @@ payment paths, with diagnostic subscriptions both enabled and absent. An
 Execute-time rejection remains definite; the same exception during readback
 quarantines old controls until an ordinary observation reconciles them, followed
 by one explicit fresh command. Partial batches cannot discard an earlier applied
-command behind a later rejection: either the owner has published its actual
-result, or the standalone batch retains uncertainty. Changed-prompt
+command behind a later rejection; owner validation is not publication and does
+not clear earlier unpublished uncertainty. Changed-prompt
 execution-history rollback must fail before a second command, including a held
 read valid against its worker prefix but behind a newer owner-thread cursor.
-The owner acknowledgement commits each model frame once without waiting for
-rendering. Hold admits its already-sent result once; Reset and unpumped Close
+The owner acknowledgement validates continuation without publishing every
+passing frame; the existing `AdvanceRegression` keeps its one-presentation-
+checkpoint contract. Hold publishes its already-sent result once; Reset and unpumped Close
 release the retired wait and retain the exact serialized negative grant cleanup.
 Ordinary polls and external
 provider ingress use that same narrow admission guard; direct acceptance still

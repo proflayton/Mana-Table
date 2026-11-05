@@ -268,8 +268,8 @@ public sealed partial class ClientSession
 
     // A worker can validate its own immutable read prefix, but only the session
     // thread knows whether a newer accepted cursor has superseded that prefix.
-    // This model ACK adds no rendering/presentation pacing. A successfully
-    // committed frame is not posted again by the batch's final continuation.
+    // This validation ACK grants no publication. The existing observed/final
+    // checkpoints still decide when presentation receives a frame.
     private async Task<ObservationAdmission> AdmitAdvanceObservationAsync(GameSnapshot state, CommandFailurePhase phase, long epoch,
         CancellationToken cancellation)
     {
@@ -290,16 +290,7 @@ public sealed partial class ClientSession
             catch (Exception error) when (error is ArgumentException or InvalidOperationException or IOException) {
                 completion.TrySetException(new CommandExchangeException(phase, error)); return;
             }
-            // Pre-commit contract failures are handled above. Changed/Recovered
-            // callbacks below keep their explicit exception behavior.
-            bool accepted;
-            // Generated sealed-record equality includes the whole snapshot,
-            // including decision payload and every stored init property. Its
-            // immutable collections compare conservatively by backing identity;
-            // header equality alone never acknowledges unaccepted data.
-            try { accepted = Equals(State, state) || Accept(state, epoch, commandObservation: true, observationFailurePhase: phase); }
-            catch { completion.TrySetResult(ObservationAdmission.Retired); throw; }
-            completion.TrySetResult(accepted ? ObservationAdmission.Accepted : ObservationAdmission.Retired);
+            completion.TrySetResult(ObservationAdmission.Validated);
         });
         return await completion.Task;
     }
@@ -456,8 +447,9 @@ public sealed partial class ClientSession
                     Post(() => Accept(state, epoch, commandObservation: true, observationFailurePhase: phase));
                 }
                 var state = await operation(initial, cancellation.Token, streamObservations ? Observed : null);
-                lastPosted = advance.LastAdmittedObservation ?? lastPosted;
-                if (!advance.SuppressFinalObservation && !ReferenceEquals(lastPosted, state))
+                // Generated sealed-record equality compares the complete stored
+                // payload. Equal headers alone cannot suppress changed data.
+                if (!advance.SuppressFinalObservation && !Equals(lastPosted, state))
                 {
                     var phase = advance.ObservationFailurePhase;
                     Post(() => Accept(state, epoch, commandObservation: true, observationFailurePhase: phase));
