@@ -4,35 +4,41 @@ namespace Mana.Table;
 // identity of its bounded semantic receipts; polling is never progress.
 internal sealed class JourneyProgressClock
 {
+    internal const int PhaseContractVersion = 1;
+    internal const string PhaseContractName = "setup45-active-match90-total135-stall15";
     private readonly TimeProvider time;
-    private readonly TimeSpan readinessBudget, activeBudget, stallBudget;
+    private readonly TimeSpan setupBudget, activeMatchBudget, stallBudget;
     private readonly long started;
     private long? activeStarted, workStarted, stopped;
     private long lastProgress;
     private int progress, progressLimit;
 
-    internal JourneyProgressClock(TimeSpan readinessBudget, TimeSpan activeBudget, TimeSpan stallBudget,
+    internal JourneyProgressClock(TimeSpan setupBudget, TimeSpan activeMatchBudget, TimeSpan stallBudget,
         TimeProvider? time = null)
     {
-        if (readinessBudget <= TimeSpan.Zero || activeBudget <= TimeSpan.Zero || stallBudget <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(readinessBudget));
+        if (setupBudget <= TimeSpan.Zero || activeMatchBudget <= TimeSpan.Zero || stallBudget <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(setupBudget));
         this.time = time ?? TimeProvider.System;
-        this.readinessBudget = readinessBudget; this.activeBudget = activeBudget; this.stallBudget = stallBudget;
+        this.setupBudget = setupBudget; this.activeMatchBudget = activeMatchBudget; this.stallBudget = stallBudget;
         started = this.time.GetTimestamp();
     }
 
-    internal bool InActiveJourney => activeStarted.HasValue;
+    internal bool InActiveMatch => activeStarted.HasValue;
     internal bool InWorkload => workStarted.HasValue;
     internal int Progress => progress;
-    internal TimeSpan ReadinessElapsed => time.GetElapsedTime(started, activeStarted ?? Now);
-    internal TimeSpan ActiveElapsed => activeStarted is { } start ? time.GetElapsedTime(start, Now) : TimeSpan.Zero;
+    internal TimeSpan SetupElapsed => time.GetElapsedTime(started, activeStarted ?? Now);
+    internal TimeSpan ActiveMatchElapsed => activeStarted is { } start ? time.GetElapsedTime(start, Now) : TimeSpan.Zero;
+    internal TimeSpan TotalElapsed => time.GetElapsedTime(started, Now);
+    internal long StartedTimestamp => started;
+    internal long? StoppedTimestamp => stopped;
+    internal long TimestampFrequency => time.TimestampFrequency;
     internal TimeSpan WorkloadElapsed => workStarted is { } start ? time.GetElapsedTime(start, Now) : TimeSpan.Zero;
     internal TimeSpan MaximumProgressGap { get; private set; }
     private long Now => stopped ?? time.GetTimestamp();
 
-    internal void BeginJourney()
+    internal void BeginActiveMatch()
     {
-        if (activeStarted.HasValue || stopped.HasValue) throw new InvalidOperationException("A journey admits provider readiness only once.");
+        if (activeStarted.HasValue || stopped.HasValue) throw new InvalidOperationException("A journey requests match start only once.");
         long now = Now; CheckAt(now);
         activeStarted = now;
     }
@@ -40,7 +46,7 @@ internal sealed class JourneyProgressClock
     internal void BeginWork(int expectedProgress)
     {
         if (!activeStarted.HasValue || workStarted.HasValue || stopped.HasValue)
-            throw new InvalidOperationException("A live active journey captures its workload only once.");
+            throw new InvalidOperationException("A live active match captures its workload only once.");
         if (expectedProgress <= 0) throw new ArgumentOutOfRangeException(nameof(expectedProgress));
         long now = Now; CheckAt(now);
         workStarted = lastProgress = now; progressLimit = expectedProgress;
@@ -61,13 +67,13 @@ internal sealed class JourneyProgressClock
 
     private void CheckAt(long now)
     {
-        if (time.GetElapsedTime(started, now) >= readinessBudget + activeBudget)
+        if (time.GetElapsedTime(started, now) >= setupBudget + activeMatchBudget)
             throw new TimeoutException("The journey exceeded its fixed total envelope.");
         if (activeStarted is not { } active) {
-            if (time.GetElapsedTime(started, now) >= readinessBudget) throw new TimeoutException("The journey exceeded its fixed provider-readiness budget.");
+            if (time.GetElapsedTime(started, now) >= setupBudget) throw new TimeoutException("The journey exceeded its fixed setup budget.");
             return;
         }
-        if (time.GetElapsedTime(active, now) >= activeBudget) throw new TimeoutException("The journey exceeded its fixed active-journey budget.");
+        if (time.GetElapsedTime(active, now) >= activeMatchBudget) throw new TimeoutException("The journey exceeded its fixed active-match budget.");
         // Initial preparation has no declared terminal set. Capturing it arms
         // this watchdog, while the active deadline retains its original owner.
         if (!workStarted.HasValue) return;

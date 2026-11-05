@@ -826,13 +826,34 @@ authored transport checks establish scheduling and authority, not engine input
 consumption, throughput or a fix for a retained CI cutoff.
 
 The fixture-backed `--smoke-headless-engine` lane also invokes
-`PolledFanoutEngineJourney` with fixed45-second provider-readiness and90-second
-active-journey budgets (the same135-second maximum, separate from teardown).
-The active clock starts once both providers initialize, before lobby setup,
-fixture preparation and the ordinary cast. Capturing the actual110-trigger queue
-arms a15-second semantic-progress stall watchdog without resetting that active
-deadline. These are qualification deadlines checked at
-owner boundaries, not forced cancellation of an in-flight provider call.
+`PolledFanoutEngineJourney`. Result format3 declares the new phase contract
+`setup45-active-match90-total135-stall15`, version1. Setup's fixed45 seconds now
+include provider initialization, AI enablement, imports, lobby membership, deck
+selection, readiness and binding. Every returned setup operation is checked
+before dependent work. The fixed90-second active-match clock begins immediately
+before invoking `StartAsync`, including that method's own lobby preflight and
+its acknowledgement wait. The acknowledgement is checked before any match
+continuation. Capturing the actual110-trigger queue arms the unchanged15-second
+semantic-progress watchdog without restarting active time; final history and
+resource checks must also finish before completion. The original monotonic
+origin and absolute135-second qualification envelope remain unchanged. These
+are cooperative qualification deadlines, not forced cancellation of an
+in-flight provider call or a limit on teardown wall time.
+
+This is an explicit qualification-policy change: it tightens setup relative to
+the former provider-only45-second phase, and relaxes match completion by the
+time spent in lobby setup relative to the former provider-return origin. It is
+not a demonstrated game-speed fix. Format2's provider-readiness and
+active-journey fields retain their old meanings; they are not reinterpreted as
+the expanded setup and active-match phases. Native405 remains a failed109/110
+cutoff, even though its mutable terminal sets later serialized110 during
+cleanup. New metadata records provider initialization separately from setup,
+match-start request separately from acknowledgement, the active origin and
+the versioned phase contract. Private evidence now copies terminal sets,
+source-action lists and receipt/error/trace collections before cleanup. Those
+asynchronous samples are pre-cleanup evidence, not an atomic deadline snapshot;
+the clock's credited common-terminal count remains authoritative.
+
 The earlier45-second workload cut off an
 actual CI run at90 of110 resolved triggers with no provider or AI fault; its
 largest observed queue-front receipt gap was conservatively under1.81 seconds.
@@ -840,18 +861,20 @@ This is a test case budget correction, not a game-speed fix or a job/opening
 watchdog change. A later master396 sample completed provider startup at24.526
 seconds, the table at30.631 and its cast at43.641; it was still resolving when
 the former combined startup/preparation cap expired at45.171. That failed sample
-stays preserved. Separating provider startup gives preparation and queue
-resolution one shared90-second cap, rather than extending the total envelope.
-Preparation has that absolute deadline; it cannot report terminal progress before
+stays preserved. The subsequent format2 policy separated provider startup and
+shared90 seconds between lobby preparation and queue resolution. Under the new
+contract, active match preparation has its absolute deadline; it cannot report terminal progress before
 the actual queue is captured. Only
 new captured terminal execution receipts observed by both ordinary humans reset
 the stall timer; polls and board revisions do not. Neither late progress nor
 late completion can qualify an expired workload. Fake-clock checks in the
-existing configured-simulation/full headless lane retain the old healthy-prefix
-counterexample and measured396 prefix, delayed initialization/capture, absolute
-and stall deadline controls. Result format2 records separate provider-readiness,
-active-journey and queue-resolution durations plus the maximum observed terminal
-progress gap. Its original16 assertions and resource receipts are unchanged;
+existing configured-simulation/full headless lane retain the historical
+healthy-prefix counterexample, revised-phase interval examples, delayed
+initialization/capture, absolute and stall deadline controls. Actual start-wrapper
+checks reject expired setup without sending Start and reject a late start ACK
+before continuation. A capture near active89 seconds cannot reset90 or135, and
+a pre-cleanup109 sample cannot mutate when cleanup later admits110.
+The original16 assertions and resource receipts are unchanged;
 one additional setup assertion verifies the declared starting-player rule.
 The background host uses the shipping `TimedAiHostPacing` at2.4 seconds, so the
 real optional-payment and counter-trigger cohort must also retain its expected
