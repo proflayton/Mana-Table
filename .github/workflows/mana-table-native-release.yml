@@ -290,6 +290,7 @@ jobs:
           skip-decompress: true
           digest-mismatch: error
       - name: Verify the package and suite-specific harness and engine identity
+        id: verify_native_inputs
         run: |
           $restore = @{ Directory='dist/ci-inputs'; RequireHarness=$true }
           switch -CaseSensitive ($env:MANA_VERIFICATION_SUITE) {
@@ -299,6 +300,7 @@ jobs:
           }
           ./mana-native/ci/restore-package.ps1 @restore
       - name: Run the selected native verification suite
+        id: run_native_suite
         run: |
           switch -CaseSensitive ($env:MANA_VERIFICATION_SUITE) {
             'presentation' {
