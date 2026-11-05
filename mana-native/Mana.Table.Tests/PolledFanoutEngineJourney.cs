@@ -59,44 +59,62 @@ internal static class PolledFanoutEngineJourney
         var stages = new List<object>();
         void Stage(string name) => stages.Add(new { name, seconds = elapsed.Elapsed.TotalSeconds });
         bool complete = false, startingPlayerVerified = false;
+        double? providerInitializationStartedSeconds = null, providerInitializationReturnedSeconds = null;
+        double? matchStartRequestSeconds = null, matchStartAcknowledgedSeconds = null;
+        long? evidenceSamplingStartedTimestamp = null, evidenceSamplingFinishedTimestamp = null;
         Exception? failure = null;
         var cleanupErrors = new List<string>();
         object? stopped = null;
         var selections = new Dictionary<int, string>();
         try {
+            Guard();
+            providerInitializationStartedSeconds = clock.TotalElapsed.TotalSeconds;
             await Task.WhenAll(engines.Select(engine => engine.InitializeAsync()));
+            providerInitializationReturnedSeconds = clock.TotalElapsed.TotalSeconds;
+            Guard();
             Stage("providers-ready");
-            clock.BeginJourney();
             // Enable before the first lobby operation, exactly as app startup.
-            await ai.StartAsync();
-            var host = await Import(engines[0], "Polled fanout host", "99 Island", "Toothy, Imaginary Friend");
+            await ai.StartAsync(); Guard();
+            var host = await Import(engines[0], "Polled fanout host", "99 Island", "Toothy, Imaginary Friend", Guard); Guard();
             // Toothy alone is a legal Commander list; this fixture does not
             // claim the subsequently substituted deterministic host library is.
-            var guest = await Import(engines[1], "Polled fanout guest", "99 Plains", "Isamaru, Hound of Konda");
-            var quietRed = await Import(engines[0], "Quiet red", "99 Mountain", "Rograkh, Son of Rohgahh");
-            var quietWhite = await Import(engines[0], "Quiet white", "99 Plains", "Isamaru, Hound of Konda");
-            var lobby = await engines[0].HostAsync(4, false);
+            var guest = await Import(engines[1], "Polled fanout guest", "99 Plains", "Isamaru, Hound of Konda", Guard); Guard();
+            var quietRed = await Import(engines[0], "Quiet red", "99 Mountain", "Rograkh, Son of Rohgahh", Guard); Guard();
+            var quietWhite = await Import(engines[0], "Quiet white", "99 Plains", "Isamaru, Hound of Konda", Guard); Guard();
+            var lobby = await engines[0].HostAsync(4, false); Guard();
             string port = lobby.Addresses.First(address => address.Url.Contains(':')).Url.Split(':').Last();
-            await engines[1].JoinAsync("127.0.0.1:" + port);
-            lobby = await engines[0].SetSeatAsync(lobby.TableId, 2, "AI", "deck:" + quietRed.Id + ":" + quietRed.LibraryToken);
+            await engines[1].JoinAsync("127.0.0.1:" + port); Guard();
+            lobby = await engines[0].SetSeatAsync(lobby.TableId, 2, "AI", "deck:" + quietRed.Id + ":" + quietRed.LibraryToken); Guard();
             selections[2] = lobby.Seats.Single(seat => seat.Index == 2).DeckPreview?.SelectionId ?? "";
-            lobby = await engines[0].SetSeatAsync(lobby.TableId, 3, "AI", "deck:" + quietWhite.Id + ":" + quietWhite.LibraryToken);
+            lobby = await engines[0].SetSeatAsync(lobby.TableId, 3, "AI", "deck:" + quietWhite.Id + ":" + quietWhite.LibraryToken); Guard();
             selections[3] = lobby.Seats.Single(seat => seat.Index == 3).DeckPreview?.SelectionId ?? "";
             foreach (var selection in new[] { (Engine: engines[0], Deck: host), (Engine: engines[1], Deck: guest) }) {
-                var receipt = await selection.Engine.SelectDeckAsync(new(lobby.TableId, selection.Deck.Id, selection.Deck.LibraryToken));
+                var receipt = await selection.Engine.SelectDeckAsync(new(lobby.TableId, selection.Deck.Id, selection.Deck.LibraryToken)); Guard();
                 var own = receipt.Seats.Single(seat => seat.Local);
                 selections[own.Index] = own.DeckPreview?.SelectionId ?? "";
-                await selection.Engine.SetReadyAsync(true);
+                await selection.Engine.SetReadyAsync(true); Guard();
             }
-            while (!(lobby = await engines[0].LobbyAsync()).CanStart) { Guard(); await Task.Delay(5); }
+            while (true) {
+                lobby = await engines[0].LobbyAsync(); Guard();
+                if (lobby.CanStart) break;
+                await Task.Delay(5); Guard();
+            }
             Require(lobby.Seats.Count(seat => seat.Type == "AI") == 2
                     && lobby.Seats.Where(seat => seat.Type == "AI").Select(seat => seat.OpponentId).Distinct().Count() == 2
                     && selections.Count == 4 && selections.Values.All(id => id.Length > 0)
                     && lobby.Seats.All(seat => seat.Ready && seat.DeckPreview is { } preview
                         && string.IsNullOrEmpty(preview.Problem) && selections.GetValueOrDefault(seat.Index) == preview.SelectionId),
                 "The fanout fixture binds a real TCP guest and two distinct legal quiet AI lists before pregame setup");
-            foreach (int index in new[] { 0, 1 }) players[index].Client.BindLobby(await engines[index].LobbyAsync());
-            await engines[0].StartAsync();
+            foreach (int index in new[] { 0, 1 }) {
+                var binding = await engines[index].LobbyAsync(); Guard();
+                players[index].Client.BindLobby(binding);
+            }
+            await StartMatchAsync(clock, async () => {
+                matchStartRequestSeconds = clock.TotalElapsed.TotalSeconds;
+                Stage("match-start-request");
+                await engines[0].StartAsync();
+                matchStartAcknowledgedSeconds = clock.TotalElapsed.TotalSeconds;
+            });
             Stage("table-started");
 
             while (!complete) {
@@ -241,6 +259,7 @@ internal static class PolledFanoutEngineJourney
             Require(players[1].RetiredPaymentRejected,
                 "An answered optional-payment command cannot be submitted or emit another RPC against a later actual offer");
             var history = await ReadHistory(engines[0], finalHost);
+            Guard();
             castExecution = history.Actions.Single(action => action.Kind == ExecutionKind.Spell && action.SourceName == "Shamanic Revelation").Id;
             facts["committedRevelationDrawActivities"] = history.Records.Count(record => record.Activity is { Kind: "draw" } activity
                     && activity.PlayerId == finalHost.ViewerId && record.ExecutionId == castExecution);
@@ -264,21 +283,21 @@ internal static class PolledFanoutEngineJourney
             clock.Complete();
         } catch (Exception error) {
             failure = error;
-            failurePhase = clock.InWorkload ? "queue-resolution" : clock.InActiveJourney ? "active-preparation" : "provider-readiness";
+            failurePhase = clock.InWorkload ? "queue-resolution" : clock.InActiveMatch ? "match-preparation" : "setup";
             File.WriteAllText(Path.Combine(directory, "primary-error.txt"), error.ToString());
         }
         finally {
             clock.Stop();
-            // Freeze authority and evidence before withdrawing any live owner.
-            stopped = new { audience = "host-private", captured, eyeTriggers, beforeCast, burst, castExecution,
-                players = players.Select(player => new { state = player.Client.State, source = player.Client.SourceActions.View,
-                    acknowledgements = player.Acknowledgements.ToArray(), player.Terminals,
-                    progress = player.Intent?.Progress is { } progress ? new {
-                        progress.CapturedCount, progress.CompletedCount, progress.RemainingCount, progress.UnknownCount,
-                        outcomes = progress.Outcomes.ToDictionary(pair => pair.Key.ToString(), pair => pair.Value)
-                    } : null, stop = player.Intent?.StopReason,
-                    sourceErrors = player.SourceErrors.ToArray(), sourceTrace = player.SourceTrace.ToArray() }).ToArray(),
+            // These asynchronous samples are pre-cleanup evidence, not an
+            // atomic cutoff. Only the clock's credited count owns its deadline.
+            evidenceSamplingStartedTimestamp = Stopwatch.GetTimestamp();
+            stopped = new { formatVersion = 2, audience = "host-private", evidenceScope = "pre-cleanup",
+                creditedCommonTerminalReceipts = clock.Progress, captured, eyeTriggers, beforeCast, burst, castExecution,
+                players = players.Select(player => CaptureStoppedPlayer(player.Client.State, player.Client.SourceActions.View,
+                    player.Acknowledgements, player.Terminals, player.Intent?.Progress, player.Intent?.StopReason,
+                    player.SourceErrors, player.SourceTrace)).ToImmutableArray(),
                 histories = ai.Histories, botReceipts = botPort.Receipts.ToArray(), faults = botPort.Faults.ToArray() };
+            evidenceSamplingFinishedTimestamp = Stopwatch.GetTimestamp();
             foreach (var player in players) player.Port.Release.TrySetResult();
             try {
                 var settle = DateTime.UtcNow.AddSeconds(3);
@@ -302,13 +321,29 @@ internal static class PolledFanoutEngineJourney
                 failure ??= new IOException("Fanout evidence could not be preserved.", error);
             }
             File.WriteAllText(Path.Combine(directory, "result.json"), JsonSerializer.Serialize(new {
-                formatVersion = 2, scenario = "real-polled-tcp-fifty-five-draws", passed = complete && failure == null,
+                formatVersion = 3, scenario = "real-polled-tcp-fifty-five-draws", passed = complete && failure == null,
                 failure = failure?.ToString(), failurePhase, cleanupErrors, checks, facts, stages, steps, elapsedSeconds = elapsed.Elapsed.TotalSeconds,
-                providerReadinessSeconds = clock.ReadinessElapsed.TotalSeconds, activeJourneySeconds = clock.ActiveElapsed.TotalSeconds,
+                stagesOrigin = "Case Stopwatch created before the qualification clock; stage seconds are case-relative and elapsedSeconds includes cleanup. New phase/init/start fields use the qualification clock origin.",
+                phaseContract = new { version = JourneyProgressClock.PhaseContractVersion, name = JourneyProgressClock.PhaseContractName,
+                    origin = "before-provider-initialization", activeOrigin = "immediately-before-StartAsync-invocation",
+                    change = "Setup now includes providers and all pre-start lobby work. Relative to the former provider-only setup, this relaxes match completion by lobby duration while retaining the absolute total envelope." },
+                providerInitialization = new { startedAtSeconds = providerInitializationStartedSeconds, returnedAtSeconds = providerInitializationReturnedSeconds,
+                    durationSeconds = providerInitializationStartedSeconds is { } initialized && providerInitializationReturnedSeconds is { } returned
+                        ? returned - initialized : (double?)null,
+                    incompleteElapsedToStopSeconds = providerInitializationStartedSeconds is { } incomplete && !providerInitializationReturnedSeconds.HasValue
+                        ? clock.TotalElapsed.TotalSeconds - incomplete : (double?)null },
+                setupElapsedSeconds = clock.SetupElapsed.TotalSeconds, activeMatchElapsedSeconds = clock.ActiveMatchElapsed.TotalSeconds,
+                qualificationElapsedSeconds = clock.TotalElapsed.TotalSeconds, matchStartRequestSeconds, matchStartAcknowledgedSeconds,
+                matchStartMarkersScope = "Request is ordinary StartAsync invocation including lobby preflight, not IPC wire-send time; acknowledgement is method return sampled before the post-return clock check. "
+                    + "A missing return marker means the method did not return normally, not that no protocol reply existed.",
+                activeOriginSeconds = clock.InActiveMatch ? clock.SetupElapsed.TotalSeconds : (double?)null,
                 queueResolutionSeconds = clock.WorkloadElapsed.TotalSeconds,
-                providerReadinessBudgetSeconds = 45, activeJourneyBudgetSeconds = 90, totalEnvelopeBudgetSeconds = 135,
+                setupBudgetSeconds = 45, activeMatchBudgetSeconds = 90, totalEnvelopeBudgetSeconds = 135,
                 semanticStallBudgetSeconds = 15,
                 commonTerminalReceipts = clock.Progress, maximumSemanticProgressGapSeconds = clock.MaximumProgressGap.TotalSeconds,
+                evidenceCapture = new { scope = "pre-cleanup asynchronous samples; not an atomic cutoff",
+                    clock.StartedTimestamp, clock.StoppedTimestamp, clock.TimestampFrequency,
+                    samplingStartedTimestamp = evidenceSamplingStartedTimestamp, samplingFinishedTimestamp = evidenceSamplingFinishedTimestamp },
                 hostPacing = new { policy = pacing.GetType().Name, announcementSeconds = pacingDuration.TotalSeconds,
                     scope = "Shipping timed pacing with fresh real AI policy decisions; not a diagnostic bypass or proof of a live slowdown's cause." },
                 startingPlayer = new { rule = "Power Play conspiracy", testOnly = true, verified = startingPlayerVerified,
@@ -325,15 +360,42 @@ internal static class PolledFanoutEngineJourney
         }
     }
 
+    internal static async Task StartMatchAsync(JourneyProgressClock clock, Func<Task> start)
+    {
+        clock.BeginActiveMatch();
+        await start();
+        clock.Check();
+    }
+
+    internal sealed record StoppedProgress(int CapturedCount, int CompletedCount, int RemainingCount, int UnknownCount,
+        [property: JsonPropertyName("outcomes")] ImmutableDictionary<string, int> Outcomes);
+    internal sealed record StoppedPlayerEvidence(
+        [property: JsonPropertyName("state")] GameSnapshot? State,
+        [property: JsonPropertyName("source")] SourceActionView Source,
+        [property: JsonPropertyName("acknowledgements")] ImmutableArray<Receipt> Acknowledgements,
+        ImmutableArray<string> Terminals,
+        [property: JsonPropertyName("progress")] StoppedProgress? Progress,
+        [property: JsonPropertyName("stop")] string? Stop,
+        [property: JsonPropertyName("sourceErrors")] ImmutableArray<string> SourceErrors,
+        [property: JsonPropertyName("sourceTrace")] ImmutableArray<object> SourceTrace);
+    internal static StoppedPlayerEvidence CaptureStoppedPlayer(GameSnapshot? state, SourceActionView source,
+        IEnumerable<Receipt> acknowledgements, IEnumerable<string> terminals, FiniteResolutionProgress? progress, string? stop,
+        IEnumerable<string> sourceErrors, IEnumerable<object> sourceTrace)
+        => new(state, source with { Actions = source.Actions.ToImmutableArray() }, acknowledgements.ToImmutableArray(), terminals.ToImmutableArray(),
+            progress == null ? null : new(progress.CapturedCount, progress.CompletedCount, progress.RemainingCount, progress.UnknownCount,
+                progress.Outcomes.ToImmutableDictionary(pair => pair.Key.ToString(), pair => pair.Value, StringComparer.Ordinal)),
+            stop, sourceErrors.ToImmutableArray(), sourceTrace.ToImmutableArray());
+
     private static int Counters(Mana.Contracts.Player player) => player.Zone("Battlefield").Cards
         .Single(card => card.Name == "Toothy, Imaginary Friend").Counters.Values.Sum();
 
-    private static async Task<DeckSummary> Import(ForgeEngine engine, string name, string list, string commander)
+    private static async Task<DeckSummary> Import(ForgeEngine engine, string name, string list, string commander, Action guard)
     {
         // Import already commits a selectable library version, as NativeSmoke
         // does. Actual SelectDeck/Ready/CanStart still enforce format legality
         // and the captured seat version; redundant Open/Save adds no evidence.
         var imported = await engine.ImportAsync(name, "Deck\n" + list + "\nCommander\n1 " + commander);
+        guard();
         if (imported.Id.Length == 0 || imported.LibraryToken.Length == 0)
             throw new InvalidDataException("The imported fixture list has no committed library version: " + name);
         return imported;
@@ -409,7 +471,7 @@ internal static class PolledFanoutEngineJourney
     }
     private static string Hash(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
 
-    private sealed record Receipt([property: JsonIgnore] GameCommand Command, long Revision, OptionalDeclineOffer? Offer, bool Unpayable)
+    internal sealed record Receipt([property: JsonIgnore] GameCommand Command, long Revision, OptionalDeclineOffer? Offer, bool Unpayable)
     {
         public long MonotonicTicks { get; } = Stopwatch.GetTimestamp();
         public string Kind => Command.GetType().Name;

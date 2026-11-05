@@ -113,6 +113,6 @@ public sealed class StackResolutionIntent : IFiniteDecisionPolicy
         }
     }
 
-    DecisionCommand? IFiniteDecisionPolicy.NextCommand(GameSnapshot state) => NextPass(state);
+    FiniteNextStep IFiniteDecisionPolicy.NextStep(GameSnapshot state) => FiniteNextStep.FromCommand(NextPass(state));
     void IFiniteDecisionPolicy.Submitted(GameSnapshot state, DecisionCommand command) => Submitted(state);
 }

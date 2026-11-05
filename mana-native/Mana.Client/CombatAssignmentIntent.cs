@@ -146,7 +146,9 @@ public sealed class CombatAssignmentIntent : IFiniteDecisionPolicy
         }
     }
 
-    DecisionCommand? IFiniteDecisionPolicy.NextCommand(GameSnapshot state)
+    FiniteNextStep IFiniteDecisionPolicy.NextStep(GameSnapshot state) => FiniteNextStep.FromCommand(NextCommand(state));
+
+    private DecisionCommand? NextCommand(GameSnapshot state)
     {
         lock (gate) {
             if (paused || !CanContinue(state) || state.Revision < revision || pending != null || state.Decision?.Payload is not BlockPayload) return null;

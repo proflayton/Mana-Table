@@ -202,7 +202,8 @@ internal sealed class OptionalPaymentIntent(GameSnapshot initial, OptionalPaymen
             active = false; return false;
         }
     }
-    public DecisionCommand? NextCommand(GameSnapshot state)
+    public FiniteNextStep NextStep(GameSnapshot state) => FiniteNextStep.FromCommand(NextCommand(state));
+    private DecisionCommand? NextCommand(GameSnapshot state)
     {
         lock (gate) {
             if (paused || !CanContinue(state) || state.Revision < revision || state.Decision is not { } decision

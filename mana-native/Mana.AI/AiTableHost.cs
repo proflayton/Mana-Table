@@ -59,9 +59,19 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
     public async Task StepAsync(CancellationToken cancellation = default)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
+        await StepCoreAsync(cancellation).ConfigureAwait(false);
+    }
+
+    // Acknowledgement requests another read, never means input consumption or
+    // permission to reuse this batch. Absence of work keeps the idle backoff.
+    private enum AiHostStepOutcome { WaitForCurrentWork, ReobserveAfterAcceptedSubmission }
+
+    private async Task<AiHostStepOutcome> StepCoreAsync(CancellationToken cancellation)
+    {
         using var stopping = CancellationTokenSource.CreateLinkedTokenSource(cancellation, lifetime.Token);
         var token = stopping.Token;
         await step.WaitAsync(token).ConfigureAwait(false);
+        bool acceptedSubmission = false, backoffRequired = false;
         try {
             ImmutableArray<AutomatedSeatObservation> observed;
             try { observed = await AwaitProvider("observe", provider.ObserveAutomatedSeatsAsync, token).ConfigureAwait(false); }
@@ -69,7 +79,7 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                 // Discovery produced no authority. The next ordinary host step
                 // must obtain a new complete batch before evaluating any seat.
                 // Other provider failures still reach the diagnostic/fault path.
-                return;
+                return AiHostStepOutcome.WaitForCurrentWork;
             }
             pacing?.Observe(observed.Select(item => AiTableProgress.From(item.State)).ToImmutableArray());
             var active = observed.Select(item => (item.State.Id, item.SeatId)).ToHashSet();
@@ -85,7 +95,7 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                 token.ThrowIfCancellationRequested();
                 var state = item.State;
                 if (state.ViewerId != item.SeatId) throw new InvalidDataException("The automated observation belongs to another seat.");
-                if (faultedGames.Contains(state.Id)) continue;
+                if (faultedGames.Contains(state.Id)) { backoffRequired = true; continue; }
                 var key = (state.Id, item.SeatId);
                 AiSeatSession session;
                 try {
@@ -100,10 +110,11 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                     }
                 } catch (Exception error) {
                     await FaultAsync(state.Id, item.SeatId, "policy-configuration", token, error).ConfigureAwait(false);
+                    backoffRequired = true;
                     continue;
                 }
                 if (!session.ObserveRestoration(state)) {
-                    await CheckObservationProgress(key, token).ConfigureAwait(false);
+                    if (await CheckObservationProgress(key, token).ConfigureAwait(false)) backoffRequired = true;
                     continue;
                 }
                 if (state.Status != "playing" || state.Decision == null || state.Viewer?.Eliminated != false) {
@@ -117,7 +128,7 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                 if (awaitingObservation.ContainsKey(key)) {
                     frame = new(state, domain: item.Domain, semantics: item.Semantics);
                     if (session.Observe(frame)) awaitingObservation.Remove(key);
-                    if (await CheckObservationProgress(key, token).ConfigureAwait(false)) continue;
+                    if (await CheckObservationProgress(key, token).ConfigureAwait(false)) { backoffRequired = true; continue; }
                 }
                 // A presentation pause never caches an answer.
                 // Skip this iteration and re-observe current authority next time.
@@ -125,6 +136,7 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                 frame ??= new(state, domain: item.Domain, semantics: item.Semantics);
                 if (rejected.Remove(key, out var priorRejection) && priorRejection == frame.Stamp) {
                     await FaultAsync(state.Id, item.SeatId, "rejected-command", token).ConfigureAwait(false);
+                    backoffRequired = true;
                     continue;
                 }
                 session.Observe(frame);
@@ -132,16 +144,18 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                 token.ThrowIfCancellationRequested();
                 if (result.Status is AiSeatStatus.Unavailable or AiSeatStatus.Invalid or AiSeatStatus.BudgetExceeded or AiSeatStatus.NeedsRecovery) {
                     await FaultAsync(state.Id, item.SeatId, result.Status.ToString().ToLowerInvariant(), token).ConfigureAwait(false);
+                    backoffRequired = true;
                     continue;
                 }
                 if (session.TakeCommand() is not { } ticket) continue;
                 try {
                     await AwaitProvider("execute", stop => provider.ExecuteAutomatedAsync(item.SeatId, ticket.Command, stop), token).ConfigureAwait(false);
-                    session.Report(ticket, AiExecutionReceipt.Accepted);
+                    acceptedSubmission |= session.Report(ticket, AiExecutionReceipt.Accepted);
                     awaitingObservation[key] = operationTime.GetTimestamp();
                 } catch (EngineCommandRejectedException) {
                     session.Report(ticket, AiExecutionReceipt.Rejected);
                     rejected[key] = ticket.Stamp;
+                    backoffRequired = true;
                     // The engine may have advanced between observation and reply.
                     // The next iteration must observe a new scope, never replay.
                 } catch (OperationCanceledException) when (token.IsCancellationRequested) {
@@ -152,8 +166,11 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                 } catch (Exception error) {
                     session.Report(ticket, AiExecutionReceipt.Unknown);
                     await FaultAsync(state.Id, item.SeatId, "execution-unknown", token, error).ConfigureAwait(false);
+                    backoffRequired = true;
                 }
             }
+            return acceptedSubmission && !backoffRequired ? AiHostStepOutcome.ReobserveAfterAcceptedSubmission
+                : AiHostStepOutcome.WaitForCurrentWork;
         } finally { step.Release(); }
     }
 
@@ -208,8 +225,11 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
     {
         try {
             while (!lifetime.IsCancellationRequested) {
-                await StepAsync(lifetime.Token).ConfigureAwait(false);
-                await Task.Delay(40, lifetime.Token).ConfigureAwait(false);
+                // This private loop's lifetime is authoritative during normal
+                // disposal; public StepAsync retains its strict disposed check.
+                var outcome = await StepCoreAsync(lifetime.Token).ConfigureAwait(false);
+                if (outcome == AiHostStepOutcome.WaitForCurrentWork)
+                    await Task.Delay(TimeSpan.FromMilliseconds(40), operationTime, lifetime.Token).ConfigureAwait(false);
             }
         } catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
         catch (Exception error) {

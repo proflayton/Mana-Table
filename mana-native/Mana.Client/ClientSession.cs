@@ -36,7 +36,7 @@ public sealed partial class ClientSession
         time = clock ?? TimeProvider.System;
         diagnostics = new(RecordDiagnostic, () => replica.Epoch, () => DiagnosticRecorded != null,
             context => CurrentSourceContext(State, context.SourceCardKey) == context);
-        advance = new(connection, diagnostics, AdmitAdvanceObservationAsync);
+        advance = new(connection, diagnostics, AdmitAdvanceObservationAsync, time);
         SourceActions = new(sourceActions, Post) { Diagnostics = diagnostics };
         History = new(history, Post);
         ObservationDelivery = observationDelivery;
@@ -215,6 +215,7 @@ public sealed partial class ClientSession
                 // Restoration, retirement and audience handoff replace current
                 // action ownership before Changed.
                 finiteIntent?.Stop(); finiteIntent = null;
+                advance.RetireFiniteReadCadence();
                 advancing?.Cancel(); SourceActions.Clear(); pendingSettings.Clear(); activeSetting = null;
                 ClearAllOptionalPaymentPolicies(); optionalSubmissions.Clear(); optionalPaymentsPaused = false;
                 if (RestorationChanged) {
@@ -405,7 +406,7 @@ public sealed partial class ClientSession
     }
     public bool Advance(Func<GameSnapshot, bool> canPass, Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
         => StartAdvance(canPass, (initial, cancellation, _) => advance.RunAsync(initial, canPass, shouldPresent, cancellation));
-    public void CancelAdvance() { advancing?.Cancel(); QueueFiniteRevocation(); }
+    public void CancelAdvance() { advancing?.Cancel(); advance.RetireFiniteReadCadence(); QueueFiniteRevocation(); }
     public bool AdvanceQuietly(string token, Func<GameSnapshot, bool> canContinue,
         Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
         => StartAdvance(initial => QuietPriorityPolicy.CanPass(initial, token) && canContinue(initial),
@@ -490,7 +491,7 @@ public sealed partial class ClientSession
         return card == null || !CardViews.CanReadActionSource(state, key) ? null
             : new(state.Id, decision.Id, state.Revision, state.ViewerId, card.Key, CardViews.Identity(card));
     }
-    private void StopFiniteIntent() { QueueFiniteRevocation(); finiteIntent?.Stop(); finiteIntent = null; }
+    private void StopFiniteIntent() { QueueFiniteRevocation(); finiteIntent?.Stop(); finiteIntent = null; advance.RetireFiniteReadCadence(); }
     public void Close()
     {
         ClearAllOptionalPaymentPolicies();

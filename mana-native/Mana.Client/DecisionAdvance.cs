@@ -9,6 +9,11 @@ public sealed class DecisionAdvance
     private readonly IMatchConnection connection;
     private readonly TimeProvider time;
     private static readonly TimeSpan MaximumSliceDuration = TimeSpan.FromMilliseconds(350);
+    private static readonly TimeSpan ServerProgressReadInterval = TimeSpan.FromMilliseconds(50);
+    private readonly record struct FiniteReadAnchor(IFiniteDecisionPolicy Policy, FiniteServerProgressScope? Scope, long Started);
+    private readonly object finiteReadGate = new();
+    private long finiteReadGeneration;
+    private FiniteReadAnchor? finiteReadAnchor;
     private readonly ClientCommandDiagnostics? diagnostics;
     private long operationEpoch;
     private readonly Func<GameSnapshot, CommandFailurePhase, long, CancellationToken, Task<ObservationAdmission>>? admit;
@@ -22,13 +27,23 @@ public sealed class DecisionAdvance
         this.time = time ?? throw new ArgumentNullException(nameof(time));
     }
     internal DecisionAdvance(IMatchConnection connection, ClientCommandDiagnostics diagnostics,
-        Func<GameSnapshot, CommandFailurePhase, long, CancellationToken, Task<ObservationAdmission>> admit)
-        : this(connection) { this.diagnostics = diagnostics; this.admit = admit; }
+        Func<GameSnapshot, CommandFailurePhase, long, CancellationToken, Task<ObservationAdmission>> admit, TimeProvider? clock = null)
+        : this(connection, clock ?? TimeProvider.System) { this.diagnostics = diagnostics; this.admit = admit; }
     internal void SetOperationEpoch(long epoch)
     {
         operationEpoch = epoch;
         ObservationFailurePhase = CommandFailurePhase.Observation;
         SuppressFinalObservation = false;
+    }
+    internal void RetireFiniteReadCadence()
+    {
+        lock (finiteReadGate) { finiteReadGeneration++; finiteReadAnchor = null; }
+    }
+    private void RetireFiniteReadCadence(long generation)
+    {
+        lock (finiteReadGate) if (finiteReadGeneration == generation) {
+            finiteReadGeneration++; finiteReadAnchor = null;
+        }
     }
 
     public Task<GameSnapshot?> RunAsync(GameSnapshot initial, Func<GameSnapshot, bool> canPass,
@@ -38,6 +53,7 @@ public sealed class DecisionAdvance
     public async Task<GameSnapshot?> RunQuietlyAsync(GameSnapshot initial, string token, Func<GameSnapshot, bool> canContinue,
         Func<GameSnapshot, GameSnapshot, bool> shouldPresent, CancellationToken cancellation = default)
     {
+        RetireFiniteReadCadence();
         if (!QuietPriorityPolicy.CanPass(initial, token) || !canContinue(initial)) return initial;
         return await RunBatchAsync(initial, token, canContinue, shouldPresent, cancellation);
     }
@@ -51,6 +67,13 @@ public sealed class DecisionAdvance
         CancellationToken cancellation = default)
     {
         ArgumentNullException.ThrowIfNull(intent);
+        long readGeneration;
+        lock (finiteReadGate) {
+            if (finiteReadAnchor is { } previous && !ReferenceEquals(previous.Policy, intent)) {
+                finiteReadGeneration++; finiteReadAnchor = null;
+            }
+            readGeneration = finiteReadGeneration;
+        }
         long started = time.GetTimestamp();
         var state = initial;
         int passes = 0;
@@ -61,7 +84,12 @@ public sealed class DecisionAdvance
             while (!cancellation.IsCancellationRequested) {
                 if (UndoFacts.RestoredSince(initial, state)) { intent.Stop(); return state; }
                 if (intent.IsPaused || !intent.CanContinue(state) || shouldPresent(initial, state)) return state;
-                var command = intent.NextCommand(state);
+                var step = intent.NextStep(state);
+                var command = step switch {
+                    FiniteNextStep.DispatchCommand dispatch => dispatch.Command,
+                    FiniteNextStep.ObserveCurrentInput or FiniteNextStep.AwaitAcknowledgedServerProgress => null,
+                    _ => throw new InvalidOperationException("A finite policy must identify its next operation.")
+                };
                 ClientDiagnosticAttempt? attempt = null;
                 if (!intent.IsActive) return state;
                 if (command != null) {
@@ -71,8 +99,14 @@ public sealed class DecisionAdvance
                     await exchange.ExecuteAsync(command, attempt);
                     intent.Submitted(state, command); passes++;
                 }
+                else if (step is FiniteNextStep.AwaitAcknowledgedServerProgress waiting
+                    && !await WaitForServerProgressAsync(intent, waiting.Scope, started, readGeneration, cancellation)) return state;
                 // Cancellation never hides the result of a pass already sent.
                 ObservationFailurePhase = exchange.ObservationFailurePhase;
+                // Full command readbacks stay immediate and establish the next
+                // passive read's start-to-start anchor, including the grant ACK.
+                lock (finiteReadGate) if (finiteReadGeneration == readGeneration)
+                    finiteReadAnchor = new(intent, (step as FiniteNextStep.AwaitAcknowledgedServerProgress)?.Scope, time.GetTimestamp());
                 var next = await exchange.ObserveAsync(state, attempt);
                 if (next != null && next.Revision >= state.Revision && admit != null
                     && await AdmitAsync(next, cancellation) != ObservationAdmission.Validated) return next;
@@ -88,18 +122,51 @@ public sealed class DecisionAdvance
                 if (UndoFacts.RestoredSince(initial, state)) { intent.Stop(); return state; }
                 if (intent.IsPaused || !intent.CanContinue(state) || shouldPresent(initial, state)) return state;
                 if (time.GetElapsedTime(started) >= MaximumSliceDuration || passes >= 32) return state;
-                if (command == null || state.Decision == null) {
+                if (step is not FiniteNextStep.AwaitAcknowledgedServerProgress && (command == null || state.Decision == null)) {
                     try { await Task.Delay(10, cancellation); }
                     catch (OperationCanceledException) { return state; }
                 }
             }
             return state;
         } catch { intent.Stop(); throw; }
+        finally {
+            if (cancellation.IsCancellationRequested || intent.IsPaused || !intent.IsActive)
+                RetireFiniteReadCadence(readGeneration);
+        }
+    }
+
+    private async Task<bool> WaitForServerProgressAsync(IFiniteDecisionPolicy intent, FiniteServerProgressScope scope,
+        long sliceStarted, long generation, CancellationToken cancellation)
+    {
+        // One latest read, never a per-decision cache. Original grant terms and
+        // the policy instance identify one instruction across worker slices.
+        while (!cancellation.IsCancellationRequested && intent.IsActive && !intent.IsPaused) {
+            FiniteReadAnchor? captured;
+            lock (finiteReadGate) {
+                if (finiteReadGeneration != generation) return false;
+                captured = finiteReadAnchor;
+            }
+            if (captured is not { } anchor || !ReferenceEquals(anchor.Policy, intent)
+                || anchor.Scope != null && anchor.Scope != scope) return true;
+            long now = time.GetTimestamp();
+            var sliceRemaining = MaximumSliceDuration - time.GetElapsedTime(sliceStarted, now);
+            if (sliceRemaining <= TimeSpan.Zero) return false;
+            var remaining = ServerProgressReadInterval - time.GetElapsedTime(anchor.Started, now);
+            if (remaining <= TimeSpan.Zero) return true;
+            var delay = remaining < sliceRemaining ? remaining : sliceRemaining;
+            // System timers may round fractional milliseconds down. Recheck the
+            // monotonic clock after every wake; never start a read early.
+            if (delay < TimeSpan.FromMilliseconds(1)) delay = TimeSpan.FromMilliseconds(1);
+            try { await Task.Delay(delay, time, cancellation); }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { return false; }
+        }
+        return false;
     }
 
     private async Task<GameSnapshot?> RunBatchAsync(GameSnapshot initial, string? quietToken, Func<GameSnapshot, bool> policy,
         Func<GameSnapshot, GameSnapshot, bool> shouldPresent, CancellationToken cancellation)
     {
+        RetireFiniteReadCadence();
         long started = time.GetTimestamp();
         var state = initial;
         int passes = 0;

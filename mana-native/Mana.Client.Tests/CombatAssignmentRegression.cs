@@ -82,7 +82,7 @@ internal static class CombatAssignmentRegression
         var initial = State(3); var desired = new[] { new BlockAssignment("a000", "b000"), new("a001", "b001") };
         var monotonic = CombatAssignmentIntent.TryArm(initial, desired)!;
         check(monotonic.CanContinue(State(3, revision: 2))
-                && ((IFiniteDecisionPolicy)monotonic).NextCommand(initial) == null,
+                && ((IFiniteDecisionPolicy)monotonic).NextStep(initial) is not FiniteNextStep.DispatchCommand,
             "A retained older declaration frame cannot generate block commands after the intent has observed a newer revision");
         foreach (var changed in new[] {
             State(3, revision: 2) with { Turn = 9 },

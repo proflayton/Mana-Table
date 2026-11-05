@@ -7,6 +7,7 @@ internal static class CommandExchangeRegression
     internal static async Task RunAsync(Action<bool, string> check)
     {
         foreach (bool diagnostics in new[] { false, true }) {
+            await QueuedAutoRefusal(diagnostics, check);
             foreach (string mode in new[] { "direct", "source", "auto", "quiet", "finite", "optional" }) {
                 await Readback(mode, diagnostics, check);
                 await FirstRejected(mode, diagnostics, check);
@@ -23,6 +24,50 @@ internal static class CommandExchangeRegression
         await EqualHeaders(check);
         await QuietEarlyVeto(check);
         foreach (string retirement in new[] { "hold", "reset", "close" }) await AdmissionLifecycle(retirement, check);
+    }
+
+    private static async Task QueuedAutoRefusal(bool diagnostics, Action<bool, string> check)
+    {
+        var initial = State("auto");
+        var restored = initial with { Revision = initial.Revision + 1, BoardRevision = initial.BoardRevision + 1,
+            Decision = initial.Decision! with { Payload = ((PriorityPayload)initial.Decision.Payload) with { CanAutoPass = false } } };
+        // An ACK admits a queued operation; it does not promise that the rules
+        // owner will consume its input after a later permission change.
+        var port = new Port(restored) { HoldRead = true };
+        var client = Session(port, diagnostics); client.Accept(initial);
+        int failures = 0; client.Failed += _ => failures++;
+        bool CanPass(GameSnapshot state) => state.Decision?.Payload is PriorityPayload { CanAutoPass: true };
+        check(client.Advance(CanPass, (_, _) => false),
+            "An automatic pass starts before its queued permission refusal; diagnostics=" + diagnostics);
+        try {
+            await port.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var automatic = new AutoPassPriority(initial.Id, initial.Decision!.Id);
+            check(client.Busy && ReferenceEquals(client.State, initial) && port.Commands.SequenceEqual([automatic]) && port.Reads == 1,
+                "One accepted Auto dispatch awaits its real readback without exposing a second current command");
+            port.ReadRelease.TrySetResult(); await Drain(client);
+            check(ReferenceEquals(client.State, restored) && restored.Decision!.Id == initial.Decision.Id
+                    && !client.Busy && !client.NeedsRecovery && !client.UncertainCommand && failures == 0,
+                "A newer same-input permission refusal is retained as an ordinary current observation rather than an uncertain command or error");
+            // The existing bounded advance may observe an ACKed, unanswered
+            // same-ID input more than once before returning its350ms slice.
+            // Once settled, rejected restarts must cause no further I/O.
+            int settledReads = port.Reads;
+            bool restarted = client.Advance(CanPass, (_, _) => false);
+            bool replayed = client.Submit(automatic);
+            check(!restarted && !replayed && port.Commands.SequenceEqual([automatic]) && port.Reads == settledReads,
+                "The restored same-ID input with no Auto permission cannot replay its acknowledged pass or restart Auto; diagnostics="
+                    + diagnostics + "; restartAccepted=" + restarted + "; replayAccepted=" + replayed
+                    + "; settledReads=" + settledReads + "; afterRejectedRestartsReads=" + port.Reads + "; commands=" + port.Commands.Count);
+            port.Next = Fresh(restored);
+            var manual = new PassPriority(restored.Id, restored.Decision!.Id);
+            check(client.Submit(manual), "A deliberate manual pass remains available for the still-unanswered current input");
+            await Drain(client);
+            check(port.Commands.SequenceEqual([automatic, manual]) && port.Reads == settledReads + 1 && ReferenceEquals(client.State, port.Next)
+                    && !client.Submit(automatic) && !client.NeedsRecovery && !client.UncertainCommand && failures == 0,
+                "The queued-refusal journey sends exactly one Auto and one explicit manual pass, reconciles their own observations and never replays the retired Auto; diagnostics="
+                    + diagnostics + "; settledReads=" + settledReads + "; afterManualReads=" + port.Reads
+                    + "; commands=" + port.Commands.Count + "; failures=" + failures);
+        } finally { port.ReadRelease.TrySetResult(); client.Close(); }
     }
 
     private static async Task Readback(string mode, bool diagnostics, Action<bool, string> check)
