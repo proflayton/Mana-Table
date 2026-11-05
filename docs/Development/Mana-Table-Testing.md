@@ -815,6 +815,16 @@ These checks do not establish arbitrary independent same-world multi-reader
 merging of automated authority; cancellation and retirement still belong to the
 single composition owner.
 
+`AiHostLoopRegression` drives the real background loop with timer-controlled
+provider replies. An accepted submission immediately requests a new observation;
+resolving and the identical old stamp grant no replay and retain the40 ms idle
+wait. Fresh authority, the real2.4-second announcement pacer, rejected/unknown
+receipts, mixed-seat failures, cancellation and lawful foreign-human waiting
+remain separate controls. A clock-only old-loop baseline preserves its
+unconditional40 ms wait while exposing the same existing operation clock. These
+authored transport checks establish scheduling and authority, not engine input
+consumption, throughput or a fix for a retained CI cutoff.
+
 The fixture-backed `--smoke-headless-engine` lane also invokes
 `PolledFanoutEngineJourney` with fixed45-second provider-readiness and90-second
 active-journey budgets (the same135-second maximum, separate from teardown).

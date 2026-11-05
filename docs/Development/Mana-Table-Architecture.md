@@ -979,6 +979,13 @@ Private preparation, faces, names, offers and proposed answers
 are excluded from this projection. Legacy/missing evidence keeps ordinary timing.
 This is host cadence, not a bot strategy, human consent or server grant: every
 automated input still receives a fresh observation and policy evaluation.
+The background loop separately distinguishes an accepted submission that needs
+a fresh observation from a cycle with no current work. Acceptance skips the
+40 ms idle backoff before that read; it proves no input consumption or resolved
+effect. Resolving, unchanged authority and presentation holds keep the backoff,
+and rejection or failure overrides another seat's accepted-submission hint.
+The existing operation clock schedules the idle wait; announcement pacing and
+all current actor, offer and command permissions remain separate gates.
 
 The source implementation after 0.2.292 separates announcement timing from
 cohort validity. With complete typed public progress, a phase, action-version or
