@@ -48,9 +48,10 @@ the lease and holds the unanswered input if it has expired. This safety boundary
 is implemented; registering standing Auto intent remains the proposed next step.
 
 `TimedAiHostPacing` is a separate presentation owner. The fast full-game campaign
-does not test its timing. The existing real 110-trigger fixture is being extended
-to use the shipping 2.4-second pacer, retaining real AI evaluations and all
-resource, consent and terminal-receipt assertions. A slow archive-arrival interval
+does not test its timing. The real 110-trigger fixture now uses the shipping
+2.4-second pacer, retaining real AI evaluations and all resource, consent and
+terminal-receipt assertions. This controlled journey verifies the captured queue;
+it does not establish the cause of the user's live delay. A slow archive-arrival interval
 alone cannot establish which of these owners caused a delay.
 
 ## One consent owner, existing rules dispatch

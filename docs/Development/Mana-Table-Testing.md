@@ -446,7 +446,10 @@ failures through the existing direct/source, Auto, quiet, finite and optional
 payment paths, with diagnostic subscriptions both enabled and absent. An
 Execute-time rejection remains definite; the same exception during readback
 quarantines old controls until an ordinary observation reconciles them, followed
-by one explicit fresh command. Partial batches cannot discard an earlier applied
+by one explicit fresh command. A queued Auto acknowledgement followed by a
+newer, same-input observation withdrawing Auto permission must retain the
+unanswered decision, prevent automatic replay, and permit one deliberate manual
+pass without recovery. Partial batches cannot discard an earlier applied
 command behind a later rejection; owner validation is not publication and does
 not clear earlier unpublished uncertainty. Changed-prompt
 execution-history rollback must fail before a second command, including a held
@@ -1749,6 +1752,16 @@ comfortable interaction.
 and terminal cleanup. Its focused controller regression also checks timestamp
 ordering, removal fallback and nullable search overrides through public APIs on
 an unstarted table, including bounded concurrent reads while overrides change.
+
+`RulesScenarioPriorityRefusalTest` distinguishes admission from input consumption
+through the real API. The driver suppresses only an already submitted publication,
+so a queued refusal can restore the same input at a newer revision. An automatic
+pass rejected at admission is treated as superseded only when a passive read
+independently witnesses the same owned priority input, newer publication and
+withdrawn permission. Unchanged observations and invalid commands remain errors;
+a replacement required payment is never answered implicitly. The original
+`FlashbackRefreshConcessionTest` and `CardQueryConcessionTest` retain their traversal,
+privacy, continued-play and terminal assertions and deadlines.
 
 ## Native headless checks
 

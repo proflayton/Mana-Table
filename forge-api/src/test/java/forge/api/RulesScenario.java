@@ -29,7 +29,7 @@ final class RulesScenario implements AutoCloseable {
     private final int seatCount;
     private final boolean automated;
     private final List<Object> trace = new ArrayList<>();
-    private final Map<Integer, String> answered = new HashMap<>();
+    private final Map<Integer, SubmittedPublication> submitted = new HashMap<>();
     enum TraceMode { FULL, SCALE }
     private TraceMode traceMode = TraceMode.FULL;
     private Input firstInput, previousInput, currentInput;
@@ -183,6 +183,15 @@ final class RulesScenario implements AutoCloseable {
 
     record Input(int seat, JsonObject state, JsonObject prompt) { }
 
+    /** Admission can queue an operation that subsequently refuses its lease.
+     * Suppress that observed publication, never a restored input's identity. */
+    private record SubmittedPublication(String gameId, int viewerId, String promptId, long revision, long boardRevision) {
+        static SubmittedPublication of(Input input) {
+            return new SubmittedPublication(text(input.state(), "id"), input.state().get("viewerId").getAsInt(),
+                    text(input.prompt(), "id"), input.state().get("revision").getAsLong(), input.state().get("boardRevision").getAsLong());
+        }
+    }
+
     // A predicate gets every new decision. Return true to pause before answering it.
     Input until(Predicate<Input> stop) throws Exception {
         long deadline = System.nanoTime() + Duration.ofSeconds(45).toNanos();
@@ -191,8 +200,8 @@ final class RulesScenario implements AutoCloseable {
                 var state = state(seat);
                 if (!state.has("prompt") || state.get("prompt").isJsonNull()) continue;
                 var prompt = state.getAsJsonObject("prompt");
-                if (text(prompt, "id").equals(answered.get(seat))) continue;
                 var input = new Input(seat, state, prompt);
+                if (SubmittedPublication.of(input).equals(submitted.get(seat))) continue;
                 remember(input);
                 if (stop.test(input)) return input;
                 String type = text(prompt, "inputType");
@@ -215,7 +224,7 @@ final class RulesScenario implements AutoCloseable {
         JsonObject request = request(input, answer);
         try {
             session(input.seat()).action(request);
-            answered.put(input.seat(), text(input.prompt(), "id"));
+            submitted.put(input.seat(), SubmittedPublication.of(input));
             if (traceMode == TraceMode.FULL) trace.add(Map.of("seat", input.seat(), "state", input.state(), "answer", answer));
             else {
                 remember(input);
@@ -226,9 +235,30 @@ final class RulesScenario implements AutoCloseable {
         } catch (IllegalArgumentException error) {
             // Publication may supersede a prompt before it is answered. Never replay
             // an answer against a new prompt; let the test inspect the fresh input.
-            if (!"That choice has changed. Use the current prompt.".equals(error.getMessage())) throw error;
-            return false;
+            if ("That choice has changed. Use the current prompt.".equals(error.getMessage())) return false;
+            if ("This response window needs your decision".equals(error.getMessage())
+                    && noResponseObservationSuperseded(input, answer)) return false;
+            throw error;
         }
+    }
+
+    private boolean noResponseObservationSuperseded(Input input, Map<String, ?> answer) {
+        if (!Objects.equals(answer.get("action"), "passIfNoResponse")
+                || !text(input.prompt(), "inputType").equals("InputPassPriority")
+                || !input.prompt().has("canAutoPass") || !input.prompt().get("canAutoPass").getAsBoolean()) return false;
+        // Observe after already queued input work, without publishing, rescanning
+        // or retrying the refused command. An unchanged frame is not a witness.
+        var latest = HeadlessPlatform.query(table, () -> JSON.toJsonTree(session(input.seat()).state()).getAsJsonObject());
+        if (!text(latest, "id").equals(text(input.state(), "id"))
+                || !latest.get("viewerId").equals(input.state().get("viewerId"))
+                || !text(latest, "status").equals("playing")
+                || latest.get("revision").getAsLong() <= input.state().get("revision").getAsLong()
+                || latest.get("boardRevision").getAsLong() <= input.state().get("boardRevision").getAsLong()
+                || !latest.has("prompt") || !latest.get("prompt").isJsonObject()) return false;
+        var current = latest.getAsJsonObject("prompt");
+        return text(current, "id").equals(text(input.prompt(), "id"))
+                && text(current, "inputType").equals("InputPassPriority")
+                && current.has("canAutoPass") && !current.get("canAutoPass").getAsBoolean();
     }
 
     void rejected(Input input, String action, String message) {
