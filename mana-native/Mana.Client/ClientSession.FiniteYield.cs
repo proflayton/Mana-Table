@@ -111,29 +111,31 @@ public sealed partial class ClientSession
 
     private async Task<GameSnapshot> ObserveFiniteRevocationAsync(PendingFiniteRevoke pending)
     {
+        var exchange = new CommandExchange(connection, commandSubmitted: pending.Sent);
         if (!pending.Sent) {
             pending.Sent = true; pending.Started = time.GetUtcNow();
-            try { await connection.ExecuteAsync(pending.Command); }
-            catch (EngineCommandRejectedException) {
+            try { await exchange.ExecuteAsync(pending.Command); }
+            catch (CommandExchangeException error) when (error.Phase == CommandFailurePhase.DispatchRejected) {
                 // A prior grant may already be terminal/replaced. Rejection
                 // itself proves nothing; reconcile the actual advertisement.
             }
         }
-        var next = await connection.ObserveAsync()
-            ?? throw new IOException("The finite-yield revocation could not be observed.");
-        // A transport return is not an acknowledgement until the same typed
-        // evidence required by ordinary session acceptance has been validated.
-        lock (observationGate) {
-            executions.Validate(next); FiniteResolutionFacts.Validate(next); FiniteStackYieldFacts.Validate(next);
-            if (next.Id != pending.Command.GameId || next.ViewerId != pending.ViewerId || next.FiniteStackYield == null
-                || next.Revision < pending.MinimumRevision
-                || State is { } current && current.Id == next.Id && current.ViewerId == next.ViewerId && next.Revision < current.Revision)
-                throw new IOException("The finite-yield revocation receipt does not identify its current captured audience.");
-            ValidateFiniteAcknowledgement(next);
-            if (next.FiniteStackYield is { Status: FiniteStackYieldStatus.Active } active && active.GrantId != pending.Command.GrantId)
-                throw new IOException("Finite-yield ownership changed before revocation could be acknowledged.");
-        }
-        return next;
+        var next = await exchange.ObserveAsync(validate: next => {
+            if (next == null) throw new IOException("The finite-yield revocation could not be observed.");
+            // A transport return is not an acknowledgement until the same typed
+            // evidence required by ordinary session acceptance has been validated.
+            lock (observationGate) {
+                executions.Validate(next); FiniteResolutionFacts.Validate(next); FiniteStackYieldFacts.Validate(next);
+                if (next.Id != pending.Command.GameId || next.ViewerId != pending.ViewerId || next.FiniteStackYield == null
+                    || next.Revision < pending.MinimumRevision
+                    || State is { } current && current.Id == next.Id && current.ViewerId == next.ViewerId && next.Revision < current.Revision)
+                    throw new IOException("The finite-yield revocation receipt does not identify its current captured audience.");
+                ValidateFiniteAcknowledgement(next);
+                if (next.FiniteStackYield is { Status: FiniteStackYieldStatus.Active } active && active.GrantId != pending.Command.GrantId)
+                    throw new IOException("Finite-yield ownership changed before revocation could be acknowledged.");
+            }
+        });
+        return next!;
     }
     private static bool RemainsActive(GameSnapshot state, RevokeFiniteStackYield command)
         => state.Id == command.GameId && state.FiniteStackYield is { Status: FiniteStackYieldStatus.Active } grant

@@ -8,7 +8,7 @@ namespace Mana.Table;
 
 // Actual child pipes, provider codec and command scope; authored envelopes are
 // not Magic rules, TCP audience authorization or human gameplay evidence.
-internal static class OwnedDecisionObservationProtocolProbe
+internal static partial class OwnedDecisionObservationProtocolProbe
 {
     internal const string Marker = "--owned-decision-observation-protocol-probe";
     private const string InitialGame = "owned-observation-game", InitialDecision = "owned-priority";
@@ -19,6 +19,7 @@ internal static class OwnedDecisionObservationProtocolProbe
         int index = Array.IndexOf(arguments, Marker);
         string mode = arguments[index + 1], directory = Path.GetDirectoryName(arguments[index + 2])!;
         Directory.CreateDirectory(directory);
+        if (mode.StartsWith("source-read-", StringComparison.Ordinal)) return ServeSourceReads(mode, directory);
         var capabilities = ForgeProtocol.RequiredCapabilities.Add("automated-seats");
         if (mode != "legacy") capabilities = capabilities.Add("owned-decision-observation");
         if (mode == "private-faces") capabilities = capabilities.Add("private-action-faces");
@@ -148,6 +149,7 @@ internal static class OwnedDecisionObservationProtocolProbe
     internal static async Task RunAsync(string profile, Action<bool, string> check)
     {
         CheckWire(check);
+        await CheckSourceReadsAsync(profile, check);
         await CheckAutomatedReadsAsync(profile, check);
         await CheckOrdinaryReadsAsync(profile, check);
         string executable = Path.Combine(AppContext.BaseDirectory, "Mana.Table.Tests.exe");

@@ -191,6 +191,14 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     internal static Exception RequestFailure(string method, JsonElement message)
     {
+        if (method == "matchSourceActions") {
+            if (Text(message, "errorCode") == "source-read-superseded")
+                return new EngineSourceReadException(EngineSourceReadFailure.Superseded);
+            if (Text(message, "errorCode") == "source-read-changed")
+                return new EngineSourceReadException(EngineSourceReadFailure.Changed);
+            if (Text(message, "errorCode") == "source-read-failed")
+                return new EngineSourceReadException(EngineSourceReadFailure.Failed);
+        }
         // A racing observation has no command receipt to retry. Only the
         // provider's typed discovery result on this read-only method permits
         // discarding a batch; identical prose on any other failure stays fatal.

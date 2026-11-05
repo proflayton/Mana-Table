@@ -34,8 +34,7 @@ internal static class PolledFanoutEngineJourney
             Profile = Path.Combine(directory, "connection-" + index)
         })).ToArray();
         var elapsed = Stopwatch.StartNew();
-        var setupTime = Stopwatch.StartNew();
-        var workload = new Stopwatch();
+        var clock = new JourneyProgressClock(TimeSpan.FromSeconds(45), TimeSpan.FromSeconds(90), TimeSpan.FromSeconds(15));
         string? failurePhase = null;
         var checks = new List<string>();
         var facts = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -131,7 +130,7 @@ internal static class PolledFanoutEngineJourney
                                 && state.Stack.Select(item => item.ExecutionId).Distinct().Count() == 110,
                             "One real Shamanic Revelation produces110 distinct typed trigger executions after55 actual draws");
                         burst = state;
-                        setupTime.Stop(); workload.Start();
+                        clock.BeginWork(110);
                         Stage("actual110-trigger-queue");
                         captured = state.Stack.Select(item => item.ExecutionId).ToImmutableHashSet(StringComparer.Ordinal);
                         eyeTriggers = state.Stack.Where(item => item.Card?.Name == "Mind's Eye").Select(item => item.ExecutionId).ToImmutableHashSet(StringComparer.Ordinal);
@@ -166,6 +165,12 @@ internal static class PolledFanoutEngineJourney
                         }
                     }
                     player.Poll();
+                }
+                if (!captured.IsEmpty) {
+                    // Only terminal receipts admitted independently by BOTH
+                    // ordinary owners can keep this bounded workload alive.
+                    // Player.Changed already rejects audience replacement.
+                    clock.ObserveProgress(captured.Count(id => players.All(player => player.Terminals.Contains(id))));
                 }
                 foreach (var key in cohorts.Keys.OrderByDescending(key => key.Board).Skip(64).ToArray()) cohorts.Remove(key);
                 if (!captured.IsEmpty && players.All(player => player.Client.State is { Stack.IsEmpty: true }
@@ -243,13 +248,14 @@ internal static class PolledFanoutEngineJourney
                 "The actual spell payment records five Forest production children, five committed mana consumption and a completed empty bill");
             Guard();
             File.WriteAllText(Path.Combine(directory, "private-history.json"), JsonSerializer.Serialize(history));
+            clock.Complete();
         } catch (Exception error) {
             failure = error;
-            failurePhase = workload.IsRunning ? "workload" : "setup";
+            failurePhase = clock.InWorkload ? "workload" : "setup";
             File.WriteAllText(Path.Combine(directory, "primary-error.txt"), error.ToString());
         }
         finally {
-            setupTime.Stop(); workload.Stop();
+            clock.Stop();
             // Freeze authority and evidence before withdrawing any live owner.
             stopped = new { audience = "host-private", captured, eyeTriggers, beforeCast, burst, castExecution,
                 players = players.Select(player => new { state = player.Client.State, source = player.Client.SourceActions.View,
@@ -285,8 +291,9 @@ internal static class PolledFanoutEngineJourney
             File.WriteAllText(Path.Combine(directory, "result.json"), JsonSerializer.Serialize(new {
                 formatVersion = 1, scenario = "real-polled-tcp-fifty-five-draws", passed = complete && failure == null,
                 failure = failure?.ToString(), failurePhase, cleanupErrors, checks, facts, stages, steps, elapsedSeconds = elapsed.Elapsed.TotalSeconds,
-                setupSeconds = setupTime.Elapsed.TotalSeconds, workloadSeconds = workload.Elapsed.TotalSeconds,
-                setupBudgetSeconds = 45, workloadBudgetSeconds = 45,
+                setupSeconds = clock.SetupElapsed.TotalSeconds, workloadSeconds = clock.WorkloadElapsed.TotalSeconds,
+                setupBudgetSeconds = 45, workloadBudgetSeconds = 90, semanticStallBudgetSeconds = 15,
+                commonTerminalReceipts = clock.Progress, maximumSemanticProgressGapSeconds = clock.MaximumProgressGap.TotalSeconds,
                 aiHistoryCapacity = 1024,
                 capturedTriggers = captured.Count, optionalPaymentTriggers = eyeTriggers.Count, coherentPublicCheckpoints = coherent,
                 runtime, launch = new { fixture = Hash(paths.Jar), derivedFixture = Hash(launch.Jar), bootstrap = "forge.api.AiReleaseFixtureEngine$PolledFanout" },
@@ -295,8 +302,7 @@ internal static class PolledFanoutEngineJourney
         }
         if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
         void Guard() {
-            if (workload.IsRunning ? workload.Elapsed >= TimeSpan.FromSeconds(45) : setupTime.Elapsed >= TimeSpan.FromSeconds(45))
-                throw new TimeoutException("The real polled110-trigger fixture exceeded its fixed45s " + (workload.IsRunning ? "workload" : "setup") + " budget.");
+            clock.Check();
         }
     }
 

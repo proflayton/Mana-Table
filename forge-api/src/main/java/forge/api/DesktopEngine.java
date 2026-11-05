@@ -28,6 +28,7 @@ public final class DesktopEngine implements AutoCloseable {
     private final AiDeckCatalog aiDecks;
     private final DeckPlaytests playtests;
     private final SimulationTableFactory simulationTables;
+    private final SourceReadFailureCapture sourceReadFailure = new SourceReadFailureCapture();
     private final SyncLobby.PregameSetup pregameSetup;
     private Path resources;
     private SeatConnection match;
@@ -94,21 +95,40 @@ public final class DesktopEngine implements AutoCloseable {
                 } catch (Exception error) {
                     // Validation errors are returned to the caller; unexpected
                     // request failures also need a stack trace in engine.log.
-                    if (!(error instanceof IllegalArgumentException || error instanceof StaleObservationException)) error.printStackTrace(System.err);
+                    if (sourceReadRequest(request)) {
+                        if (!(error instanceof IllegalArgumentException)) {
+                            // Session/transport/pre-dispatch failures share one
+                            // bounded fallback owned by this process, not a
+                            // trace on every source read. Session capture has
+                            // its own smaller lifetime and keeps the raw cause.
+                            engine.sourceReadFailure.capture(error);
+                            engine.sourceReadFailure.emit(System.err);
+                        }
+                    } else if (!(error instanceof IllegalArgumentException || error instanceof StaleObservationException)) error.printStackTrace(System.err);
                     protocol.println(JSON.toJson(errorReply(request, error)));
                 }
             }
         }
     }
 
+    private static boolean sourceReadRequest(JsonObject request) {
+        return request != null && request.has("method") && request.get("method").isJsonPrimitive()
+                && request.getAsJsonPrimitive("method").isString() && request.get("method").getAsString().equals("matchSourceActions");
+    }
+
     static JsonObject errorReply(JsonObject request, Exception error) {
         var reply = new JsonObject();
         if (request != null) reply.add("id", request.get("id"));
-        reply.addProperty("error", error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage());
+        boolean failedSourceRead = sourceReadRequest(request) && (!(error instanceof IllegalArgumentException)
+                || error instanceof forge.api.sync.SyncTransport.CodedFailure coded && SourceReadException.FAILED.equals(coded.code()));
+        reply.addProperty("error", failedSourceRead ? SourceReadException.FAILED_MESSAGE
+                : error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage());
+        if (failedSourceRead) reply.addProperty("errorCode", SourceReadException.FAILED);
         if (error instanceof forge.api.sync.SyncTransport.CodedFailure coded && request != null && request.has("method")
                 && request.get("method").isJsonPrimitive()
-                && (request.get("method").getAsString().equals("matchDecisionObservation")
-                    || request.get("method").getAsString().equals("automatedState") && coded.code().equals(StaleObservationException.CODE)))
+                && (SourceReadException.isCode(coded.code()) ? request.get("method").getAsString().equals("matchSourceActions")
+                    : request.get("method").getAsString().equals("matchDecisionObservation")
+                        || request.get("method").getAsString().equals("automatedState") && coded.code().equals(StaleObservationException.CODE)))
             reply.addProperty("errorCode", coded.code());
         if (error instanceof HistoryUnavailableException && request != null && request.has("method")
                 && request.get("method").isJsonPrimitive()

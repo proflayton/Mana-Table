@@ -1,14 +1,16 @@
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text.Json.Serialization;
 using Mana.Contracts;
 
 namespace Mana.Client;
 
-public enum ClientDiagnosticOrigin { Direct, Automatic, Quiet, Finite, Publication }
+public enum ClientDiagnosticOrigin { Direct, Automatic, Quiet, Finite, Publication, SourceRead }
 public enum ClientDiagnosticStage
 {
     LocalDeclined, Admitted, DispatchStarted, ProviderReturned, ProviderObservationReturned,
-    ObservationAccepted, ObservationDiscarded, ProviderRejected, OutcomeUnknown
+    ObservationAccepted, ObservationDiscarded, ProviderRejected, OutcomeUnknown,
+    SourceReadStarted, SourceReadAccepted, SourceReadStale, SourceReadUnsupported, SourceReadFailed, SourceReadDiscarded
 }
 public enum ClientDiagnosticFailure
 {
@@ -31,6 +33,15 @@ public enum ClientDiagnosticCommand
     IgnorePriorityAbility, RestorePriorityAbility, PassForNow, GrantFiniteStackYield, RevokeFiniteStackYield, UndoAction
 }
 public sealed record ClientDiagnosticManaPart(string Symbol, int Count);
+public enum ClientSourceReadReason
+{
+    None, Superseded, Changed, Unsupported, Rejected, Timeout, Cancelled, Unavailable,
+    Unexpected, EmptyResult, InvalidResult, ContextMismatch
+}
+// Request stamps remain distinguishable from the current owner after ABA or
+// retirement. No source, decision, game handle, printed face or provider text.
+public sealed record ClientDiagnosticSourceRead(long Generation, long Epoch, int? ViewerId, long? Revision,
+    long CurrentGeneration, long CurrentEpoch, bool Current, ClientSourceReadReason Reason);
 public sealed record ClientDiagnosticPriorityFacts(bool CanAutoPass, bool QuietYieldOffered,
     int AvailableAbilityCount, int IgnoredAbilityCount);
 public sealed record ClientDiagnosticFacts(bool HasSnapshot, int? ViewerId, long? Revision,
@@ -48,19 +59,71 @@ public sealed record ClientDiagnosticFacts(bool HasSnapshot, int? ViewerId, long
 /// Publication events deliberately carry no command-attempt correlation.</summary>
 public sealed record ClientDiagnostic(long? AttemptId, ClientDiagnosticOrigin Origin,
     ClientDiagnosticStage Stage, ClientDiagnosticCommand Command, ClientDiagnosticFailure Failure,
-    int? SubmittedNumber, ClientDiagnosticFacts Facts);
+    int? SubmittedNumber, ClientDiagnosticFacts Facts)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ClientDiagnosticSourceRead? SourceRead { get; init; }
+}
 
 // Only an immutable summary and private audience fence survive a dispatch.
 // No command, snapshot, action handle, token or source ID is retained here.
 internal sealed record ClientDiagnosticAttempt(long Id, ClientDiagnosticOrigin Origin,
     ClientDiagnosticCommand Command, int? SubmittedNumber, string GameId, int ViewerId, long Epoch,
     ClientDiagnosticFacts Initial);
+internal sealed record ClientSourceReadAttempt(long Id, long Generation, long Epoch,
+    int? ViewerId, long? Revision, bool InitiallyCurrent);
 
-internal sealed class ClientCommandDiagnostics(Action<ClientDiagnostic> emit, Func<long> currentEpoch, Func<bool> enabled)
+internal sealed class ClientCommandDiagnostics(Action<ClientDiagnostic> emit, Func<long> currentEpoch, Func<bool> enabled,
+    Func<SourceActionContext, bool>? sourceCurrent = null)
 {
     private long sequence;
     private static readonly ClientDiagnosticFacts Empty = new(false, null, null, ClientDiagnosticDecision.None,
         null, null, null, null, null, null, [], false);
+
+    // Called only before dispatch and after posting back to the session owner.
+    // The transport worker never reads a replica or visibility predicate.
+    internal ClientSourceReadAttempt? BeginSourceRead(SourceActionContext context, long generation)
+    {
+        try {
+            if (!enabled()) return null;
+            bool current = SourceCurrent(context);
+            var attempt = new ClientSourceReadAttempt(Interlocked.Increment(ref sequence), generation, currentEpoch(),
+                current ? context.ViewerId : null, current ? context.Revision : null, current);
+            RecordSourceRead(attempt, generation, current, ClientDiagnosticStage.SourceReadStarted, ClientSourceReadReason.None);
+            return attempt;
+        } catch { return null; } // Evidence cannot prevent starting the read.
+    }
+    internal void CompleteSourceRead(ClientSourceReadAttempt? attempt, SourceActionContext context,
+        long generation, bool currentQuery, SourceActionStatus status, ClientSourceReadReason reason)
+    {
+        try {
+            if (attempt == null || !enabled()) return;
+            bool current = attempt.InitiallyCurrent && currentQuery && attempt.Epoch == currentEpoch() && SourceCurrent(context);
+            var stage = !current ? ClientDiagnosticStage.SourceReadDiscarded : status switch {
+                SourceActionStatus.Ready => ClientDiagnosticStage.SourceReadAccepted,
+                SourceActionStatus.Stale => ClientDiagnosticStage.SourceReadStale,
+                SourceActionStatus.Unsupported => ClientDiagnosticStage.SourceReadUnsupported,
+                _ => ClientDiagnosticStage.SourceReadFailed
+            };
+            RecordSourceRead(attempt, generation, current, stage, reason);
+        } catch { /* Evidence cannot block completion or a coalesced current read. */ }
+    }
+    private bool SourceCurrent(SourceActionContext context)
+    {
+        try { return sourceCurrent?.Invoke(context) == true; }
+        catch { return false; }
+    }
+    private void RecordSourceRead(ClientSourceReadAttempt attempt, long generation, bool current,
+        ClientDiagnosticStage stage, ClientSourceReadReason reason)
+    {
+        var facts = current ? new ClientDiagnosticFacts(true, attempt.ViewerId, attempt.Revision,
+            ClientDiagnosticDecision.Undisclosed, null, null, null, null, null, null, [], false) : Empty;
+        Emit(new(attempt.Id, ClientDiagnosticOrigin.SourceRead, stage, ClientDiagnosticCommand.Unknown,
+            stage is ClientDiagnosticStage.SourceReadDiscarded or ClientDiagnosticStage.SourceReadStale ? ClientDiagnosticFailure.Superseded
+                : stage == ClientDiagnosticStage.SourceReadFailed ? ClientDiagnosticFailure.ProviderFailure : ClientDiagnosticFailure.None,
+            null, facts) { SourceRead = new(attempt.Generation, attempt.Epoch, attempt.ViewerId, attempt.Revision,
+                generation, currentEpoch(), current, reason) });
+    }
 
     internal ClientDiagnosticAttempt? Begin(GameSnapshot state, GameCommand command, ClientDiagnosticOrigin origin, long epoch)
     {
