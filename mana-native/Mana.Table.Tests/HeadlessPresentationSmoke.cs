@@ -59,6 +59,7 @@ internal static partial class HeadlessPresentationSmoke
                     EncounterStartProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                 }
                 else if (group == "play-access") CheckPlayAccess(profile, Check, trace, performance);
+                else if (group == "play-affordability") CheckPlayAffordability(profile, Check, trace, performance);
                 else if (group == "attachment-stack") AttachmentStackChecks.Run(profile, Check);
                 else if (group == "visible-auto") {
                     VisibleAutoPriorityChecks.Run(profile, Check);
@@ -132,6 +133,7 @@ internal static partial class HeadlessPresentationSmoke
             CheckRulesReader(profile, Check, trace, performance);
             CheckKeywordHelp(profile, Check, trace, performance);
             CheckHandSourceAlternatives(profile, Check, trace, performance);
+            CheckPlayAffordability(profile, Check, trace, performance);
             CheckMatchFailure(profile, Check, trace, performance);
             ConcessionLifetimeChecks.Run(profile, Check);
             GameplayUndoPresentationChecks.Run(profile, Check);

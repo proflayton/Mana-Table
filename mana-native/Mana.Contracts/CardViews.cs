@@ -55,7 +55,7 @@ public static class CardViews
             if (source.PlayerId != state.ViewerId || state.DecisionOwnerId is { } owner && owner != state.ViewerId
                 || decision.Payload is PriorityPayload && state.PriorityPlayerId is { } responder && responder != state.ViewerId
                 || !card.FaceDown || card.VisualId.Length > 0 || card.CombatId.Length == 0
-                || source.KnownFace is not { FaceDown: false, Selectable: false, Highlighted: false,
+                || source.KnownFace is not { FaceDown: false, Selectable: false, Highlighted: false, PlayAffordability: ActionAffordability.Unknown,
                     Key.Length: 0, VisualId.Length: 0, CombatId.Length: 0, Name.Length: > 0, Type.Length: > 0,
                     AttachedTo: null, Attachments.IsEmpty: true, DefenderId: null, Defender: null }) return false;
             var physical = InZones(state).Where(zoned => zoned.PlayerId == state.ViewerId && zoned.Zone == "Battlefield"

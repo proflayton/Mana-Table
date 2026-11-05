@@ -42,11 +42,14 @@ internal static class ForgeSnapshotDecoder
                 || decision?.Payload is PriorityPayload && wire.PriorityPlayerId is { } responder && responder != wire.ViewerId) throw Invalid();
             if (wire.States.IsDefault || wire.Activity.IsDefault || wire.Notices.IsDefault || wire.IgnoredPriorityAbilities.IsDefault) throw Invalid();
             if (spectator && (!wire.PlayAccesses.IsEmpty || !wire.Activity.IsEmpty || !wire.Notices.IsEmpty
+                || wire.Players.Any(player => player.Zones.Any(zone => zone.TopCard is { } top
+                    && top.PlayAffordability != ActionAffordability.Unknown))
                 || wire.Players.Any(player => player.Zones.Any(zone => zone.Name is "Hand" or "Library"
                     && (!zone.Cards.IsEmpty || zone.TopCard != null)))
                 || wire.Players.SelectMany(player => player.Zones).SelectMany(zone => zone.Cards)
                     .Concat(wire.Stack.Select(item => item.Card).OfType<Card>())
-                    .Any(card => card.Key.Length > 0 || card.Selectable || card.Highlighted))) throw Invalid();
+                    .Any(card => card.Key.Length > 0 || card.Selectable || card.Highlighted
+                        || card.PlayAffordability != ActionAffordability.Unknown))) throw Invalid();
             ValidateAccess(wire, decision);
             var snapshot = new GameSnapshot(wire.Id, wire.Status, wire.Error, wire.Result, wire.ViewerId, wire.Turn,
                 wire.Phase ?? "Starting game", wire.PhaseKey ?? "PREGAME", wire.ActivePlayerId, wire.Players,

@@ -6,6 +6,28 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Light a card only with current funding evidence: source candidate
+
+**Source candidate; exact-candidate human review pending.** The player reports
+Ultima, Origin of Oblivion glowing despite insufficient mana. The intent is to
+recognize which current card actions can be paid, then read or deliberately play
+the physical card. The supplied [Arena hand and exile reference](#cards-playable-beside-the-hand)
+keeps the glow attached to the recognizable card. Requiring authoritative funding
+for that cue is our adaptation; the screenshot does not establish Arena's
+internal affordability algorithm or a rule for every alternate cost.
+
+The candidate keeps inspection and manual cast offers available. A positive cue
+requires the current engine's cached payment witness for at least one route on
+that occurrence. A timing-legal offer, conservative selectable fallback, nominal
+cost preview or retained play access cannot create the glow. Unknown or expired
+evidence stays unlit. Hover focus remains distinct, and a card-level witness is
+not proof that every face or source option is funded. The engine still owns the
+actual cost, targets, payment and resulting stack entry. There are no new controls
+or per-card funding requests. Review the unaffordable card before and after
+inspection, then its funded state and actual payment; include alternate faces,
+external-zone access and an older provider without the new fact. Automated draw
+and rules checks do not supply human approval of this journey.
+
 ## Read a permitted hidden face without turning it up: source candidate
 
 **Source candidate; exact-candidate human review pending.** A full mixed-table

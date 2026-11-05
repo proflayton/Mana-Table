@@ -99,6 +99,8 @@ internal sealed partial class TableApplication
         return card.Selectable && !string.IsNullOrEmpty(card.Key) || HandPlacements.Options(state, card).Length > 0
             || OfferedPlayOptions(card).Length > 0;
     }
+    private bool CanPaintCardAction(Card card, string zone) => match is { } state
+        && CardAffordability.CanHighlight(state, card, zone, IsCardActionable(card));
     private void CardClick(Card card)
     {
         if (match == null || busy) return;

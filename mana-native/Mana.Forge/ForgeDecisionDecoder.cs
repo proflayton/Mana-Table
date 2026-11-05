@@ -136,7 +136,8 @@ internal static class ForgeDecisionDecoder
         ValidateCard(context.Source?.Card);
         if (players == null || !players.Contains(payer)
             || context.Source?.ControllerId is { } controller && !players.Contains(controller)
-            || context.Source?.Card is { } card && (card.Key.Length != 0 || card.Selectable || card.Highlighted)) throw Invalid();
+            || context.Source?.Card is { } card && (card.Key.Length != 0 || card.Selectable || card.Highlighted
+                || card.PlayAffordability != ActionAffordability.Unknown)) throw Invalid();
         return context with { UnpaidManaParts = PaymentParts(value) };
     }
 
@@ -267,7 +268,8 @@ internal static class ForgeDecisionDecoder
         if (value.TryGetProperty("index", out _) || value.TryGetProperty("cardId", out _)) throw Invalid();
         var card = ReadCard(value, "card") ?? throw Invalid();
         if (card.Key.Length != 0 || card.VisualId.Length != 0 || card.CombatId.Length != 0
-            || card.Selectable || card.Highlighted || card.AttachedTo != null || !card.Attachments.IsEmpty) throw Invalid();
+            || card.Selectable || card.Highlighted || card.PlayAffordability != ActionAffordability.Unknown
+            || card.AttachedTo != null || !card.Attachments.IsEmpty) throw Invalid();
         return new LibraryChoice(null, Text(value, "label", required: true), card);
     }).ToImmutableArray();
     private static ImmutableArray<LibraryChoice> Disclosures(JsonElement prompt) => Array(prompt, "libraryCards").Select(value => {

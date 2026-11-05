@@ -46,10 +46,17 @@ public final class AvailableActions {
     /** Full priority scan. Cards remain actionable even when a caller elects not to
      *  stop for an activation. Timeout or unresolved manual payment never permits Auto. */
     public record ActionScan(Set<CardView> actionableCards, List<SpellAbility> activatedAbilities,
-                             boolean hasOtherActions, boolean complete) {
+                             boolean hasOtherActions, boolean complete, Set<CardView> fundedCards) {
         public ActionScan {
             actionableCards = Set.copyOf(actionableCards);
             activatedAbilities = List.copyOf(activatedAbilities);
+            fundedCards = Set.copyOf(fundedCards);
+        }
+
+        /** Existing scan consumers do not implicitly certify payment evidence. */
+        public ActionScan(Set<CardView> actionableCards, List<SpellAbility> activatedAbilities,
+                          boolean hasOtherActions, boolean complete) {
+            this(actionableCards, activatedAbilities, hasOtherActions, complete, Set.of());
         }
 
         public boolean hasNonIgnoredActions(Predicate<SpellAbility> ignored) {
@@ -65,6 +72,7 @@ public final class AvailableActions {
     private static ActionScan scanAll(Player player, long timeoutMs) {
         long deadlineNanos = System.nanoTime() + timeoutMs * 1_000_000L;
         Set<CardView> actionable = new HashSet<>();
+        Set<CardView> funded = new HashSet<>();
         Set<CardView> visited = new HashSet<>();
         List<SpellAbility> activated = new ArrayList<>();
         boolean hasOtherActions = false;
@@ -77,18 +85,21 @@ public final class AvailableActions {
             for (Card card : cards) {
                 if (checkTimeout(deadlineNanos, timeoutMs)) {
                     addUnvisited(actionable, visited, player);
-                    return new ActionScan(actionable, activated, hasOtherActions, false);
+                    return new ActionScan(actionable, activated, hasOtherActions, false, funded);
                 }
                 for (SpellAbility ability : card.getAllPossibleAbilities(player, true)) {
                     if (checkTimeout(deadlineNanos, timeoutMs)) {
                         addUnvisited(actionable, visited, player);
-                        return new ActionScan(actionable, activated, hasOtherActions, false);
+                        return new ActionScan(actionable, activated, hasOtherActions, false, funded);
                     }
                     if (ability.isManaAbility() || !ComputerUtilAbility.isFullyTargetable(ability)) continue;
                     var payment = paymentScan.assess(ability);
                     if (payment == PaymentAvailability.UNAVAILABLE) continue;
                     if (payment == PaymentAvailability.MANUAL) complete = false;
                     actionable.add(card.getView());
+                    // Manual routes and timeout fallback remain discoverable,
+                    // but neither is a positive witness that a cost can be paid.
+                    if (payment == PaymentAvailability.PAYABLE) funded.add(card.getView());
                     if (ability.isActivatedAbility()) {
                         activated.add(ability);
                     } else {
@@ -98,11 +109,11 @@ public final class AvailableActions {
                 visited.add(card.getView());
                 if (checkTimeout(deadlineNanos, timeoutMs)) {
                     addUnvisited(actionable, visited, player);
-                    return new ActionScan(actionable, activated, hasOtherActions, false);
+                    return new ActionScan(actionable, activated, hasOtherActions, false, funded);
                 }
             }
         }
-        return new ActionScan(actionable, activated, hasOtherActions, complete);
+        return new ActionScan(actionable, activated, hasOtherActions, complete, funded);
     }
 
     /** Run the predictive sweep under an AI controller so cost-adjustment chooseX

@@ -1318,6 +1318,21 @@ classification validation. Its authored observations test presentation and
 command safety; the Java journeys supply the rules evidence. Window captures
 and human readability review remain separate.
 
+**Source candidate:** `UltimaPlayabilityExperienceTest` covers the distinct
+`Ultima, Origin of Oblivion` (five generic mana), with four versus five Wastes and
+five Forests. It retains timing-legal source offers, checks query resource purity,
+and follows the actual payment/cancellation and stack outcome before checking
+the current private funding cue. An intervening mana event and unverified input
+withdraw cached evidence; a completed current scan can establish it again.
+Another case retains a known funded route while an unrelated manual payment
+leaves the full scan incomplete; that does not certify absence for Auto. Other
+audiences cannot borrow this viewer's funding fact.
+Native hand/source presentation checks distinguish a legal manual action and
+hover focus from positive affordable-card paint. Legacy, invalid, stale and
+foreign occurrence facts cannot create that paint; MDFC route costs remain
+independent of a card-level witness. These tests do not establish human approval
+of the availability cue.
+
 `ScalingManaPaymentTest` exercises real The Eternity Elevator abilities through
 the human `InputPayMana` Auto path at 19, 20 and 32 charge counters. It checks a
 small generic bill, a bill larger than the base output, colored and explicit

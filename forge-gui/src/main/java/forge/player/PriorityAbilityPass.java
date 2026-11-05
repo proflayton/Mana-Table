@@ -6,6 +6,7 @@ import forge.game.event.GameEvent;
 import forge.game.event.GameEventCardChangeZone;
 import forge.game.event.GameEventGameFinished;
 import forge.game.card.Card;
+import forge.game.card.CardView;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
@@ -55,6 +56,13 @@ final class PriorityAbilityPass {
 
     synchronized boolean scanCurrent() {
         return scan != null && scan.complete() && scanGeneration == rulesGeneration;
+    }
+
+    /** One assessed route is positive evidence even when unrelated routes made
+     * the overall absence scan incomplete. Both require the same current generation. */
+    synchronized boolean hasCurrentFunding(CardView card) {
+        return scan != null && scanGeneration == rulesGeneration
+                && scan.fundedCards().stream().anyMatch(funded -> funded == card);
     }
 
     synchronized void clearScan() {

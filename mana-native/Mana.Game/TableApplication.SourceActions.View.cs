@@ -31,7 +31,7 @@ internal sealed partial class TableApplication
         if (IsStudyBattlefieldReader(entry)) PaintStudyBattlefieldReader(card, entry);
         else {
             var physical = CardContext.CurrentOccurrence(entry) ?? entry.Card;
-            PaintCard(card, entry.Display, false, IsCardActionable(physical), true);
+            PaintCard(card, entry.Display, false, CanPaintCardAction(physical, entry.Zone), true);
             PaintPreparedMarker(physical, entry.Display, entry.Request.Owner ?? -1);
         }
         return true;
