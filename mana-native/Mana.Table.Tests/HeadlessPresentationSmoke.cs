@@ -63,6 +63,11 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "play-access") CheckPlayAccess(profile, Check, trace, performance);
                 else if (group == "play-affordability") CheckPlayAffordability(profile, Check, trace, performance);
                 else if (group == "quick-mana") CheckQuickMana(profile, Check, trace, performance);
+                else if (group == "table-presence") {
+                    CheckTablePresence(profile, Check);
+                    TablePresenceWireChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+                    PolledMixedLobbyEngineJourney.CheckPresencePreparation(Check);
+                }
                 else if (group == "attachment-stack") AttachmentStackChecks.Run(profile, Check);
                 else if (group == "visible-auto") {
                     VisibleAutoPriorityChecks.Run(profile, Check);
@@ -139,6 +144,9 @@ internal static partial class HeadlessPresentationSmoke
             CheckHandSourceAlternatives(profile, Check, trace, performance);
             CheckPlayAffordability(profile, Check, trace, performance);
             CheckQuickMana(profile, Check, trace, performance);
+            CheckTablePresence(profile, Check);
+            TablePresenceWireChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+            PolledMixedLobbyEngineJourney.CheckPresencePreparation(Check);
             CheckMatchFailure(profile, Check, trace, performance);
             ConcessionLifetimeChecks.Run(profile, Check);
             GameplayUndoPresentationChecks.Run(profile, Check);

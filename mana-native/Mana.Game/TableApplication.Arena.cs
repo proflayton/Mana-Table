@@ -14,6 +14,7 @@ internal sealed partial class TableApplication
     private static readonly Color ActionAccent = new(115, 220, 255);
     private void DrawArena()
     {
+        tableInspectionCues = TableInspectionPaintVisible ? tablePresence.Visible(now) : [];
         attachmentBadges.Clear(); attachmentConnections.Clear();
         battlefieldLabels.Clear(); battlefieldStatsBounds.Clear(); counterAnchors.Clear();
         choiceOrderBadges.Clear(); manaColorPaint.Clear();
@@ -37,6 +38,7 @@ internal sealed partial class TableApplication
         }
         for (int i = 0; i < opponents.Length; i++) DrawHero(opponents[i], SeatHero(opponents[i].Id), false, SeatDisplayIndex(opponents[i].Id));
         DrawCombatConnections(); DrawAttachmentConnections(); DrawStack(); DrawSeatTransfers();
+        DrawStackInspections();
         DrawChangeHighlights();
         if (!BattlefieldFocused) DrawEffectTransitions();
         DrawHand(); DrawPlayAccess(); DrawPublicCollectionReturns(); DrawCardEffects(); DrawDepartures();

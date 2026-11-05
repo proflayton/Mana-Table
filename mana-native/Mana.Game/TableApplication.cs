@@ -127,6 +127,7 @@ internal sealed partial class TableApplication : IDisposable
         this.clock = clock ?? TimeProvider.System;
         this.restartedAfterUpdate = restartedAfterUpdate;
         session = new(matchConnection, tables, this.clock, services.SourceActions, observationDelivery, services.MatchHistoryProvider); updates = new(session);
+        tablePresence = new(services.Presence, updates.Enqueue);
         if (services.Diagnostics is { } diagnostics) session.DiagnosticRecorded += diagnostics;
         if (services.HistoryArchive is { } historyArchive) session.History.Accepted += historyArchive.Record;
         session.History.Updated += HistoryUpdated;
@@ -186,6 +187,7 @@ internal sealed partial class TableApplication : IDisposable
         => projectionCapture?.ObserveEnvironment(updateTime, ProjectionSettings(updateViewport), match);
     private void AcceptPresentation(GameSnapshot? previous, GameSnapshot? state)
     {
+        tablePresence.Observe(state);
         ReconcileHistory(previous, state);
         ReconcileManaReading(previous, state);
         bool restored = session.RestorationChanged;
@@ -295,6 +297,7 @@ internal sealed partial class TableApplication : IDisposable
             session.Poll(!localMatch, _ => { });
         }
         PreparePresentation(time);
+        UpdateTablePresence();
         ObserveProjectionEnvironment();
     }
     private void SetAutomatic(bool value) { automatic = value; preferences = preferences with { Automatic = value }; SavePreferences(); }
@@ -407,6 +410,7 @@ internal sealed partial class TableApplication : IDisposable
     {
         if (closing) return;
         closing = true;
+        tablePresence.Close();
         ClearQuickMana();
         submittedManaContext = null;
         if (match is { } last) CloseHistoryArchive(last, !HistoryObserved(last));

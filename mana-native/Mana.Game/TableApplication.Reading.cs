@@ -128,6 +128,7 @@ internal sealed partial class TableApplication
             else compose(entry.Display, entry.Focused);
         }
         if (entry.Hovered && !liveReader) canvas.CardFocus(entry.Display, HoverAccent);
+        DrawTableInspection(entry);
         if (clipped) canvas.EndClip();
         if (Automated) matchPresentation.Cards.RecordComposition(entry);
     }

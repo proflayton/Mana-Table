@@ -6,6 +6,45 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Seeing another player read the table: source candidate
+
+**Source candidate; exact-candidate human review pending.** The intent is to
+see another person considering a public card while that person holds ordinary
+priority. Arena already shares hover presence: Wizards' [2024.42.00 patch
+notes](https://mtgarena-support.wizards.com/hc/en-us/articles/31307518959252-Patch-Notes-2024-42-00)
+describe suppressing it for selections that must remain secret. This is evidence
+for shared attention and its confidentiality limit, not evidence for a specific
+color, timing or tentative-target gesture. Tabletop Simulator's [pointer
+settings](https://kb.tabletopsimulator.com/getting-started/configuration-menu/)
+also document other players seeing a spatial pointer. Its free-moving pointer
+is more visual traffic than this four-seat adaptation needs.
+
+The source is an actual, currently public battlefield card or exact stack item.
+The gesture is hovering that object or retaining its public card reader. A quiet
+seat-colored rim and numbered seat mark appear at that same object for the other
+viewers. Opening your own reader does not move another person's mark onto your
+enlarged face. No camera change, sound or new dialog accompanies this activity;
+the indicator is steady with either motion preference. These choices are our
+adaptation, not a claim that Arena uses this exact presentation.
+
+There is no engine transition: inspection does not cast, activate, target, pass,
+extend a timer or become match history. The authority publishes a separate
+ordinary-priority context before a seat can share inspection. A public identity
+alone cannot authorize sharing a secret choice. Hand/library activity, private
+reveals, choices, draft targets and draft combat assignments stay private; the
+AI does not manufacture a pretend inspection sequence. An overlay, background
+window or retired game/audience/input/board context suppresses sharing, and
+short leases remove abandoned marks after disconnection. Panning clears the
+local proposed inspection but keeps other players' current attention attached
+to their objects as the camera moves. A covering menu hides that paint without
+turning a camera move into an audience replacement.
+
+Review both 1000×740 and a larger window with real artwork, a rotated/tapped
+card, crowded permanents, two abilities of the same source, a locally pinned
+reader, alt-tab, and a public card becoming concealed. Controlled native frames
+and safety checks do not replace this pending human review or establish the
+latency of real friends' connections.
+
 ## Tap mana at its source: source candidate
 
 **Source candidate; exact-candidate human review pending.** Manually floating

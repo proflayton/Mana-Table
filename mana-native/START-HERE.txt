@@ -61,6 +61,11 @@ F1 opens an optional controls reference. Closing it returns to the same context
 without making a game decision. Games open directly at your decision, without a
 first-run controls tour. Existing decks, names and play preferences are retained.
 Settings opens Play controls in a side drawer, keeping the table visible.
+Source candidate: while another player holds ordinary priority, a quiet colored
+rim and seat number show the public battlefield card or pending stack item they
+are inspecting. Reading remains noncommitting. Private cards and required
+choices are not shared; opening a menu or leaving the window stops sharing
+attention, and existing marks soon expire. Older hosts can omit this activity.
 The deck builder checks every saved edit. Problem cards are highlighted and
 their reasons appear beside the selected card; deck-wide checks stay visible.
 Back to play returns Home or to your connected table. Deck checks and saving

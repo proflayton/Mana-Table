@@ -12,6 +12,7 @@ namespace Mana.Table;
 // Bot observations never enter a connected human reader.
 internal static class PolledLobbyPorts
 {
+    internal sealed record CommandLatency(string Kind, long StartedTicks, double Milliseconds);
     internal sealed class ReadPort(IMatchConnection inner) : IMatchConnection
     {
         private readonly ConcurrentDictionary<string, GameSnapshot> decisions = new(StringComparer.Ordinal);
@@ -22,6 +23,7 @@ internal static class PolledLobbyPorts
         internal int Reads => Volatile.Read(ref reads);
         internal int Accepted => Volatile.Read(ref accepted);
         internal int Failures => Volatile.Read(ref failures);
+        internal ConcurrentQueue<CommandLatency> CommandLatencies { get; } = new();
         internal GameSnapshot? Held { get; private set; }
         internal int AcceptedAtCapture { get; private set; }
         internal TaskCompletionSource Captured { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -40,14 +42,48 @@ internal static class PolledLobbyPorts
         }
         public async Task ExecuteAsync(GameCommand command)
         {
+            long started = Stopwatch.GetTimestamp();
             try {
                 var before = command is DecisionCommand decision ? decisions.GetValueOrDefault(decision.DecisionId) : null;
                 await inner.ExecuteAsync(command); Interlocked.Increment(ref accepted);
+                CommandLatencies.Enqueue(new(command.GetType().Name, started, Stopwatch.GetElapsedTime(started).TotalMilliseconds));
                 Acknowledged?.Invoke(command, before);
             }
             catch { Interlocked.Increment(ref failures); throw; }
         }
         public Task ConcedeAsync(string gameId) => throw new InvalidOperationException("The polled prefix never forces concession.");
+    }
+
+    // Transparent real presence calls. Contract bytes exclude the IPC/TCP
+    // envelope; elapsed times are observations, not a head-of-line guarantee.
+    internal sealed class PresencePort(ITablePresence inner) : ITablePresence
+    {
+        internal sealed record Exchange(long StartedTicks, double Milliseconds, long Sequence,
+            long BoardRevision, string? ContextId, TableInspectionSubject? Subject, int ContractBytes, string Outcome);
+        private int started, executing, maximumExecuting;
+        internal int Started => Volatile.Read(ref started);
+        internal int Executing => Volatile.Read(ref executing);
+        internal int MaximumExecuting => Volatile.Read(ref maximumExecuting);
+        internal ConcurrentQueue<Exchange> Exchanges { get; } = new();
+        public bool SupportsTablePresence => inner.SupportsTablePresence;
+        public async Task<TablePresenceResult> ExchangePresenceAsync(TablePresenceUpdate update, CancellationToken cancellation = default)
+        {
+            long started = Stopwatch.GetTimestamp();
+            Interlocked.Increment(ref this.started);
+            int active = Interlocked.Increment(ref executing), prior;
+            do { prior = MaximumExecuting; if (active <= prior) break; }
+            while (Interlocked.CompareExchange(ref maximumExecuting, active, prior) != prior);
+            string outcome = "failed";
+            try {
+                var result = await inner.ExchangePresenceAsync(update, cancellation);
+                outcome = result.GetType().Name;
+                return result;
+            } finally {
+                Exchanges.Enqueue(new(started, Stopwatch.GetElapsedTime(started).TotalMilliseconds, update.Sequence,
+                    update.BoardRevision, update.ContextId, update.Subject, JsonSerializer.SerializeToUtf8Bytes(update).Length, outcome));
+                Interlocked.Decrement(ref executing);
+            }
+        }
     }
 
     internal sealed class BotPort(IAutomatedSeatProvider inner) : IAutomatedSeatProvider, IAiHostDiagnostics

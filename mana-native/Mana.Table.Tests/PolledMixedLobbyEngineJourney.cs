@@ -14,7 +14,7 @@ namespace Mana.Table;
 // Actual shipping observation owners: ordinary player polls and one background
 // bot host share the real host provider. Scripts answer only their own current
 // client state. No rich/private bot observation is borrowed by a human driver.
-internal static class PolledMixedLobbyEngineJourney
+internal static partial class PolledMixedLobbyEngineJourney
 {
     internal static async Task RunStandaloneAsync(ForgePaths paths)
     {
@@ -47,6 +47,7 @@ internal static class PolledMixedLobbyEngineJourney
         var ai = new AiTableHost(botPort, _ => new CasualCommanderPolicy(), 261104,
             new(TimeSpan.FromSeconds(3), 2048), diagnostics: botPort);
         var players = engines.Take(2).Select((engine, index) => new PlayerOwner(engine, index)).ToArray();
+        var presence = new PresenceProbe(players, botPort, started);
         var cohorts = new Dictionary<(string Game, long Board), (string Facts,
             ForgePublicProjectionFacts.ExecutionCorrelation Correlations, HashSet<int> Viewers)>();
         int coherent = 0, steps = 0, guestReadsAtHold = 0, botReadsAtHold = 0, hostCommandsAtHold = 0;
@@ -63,9 +64,10 @@ internal static class PolledMixedLobbyEngineJourney
             await engines[1].JoinAsync("127.0.0.1:" + port);
             lobby = await engines[0].SetSeatAsync(lobby.TableId, 2, "AI", "green");
             lobby = await engines[0].SetSeatAsync(lobby.TableId, 3, "AI", "red");
+            lobby = await engines[0].ConfigureTempoAsync(lobby.TableId, TempoPreset.Standard, TempoExpiry.Warn);
             foreach (int index in new[] { 0, 1 }) {
                 await engines[index].SelectDeckAsync(new(lobby.TableId, decks[index].Id, decks[index].LibraryToken));
-                await engines[index].SetReadyAsync(true);
+                await engines[index].SetReadyAsync(lobby.TableId, true, lobby.Tempo!.Revision);
             }
             while (!(lobby = await engines[0].LobbyAsync()).CanStart) { Guard(); await Task.Delay(5); }
             Require(lobby.Seats.Count(seat => seat.Type == "AI") == 2
@@ -104,6 +106,8 @@ internal static class PolledMixedLobbyEngineJourney
                 }
                 foreach (var key in cohorts.Keys.OrderByDescending(key => key.Board).Skip(64).ToArray()) cohorts.Remove(key);
 
+                bool ordinaryComplete = false;
+                PolledLobbyPorts.BotPort.ProcessingSnapshot? qualifyingBotProcessing = null;
                 var host = players[0].Client.State; var guest = players[1].Client.State;
                 if (host is { Players.Length: 4 } && guest is { Players.Length: 4 } && host.Id == guest.Id
                     && host.ViewerId != guest.ViewerId) {
@@ -118,13 +122,17 @@ internal static class PolledMixedLobbyEngineJourney
                     bool sameBoard = host.BoardRevision == guest.BoardRevision
                         && cohorts.TryGetValue((host.Id, host.BoardRevision), out var shared) && shared.Viewers.Count == 2;
                     if (sameBoard && humansDeveloped && botsDeveloped) coherent++;
-                    completed = released && !players[0].Client.Polling && humansDeveloped && botsDeveloped && coherent > 0
+                    ordinaryComplete = released && !players[0].Client.Polling && humansDeveloped && botsDeveloped && coherent > 0
                         && players.All(player => !player.Client.Busy) && botProcessing.Executing == 0
                         && botProcessing.ProcessedAccepted == botProcessing.Accepted && botPort.Faults.IsEmpty
                         && players.Any(player => player.Client.State?.Decision?.Payload is PriorityPayload);
-                    if (completed) completedBotProcessing = botProcessing;
+                    if (ordinaryComplete) qualifyingBotProcessing = botProcessing;
                 }
-                if (!completed) foreach (var player in players) player.Step();
+                await presence.UpdateAsync(ordinaryComplete, limit);
+                completed = ordinaryComplete && presence.Completed;
+                if (completed) completedBotProcessing = qualifyingBotProcessing;
+                if (!completed) foreach (var player in players)
+                    if (!presence.ShouldHoldReply(player.Client.State)) player.Step();
                 await Task.Delay(1);
             }
             Require(players.All(player => player.Client.ObservationDelivery == ObservationDeliveryMode.Polled
@@ -137,6 +145,12 @@ internal static class PolledMixedLobbyEngineJourney
                     && ai.LastFault == null && botPort.Faults.IsEmpty
                     && ai.Histories.All(history => history.Decisions.All(record => record.Outcome != AiDecisionOutcome.ExecutionUnknown)),
                 "Both polled humans and both background bots develop the actual table with monotonic private-safe audiences and coherent public state, without unknown command receipts");
+            Require(presence.Completed,
+                "The real polled humans exchange changing public-card inspection through their actual host/TCP presence ports within the unchanged prefix deadline");
+            Require(presence.HoldIntegrityVerified,
+                "Presence leaves the held rules board, decision, stack, activity and history unchanged while its original decision clock continues without refill");
+            Require(presence.TrafficVerified && presence.ResumedReceiptVerified,
+                "Single-flight bounded presence traffic is followed by an ordinary reconciled human command, with actual observed transport latencies retained");
         } catch (Exception error) { failure = error; }
         finally {
             // Preserve the failed/current reader and command context before
@@ -156,6 +170,8 @@ internal static class PolledMixedLobbyEngineJourney
                 if (players.Any(player => player.Client.Busy || player.Client.Polling))
                     throw new TimeoutException("Polled player owners did not settle before teardown.");
             } catch (Exception error) { cleanupErrors.Add(error.ToString()); }
+            try { await presence.CloseAsync(CleanupBudget()); }
+            catch (Exception error) { cleanupErrors.Add(error.ToString()); }
             foreach (var player in players) player.Client.Close();
             try { await ai.DisposeAsync().AsTask().WaitAsync(CleanupBudget()); }
             catch (Exception error) { cleanupErrors.Add(error.ToString()); }
@@ -169,7 +185,7 @@ internal static class PolledMixedLobbyEngineJourney
                 completedBotProcessing, preCleanupBotProcessing = stoppedBotProcessing, faults = botPort.Faults.ToArray()
             }));
             await File.WriteAllTextAsync(Path.Combine(directory, "prefix-results.json"), JsonSerializer.Serialize(new {
-                formatVersion = 2, scope = "Real default-polled host/TCP guest and background AI prefix; no human UX, natural outcome or deck qualification claim.",
+                formatVersion = 3, scope = "Real default-polled host/TCP guest, public inspection and background AI prefix; no human UX, natural outcome or deck qualification claim.",
                 passed = failure == null && completed, failure = failure?.ToString(), cleanupErrors, elapsedSeconds = started.Elapsed.TotalSeconds,
                 steps, checks, coherentPublicCheckpoints = coherent, captured, released, guestReadsAtHold, botReadsAtHold, hostCommandsAtHold,
                 backgroundReads = botPort.Reads, backgroundAcceptedCommands = reportedBotProcessing.Accepted,
@@ -178,9 +194,11 @@ internal static class PolledMixedLobbyEngineJourney
                 botProcessingAtQualification = completedBotProcessing, preCleanupBotProcessing = stoppedBotProcessing,
                 botNonPassAcceptances = reportedBotProcessing.ProcessedNonPassBySeat.OrderBy(pair => pair.Key)
                     .Select(pair => new { seat = pair.Key, accepted = pair.Value }),
+                presence = presence.Evidence,
                 players = players.Select(player => new { player.Index, player.ClientAdmissions, providerAcceptances = player.Port.Accepted,
                     ordinaryReads = player.Port.Reads, player.PollCallbacks, player.Publications, player.HeldPublications,
-                    player.Port.Failures, viewer = player.Client.State?.ViewerId, board = player.Client.State?.BoardRevision })
+                    player.Port.Failures, commandLatencies = player.Port.CommandLatencies.ToArray(),
+                    viewer = player.Client.State?.ViewerId, board = player.Client.State?.BoardRevision })
             }, new JsonSerializerOptions { WriteIndented = true }));
         }
         if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
@@ -193,6 +211,9 @@ internal static class PolledMixedLobbyEngineJourney
         internal readonly int Index;
         internal readonly PolledLobbyPorts.ReadPort Port;
         internal readonly ClientSession Client;
+        internal readonly ForgeEngine Engine;
+        internal readonly PolledLobbyPorts.PresencePort InspectionPort;
+        internal readonly TablePresenceSession Inspection;
         internal readonly List<object> Receipts = [];
         internal int ClientAdmissions, PollCallbacks, Publications, HeldPublications;
         private readonly ConcurrentQueue<Exception> failures = new();
@@ -202,7 +223,8 @@ internal static class PolledMixedLobbyEngineJourney
         private bool armed;
         internal PlayerOwner(ForgeEngine engine, int index)
         {
-            Index = index; Port = new(engine); Client = new(Port, engine, sourceActions: engine);
+            Index = index; Engine = engine; Port = new(engine); Client = new(Port, engine, sourceActions: engine);
+            InspectionPort = new(engine); Inspection = new(InspectionPort, Client.Post);
             Client.Failed += failures.Enqueue;
             Client.Changed += (_, state) => {
                 if (state == null) { if (prior != null) throw new InvalidDataException("A polled player lost its bound match."); return; }

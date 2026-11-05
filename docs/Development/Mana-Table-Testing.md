@@ -1,5 +1,58 @@
 # Testing Mana Table
 
+## Shared public inspection
+
+The source candidate's `TablePresenceRegression` runs in the ordinary
+graphics-free client executable. It holds an actual provider task through
+pointer churn, checks the four-per-second dispatch ceiling and latest-only
+intent, and retires success across board/input/audience A-to-B-to-A, foreground
+and close transitions. Private hand identities, incorrect actors, concealed
+occurrences, overlong/expired leases and delayed replies cannot yield visible
+attention. Failure/backoff and an unsupported provider stay separate from match
+execution.
+
+`--smoke-headless-presentation --presentation-group table-presence` exercises
+production composition and physical pointer input at 1000×740 and 1540×900.
+The same checks run in the ordinary full headless suite. They inspect the
+actual rim geometry, keep attention at the physical slot while a local reader
+opens, clear it on concealment/foreground changes, exclude the private hand,
+and address distinct pending abilities through their exact stack IDs. Actual
+camera key input retains received marks at the moving card pose while clearing
+the outgoing subject. Overlays suppress outgoing subjects and covered paint;
+optional observation remains independent of gameplay. A held
+presence task also survives 350 pointer updates and input-context replacement
+without another presence request while the native game path submits priority.
+That last test uses independent controlled ports: it does not certify latency
+on the real shared IPC/TCP connection.
+
+The same group runs `TablePresenceWireChecks`: strict public-subject decoding
+and actual child-process pipes cover absent local capability, an older remote
+relay, current card/stack wire values, optional failure, caller cancellation,
+audience replacement, and the method-specific superseded outcome. Each process
+journey retains a usable explicit rules command. The presence-specific error
+code cannot change ordinary command rejection. These are authored protocol
+envelopes, separate from Java rules or multiplayer latency qualification.
+
+That group and the default full headless suite also check the real prefix's
+presence-hold preparation. An acknowledged command and an older coherent board
+cannot supply the next input's clock: both humans must first accept fresh,
+matching public priority/clock facts. Replacing the input before its thinking
+readback retires that candidate and resynchronizes rather than waiting forever
+for the old clock. Both post-presentation polls must arrive before a baseline
+can be frozen.
+During synchronization, only priority replies are held. A newly published
+required choice still uses the existing current-command permission path;
+disabled replies do not acquire an answer. Once the measurement baseline is
+established, all scripted replies are held and unexpected rules changes fail.
+
+The focused native profile retains `public-card-inspection.json` drawing-frame
+exports under each window-size journey. These are authored projected states;
+headless composition loads no GPU artwork and supplies no human UX approval.
+Real transport tests and a human review with installed card art have separate
+proof scopes. See [the inspection journey](Mana-Table-Experience-Review.md#seeing-another-player-read-the-table-source-candidate).
+
+## Boundary regression checks
+
 The [3 November boundary audit](Mana-Table-Boundary-Audit-2026-11-03.md) identifies
 the invariants behind recent regressions. `SourceQueryPublicationTest` runs in
 the ordinary Java API collection: a real mana event between publications must
@@ -806,7 +859,7 @@ frames and coherent public boards, then releases the gate and tears down the
 owners. `polled-mixed-lobby/prefix-results.json` records this bounded concurrency
 evidence; its snapshots and policy receipts remain private. The local
 `--smoke-polled-mixed` route invokes the same helper, not an alternative gate.
-Its format2 receipt totals are cumulative: a provider ACK is confirmed only
+Its format3 receipt totals are cumulative: a provider ACK is confirmed only
 when the sole serialized AI host enters its next ordinary observation, after
 processing the prior batch. Neither ACK alone nor zero executing calls is that
 confirmation. The default128-record per-seat history remains a bounded
@@ -814,6 +867,19 @@ diagnostic ring; its eviction cannot erase a prior processed nonpass witness or
 be compared with lifetime ACK totals. Successful counters are frozen at the
 qualification check, with a separate pre-cleanup sample. This evidence does not
 mean that an input was consumed or authorize reusing an earlier offer.
+The same prefix now exercises actual `TablePresenceSession` exchanges through
+the host and TCP guest, with the same two real AI decks and unchanged 45-second
+prefix/original match deadline. After development, scripts briefly hold a real
+human's ordinary priority while polling and AI discovery continue. A Standard
+warning clock runs throughout the hold. Two changing public battlefield
+occurrences must reach the other human; rules/decision/stack/activity/execution
+facts, both history cursors and clock identity/limit/strikes must remain stable,
+allowing natural elapsed time. Ordinary reconciled commands then resume.
+Its receipt retains single-flight/aggregate four-Hz traffic bounds and measured
+provider/command latency. Worker scheduling does not imply a strict physical
+250ms gap or a zero head-of-line guarantee, and any actual overlap is recorded
+separately. Missing current provider capability fails this gate; older-provider
+fallback is tested separately at the optional client boundary.
 Background discovery is serialized by one `AiTableHost` per provider. Same
 healthy-process world replacement supersedes a read without faulting that host;
 engine-process failure, malformed current data and command failures remain

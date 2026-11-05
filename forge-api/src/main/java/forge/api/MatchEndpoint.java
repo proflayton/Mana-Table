@@ -11,6 +11,7 @@ interface MatchEndpoint {
     Map<String, Object> decisionObservation(boolean privateActionFaces);
     Map<String, Object> action(JsonObject command);
     Map<String, Object> sourceActions(JsonObject command);
+    default Map<String, Object> presence(JsonObject update) { return null; }
     Map<String, Object> history(JsonObject query);
     Map<String, Object> concede(JsonObject command);
     Map<String, Object> tempoPresented(JsonObject command);

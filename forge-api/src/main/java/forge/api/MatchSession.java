@@ -82,6 +82,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private final SourceReadFailureCapture sourceReadFailure = new SourceReadFailureCapture();
     private long publishedSourceActionVersion = -1;
     private final Map<Input, String> inputEpisodes = new WeakHashMap<>();
+    private Input inspectionInput;
+    private long inspectionSourceVersion = -1;
+    private MatchPresence.Context inspectionContext;
+    private Set<MatchPresence.Subject> inspectionSubjects = Set.of();
+    private long inspectionSubjectsBoardRevision = -1;
     private final Map<Object, Boolean> resolutionEpisodes = new WeakHashMap<>();
     private final Map<Object, DeclineLineage> declineEpisodes = new WeakHashMap<>();
     private record DeclineLineage(String id, String previousId) { }
@@ -617,9 +622,38 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     void revokeFiniteYieldForConnection() {
         game.getAction().withState(() -> { synchronized (gate) {
+            inspectionInput = null; inspectionContext = null;
+            table.presence.disconnected(viewer.getId());
             finiteStackYield.revoke("connection-ended");
             if (!closed && error == null) table.publish();
         } });
+    }
+
+    MatchPresence.Context publicInspectionContext(long boardRevision) {
+        Pending current = pending;
+        if (current == null || !(current.input instanceof InputPassPriority) || !sourceInputCurrent(current)
+                || inspectionSubjectsBoardRevision != boardRevision || !inspectionBoardCurrent(boardRevision)
+                || publishedSourceActionVersion != sourceActionVersion.get()) {
+            inspectionInput = null; inspectionContext = null; return null;
+        }
+        if (inspectionContext == null || inspectionInput != current.input || inspectionContext.boardRevision() != boardRevision
+                || inspectionSourceVersion != sourceActionVersion.get()) {
+            inspectionInput = current.input; inspectionSourceVersion = sourceActionVersion.get();
+            inspectionContext = new MatchPresence.Context(UUID.randomUUID().toString(), boardRevision, viewer.getId());
+        }
+        return inspectionContext;
+    }
+
+    private boolean inspectionBoardCurrent(long boardRevision) {
+        return latest.get("boardRevision") instanceof Number published && published.longValue() == boardRevision;
+    }
+    Set<MatchPresence.Subject> publicInspectionSubjects(long boardRevision) {
+        return inspectionSubjectsBoardRevision == boardRevision && inspectionBoardCurrent(boardRevision)
+                && publishedSourceActionVersion == sourceActionVersion.get() ? inspectionSubjects : Set.of();
+    }
+
+    @Override public Map<String, Object> presence(JsonObject request) {
+        return table.exchangePresence(this, viewer.getId(), request);
     }
 
     @Override
@@ -2102,7 +2136,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         table.publish();
     }
 
-    void updatePublicDecision(Integer owner, String actionClass) {
+    void updatePublicDecision(Integer owner, String actionClass, MatchPresence.Context publicInspection) {
+        if (publicInspection != null && (!inspectionBoardCurrent(publicInspection.boardRevision())
+                || publishedSourceActionVersion != sourceActionVersion.get())) publicInspection = null;
         // Only ownership/class is public. Another seat choosing attackers is
         // observed until an attack actually exists; choosing none stays quiet.
         // Other required prompts still revoke without exposing private options.
@@ -2110,15 +2146,17 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         boolean requiredChoice = !actionClass.equals("priority") && !actionClass.equals("resolving") && !otherAttackChoice;
         if (requiredChoice) quietYield.invalidate();
         String status = (String) latest.get("status");
-        if (status.equals("finished") || status.equals("error") || status.equals("starting")) { owner = null; actionClass = status; }
+        if (status.equals("finished") || status.equals("error") || status.equals("starting")) { owner = null; actionClass = status; publicInspection = null; }
         boolean clearPriority = actionClass.equals("resolving") || actionClass.equals("finished") || actionClass.equals("error");
         var undo = undoProjection(actionClass.equals("priority") && Objects.equals(owner, viewer.getId()) ? pending : null);
         if (Objects.equals(latest.get("decisionOwnerId"), owner) && Objects.equals(latest.get("actionClass"), actionClass)
                 && Objects.equals(latest.get("stackInterruptionVersion"), table.stackInterruption.version())
                 && Objects.equals(latest.get("undo"), undo)
+                && Objects.equals(latest.get("publicInspection"), publicInspection)
                 && (!clearPriority || latest.get("priorityPlayerId") == null)) return;
         var next = new LinkedHashMap<>(latest);
         next.put("undo", undo);
+        next.put("publicInspection", publicInspection);
         next.put("revision", ++revision); next.put("decisionOwnerId", owner); next.put("actionClass", actionClass);
         next.put("stackInterruptionVersion", table.stackInterruption.version());
         next.put("stackActionVersion", table.stackInterruption.actionVersion());
@@ -2351,6 +2389,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 prompt.sourceQuery = null;
             }
         }
+        inspectionSubjects = MatchPresence.subjects(players, stack);
+        inspectionSubjectsBoardRevision = boardRevision;
         latest = Collections.unmodifiableMap(snapshot);
         publishedSourceActionVersion = publicationSourceVersion;
         return true;
@@ -2637,6 +2677,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             next.put("outcome", null);
             next.put("finiteStackYield", finiteStackYield.frame(table.stackInterruption.actionVersion(), resolutionChoiceVersion));
             next.put("priorityPlayerId", null); next.put("decisionOwnerId", null); next.put("actionClass", "error");
+            next.put("publicInspection", null);
             latest = Collections.unmodifiableMap(next);
             notifyPlaytest();
         }
