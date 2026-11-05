@@ -298,7 +298,7 @@ jobs:
             default { throw "Unknown native verification suite: $env:MANA_VERIFICATION_SUITE" }
           }
           ./mana-native/ci/restore-package.ps1 @restore
-      - name: Run the selected unchanged native verification suite
+      - name: Run the selected native verification suite
         run: |
           switch -CaseSensitive ($env:MANA_VERIFICATION_SUITE) {
             'presentation' {
@@ -333,6 +333,39 @@ jobs:
                 throw 'Mixed-lobby prefix evidence does not prove the required bounded continuation.'
               }
               Write-Output 'Production mixed-lobby prefix passed; private observations and test hands are CI evidence, not public release assets.'
+              dotnet ./dist/ci-inputs/harness/Mana.Table.Tests.dll --qualify-mixed-game --mixed-game-mode polled-background --campaign-profile smoke --engine-jar (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar') --engine-resources (Join-Path $env:MANA_NATIVE_PACKAGE 'engine') --profile dist/polled-full-game-checks
+              if ($LASTEXITCODE -ne 0) { throw 'Default-polled/background-AI campaign smoke failed.' }
+              $campaign = 'dist/polled-full-game-checks/mixed-game-campaign'
+              function Read-CampaignEvidence([string]$path) {
+                $file = Get-Item -LiteralPath $path
+                if ($file.Length -le 0 -or $file.Length -gt 4194304) { throw 'Campaign evidence is empty or oversized.' }
+                Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+              }
+              $manifest = Read-CampaignEvidence "$campaign/manifest.json"
+              $result = Read-CampaignEvidence "$campaign/match-0/result.json"
+              $owners = Read-CampaignEvidence "$campaign/match-0/private-owner-teardown.json"
+              if ($manifest.profile -cne 'smoke' -or $manifest.mode -cne 'PolledBackground' -or
+                  $result.DriveMode -cne 'PolledBackground' -or
+                  $result.PSObject.Properties.Name -cnotcontains 'Failure' -or $null -ne $result.Failure -or
+                  $result.StopReason -cnotin @('time-budget','turn-budget','natural-outcome') -or
+                  $result.Qualification.Status -cnotin @('Passed','Inconclusive') -or @($result.Evidence.DiagnosticErrors).Count -ne 0 -or
+                  $result.PublicComparisons -le 0 -or $result.FourAudienceCohorts -le 0 -or
+                  @($result.Participants).Count -ne 4 -or
+                  @($result.Participants.PlayerId | Sort-Object -Unique).Count -ne 4 -or
+                  @($result.Participants.SlotIndex | Sort-Object -Unique).Count -ne 4 -or
+                  @($result.Participants | Where-Object Role -CEQ 'Host').Count -ne 1 -or
+                  @($result.Participants | Where-Object Role -CEQ 'Guest').Count -ne 1 -or
+                  @($result.Participants | Where-Object Role -CEQ 'Ai').Count -ne 2 -or
+                  @($result.Participants | Where-Object { $_.ProviderAcceptances -le 0 -or $_.PlayerId -notin $result.DevelopedSeats }).Count -ne 0 -or
+                  $owners.Executing -ne 0 -or $owners.orderedEvidence.Pending -ne 0 -or
+                  $owners.orderedEvidence.Retired -isnot [bool] -or -not $owners.orderedEvidence.Retired -or
+                  $owners.orderedEvidence.MissingOwnedBatch -isnot [bool] -or $owners.orderedEvidence.MissingOwnedBatch -or
+                  $null -ne $owners.orderedEvidence.Failure -or
+                  $owners.orderedEvidence.Enqueued -ne $owners.orderedEvidence.Applied -or
+                  $owners.orderedEvidence.DiscardedAfterFault -ne 0) {
+                throw 'The polled campaign did not retain four progressing roles and drained, retired owners.'
+              }
+              Write-Output 'Default-polled/background-AI campaign smoke passed; this bounded prefix does not qualify a natural game or human UX.'
             }
             default { throw "Unknown native verification suite: $env:MANA_VERIFICATION_SUITE" }
           }
