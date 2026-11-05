@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Mana.Contracts;
 
 namespace Mana.Client;
@@ -8,13 +7,20 @@ namespace Mana.Client;
 public sealed class DecisionAdvance
 {
     private readonly IMatchConnection connection;
+    private readonly TimeProvider time;
+    private static readonly TimeSpan MaximumSliceDuration = TimeSpan.FromMilliseconds(350);
     private readonly ClientCommandDiagnostics? diagnostics;
     private long operationEpoch;
     private readonly Func<GameSnapshot, CommandFailurePhase, long, CancellationToken, Task<ObservationAdmission>>? admit;
     internal CommandFailurePhase ObservationFailurePhase { get; private set; } = CommandFailurePhase.Observation;
     internal bool SuppressFinalObservation { get; private set; }
     private string? automaticSubmitted, quietSubmitted;
-    public DecisionAdvance(IMatchConnection connection) => this.connection = connection;
+    public DecisionAdvance(IMatchConnection connection) : this(connection, TimeProvider.System) { }
+    public DecisionAdvance(IMatchConnection connection, TimeProvider time)
+    {
+        this.connection = connection;
+        this.time = time ?? throw new ArgumentNullException(nameof(time));
+    }
     internal DecisionAdvance(IMatchConnection connection, ClientCommandDiagnostics diagnostics,
         Func<GameSnapshot, CommandFailurePhase, long, CancellationToken, Task<ObservationAdmission>> admit)
         : this(connection) { this.diagnostics = diagnostics; this.admit = admit; }
@@ -45,7 +51,7 @@ public sealed class DecisionAdvance
         CancellationToken cancellation = default)
     {
         ArgumentNullException.ThrowIfNull(intent);
-        var clock = Stopwatch.StartNew();
+        long started = time.GetTimestamp();
         var state = initial;
         int passes = 0;
         var exchange = new CommandExchange(connection, diagnostics);
@@ -81,7 +87,7 @@ public sealed class DecisionAdvance
                 // aggregate only its captured work while observing every result.
                 if (UndoFacts.RestoredSince(initial, state)) { intent.Stop(); return state; }
                 if (intent.IsPaused || !intent.CanContinue(state) || shouldPresent(initial, state)) return state;
-                if (clock.ElapsedMilliseconds >= 350 || passes >= 32) return state;
+                if (time.GetElapsedTime(started) >= MaximumSliceDuration || passes >= 32) return state;
                 if (command == null || state.Decision == null) {
                     try { await Task.Delay(10, cancellation); }
                     catch (OperationCanceledException) { return state; }
@@ -94,7 +100,7 @@ public sealed class DecisionAdvance
     private async Task<GameSnapshot?> RunBatchAsync(GameSnapshot initial, string? quietToken, Func<GameSnapshot, bool> policy,
         Func<GameSnapshot, GameSnapshot, bool> shouldPresent, CancellationToken cancellation)
     {
-        var clock = Stopwatch.StartNew();
+        long started = time.GetTimestamp();
         var state = initial;
         int passes = 0;
         var exchange = new CommandExchange(connection, diagnostics);
@@ -132,7 +138,7 @@ public sealed class DecisionAdvance
             if (next == null) return null;
             if (next.Revision >= state.Revision) state = next;
             // Yield periodically to present progress and avoid owning the connection indefinitely.
-            if (clock.ElapsedMilliseconds >= 350 || passes >= 32) return state;
+            if (time.GetElapsedTime(started) >= MaximumSliceDuration || passes >= 32) return state;
             if (state.Decision == null || submitted == state.Id + ":" + state.Decision.Id) {
                 try { await Task.Delay(10, cancellation); }
                 catch (OperationCanceledException) { return state; }

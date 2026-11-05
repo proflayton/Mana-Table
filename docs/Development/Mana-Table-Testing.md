@@ -455,6 +455,14 @@ The owner acknowledgement validates continuation without publishing every
 passing frame; the existing `AdvanceRegression` keeps its one-presentation-
 checkpoint contract. Hold publishes its already-sent result once; Reset and unpumped Close
 release the retired wait and retain the exact serialized negative grant cleanup.
+`DecisionAdvance` defaults to `TimeProvider.System` and the same350 ms /
+32-command slice. The immediate four-window fixture supplies a controlled
+monotonic clock; explicit349/350 ms checks verify exact prefix return and fresh
+slice continuation without replay. Real400 ms late-I/O, waiting, Hold and session
+publication checks still use system time. The first four-window observation and
+receipt evidence is written before its unchanged assertion, so future failures
+retain a measured prefix. The earlier CI failure lacked that evidence; elapsed
+slice expiry is a testable explanation, not an established cause of that incident.
 Ordinary polls and external
 provider ingress use that same narrow admission guard; direct acceptance still
 throws and presentation callback failures are not swallowed. The existing
