@@ -12,7 +12,10 @@ import org.testng.annotations.Test;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static forge.api.RulesScenario.*;
 import static org.testng.Assert.*;
@@ -20,6 +23,65 @@ import static org.testng.Assert.*;
 /** The real API's admission acknowledgment is not proof that its queued input
  * was consumed. Controlled resource timing exercises the driver, not new rules. */
 public class RulesScenarioPriorityRefusalTest {
+    @Test(timeOut = 90000)
+    public void aNonconsumingFiniteGrantPublicationWaitsForTheActualNextSeat() throws Exception {
+        try (var game = new RulesScenario("scenario-finite-nonconsuming-publication",
+                Map.of(0, List.of("Toothy, Imaginary Friend", "Reliquary Tower")))) {
+            var initial = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").equals("InputPassPriority")
+                    && !next.state().getAsJsonArray("stack").isEmpty());
+            var thread = new AtomicReference<Thread>();
+            var driver = Executors.newSingleThreadExecutor(task -> { var value = new Thread(task, "scenario-next-seat"); thread.set(value); return value; });
+            try (var barrier = new InputBarrier(game)) {
+                var members = initial.state().getAsJsonArray("stack").asList().stream()
+                        .map(value -> text(value.getAsJsonObject(), "executionId")).toList();
+                assertTrue(game.answer(initial, Map.of("action", "grantFiniteStackYield", "grantId", "one-real-seat",
+                        "executionIds", members, "stackActionVersion", initial.state().get("stackActionVersion").getAsLong(),
+                        "resolutionChoiceVersion", initial.state().get("resolutionChoiceVersion").getAsLong())));
+                game.table.game.getAction().withState(game.table::publish);
+                var published = current(game);
+                assertEquals(text(published.prompt(), "id"), text(initial.prompt(), "id"));
+                assertTrue(published.state().get("boardRevision").getAsLong() > initial.state().get("boardRevision").getAsLong());
+                assertEquals(published.state().getAsJsonObject("finiteStackYield").get("automaticPasses").getAsInt(), 0);
+                var next = driver.submit(() -> game.until(input -> text(input.prompt(), "inputType").equals("InputPassPriority")));
+                assertDriverWaits(next, thread, "A nonconsuming grant publication must not masquerade as the next seat");
+                barrier.release();
+                var actualNext = next.get(5, TimeUnit.SECONDS);
+                assertNotEquals(actualNext.seat(), 0);
+                assertNotEquals(text(actualNext.prompt(), "id"), text(initial.prompt(), "id"));
+                assertEquals(game.state(0).getAsJsonObject("finiteStackYield").get("automaticPasses").getAsInt(), 1);
+            } finally { driver.shutdownNow(); assertTrue(driver.awaitTermination(5, TimeUnit.SECONDS)); }
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void aSameIdentityPositiveAutoPublicationIsNotAWithdrawnPermissionWitness() throws Exception {
+        try (var game = new RulesScenario("scenario-auto-positive-republication",
+                Map.of(0, List.of("Forest", "Forest", "Spellbook"), 1, List.of("Spellbook"),
+                        2, List.of("Spellbook"), 3, List.of("Spellbook")), "Lightning Bolt", "Progenitus")) {
+            var old = main(game); var input = actual(game);
+            assertTrue(old.prompt().get("canAutoPass").getAsBoolean());
+            try (var barrier = new InputBarrier(game)) {
+                assertTrue(game.answer(old, Map.of("action", "passIfNoResponse")));
+                game.table.game.getAction().withState(() -> addGreen(game));
+                barrier.release(); HeadlessPlatform.query(game.table, () -> null);
+                assertTrue(input.isPriorityActive()); assertFalse(current(game).prompt().get("canAutoPass").getAsBoolean());
+            }
+            HeadlessPlatform.query(game.table, () -> { assertTrue(controller(game).refreshRestoredPriority(input)); game.table.publish(); return null; });
+            var positive = current(game);
+            assertEquals(text(positive.prompt(), "id"), text(old.prompt(), "id"));
+            assertTrue(positive.prompt().get("canAutoPass").getAsBoolean());
+            assertTrue(positive.state().get("boardRevision").getAsLong() > old.state().get("boardRevision").getAsLong());
+            var thread = new AtomicReference<Thread>();
+            var driver = Executors.newSingleThreadExecutor(task -> { var value = new Thread(task, "scenario-positive-republication"); thread.set(value); return value; });
+            try (var barrier = new InputBarrier(game)) {
+                var next = driver.submit(() -> game.until(value -> text(value.prompt(), "inputType").equals("InputPassPriority")));
+                assertDriverWaits(next, thread, "A positive same-ID refresh cannot be inferred to be a refused submitted pass");
+                assertTrue(game.answer(positive, Map.of("action", "passPriority")), "Only this explicit manual command resumes the held input");
+                barrier.release(); assertNotEquals(next.get(5, TimeUnit.SECONDS).seat(), 0);
+            } finally { driver.shutdownNow(); assertTrue(driver.awaitTermination(5, TimeUnit.SECONDS)); }
+        }
+    }
+
     @Test(timeOut = 90000)
     public void anOldPositiveAutoObservationCanYieldOnlyToAFreshOwnedPublication() throws Exception {
         try (var game = scenario("scenario-auto-admission-refusal")) {
@@ -92,6 +154,18 @@ public class RulesScenarioPriorityRefusalTest {
     private static RulesScenario scenario(String name) throws Exception {
         return new RulesScenario(name, Map.of(0, List.of("Forest", "Forest", "Spellbook"),
                 1, List.of("Spellbook"), 2, List.of("Spellbook"), 3, List.of("Spellbook")), "Manalith", "Progenitus");
+    }
+    private static void assertDriverWaits(Future<Input> next, AtomicReference<Thread> thread, String message) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            assertFalse(next.isDone(), message);
+            var current = thread.get();
+            if (current != null && current.getState() == Thread.State.TIMED_WAITING
+                    && java.util.Arrays.stream(current.getStackTrace()).anyMatch(frame ->
+                        frame.getClassName().equals(RulesScenario.class.getName()) && frame.getMethodName().equals("until"))) return;
+            Thread.sleep(1);
+        }
+        fail("The held driver did not reach its actual observation loop");
     }
     private static Input main(RulesScenario game) throws Exception {
         return game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").equals("InputPassPriority")

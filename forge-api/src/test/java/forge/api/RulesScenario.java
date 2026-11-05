@@ -183,12 +183,37 @@ final class RulesScenario implements AutoCloseable {
 
     record Input(int seat, JsonObject state, JsonObject prompt) { }
 
-    /** Admission can queue an operation that subsequently refuses its lease.
-     * Suppress that observed publication, never a restored input's identity. */
-    private record SubmittedPublication(String gameId, int viewerId, String promptId, long revision, long boardRevision) {
-        static SubmittedPublication of(Input input) {
+    /** Most acknowledgments do not imply a new decision: a finite grant, for
+     * example, republishes its still-waiting input. Only a witnessed refusal of
+     * an admitted positive no-response pass can reopen that same identity. */
+    private record SubmittedPublication(String gameId, int viewerId, String promptId, long revision, long boardRevision,
+                                        String action, boolean positiveNoResponse) {
+        static SubmittedPublication of(Input input, Map<String, ?> answer) {
+            String action = Objects.toString(answer.get("action"), "");
+            boolean positive = action.equals("passIfNoResponse")
+                    && text(input.prompt(), "inputType").equals("InputPassPriority")
+                    && input.prompt().has("canAutoPass") && input.prompt().get("canAutoPass").getAsBoolean()
+                    && input.state().get("viewerId").equals(input.state().get("decisionOwnerId"));
             return new SubmittedPublication(text(input.state(), "id"), input.state().get("viewerId").getAsInt(),
-                    text(input.prompt(), "id"), input.state().get("revision").getAsLong(), input.state().get("boardRevision").getAsLong());
+                    text(input.prompt(), "id"), input.state().get("revision").getAsLong(), input.state().get("boardRevision").getAsLong(),
+                    action, positive);
+        }
+
+        boolean suppresses(Input current) {
+            return gameId.equals(text(current.state(), "id")) && viewerId == current.state().get("viewerId").getAsInt()
+                    && promptId.equals(text(current.prompt(), "id")) && !withdrawnBy(current.state());
+        }
+
+        boolean withdrawnBy(JsonObject latest) {
+            if (!positiveNoResponse || !action.equals("passIfNoResponse") || !gameId.equals(text(latest, "id"))
+                    || viewerId != latest.get("viewerId").getAsInt()
+                    || !latest.get("viewerId").equals(latest.get("decisionOwnerId"))
+                    || !text(latest, "status").equals("playing") || latest.get("revision").getAsLong() <= revision
+                    || latest.get("boardRevision").getAsLong() <= boardRevision
+                    || !latest.has("prompt") || !latest.get("prompt").isJsonObject()) return false;
+            var current = latest.getAsJsonObject("prompt");
+            return promptId.equals(text(current, "id")) && text(current, "inputType").equals("InputPassPriority")
+                    && current.has("canAutoPass") && !current.get("canAutoPass").getAsBoolean();
         }
     }
 
@@ -201,7 +226,8 @@ final class RulesScenario implements AutoCloseable {
                 if (!state.has("prompt") || state.get("prompt").isJsonNull()) continue;
                 var prompt = state.getAsJsonObject("prompt");
                 var input = new Input(seat, state, prompt);
-                if (SubmittedPublication.of(input).equals(submitted.get(seat))) continue;
+                var prior = submitted.get(seat);
+                if (prior != null && prior.suppresses(input)) continue;
                 remember(input);
                 if (stop.test(input)) return input;
                 String type = text(prompt, "inputType");
@@ -224,7 +250,7 @@ final class RulesScenario implements AutoCloseable {
         JsonObject request = request(input, answer);
         try {
             session(input.seat()).action(request);
-            submitted.put(input.seat(), SubmittedPublication.of(input));
+            submitted.put(input.seat(), SubmittedPublication.of(input, answer));
             if (traceMode == TraceMode.FULL) trace.add(Map.of("seat", input.seat(), "state", input.state(), "answer", answer));
             else {
                 remember(input);
@@ -243,22 +269,12 @@ final class RulesScenario implements AutoCloseable {
     }
 
     private boolean noResponseObservationSuperseded(Input input, Map<String, ?> answer) {
-        if (!Objects.equals(answer.get("action"), "passIfNoResponse")
-                || !text(input.prompt(), "inputType").equals("InputPassPriority")
-                || !input.prompt().has("canAutoPass") || !input.prompt().get("canAutoPass").getAsBoolean()) return false;
+        var previous = SubmittedPublication.of(input, answer);
+        if (!previous.positiveNoResponse()) return false;
         // Observe after already queued input work, without publishing, rescanning
         // or retrying the refused command. An unchanged frame is not a witness.
         var latest = HeadlessPlatform.query(table, () -> JSON.toJsonTree(session(input.seat()).state()).getAsJsonObject());
-        if (!text(latest, "id").equals(text(input.state(), "id"))
-                || !latest.get("viewerId").equals(input.state().get("viewerId"))
-                || !text(latest, "status").equals("playing")
-                || latest.get("revision").getAsLong() <= input.state().get("revision").getAsLong()
-                || latest.get("boardRevision").getAsLong() <= input.state().get("boardRevision").getAsLong()
-                || !latest.has("prompt") || !latest.get("prompt").isJsonObject()) return false;
-        var current = latest.getAsJsonObject("prompt");
-        return text(current, "id").equals(text(input.prompt(), "id"))
-                && text(current, "inputType").equals("InputPassPriority")
-                && current.has("canAutoPass") && !current.get("canAutoPass").getAsBoolean();
+        return previous.withdrawnBy(latest);
     }
 
     void rejected(Input input, String action, String message) {

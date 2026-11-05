@@ -1754,8 +1754,10 @@ ordering, removal fallback and nullable search overrides through public APIs on
 an unstarted table, including bounded concurrent reads while overrides change.
 
 `RulesScenarioPriorityRefusalTest` distinguishes admission from input consumption
-through the real API. The driver suppresses only an already submitted publication,
-so a queued refusal can restore the same input at a newer revision. An automatic
+through the real API. The driver retains an admitted decision's scope; only an
+admitted positive automatic pass can reopen that same input after independently
+observed permission withdrawal. A non-consuming finite grant acknowledgement or
+incidental publication must not cause that seat to be granted again. An automatic
 pass rejected at admission is treated as superseded only when a passive read
 independently witnesses the same owned priority input, newer publication and
 withdrawn permission. Unchanged observations and invalid commands remain errors;
