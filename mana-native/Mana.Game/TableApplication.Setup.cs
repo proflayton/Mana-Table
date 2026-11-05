@@ -10,6 +10,8 @@ internal sealed partial class TableApplication
 {
     private void ResetTableView()
     {
+        ClearQuickMana();
+        submittedManaContext = null;
         StopQuietPriority();
         StopStackResolution(); expandedStackWorkload = "";
         StopGroupBlocks();

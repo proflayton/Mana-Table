@@ -81,6 +81,9 @@ public sealed record SourceAction(string Id, string Kind, string Text)
     public Card? Card { get; init; }
     public string Zone { get; init; } = "";
     public ManaCostPreview? CostPreview { get; init; }
+    // Provider-certified ordinary tap-only output choices. Omission preserves
+    // the existing manual source reader and cannot imply a safe shortcut.
+    public QuickMana? QuickMana { get; init; }
 }
 // Social commands have their own ordering and never advance a game decision.
 public interface ITableSocial

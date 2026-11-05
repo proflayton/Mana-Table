@@ -58,19 +58,27 @@ public sealed partial class ForgeEngine
             throw new EngineCommandRejectedException("The source action context changed. Select the current card again.");
         if (result.SourceCardId == null || result.Actions.IsDefault || result.Actions.Any(action => action == null || string.IsNullOrWhiteSpace(action.Id)
                 || action.Kind is not ("activate" or "cast" or "play") || string.IsNullOrWhiteSpace(action.Text)
+                || action.QuickMana is { } quick && (result.Revision == null || action.Kind != "activate"
+                    || action.Card != null || !quick.IsValid())
                 || action.Card is { } linked && (linked.FaceDown || linked.Key != "" || linked.Selectable || linked.Highlighted
                     || linked.PlayAffordability != ActionAffordability.Unknown
                     || string.IsNullOrWhiteSpace(linked.Name) || string.IsNullOrWhiteSpace(action.Zone)))
             || result.Actions.Select(action => action.Id).Distinct(StringComparer.Ordinal).Count() != result.Actions.Length)
             throw new IOException("The rules adapter returned an invalid source action list.");
         try {
+            if (result.Actions.Any(action => action.QuickMana != null)) {
+                var physical = CardViews.FindZoneActionSource(observed, sourceCardKey);
+                if (physical is not { Zone: "Battlefield" } currentSource || currentSource.PlayerId != observed.ViewerId
+                    || currentSource.Card.FaceDown || CardViews.Identity(currentSource.Card) != result.SourceCardId)
+                    throw new ArgumentException("Quick mana requires its current owned physical source.");
+            }
             foreach (var action in result.Actions.Where(action => action.CostPreview != null)) {
                 if (result.Revision == null || !Enum.IsDefined(action.CostPreview!.ManaCostKnowledge))
                     throw new ArgumentException("A cost preview requires a bound source revision and knowledge.");
                 ManaFundingFacts.ValidateCosts(action.CostPreview.Costs);
                 ManaFundingFacts.Validate(observed, action.CostPreview.Funding);
             }
-        } catch (ArgumentException error) { throw new IOException("The rules adapter returned unscoped funding facts.", error); }
+        } catch (ArgumentException error) { throw new IOException("The rules adapter returned unscoped source facts.", error); }
         return result;
     }
 }

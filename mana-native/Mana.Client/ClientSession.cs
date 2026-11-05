@@ -376,7 +376,7 @@ public sealed partial class ClientSession
             : !GameCommandPermissions.Allows(State, command) ? ClientDiagnosticFailure.NotOffered : null;
         if (decline is { } failure) { diagnostics.Decline(State, command, failure); return false; }
         if (command is UseOfferedAction offered && (CurrentSourceContext(State, offered.Card) is not { } context
-            || SourceActions.TryCreateCommand(context, offered.ActionId) != offered)) {
+            || SourceActions.TryCreateCommand(context, offered.ActionId, offered.ManaOutput?.Colors) == null)) {
             diagnostics.Decline(State, command, ClientDiagnosticFailure.SourceOfferChanged); return false;
         }
         command.Validate();

@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using System.Collections.Immutable;
 
 namespace Mana.Client;
 
@@ -52,10 +53,20 @@ public sealed class SourceActionSession(ISourceActions? source, Action<Action> p
     }
 
     public UseOfferedAction? TryCreateCommand(SourceActionContext current, string actionId)
+        => TryCreateCommand(current, actionId, null);
+
+    public UseOfferedAction? TryCreateCommand(SourceActionContext current, string actionId,
+        ImmutableDictionary<string, int>? manaOutput)
     {
         if (!Supported || View.Status != SourceActionStatus.Ready || View.Context != current
-            || !View.Actions.Any(action => action.Id == actionId)) return null;
-        return new(current.GameId, current.DecisionId, current.SourceCardKey, actionId);
+            || View.Actions.FirstOrDefault(action => action.Id == actionId) is not { } action) return null;
+        if (manaOutput == null) return new(current.GameId, current.DecisionId, current.SourceCardKey, actionId);
+        if (action.QuickMana is not { } quick || !quick.IsValid()) return null;
+        var output = quick.Outputs.FirstOrDefault(output => output.Colors.Count == manaOutput.Count
+            && output.Colors.All(part => manaOutput.TryGetValue(part.Key, out int count) && part.Value == count));
+        return output == null ? null : new(current.GameId, current.DecisionId, current.SourceCardKey, actionId) {
+            ManaOutput = new(output.Colors)
+        };
     }
 
     public void Close()
@@ -116,7 +127,9 @@ public sealed class SourceActionSession(ISourceActions? source, Action<Action> p
                 || action.Card is { } linked && (linked.FaceDown || linked.Key != "" || linked.Selectable || linked.Highlighted
                     || linked.PlayAffordability != ActionAffordability.Unknown
                     || string.IsNullOrWhiteSpace(linked.Name) || string.IsNullOrWhiteSpace(action.Zone))
-                || action.CostPreview != null && result.Revision == null)
+                || action.CostPreview != null && result.Revision == null
+                || action.QuickMana is { } quick && (result.Revision == null || action.Kind != "activate"
+                    || action.Card != null || !quick.IsValid()))
             || result.Actions.Select(action => action.Id).Distinct(StringComparer.Ordinal).Count() != result.Actions.Length))
             status = SourceActionStatus.Failed;
         if (failure == null) reason = status switch {

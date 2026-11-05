@@ -314,6 +314,12 @@ abilities on the stack appear in the middle. Decks are physical piles near each
 seat. Life medallions use existing commander artwork, with a lit rim on the
 active seat. Hover highlights a card without moving or enlarging it.
 Click a card to enlarge it for reading; click it again or empty table to close.
+Source candidate: double-click your battlefield land or mana rock to tap for
+mana. A single supported tap-only output activates directly; multiple outputs
+open a small mana chooser by the pointer. Choose the mana you want, or press
+Escape/click outside to close. Single-click still reads. Abilities with extra
+costs or unsupported choices keep their normal card actions. Each grouped copy
+is tapped separately. Manual tapping takes control; resume Auto when ready.
 Source-only until a release containing it is published: choose Rules beneath
 the enlarged card, or press R, to turn it to readable engine text. Artwork/R
 turns it back. Current stats and counters remain visible. This is a reading

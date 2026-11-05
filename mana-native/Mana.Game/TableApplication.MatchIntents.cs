@@ -29,6 +29,7 @@ internal sealed partial class TableApplication
             case MatchIntent.OpenStack open: OpenStack(open.Index); break;
             case MatchIntent.OpenStackWorkload open: OpenStackWorkload(open.Key); break;
             case MatchIntent.CloseStackWorkload: expandedStackWorkload = ""; break;
+            case MatchIntent.ChooseQuickMana choice: ChooseQuickMana(choice.Generation, choice.Index); break;
             case MatchIntent.InspectCard read: Inspect(read.Card); break;
             case MatchIntent.ReadChoice read: InspectChoice(read.Slot); break;
             case MatchIntent.InspectOccurrence read:

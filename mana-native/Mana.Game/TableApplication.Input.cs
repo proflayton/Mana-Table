@@ -26,6 +26,7 @@ internal sealed partial class TableApplication
         ClearKeywordHelp();
         FinishAudioAdjustment(); audioVolumeFocused = false;
         CancelReleasedPlayIntent();
+        ClearQuickMana();
         pressed = null; dragSource = null; dragging = false; selectedCombat = null;
         ClearCardDrag();
         boardPanning = spreadPanning = boardKeyboardPanning = spreadKeyboardPanning = false;
@@ -63,6 +64,7 @@ internal sealed partial class TableApplication
         boardPointerActivity = mouse.X != previousMouse.X || mouse.Y != previousMouse.Y
             || mouse.ScrollWheelValue != previousMouse.ScrollWheelValue || mouse.LeftButton != previousMouse.LeftButton;
         bool escapePressed = !chatKeys && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape);
+        if (escapePressed) ClearQuickMana();
         bool cancelledDrag = escapePressed && dragSource != null;
         if (cancelledDrag) {
             // Cancellation wins even if the mouse is released in this update.
@@ -70,12 +72,14 @@ internal sealed partial class TableApplication
             dragging = false; dragSource = null; pressed = null; ClearCardDrag();
         }
         if (!blockedInput && mouse.RightButton == ButtonState.Pressed && previousMouse.RightButton == ButtonState.Released) {
+            ClearQuickMana();
             if (dragging) { dragging = false; dragSource = null; pressed = null; ClearCardDrag(); }
             else if (HitAt(pointer)?.Card is { } card) Inspect(card);
         }
         if (mouse.LeftButton == ButtonState.Pressed && previousMouse.LeftButton == ButtonState.Released) {
             CancelReleasedPlayIntent();
             pressed = HitAt(pointer); pressPoint = pointer;
+            BeginQuickManaPress();
             if (!blockedInput && chatOpen && !ChatBounds.Contains(pointer)) chatFocus = false;
             if (!blockedInput && match == null && deckEditor && pressed?.Intent is not DeckIntent.FocusText) { deckTextFocus = ""; textFocus = false; }
             dragSource = (!OverlayOpen || ZoneReadingOpen) && !AbilityActionPending && pressed is { Card: { } source } sourceHit
@@ -96,8 +100,12 @@ internal sealed partial class TableApplication
         }
         if (mouse.LeftButton == ButtonState.Released && previousMouse.LeftButton == ButtonState.Pressed) {
             var hit = HitAt(pointer);
-            if (dragging) AcceptedDrag = DropCard(hit);
-            else if (hit != null && pressed?.Id == hit.Id && pressed.Scope == hit.Scope && ActivateHit(hit)) AcceptedHit = hit.Id;
+            if (dragging) { ClearQuickMana(); AcceptedDrag = DropCard(hit); }
+            else if (FinishQuickManaPress(escapePressed)) { }
+            else if (hit != null && pressed?.Id == hit.Id && pressed.Scope == hit.Scope && ActivateHit(hit)) {
+                AcceptedHit = hit.Id;
+                RememberManaInspection(hit);
+            }
             else if (pressed == null && hit == null) { CollapseCardReading(); FoldCardCollection(); }
             pressed = null; dragSource = null; dragging = false; ClearCardDrag();
         }

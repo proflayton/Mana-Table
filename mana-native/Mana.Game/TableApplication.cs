@@ -271,6 +271,7 @@ internal sealed partial class TableApplication : IDisposable
         }
         if (dragSource != null && CurrentDragCard(dragSource) == null) { dragging = false; dragSource = null; pressed = null; ClearCardDrag(); }
         UpdateLocalInput(time, mouse, keys, viewport, inputActive);
+        ContinueQuickMana();
         // Give a ready pass precedence over starting another observation. Use this
         // update's pointer position so entering a card pauses Auto before Draw.
         bool autoBlocked = AutomaticInteractionPause() != DecisionDockPauseReason.None;
@@ -406,6 +407,8 @@ internal sealed partial class TableApplication : IDisposable
     {
         if (closing) return;
         closing = true;
+        ClearQuickMana();
+        submittedManaContext = null;
         if (match is { } last) CloseHistoryArchive(last, !HistoryObserved(last));
         historyReadCancellation?.Cancel(); historyReadCancellation?.Dispose();
         ClearHistoryDetails(); historyDocument = null; archivedHistory = null;
