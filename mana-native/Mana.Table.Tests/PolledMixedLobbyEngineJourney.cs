@@ -48,6 +48,7 @@ internal static partial class PolledMixedLobbyEngineJourney
             new(TimeSpan.FromSeconds(3), 2048), diagnostics: botPort);
         var players = engines.Take(2).Select((engine, index) => new PlayerOwner(engine, index)).ToArray();
         var presence = new PresenceProbe(players, botPort, started);
+        var choices = new ChoiceProbe(players, botPort, started);
         var cohorts = new Dictionary<(string Game, long Board), (string Facts,
             ForgePublicProjectionFacts.ExecutionCorrelation Correlations, HashSet<int> Viewers)>();
         int coherent = 0, steps = 0, guestReadsAtHold = 0, botReadsAtHold = 0, hostCommandsAtHold = 0;
@@ -128,11 +129,12 @@ internal static partial class PolledMixedLobbyEngineJourney
                         && players.Any(player => player.Client.State?.Decision?.Payload is PriorityPayload);
                     if (ordinaryComplete) qualifyingBotProcessing = botProcessing;
                 }
-                await presence.UpdateAsync(ordinaryComplete, limit);
-                completed = ordinaryComplete && presence.Completed;
+                await choices.UpdateAsync(limit);
+                await presence.UpdateAsync(ordinaryComplete && choices.Completed, limit);
+                completed = ordinaryComplete && choices.Completed && presence.Completed;
                 if (completed) completedBotProcessing = qualifyingBotProcessing;
                 if (!completed) foreach (var player in players)
-                    if (!presence.ShouldHoldReply(player.Client.State)) player.Step();
+                    if (!choices.ShouldHoldReply(player.Client.State) && !presence.ShouldHoldReply(player.Client.State)) player.Step();
                 await Task.Delay(1);
             }
             Require(players.All(player => player.Client.ObservationDelivery == ObservationDeliveryMode.Polled
@@ -151,6 +153,12 @@ internal static partial class PolledMixedLobbyEngineJourney
                 "Presence leaves the held rules board, decision, stack, activity and history unchanged while its original decision clock continues without refill");
             Require(presence.TrafficVerified && presence.ResumedReceiptVerified,
                 "Single-flight bounded presence traffic is followed by an ordinary reconciled human command, with actual observed transport latencies retained");
+            Require(choices.Completed && choices.SawSource && choices.SawTarget && choices.SawClear,
+                "The real declaring human shares a source-only consideration, actual legal aim and explicit clearing with the other TCP audience");
+            Require(choices.HoldIntegrityVerified,
+                "Tentative combat presence preserves both real histories and rules boards while the exact presented attack clock continues without refill");
+            Require(choices.TrafficVerified && choices.ResumedReceiptVerified,
+                "The new choice capability remains single-flight within the existing four-Hz presence budget and resumes a reconciled ordinary combat declaration");
         } catch (Exception error) { failure = error; }
         finally {
             // Preserve the failed/current reader and command context before
@@ -185,7 +193,7 @@ internal static partial class PolledMixedLobbyEngineJourney
                 completedBotProcessing, preCleanupBotProcessing = stoppedBotProcessing, faults = botPort.Faults.ToArray()
             }));
             await File.WriteAllTextAsync(Path.Combine(directory, "prefix-results.json"), JsonSerializer.Serialize(new {
-                formatVersion = 3, scope = "Real default-polled host/TCP guest, public inspection and background AI prefix; no human UX, natural outcome or deck qualification claim.",
+                formatVersion = 4, scope = "Real default-polled host/TCP guest, tentative combat choices, public inspection and background AI prefix; no human UX, natural outcome or deck qualification claim.",
                 passed = failure == null && completed, failure = failure?.ToString(), cleanupErrors, elapsedSeconds = started.Elapsed.TotalSeconds,
                 steps, checks, coherentPublicCheckpoints = coherent, captured, released, guestReadsAtHold, botReadsAtHold, hostCommandsAtHold,
                 backgroundReads = botPort.Reads, backgroundAcceptedCommands = reportedBotProcessing.Accepted,
@@ -195,6 +203,7 @@ internal static partial class PolledMixedLobbyEngineJourney
                 botNonPassAcceptances = reportedBotProcessing.ProcessedNonPassBySeat.OrderBy(pair => pair.Key)
                     .Select(pair => new { seat = pair.Key, accepted = pair.Value }),
                 presence = presence.Evidence,
+                choices = choices.Evidence,
                 players = players.Select(player => new { player.Index, player.ClientAdmissions, providerAcceptances = player.Port.Accepted,
                     ordinaryReads = player.Port.Reads, player.PollCallbacks, player.Publications, player.HeldPublications,
                     player.Port.Failures, commandLatencies = player.Port.CommandLatencies.ToArray(),

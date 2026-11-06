@@ -87,6 +87,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private MatchPresence.Context inspectionContext;
     private Set<MatchPresence.Subject> inspectionSubjects = Set.of();
     private long inspectionSubjectsBoardRevision = -1;
+    private Set<MatchChoices.Reference> choiceReferences = Set.of();
+    private MatchChoices.Domain choiceDomain;
+    private Input choicePublishedInput, choiceContextInput;
+    private MatchChoices.Context choiceContext;
     private final Map<Object, Boolean> resolutionEpisodes = new WeakHashMap<>();
     private final Map<Object, DeclineLineage> declineEpisodes = new WeakHashMap<>();
     private record DeclineLineage(String id, String previousId) { }
@@ -305,10 +309,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         combatChoices.clear();
         finiteStackYield.revoke("connection-ended");
         closed = true;
-        inspectionInput = null; inspectionContext = null;
-        if (latest.get("publicInspection") != null) {
+        inspectionInput = null; inspectionContext = null; choiceContextInput = null; choiceContext = null;
+        if (latest.get("publicInspection") != null || latest.get("publicChoice") != null) {
             var retired = new LinkedHashMap<>(latest); retired.put("revision", ++revision);
-            retired.put("publicInspection", null); latest = freezePublishedView(retired);
+            retired.put("publicInspection", null); retired.put("publicChoice", null); latest = freezePublishedView(retired);
         }
         notifyPlaytest();
         if (pending != null) pending.response.completeExceptionally(new CancellationException("Match closed"));
@@ -627,7 +631,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     void revokeFiniteYieldForConnection() {
         game.getAction().withState(() -> { synchronized (gate) {
-            inspectionInput = null; inspectionContext = null;
+            inspectionInput = null; inspectionContext = null; choiceContextInput = null; choiceContext = null;
             table.presence.disconnected(viewer.getId());
             finiteStackYield.revoke("connection-ended");
             if (!closed && error == null) table.publish();
@@ -657,6 +661,29 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 && publishedSourceActionVersion == sourceActionVersion.get() ? inspectionSubjects : Set.of();
     }
 
+    MatchChoices.Domain publicChoiceDomain(long boardRevision) {
+        Pending current = pending;
+        return current != null && current.input == choicePublishedInput && decisionOwnerCurrent(current)
+                && inspectionSubjectsBoardRevision == boardRevision && inspectionBoardCurrent(boardRevision)
+                && publishedSourceActionVersion == sourceActionVersion.get() ? choiceDomain : null;
+    }
+
+    MatchChoices.Context publicChoiceContext(long boardRevision) {
+        var domain = publicChoiceDomain(boardRevision);
+        if (domain == null) { choiceContextInput = null; choiceContext = null; return null; }
+        if (choiceContext == null || choiceContextInput != pending.input || choiceContext.boardRevision() != boardRevision
+                || choiceContext.kind() != domain.kind() || !Objects.equals(choiceContext.source(), domain.source())) {
+            choiceContextInput = pending.input;
+            choiceContext = new MatchChoices.Context(UUID.randomUUID().toString(), boardRevision, viewer.getId(), domain.kind(), domain.source());
+        }
+        return choiceContext;
+    }
+
+    Set<MatchChoices.Reference> publicChoiceReferences(long boardRevision, MatchChoices.Context context) {
+        return inspectionSubjectsBoardRevision == boardRevision && inspectionBoardCurrent(boardRevision)
+                && choiceForAudience(latest, context) != null ? choiceReferences : Set.of();
+    }
+
     private MatchPresence.Context inspectionForAudience(Map<String, Object> frame, MatchPresence.Context context) {
         return context == null || closed || conceded || error != null
                 || inspectionSubjectsBoardRevision != context.boardRevision()
@@ -668,7 +695,15 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private Map<String, Object> freezePublishedView(Map<String, Object> frame) {
         if (frame.get("publicInspection") instanceof MatchPresence.Context context)
             frame.put("publicInspection", inspectionForAudience(frame, context));
+        if (frame.get("publicChoice") instanceof MatchChoices.Context context)
+            frame.put("publicChoice", choiceForAudience(frame, context));
         return Collections.unmodifiableMap(frame);
+    }
+
+    private MatchChoices.Context choiceForAudience(Map<String, Object> frame, MatchChoices.Context context) {
+        return context == null || closed || conceded || error != null
+                || inspectionSubjectsBoardRevision != context.boardRevision()
+                || publishedSourceActionVersion != sourceActionVersion.get() ? null : MatchChoices.projectContext(frame, context, choiceReferences);
     }
 
     @Override public Map<String, Object> presence(JsonObject request) {
@@ -1762,6 +1797,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var next = new LinkedHashMap<>(latest);
         next.put("revision", ++revision); next.put("prompt", null); next.put("status", "resolving");
         next.put("publicInspection", null);
+        next.put("publicChoice", null);
         next.put("actionSources", List.of());
         next.put("undo", undoProjection(null));
         next.put("players", resolvingPlayers(consumed));
@@ -2157,6 +2193,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     void updatePublicDecision(Integer owner, String actionClass, MatchPresence.Context publicInspection) {
+        updatePublicDecision(owner, actionClass, publicInspection, null);
+    }
+
+    void updatePublicDecision(Integer owner, String actionClass, MatchPresence.Context publicInspection, MatchChoices.Context publicChoice) {
         // Only ownership/class is public. Another seat choosing attackers is
         // observed until an attack actually exists; choosing none stays quiet.
         // Other required prompts still revoke without exposing private options.
@@ -2164,20 +2204,23 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         boolean requiredChoice = !actionClass.equals("priority") && !actionClass.equals("resolving") && !otherAttackChoice;
         if (requiredChoice) quietYield.invalidate();
         String status = (String) latest.get("status");
-        if (status.equals("finished") || status.equals("error") || status.equals("starting")) { owner = null; actionClass = status; publicInspection = null; }
+        if (status.equals("finished") || status.equals("error") || status.equals("starting")) { owner = null; actionClass = status; publicInspection = null; publicChoice = null; }
         boolean clearPriority = actionClass.equals("resolving") || actionClass.equals("finished") || actionClass.equals("error");
         var undo = undoProjection(actionClass.equals("priority") && Objects.equals(owner, viewer.getId()) ? pending : null);
         var next = new LinkedHashMap<>(latest);
         next.put("decisionOwnerId", owner); next.put("actionClass", actionClass);
         if (clearPriority) next.put("priorityPlayerId", null);
         publicInspection = inspectionForAudience(next, publicInspection);
+        publicChoice = choiceForAudience(next, publicChoice);
         if (Objects.equals(latest.get("decisionOwnerId"), owner) && Objects.equals(latest.get("actionClass"), actionClass)
                 && Objects.equals(latest.get("stackInterruptionVersion"), table.stackInterruption.version())
                 && Objects.equals(latest.get("undo"), undo)
                 && Objects.equals(latest.get("publicInspection"), publicInspection)
+                && Objects.equals(latest.get("publicChoice"), publicChoice)
                 && (!clearPriority || latest.get("priorityPlayerId") == null)) return;
         next.put("undo", undo);
         next.put("publicInspection", publicInspection);
+        next.put("publicChoice", publicChoice);
         next.put("revision", ++revision); next.put("decisionOwnerId", owner); next.put("actionClass", actionClass);
         next.put("stackInterruptionVersion", table.stackInterruption.version());
         next.put("stackActionVersion", table.stackInterruption.actionVersion());
@@ -2410,11 +2453,61 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 prompt.sourceQuery = null;
             }
         }
-        inspectionSubjects = MatchPresence.subjects(players, stack);
+        var nextSubjects = MatchPresence.subjects(players, stack);
+        var nextReferences = MatchChoices.publicReferences(players, nextSubjects);
+        var nextChoiceDomain = capturePublicChoice(prompt, projectedPrompt, snapshot, stack, nextReferences);
+        if (!table.currentPublication(boardRevision) || pending != prompt || sourceActionVersion.get() != publicationSourceVersion
+                || captured != null && !decisionOwnerCurrent(prompt)) return false;
+        inspectionSubjects = nextSubjects;
+        choiceReferences = nextReferences; choiceDomain = nextChoiceDomain; choicePublishedInput = prompt == null ? null : prompt.input;
         inspectionSubjectsBoardRevision = boardRevision;
         latest = freezePublishedView(snapshot);
         publishedSourceActionVersion = publicationSourceVersion;
         return true;
+    }
+
+    private MatchChoices.Domain capturePublicChoice(Pending prompt, Map<String, Object> projectedPrompt,
+            Map<String, Object> snapshot, List<?> stack, Set<MatchChoices.Reference> references) {
+        if (prompt == null || !decisionOwnerCurrent(prompt)) return null;
+        if (prompt.input instanceof InputAttack || prompt.input instanceof InputBlock)
+            return currentCombatChoices(prompt) == null ? null : MatchChoices.combatDomain(
+                    prompt.input instanceof InputAttack ? MatchChoices.Kind.ATTACK : MatchChoices.Kind.BLOCK,
+                    snapshot.get("combat") instanceof Map<?, ?> combat ? combat : null, (List<?>)snapshot.get("players"), references);
+        if (!(prompt.input instanceof InputSelectTargets targeting) || !selectionInputCurrent(prompt)
+                || projectedPrompt.get("librarySearch") != null) return null;
+        var ability = targeting.getSpellAbility();
+        var source = ability == null || ability.getHostCard() == null ? null : publicChoiceCard(ability.getHostCard().getView(), stack, references);
+        if (source == null) return null;
+        var targets = new HashSet<MatchChoices.Reference>();
+        // InputSelectTargets publishes this exact selectable-card domain while
+        // it is current. Never discover actions or retain a private card face.
+        for (var card : selectable) {
+            var reference = publicChoiceCard(card, stack, references);
+            if (reference != null) targets.add(reference);
+        }
+        if (projectedPrompt.get("playerChoices") instanceof List<?> players)
+            for (var player : players) if (player instanceof Number id) {
+                var reference = new MatchChoices.Reference(MatchChoices.ReferenceKind.PLAYER, Integer.toString(id.intValue()));
+                if (references.contains(reference)) targets.add(reference);
+            }
+        return targets.isEmpty() ? null : new MatchChoices.Domain(MatchChoices.Kind.TARGET, source, Map.of(source, targets));
+    }
+
+    private MatchChoices.Reference publicChoiceCard(CardView card, List<?> stack, Set<MatchChoices.Reference> references) {
+        if (card == null || card.isFaceDown() || card.isPhasedOut()) return null;
+        String visual = activity.visualId(card);
+        if (card.getZone() == ZoneType.Battlefield) {
+            var reference = new MatchChoices.Reference(MatchChoices.ReferenceKind.CARD, visual);
+            return references.contains(reference) ? reference : null;
+        }
+        if (card.getZone() != ZoneType.Stack) return null;
+        var matches = new ArrayList<MatchChoices.Reference>();
+        for (var value : stack) if (value instanceof Map<?, ?> item && Boolean.FALSE.equals(item.get("ability"))
+                && item.get("card") instanceof Map<?, ?> face && Objects.equals(face.get("visualId"), visual)) {
+            var reference = new MatchChoices.Reference(MatchChoices.ReferenceKind.STACK, String.valueOf(item.get("id")));
+            if (references.contains(reference)) matches.add(reference);
+        }
+        return matches.size() == 1 ? matches.get(0) : null;
     }
 
     private static Map<String, Integer> publicMana(PlayerView player) {

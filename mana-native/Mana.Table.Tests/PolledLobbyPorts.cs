@@ -59,13 +59,15 @@ internal static class PolledLobbyPorts
     internal sealed class PresencePort(ITablePresence inner) : ITablePresence
     {
         internal sealed record Exchange(long StartedTicks, double Milliseconds, long Sequence,
-            long BoardRevision, string? ContextId, TableInspectionSubject? Subject, int ContractBytes, string Outcome);
+            long BoardRevision, string? ContextId, TableInspectionSubject? Subject, int ContractBytes, string Outcome,
+            string? ChoiceContextId, TableChoicePreview? Choice, TablePresenceFrame? Response);
         private int started, executing, maximumExecuting;
         internal int Started => Volatile.Read(ref started);
         internal int Executing => Volatile.Read(ref executing);
         internal int MaximumExecuting => Volatile.Read(ref maximumExecuting);
         internal ConcurrentQueue<Exchange> Exchanges { get; } = new();
         public bool SupportsTablePresence => inner.SupportsTablePresence;
+        public bool SupportsTableChoices => inner.SupportsTableChoices;
         public async Task<TablePresenceResult> ExchangePresenceAsync(TablePresenceUpdate update, CancellationToken cancellation = default)
         {
             long started = Stopwatch.GetTimestamp();
@@ -74,13 +76,16 @@ internal static class PolledLobbyPorts
             do { prior = MaximumExecuting; if (active <= prior) break; }
             while (Interlocked.CompareExchange(ref maximumExecuting, active, prior) != prior);
             string outcome = "failed";
+            TablePresenceFrame? response = null;
             try {
                 var result = await inner.ExchangePresenceAsync(update, cancellation);
                 outcome = result.GetType().Name;
+                response = (result as TablePresenceResult.Current)?.Frame;
                 return result;
             } finally {
                 Exchanges.Enqueue(new(started, Stopwatch.GetElapsedTime(started).TotalMilliseconds, update.Sequence,
-                    update.BoardRevision, update.ContextId, update.Subject, JsonSerializer.SerializeToUtf8Bytes(update).Length, outcome));
+                    update.BoardRevision, update.ContextId, update.Subject, JsonSerializer.SerializeToUtf8Bytes(update).Length, outcome,
+                    update.ChoiceContextId, update.Choice, response));
                 Interlocked.Decrement(ref executing);
             }
         }

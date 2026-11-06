@@ -30,9 +30,10 @@ adaptation, not a claim that Arena uses this exact presentation.
 There is no engine transition: inspection does not cast, activate, target, pass,
 extend a timer or become match history. The authority publishes a separate
 ordinary-priority context before a seat can share inspection. A public identity
-alone cannot authorize sharing a secret choice. Hand/library activity, private
-reveals, choices, draft targets and draft combat assignments stay private; the
-AI does not manufacture a pretend inspection sequence. An overlay, background
+alone cannot authorize sharing a secret choice. Inspection does not share
+hand/library activity, private reveals or a pending choice. Separately permitted
+public pointing is described below; the AI does not manufacture a pretend
+inspection sequence. An overlay, background
 window or retired game/audience/input/board context suppresses sharing, and
 short leases remove abandoned marks after disconnection. Panning clears the
 local proposed inspection but keeps other players' current attention attached
@@ -44,6 +45,65 @@ card, crowded permanents, two abilities of the same source, a locally pinned
 reader, alt-tab, and a public card becoming concealed. Controlled native frames
 and safety checks do not replace this pending human review or establish the
 latency of real friends' connections.
+
+## Seeing a player consider a public play: source candidate
+
+**Source candidate; release qualification and exact-candidate human review
+pending.** Automated controls are described in the [testing guide](Mana-Table-Testing.md#shared-public-choice-previews).
+The intent is to follow another person's considered attack, block or
+public target while they change their mind, as people can watch a player point
+across a physical table. Hearthstone's [developer panel
+recap](https://hearthstone.blizzard.com/en-gb/news/16421344/fireside-chat-developer-panel-recap/)
+describes spectators watching a friend hover cards and point a targeting arrow
+while considering a move. This is a historical spectator-view precedent, not
+evidence that current opponents see every draft selection. Arena's [secret
+selection correction](https://mtgarena-support.wizards.com/hc/en-us/articles/31307518959252-Patch-Notes-2024-42-00)
+supplies the confidentiality limit. The exact line treatment and four-seat
+ownership marks below are our adaptation; no gameplay video was viewed for this
+candidate.
+
+Combat already publishes the engine's staged attack and block assignments before
+the final declaration confirmation. Those remain authoritative staged combat,
+with their existing solid relationships. They are different from the locally
+selected combatant and the legal target currently under the pointer. The new
+gesture shares only that latest considered source/target pair, rather than
+creating another copy of combat or a list of draft assignments.
+
+The player selects or drags an actual combatant using the existing gesture, then
+points at a currently legal public defender or attacker. Explicit targeting from
+an authority-disclosed battlefield or stack source uses the same public pointing
+grammar. A quiet seat-colored rim and numbered marker identify the source. A
+thin dashed connection with a hollow arrowhead joins its physical card edge to
+the considered public card, stack item or player portrait. A source without a
+current target retains only its mark. Changing the target replaces the line;
+cancellation or loss of the current decision clears it. A viewer's enlarged
+reader does not move that line away from the physical table occurrence. The
+existing solid combat relationships remain distinct without relying on color
+alone. No new button, camera move, sound, notification panel, history entry or
+timer extension accompanies pointing.
+
+Player aims end outside the portrait's surrounding phase controls and mark the
+seat with a quiet ring. A real-art capture caught an earlier arrowhead hidden
+behind those controls; the retained regression checks the whole open head at
+both window sizes, rather than merely checking that a target ID was present.
+
+The authority grants a separate current public-choice context for supported
+attack, block and explicit public-source targeting decisions. A public card
+alone is insufficient. Hand/private sources, searches, generic choice galleries,
+simultaneous or secret inputs and face-down occurrences do not publish a preview.
+An unknown or older host quietly omits the optional feature. Changing, concealing
+or removing either occurrence, changing the source audience/input/board, leaving
+the window or disconnecting retires its cue. AI decisions gain no fabricated
+consideration sequence, and recipients do not gain permission to answer someone
+else's decision.
+
+Review two humans plus two AIs at 1000×740 and a larger window: select, point,
+retarget and cancel attacks and blocks; inspect the same card locally while its
+peer cue remains at the table; target from a public ability; verify hand/search
+and concealed-source negatives; navigate the camera and lose focus; and include
+crowded token groups. Automated permission, lifecycle and geometry checks do not
+supply human approval or establish connection latency. The existing ordered
+transport remains shared with gameplay; this is not a separate low-latency lane.
 
 ## Tap mana at its source: source candidate
 
@@ -1436,6 +1496,12 @@ this finding does not establish the cause of the secondhand target-selection rep
    the turning footprint, and give compact state cues space before names.
    Reserve room for portrait resources before packing cards. Mana quantities
    must remain separate from both card faces and the life total.
+   A considered public gesture and a staged engine assignment are different
+   facts. Show the former at its current physical source and target with a
+   tentative line treatment; keep the latter in the engine's existing combat
+   projection. Sharing attention must not reveal a secret decision merely because
+   one candidate is a public card. The [public-play journey](#seeing-a-player-consider-a-public-play-source-candidate)
+   records the game precedents and current source-only scope.
 8. **Reduce repeated interaction through explicit, bounded intent.** A burst of
    equivalent choices should support assigning them together, followed by an
    interruptible continuation. Keep every underlying trigger, target restriction,

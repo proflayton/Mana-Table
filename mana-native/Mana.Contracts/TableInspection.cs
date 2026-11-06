@@ -9,6 +9,7 @@ namespace Mana.Contracts;
 public interface ITablePresence
 {
     bool SupportsTablePresence => true;
+    bool SupportsTableChoices => false;
     Task<TablePresenceResult> ExchangePresenceAsync(TablePresenceUpdate update, CancellationToken cancellation = default);
 }
 public abstract record TablePresenceResult
@@ -43,8 +44,12 @@ public sealed class TableInspectionKindConverter : JsonConverter<TableInspection
         });
 }
 public sealed record TablePresenceUpdate(string GameId, long BoardRevision, long Sequence,
-    string? ContextId, TableInspectionSubject? Subject);
+    string? ContextId, TableInspectionSubject? Subject, string? ChoiceContextId = null, TableChoicePreview? Choice = null);
 public sealed record TableInspectionCue([property: JsonRequired] int PlayerId, [property: JsonRequired] string ContextId,
     [property: JsonRequired] TableInspectionSubject Subject, [property: JsonRequired] int RemainingMilliseconds);
 public sealed record TablePresenceFrame([property: JsonRequired] string GameId, [property: JsonRequired] long BoardRevision,
-    [property: JsonRequired] long Revision, [property: JsonRequired] ImmutableArray<TableInspectionCue> Cues);
+    [property: JsonRequired] long Revision, [property: JsonRequired] ImmutableArray<TableInspectionCue> Cues)
+{
+    // Omitted by older hosts. Never infer draft-sharing support from inspection.
+    public ImmutableArray<TableChoiceCue> Choices { get; init; } = [];
+}

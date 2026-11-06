@@ -63,9 +63,18 @@ first-run controls tour. Existing decks, names and play preferences are retained
 Settings opens Play controls in a side drawer, keeping the table visible.
 Source candidate: while another player holds ordinary priority, a quiet colored
 rim and seat number show the public battlefield card or pending stack item they
-are inspecting. Reading remains noncommitting. Private cards and required
+are inspecting. Reading remains noncommitting. Private cards and unsupported
 choices are not shared; opening a menu or leaving the window stops sharing
 attention, and existing marks soon expire. Older hosts can omit this activity.
+Source candidate after 0.2.420: selected combatants and considered legal public
+targets can also be shown to the table. The selected source has the player's
+colored rim and seat number; a thin dashed line with a hollow arrowhead shows
+the current considered target. Changing or cancelling the choice clears it.
+Existing solid combat lines already show staged attacks and blocks before final
+confirmation. The preview makes no game decision, moves no camera and adds no
+controls. Hand/private sources, searches and secret choices stay private. Older
+hosts may omit this feature. Tests, release qualification and human UX review
+remain pending for this source candidate.
 The deck builder checks every saved edit. Problem cards are highlighted and
 their reasons appear beside the selected card; deck-wide checks stay visible.
 Back to play returns Home or to your connected table. Deck checks and saving

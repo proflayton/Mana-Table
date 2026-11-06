@@ -9,6 +9,7 @@ public sealed partial class ForgeEngine
     public bool SupportsTablePresence => current is { TablePresenceAvailable: true, Failure: null } owner
         && owner.Ready.Task.IsCompletedSuccessfully && !disposed
         && owner.Commands.ObservedGameId is { Length: > 0 } game && presenceUnsupportedGame != game;
+    public bool SupportsTableChoices => SupportsTablePresence && current is { TableChoicesAvailable: true };
 
     public async Task<TablePresenceResult> ExchangePresenceAsync(TablePresenceUpdate update, CancellationToken cancellation = default)
     {
@@ -17,7 +18,9 @@ public sealed partial class ForgeEngine
         if (!SupportsTablePresence) return new TablePresenceResult.Unsupported();
         if (!InspectionId(update.GameId) || update.BoardRevision < 0 || update.Sequence <= 0
             || update.ContextId != null && !InspectionId(update.ContextId)
-            || update.Subject is { } subject && (!InspectionId(subject.Id) || !Enum.IsDefined(subject.Kind) || update.ContextId == null))
+            || update.Subject is { } subject && (!InspectionId(subject.Id) || !Enum.IsDefined(subject.Kind) || update.ContextId == null)
+            || update.ChoiceContextId != null && !InspectionId(update.ChoiceContextId)
+            || update.Choice is { } choice && (update.ChoiceContextId == null || !ValidChoice(choice)))
             throw new ArgumentException("Invalid table inspection update.", nameof(update));
         var owner = current!;
         long audience = owner.Commands.AudienceGeneration;
@@ -31,6 +34,14 @@ public sealed partial class ForgeEngine
                 gameId = update.GameId, boardRevision = update.BoardRevision, sequence = update.Sequence, contextId = update.ContextId,
                 subject = update.Subject == null ? null : new {
                     kind = update.Subject.Kind == TableInspectionKind.BattlefieldCard ? "card" : "stack", id = update.Subject.Id
+                },
+                choiceContextId = SupportsTableChoices ? update.ChoiceContextId : null,
+                choice = !SupportsTableChoices || update.Choice == null ? null : new {
+                    source = new { kind = update.Choice.Source.Kind == TableInspectionKind.BattlefieldCard ? "card" : "stack", id = update.Choice.Source.Id },
+                    target = update.Choice.Target == null ? null : new {
+                        kind = update.Choice.Target.Kind switch { TableChoiceTargetKind.BattlefieldCard => "card", TableChoiceTargetKind.StackItem => "stack", _ => "player" },
+                        id = update.Choice.Target.Id
+                    }
                 }
             }).ConfigureAwait(false);
         } catch (EngineObservationSupersededException) { return new TablePresenceResult.Superseded(); }
@@ -55,10 +66,17 @@ public sealed partial class ForgeEngine
                 || frame.Cues.IsDefault || frame.Cues.Length > 6 || frame.Cues.Any(cue => cue == null || cue.PlayerId < 0
                     || !InspectionId(cue.ContextId) || cue.RemainingMilliseconds is < 1 or > 1500
                     || cue.Subject == null || !Enum.IsDefined(cue.Subject.Kind) || !InspectionId(cue.Subject.Id))
-                || frame.Cues.Select(cue => cue.PlayerId).Distinct().Count() != frame.Cues.Length) throw new JsonException();
+                || frame.Cues.Select(cue => cue.PlayerId).Distinct().Count() != frame.Cues.Length
+                || frame.Choices.IsDefault || frame.Choices.Length > 6 || frame.Choices.Any(cue => cue == null || cue.PlayerId < 0
+                    || !InspectionId(cue.ContextId) || cue.RemainingMilliseconds is < 1 or > 1500 || !ValidChoice(cue.Preview))
+                || frame.Choices.Select(cue => cue.PlayerId).Distinct().Count() != frame.Choices.Length) throw new JsonException();
             return frame;
         } catch (JsonException error) { throw new IOException("The rules adapter returned invalid public table activity.", error); }
     }
     private static bool InspectionId(string? value) => !string.IsNullOrWhiteSpace(value) && value.Length <= 128
         && !value.Any(char.IsControl);
+    private static bool ValidChoice(TableChoicePreview? preview) => preview?.Source is { } source
+        && InspectionId(source.Id) && Enum.IsDefined(source.Kind) && (preview.Target == null
+            || InspectionId(preview.Target.Id) && Enum.IsDefined(preview.Target.Kind)
+                && (preview.Target.Kind != TableChoiceTargetKind.Player || PublicChoiceFacts.PlayerId(preview.Target.Id, out _)));
 }

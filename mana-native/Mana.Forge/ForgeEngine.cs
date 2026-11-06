@@ -40,6 +40,7 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         public bool OwnedDecisionAvailable { get; set; }
         public bool PrivateActionFacesAvailable { get; set; }
         public bool TablePresenceAvailable { get; set; }
+        public bool TableChoicesAvailable { get; set; }
         public ForgeCommandScope Commands { get; } = new();
         public volatile Exception? Failure;
         public volatile bool FramingFailed;
@@ -91,6 +92,7 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
                             owner.OwnedDecisionAvailable = capabilities.Contains("owned-decision-observation");
                             owner.PrivateActionFacesAvailable = capabilities.Contains("private-action-faces");
                             owner.TablePresenceAvailable = capabilities.Contains("table-presence");
+                            owner.TableChoicesAvailable = capabilities.Contains("table-choices-v1");
                             owner.Ready.TrySetResult();
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));

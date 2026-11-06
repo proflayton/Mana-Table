@@ -79,6 +79,42 @@ absent legacy context remains a valid snapshot, without authorizing inspection.
 The shared ordered transport can still impose head-of-line latency; `Task.Run`
 and an independent fake port are not evidence of transport latency isolation.
 
+### Tentative public plans: source candidate
+
+The source candidate extends the same optional `ITablePresence` exchange through
+`table-choices-v1`; it does not introduce a second transport lane, rules command
+or combat replica. `GameSnapshot.PublicChoice` is a separate authority-issued
+`{id, boardRevision, playerId, kind, source?}` context for supported attack, block
+and explicit public-source target inputs. It does not broaden ordinary-priority
+`PublicInspection`. The actor supplies a latest public source and optional legal
+public target, not pointer coordinates, action keys or an assignment list.
+
+Engine-staged attacks and blocks already appear in the normal combat publication
+before final declaration confirmation. This extension only projects the actor's
+currently selected source and considered target. Ordinary scoped commands still
+own staging, removing and confirming assignments. A received preview never
+authorizes a command or becomes a snapshot, history record, acknowledgement of
+staging, timer update or AI action.
+
+The provider admits only the current decision owner and binds every endpoint to
+that input's captured public occurrence and legality set. Targeting requires the
+authority's explicit battlefield/stack source. A hand source, search, generic
+chooser, simultaneous/secret input or face-down occurrence cannot acquire this
+context. Admission and each audience projection recheck disclosure, the board,
+source input and connection lifetime. Context retirement clears previews rather
+than preserving plans across a changed or cancelled decision.
+
+`TablePresenceSession` coalesces both cosmetic activities into its existing one
+actual operation at a time and four-dispatches-per-second budget. The native
+owner paints a seat-colored source rim/number and a thin dashed connection with
+a hollow arrowhead between current physical poses. Receiving views do not move
+cards or cameras. A local enlarged reader leaves the peer's cue at the table
+slot, and private/off-board input produces no free-floating arrow. Unsupported
+hosts retain the existing inspection behavior without publishing choices. No
+persisted-data migration is required. Tests, exact-source release qualification
+and human UX review remain pending for this source candidate; the shared
+serialized transport supplies no independent-lane or server-performance claim.
+
 ## Local command diagnostics
 
 The [match history and evidence design](Mana-Table-History.md) distinguishes the
