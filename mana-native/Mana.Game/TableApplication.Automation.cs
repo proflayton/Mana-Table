@@ -42,6 +42,7 @@ internal sealed partial class TableApplication
         internal IReadOnlyList<CounterReceiptPaint> CounterReceipts => game.counterReceiptPaint;
         internal IReadOnlyList<StackRowPaint> StackRows => game.stackRows;
         internal ImmutableArray<TableInspectionCue> TableInspectionCues => game.tablePresence.Visible(game.now);
+        internal ImmutableArray<TableChoiceCue> TableChoiceCues => game.tablePresence.VisibleChoices(game.now);
         internal IReadOnlyList<StackWorkloadPaint> StackWorkloads => game.stackWorkloadPaint;
         internal bool ResolvingCapturedStack => game.ResolvingCapturedStack;
         internal int StackResolutionRemaining => game.CapturedStackRemaining;

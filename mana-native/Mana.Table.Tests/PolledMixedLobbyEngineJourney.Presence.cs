@@ -90,6 +90,8 @@ internal static partial class PolledMixedLobbyEngineJourney
         private long resumedTicks;
         private int botAcceptedBefore;
         private bool presenceExecutingAtResume;
+        private long measurementStartedTicks;
+        private int[] exchangesBefore = [];
         internal bool ShouldHoldReply(GameSnapshot? state) => preparation.ShouldHoldReply(state, stage == "holding");
         internal bool Completed => stage == "completed";
         internal bool HoldIntegrityVerified { get; private set; }
@@ -103,6 +105,8 @@ internal static partial class PolledMixedLobbyEngineJourney
                 Need(players.All(player => player.Inspection.Supported),
                     "The current real host and TCP guest must support public table presence; an older provider is not this gate.");
                 preparation.Synchronize(players.Select(player => player.PollCallbacks).ToArray());
+                measurementStartedTicks = Stopwatch.GetTimestamp();
+                exchangesBefore = players.Select(player => player.InspectionPort.Started).ToArray();
                 stage = "synchronizing";
                 return;
             }
@@ -247,8 +251,8 @@ internal static partial class PolledMixedLobbyEngineJourney
             // without mistaking worker scheduling jitter for a faster clock.
             int maximum = 1 + (int)Math.Ceiling((completedAt - heldAt) * 4);
             foreach (var player in players) {
-                var calls = player.InspectionPort.Exchanges.ToArray();
-                Need(player.InspectionPort.MaximumExecuting <= 1 && player.InspectionPort.Started <= maximum,
+                var calls = player.InspectionPort.Exchanges.Where(call => call.StartedTicks >= measurementStartedTicks).ToArray();
+                Need(player.InspectionPort.MaximumExecuting <= 1 && player.InspectionPort.Started - exchangesBefore[player.Index] <= maximum,
                     "Real presence exceeded its single-flight four-Hz interval budget.");
                 Need(calls.Length > 0 && calls.All(call => call.Outcome is "Current" or "Superseded")
                     && (player.Index == actor || calls.All(call => call.Subject == null)),
@@ -274,11 +278,12 @@ internal static partial class PolledMixedLobbyEngineJourney
             holdSeconds = resumedAt > 0 ? resumedAt - heldAt : 0,
             HoldIntegrityVerified, TrafficVerified, ResumedReceiptVerified, presenceExecutingAtResume,
             botAcceptedBefore,
+            measurementStartedTicks, exchangesBefore,
             observations = seen.ToArray(), before, after,
             scope = "Actual TablePresenceSession and ForgeEngine host/TCP ports. Contract byte totals exclude transport envelopes; latencies are observations, not a zero head-of-line guarantee.",
             endpoints = players.Select(player => new { player.Index,
                 player.InspectionPort.Started, player.InspectionPort.MaximumExecuting, executing = player.InspectionPort.Executing,
-                exchanges = player.InspectionPort.Exchanges.ToArray(),
+                exchanges = player.InspectionPort.Exchanges.Where(call => call.StartedTicks >= measurementStartedTicks).ToArray(),
                 resumedCommands = player.Port.CommandLatencies.Where(command => resumedTicks > 0
                     && command.StartedTicks >= resumedTicks).ToArray()
             })

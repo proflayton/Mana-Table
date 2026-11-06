@@ -212,6 +212,7 @@ await ClientDiagnosticJournalRegression.RunAsync(Check);
 await MatchHistoryArchiveRegression.RunAsync(Check);
 await MatchCompletionRegression.RunAsync(Check);
 await TablePresenceRegression.RunAsync(Check);
+await TableChoiceRegression.RunAsync(Check);
 MatchOutcomeRegression.Run(Check);
 EncounterSetupRegression.Run(Check);
 ConfiguredSimulationRegression.Run(Check);

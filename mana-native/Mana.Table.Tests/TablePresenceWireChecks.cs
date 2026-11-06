@@ -19,6 +19,7 @@ internal static class TablePresenceWireChecks
         Directory.CreateDirectory(directory);
         var capabilities = ForgeProtocol.RequiredCapabilities;
         if (mode != "legacy") capabilities = capabilities.Add("table-presence");
+        if (mode == "choices") capabilities = capabilities.Add("table-choices-v1");
         Console.WriteLine(JsonSerializer.Serialize(new { @event = "ready", protocolVersion = ForgeProtocol.Version, capabilities }));
         Console.Out.Flush();
         int reads = 0, presenceReads = 0;
@@ -31,7 +32,7 @@ internal static class TablePresenceWireChecks
             string method = request.GetProperty("method").GetString()!;
             File.AppendAllText(Path.Combine(directory, "methods.txt"), method + "\n");
             if (method == "matchState") {
-                Reply(id, State(mode == "held-audience" && ++reads == 2 ? 47 : 29));
+                Reply(id, State(mode == "held-audience" && ++reads == 2 ? 47 : 29, mode is "choices" or "choice-legacy"));
                 if (mode == "held-audience" && reads == 3 && held is { } old) { Reply(old, Frame()); held = null; }
             } else if (method == "tablePresence") {
                 File.WriteAllText(Path.Combine(directory, "presence-request.json"), request.GetProperty("params").GetRawText());
@@ -44,7 +45,7 @@ internal static class TablePresenceWireChecks
                 }
                 else if (mode == "failure") {
                     Console.WriteLine(JsonSerializer.Serialize(new { id, error = "Controlled presence failure" })); Console.Out.Flush();
-                } else Reply(id, Frame());
+                } else Reply(id, mode == "choices" ? TableChoiceWireChecks.Frame() : Frame());
             } else {
                 Reply(id, new { accepted = true });
                 if (method == "matchAction" && held is { } old) { Reply(old, Frame()); held = null; }
@@ -53,7 +54,7 @@ internal static class TablePresenceWireChecks
         return 0;
     }
 
-    private static JsonNode State(int viewer)
+    private static JsonNode State(int viewer, bool choice = false)
     {
         var state = ConfiguredSimulationWireChecks.State();
         state["id"] = Game; state["viewerId"] = viewer; state["revision"] = 10; state["boardRevision"] = 10;
@@ -61,6 +62,11 @@ internal static class TablePresenceWireChecks
         state["priorityPlayerId"] = viewer; state["decisionOwnerId"] = viewer; state["actionClass"] = "priority";
         state["publicInspection"] = new JsonObject { ["id"] = "public-context", ["boardRevision"] = 10, ["playerId"] = viewer };
         state["prompt"] = new JsonObject { ["id"] = "priority", ["kind"] = "input", ["task"] = "priority", ["okEnabled"] = true };
+        if (choice) {
+            state["publicInspection"] = null; state["priorityPlayerId"] = null; state["actionClass"] = "attack";
+            state["publicChoice"] = new JsonObject { ["id"] = "choice-context", ["boardRevision"] = 10, ["playerId"] = viewer, ["kind"] = "attack" };
+            state["prompt"]!["task"] = "attack";
+        }
         return state;
     }
     private static JsonNode Frame() => JsonNode.Parse("""
@@ -71,6 +77,7 @@ internal static class TablePresenceWireChecks
     internal static async Task RunAsync(string profile, Action<bool, string> check)
     {
         CheckSnapshotContext(check);
+        TableChoiceWireChecks.Run(check);
         var valid = Frame();
         check(ForgeEngine.DecodeTablePresence(JsonSerializer.SerializeToElement(valid), Game).Cues.Single().Subject.Kind
             == TableInspectionKind.BattlefieldCard, "Public presence has one closed battlefield subject kind");
@@ -98,7 +105,7 @@ internal static class TablePresenceWireChecks
             catch (IOException) { rejected = true; }
             check(rejected, "Malformed or unbounded public activity cannot become an inspection cue");
         }
-        foreach (string mode in new[] { "legacy", "relay-unsupported", "ready", "failure", "retired-host", "held-cancel", "held-audience" }) {
+        foreach (string mode in new[] { "legacy", "relay-unsupported", "ready", "failure", "retired-host", "held-cancel", "held-audience", "choices", "choice-legacy" }) {
             string directory = Path.Combine(profile, "presence-wire-" + mode); Directory.CreateDirectory(directory);
             if (Directory.EnumerateFiles(directory).Any()) throw new IOException("Presence wire checks need a fresh disposable profile.");
             var executable = Path.Combine(AppContext.BaseDirectory, "Mana.Table.Tests.exe");
@@ -106,6 +113,25 @@ internal static class TablePresenceWireChecks
             await engine.InitializeAsync();
             var state = await engine.ObserveAsync() ?? throw new InvalidOperationException("Missing initial presence state");
             var update = new TablePresenceUpdate(Game, 10, 1, "public-context", new(TableInspectionKind.BattlefieldCard, "public-card"));
+            if (mode is "choices" or "choice-legacy") {
+                var preview = new TableChoicePreview(new(TableInspectionKind.BattlefieldCard, "public-card"), new(TableChoiceTargetKind.Player, "47"));
+                var result = await engine.ExchangePresenceAsync(update with { ContextId = null, Subject = null, ChoiceContextId = "choice-context", Choice = preview });
+                using var request = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "presence-request.json")));
+                var wire = request.RootElement;
+                check(engine.SupportsTableChoices == (mode == "choices") && result is TablePresenceResult.Current,
+                    "Tentative choice sharing uses its separately negotiated capability: " + mode);
+                if (mode == "choices") {
+                    check(wire.GetProperty("choiceContextId").GetString() == "choice-context"
+                        && wire.GetProperty("choice").GetProperty("source").GetProperty("kind").GetString() == "card"
+                        && wire.GetProperty("choice").GetProperty("target").GetProperty("kind").GetString() == "player"
+                        && wire.GetProperty("choice").GetProperty("target").GetProperty("id").GetString() == "47"
+                        && !wire.TryGetProperty("playerId", out _) && !wire.TryGetProperty("promptId", out _)
+                        && result is TablePresenceResult.Current { Frame.Choices.Length: 1 },
+                        "Actual provider pipes carry a bounded public source/target pair without actor claims, pointer data or action keys");
+                } else check(wire.GetProperty("choiceContextId").ValueKind == JsonValueKind.Null && wire.GetProperty("choice").ValueKind == JsonValueKind.Null,
+                    "An older inspection host receives no tentative choice identifiers while its existing presence exchange remains usable");
+                continue;
+            }
             if (mode == "legacy") {
                 check(!engine.SupportsTablePresence && await engine.ExchangePresenceAsync(update) is TablePresenceResult.Unsupported && Count(directory, "tablePresence") == 0,
                     "An older local adapter receives no optional presence request"); continue;

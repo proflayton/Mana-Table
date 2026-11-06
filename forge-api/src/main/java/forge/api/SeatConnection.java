@@ -19,7 +19,7 @@ final class SeatConnection implements MatchEndpoint, AutoCloseable {
             case "tempoPresented" -> session.tempoPresented(p);
             case "history" -> session.history(p);
             default -> throw new IllegalArgumentException("Unknown seat command");
-        }, () -> { throw new IllegalStateException("This seat is local"); }, ignored -> { }, Set.of("match-history", "history-announcements", "owned-decision-observation", "private-action-faces", "table-presence"));
+        }, () -> { throw new IllegalStateException("This seat is local"); }, ignored -> { }, Set.of("match-history", "history-announcements", "owned-decision-observation", "private-action-faces", "table-presence", "table-choices-v1"));
         return new SeatConnection(server.local(0), () -> { server.close(); session.closeTable(); });
     }
     @SuppressWarnings("unchecked") public Map<String, Object> state() { return (Map<String, Object>)connection.request("observe", new JsonObject()); }
@@ -41,6 +41,9 @@ final class SeatConnection implements MatchEndpoint, AutoCloseable {
     @SuppressWarnings("unchecked") public Map<String, Object> sourceActions(JsonObject command) { return (Map<String, Object>)connection.request("sourceActions", command); }
     @SuppressWarnings("unchecked") public Map<String, Object> presence(JsonObject update) {
         if (!connection.capabilities().contains("table-presence")) return null;
+        if (!connection.capabilities().contains("table-choices-v1") && (update.has("choiceContextId") || update.has("choice"))) {
+            update = update.deepCopy(); update.remove("choiceContextId"); update.remove("choice");
+        }
         return (Map<String, Object>)connection.request("presence", update);
     }
     @SuppressWarnings("unchecked") public Map<String, Object> history(JsonObject query) {

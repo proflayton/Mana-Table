@@ -1,5 +1,57 @@
 # Testing Mana Table
 
+## Shared public choice previews
+
+`TableChoiceRegression` runs in the ordinary graphics-free client executable.
+It checks exact public source/endpoint identity, acting-seat ownership, hidden
+and generic-choice exclusions, context replacement and A-to-B-to-A retirement,
+expiry, cancellation and a held provider task. Inspection and consideration use
+one actual in-flight exchange and the existing four-per-second dispatch bound.
+These controls grant no game command or additional decision time.
+
+`--smoke-headless-presentation --presentation-group table-choices` exercises
+production pointer selection, combat dragging, cancellation and public ability
+targeting at 1000×740 and 1540×900. Received previews use the exact physical card
+occurrence, including another same-named card nearby, and remain there while a
+local reader enlarges it. Camera movement moves the existing endpoints. Dashed
+lines and an open head remain distinct from the solid staged-combat arrows in
+normal and reduced motion. Player endpoints and their seat ring clear the local
+phase controls. Private hand, search and missing-authority cases cannot publish
+a preview. Controlled frame exports are authored presentation evidence, not
+live multiplayer captures or human UX acceptance. This group also runs in the
+default full headless suite.
+
+`TableChoiceWireChecks`, reached through the existing `table-presence` group
+and full headless suite, checks closed endpoint kinds, canonical player IDs,
+bounded frames, malformed/duplicate entries and source-only previews. Actual
+child-process pipe fixtures check new capability support and older relays while
+retaining a usable ordinary game command. Public choice contexts have their own
+snapshot validation; they do not widen `PublicInspectionContext` into required
+or secret selections.
+
+Java `MatchChoicesTest` checks the detached latest-value ledger, exact legal
+pairs, disclosure, expiry and ordering. `PublicChoiceExperienceTest` uses actual
+combat and target inputs, including public card/player aims, private-source
+rejection, stale inputs, intermediate resolving audiences and concession. A
+playing peer remains a positive control when another audience loses its scope.
+Cached public references alone cannot authorize response projection.
+
+The ordinary real polled two-human/two-AI prefix now also holds an actual human
+attack declaration. Both human owners must first accept fresh matching public
+choice contexts and the real presented, thinking decision clock. The publisher
+then shares source, legal defender aim and explicit clear through its actual
+host/TCP adapter. The other human must receive those decoded responses; lease
+expiry alone cannot satisfy clear. Rules, combat, activity, history cursors and
+command counts stay unchanged during the hold while the original clock runs.
+The exact ordinary `CompleteAttackers` command must subsequently reconcile.
+The original inspection probe follows with its own measurement baseline on the
+same presence owner. Both intervals retain the single-task/four-Hz checks and
+the prefix's existing 45-second deadline. A green prefix is a bounded transport
+and ownership journey, not a full natural game or a private-choice-sharing claim.
+
+See [the considered-play journey](Mana-Table-Experience-Review.md#seeing-a-player-consider-a-public-play-source-candidate)
+for game references, confidentiality limits and pending human review.
+
 ## Shared public inspection
 
 The source candidate's `TablePresenceRegression` runs in the ordinary

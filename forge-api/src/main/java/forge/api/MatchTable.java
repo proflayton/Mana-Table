@@ -321,7 +321,8 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
             Integer owner = decisions.size() == 1 ? decisions.get(0).ownerId() : null;
             String actionClass = decisions.isEmpty() ? "resolving" : decisions.size() == 1 ? decisions.get(0).actionClass() : "simultaneous";
             var inspection = publicInspectionContext(owner, actionClass);
-            for (var seat : seats.values()) seat.updatePublicDecision(owner, actionClass, inspection);
+            var choice = publicChoiceContext(owner, actionClass);
+            for (var seat : seats.values()) seat.updatePublicDecision(owner, actionClass, inspection, choice);
             for (var seat : seats.values()) seat.observeTempo();
         }
     }
@@ -330,6 +331,12 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         if (closed || faulted || game.isGameOver() || owner == null || !actionClass.equals("priority")) return null;
         return seats.values().stream().filter(seat -> seat.publicDecision() != null && seat.publicDecision().ownerId() == owner)
                 .map(seat -> seat.publicInspectionContext(boardRevision)).filter(Objects::nonNull).findFirst().orElse(null);
+    }
+
+    private MatchChoices.Context publicChoiceContext(Integer owner, String actionClass) {
+        if (closed || faulted || game.isGameOver() || owner == null || !Set.of("attack", "block", "selection").contains(actionClass)) return null;
+        return seats.values().stream().filter(seat -> seat.publicDecision() != null && seat.publicDecision().ownerId() == owner)
+                .map(seat -> seat.publicChoiceContext(boardRevision)).filter(Objects::nonNull).findFirst().orElse(null);
     }
 
     Map<String, Object> exchangePresence(MatchSession recipient, int actor, com.google.gson.JsonObject request) {
@@ -341,8 +348,13 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
             Integer owner = decisions.size() == 1 ? decisions.get(0).ownerId() : null;
             String actionClass = decisions.size() == 1 ? decisions.get(0).actionClass() : "";
             var context = publicInspectionContext(owner, actionClass);
+            var choice = publicChoiceContext(owner, actionClass);
+            var domain = choice == null ? null : seats.values().stream()
+                    .filter(seat -> seat.publicDecision() != null && seat.publicDecision().ownerId() == choice.playerId())
+                    .map(seat -> seat.publicChoiceDomain(boardRevision)).filter(Objects::nonNull).findFirst().orElse(null);
             return presence.exchange(actor, request, boardRevision, context,
-                    recipient.publicInspectionSubjects(boardRevision), recipient.publicInspectionSubjects(boardRevision));
+                    recipient.publicInspectionSubjects(boardRevision), recipient.publicInspectionSubjects(boardRevision),
+                    choice, domain, recipient.publicChoiceReferences(boardRevision, choice));
         } });
     }
 

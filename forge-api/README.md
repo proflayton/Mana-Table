@@ -467,6 +467,43 @@ against their current public context and exact current occurrence before paintin
 expired or concealed occurrences cannot be recovered from history. Presence is
 neither archived nor replayed, and no persisted-data migration is required.
 
+The next source candidate adds optional `table-choices-v1` negotiation to that
+same `tablePresence` method. It publishes a separate nullable observation field
+`publicChoice: {id, boardRevision, playerId, kind, source?}`. `kind` is exactly
+`attack`, `block` or `target`. Combat contexts omit `source`; a target context
+requires the authority's explicit public battlefield/stack `source` reference.
+This does not grant ordinary-priority inspection during a required decision.
+Only supported non-secret current inputs receive a context: hand/private source
+targeting, searches, generic choosers, simultaneous inputs and face-down
+occurrences remain excluded.
+
+The existing update additionally accepts nullable `choiceContextId` and
+`choice: {source, target?}`. A null choice clears the considered plan. Source
+references are `{kind: "card"|"stack", id: string}`; target references add
+`kind: "player"`. Card IDs are public battlefield `visualId` values, stack IDs
+identify exact public stack entries, and player IDs use their canonical
+nonnegative decimal string. They are never action handles, private positions,
+names or screen coordinates. The source must be the actor's permitted combatant
+or the explicit public targeting source. The optional target must belong to the
+current input's legal public endpoint set. The authenticated connection supplies
+the sender; a supplied player ID cannot impersonate the decision owner.
+
+The response additionally carries
+`choices: [{playerId, contextId, preview: {source, target?}, remainingMilliseconds}]`.
+This contains only the latest considered pair and shares the existing short
+lease, current board/input/disclosure/connection fences and single in-flight,
+four-updates-per-second exchange with inspection. An older host lacking
+`table-choices-v1` keeps ordinary inspection without receiving draft-choice
+fields. No new persistent schema or action-protocol version is introduced.
+The capability remains source-only pending tests and release qualification.
+
+Attacks and blocks already staged through ordinary engine commands are visible
+in combat observations before final confirmation. A cosmetic preview is not a
+second assignment collection, command receipt, declaration or proof of rules
+progress. Replacing/cancelling the input or hiding an endpoint retires it. The
+existing ordered transport remains shared; this capability makes no separate
+lane or server-performance guarantee and adds no match history or timer effect.
+
 Catalog construction eagerly indexes the supplied printings. Initialize it once
 on a worker thread; search results include alternate printings rather than grouping
 them into a single card. Color masks are W=1, U=2, B=4, R=8, G=16; zero finds colorless

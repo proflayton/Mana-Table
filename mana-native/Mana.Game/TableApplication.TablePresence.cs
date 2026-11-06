@@ -24,7 +24,7 @@ internal sealed partial class TableApplication
     {
         tablePresence.Observe(match);
         tablePresence.Update(now, CurrentPublicInspection(), TablePresenceActive,
-            !busy && !polling && !session.IsAdvancing && fixture == null && !ExperienceLabOpen);
+            !busy && !polling && !session.IsAdvancing && fixture == null && !ExperienceLabOpen, CurrentPublicChoice());
     }
 
     private TableInspectionSubject? CurrentPublicInspection()

@@ -59,6 +59,16 @@ right-click cancels. An available hand land's secondary Play land shortcut uses
 quiet text with hover feedback.
 Required selections, mana payment and combat retain their direct clicks and
 compact faces. Right-click inspects a currently visible face without choosing it.
+Source candidate after 0.2.420: while another player considers an attack, block
+or target from an explicitly public battlefield/stack source, a seat-colored rim
+and seat number identify their selected source. A thin dashed line with a hollow
+arrowhead points to the legal public object or player they are considering.
+Changing or cancelling the choice clears that preview. Existing solid combat
+lines already show engine-staged assignments before final declaration confirmation;
+the new preview does not submit or confirm anything. Hand/private sources,
+searches, secret and generic choices stay private. This uses existing gestures
+without moving cards or cameras. Older hosts may omit it. Tests, release
+qualification and exact-candidate human UX review remain pending.
 Source candidate after 0.2.313: choice and ordering galleries also expose
 **Read card** beneath their offered and already disclosed context cards. It opens
 the full inspector without selecting or submitting; **Back to choices** or Escape

@@ -21,6 +21,7 @@ final class MatchPresence {
     private final LongSupplier clock;
     private final Map<Integer, Cue> cues = new HashMap<>();
     private final Map<Integer, Long> sequences = new HashMap<>(), lastUpdates = new HashMap<>();
+    private final MatchChoices choices = new MatchChoices();
     private long revision;
 
     MatchPresence(String gameId, LongSupplier clock) { this.gameId = gameId; this.clock = clock; }
@@ -48,15 +49,23 @@ final class MatchPresence {
     void disconnected(int player) {
         if (cues.remove(player) != null) revision++;
         sequences.remove(player); lastUpdates.remove(player);
+        choices.disconnected(player);
     }
 
     Map<String, Object> exchange(int player, JsonObject request, long boardRevision, Context context,
                                  Set<Subject> senderVisible, Set<Subject> recipientVisible) {
+        return exchange(player, request, boardRevision, context, senderVisible, recipientVisible, null, null, Set.of());
+    }
+
+    Map<String, Object> exchange(int player, JsonObject request, long boardRevision, Context context,
+            Set<Subject> senderVisible, Set<Subject> recipientVisible, MatchChoices.Context choiceContext,
+            MatchChoices.Domain choiceDomain, Set<MatchChoices.Reference> choiceVisible) {
         if (!gameId.equals(text(request.get("gameId")))) throw superseded();
         long sequence = number(request.get("sequence")), requestedBoard = number(request.get("boardRevision"));
         if (sequence <= 0 || requestedBoard < 0) throw new IllegalArgumentException("Invalid table inspection scope");
         String contextId = nullableText(request.get("contextId"));
         Subject subject = subject(request.get("subject"));
+        var choiceRequest = MatchChoices.request(request);
         long now = clock.getAsLong();
         if (cues.entrySet().removeIf(entry -> entry.getValue().expires() <= now || context == null
                 || context.boardRevision() != boardRevision
@@ -80,7 +89,8 @@ final class MatchPresence {
                     "remainingMilliseconds", (int)Math.min(LEASE_MILLIS, cue.expires() - now)));
         }
         visible.sort(Comparator.comparingInt(entry -> (int)entry.get("playerId")));
-        return Map.of("gameId", gameId, "boardRevision", boardRevision, "revision", revision, "cues", List.copyOf(visible));
+        var previews = choices.exchange(player, choiceRequest, sequence, requestedBoard, boardRevision, choiceContext, choiceDomain, choiceVisible, now);
+        return Map.of("gameId", gameId, "boardRevision", boardRevision, "revision", revision + choices.revision(), "cues", List.copyOf(visible), "choices", previews);
     }
 
     static forge.api.sync.SyncTransport.CodedFailure superseded() {

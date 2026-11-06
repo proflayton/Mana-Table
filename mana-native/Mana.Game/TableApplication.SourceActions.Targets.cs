@@ -1,5 +1,6 @@
 using Mana.Contracts;
 using Mana.Magic;
+using Mana.Renderer;
 using Microsoft.Xna.Framework;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
@@ -27,32 +28,39 @@ internal sealed partial class TableApplication
         if (origin == null && !valued) return;
         if (origin != null) canvas.CardFrame(origin.Display with { Size = origin.Display.Size + new Vector2(9) }, valued ? Gold : Blue, 2);
         var originPose = valued ? new Mana.Renderer.Pose(targetingEffectBounds.Center.ToVector2(), targetingEffectBounds.Size.ToVector2()) : origin!.Display;
+        if (CurrentSourceTargetAim(state, selection, originPose, valued, origin?.Id) is { } aim) {
+            var start = originPose.EdgeToward(aim.Point, 5);
+            canvas.Arrow(start, aim.Point, valued ? Red : Blue, 10);
+            if (valued && selection.Effect is { Amount: { } amount, Distribution: not "divided" })
+                PaintPendingDamageMarker(amount, start, aim.Point, aim.Bounds);
+        }
+    }
+
+    private readonly record struct SourceTargetAim(Vector2 Point, Rectangle Bounds, TableChoiceTarget? PublicTarget);
+
+    // The local arrow and shared consideration resolve the same actual hit.
+    // A readable private target can still draw locally, but has no public endpoint.
+    private SourceTargetAim? CurrentSourceTargetAim(GameSnapshot state, TargetSelectionPayload selection,
+        Pose originPose, bool allowSelf, string? originId)
+    {
         var hit = HitAt(pointer);
-        Vector2? target = null;
-        Rectangle? targetBounds = null;
         if (hit is { Card: { Selectable: true, Key.Length: > 0 } card } && CurrentHit(hit)
             && IsCardActionable(card) && !hit.Id.StartsWith("targeting-", StringComparison.Ordinal)) {
             var destination = matchPresentation.Cards.Cards.LastOrDefault(entry => entry.ChoiceSlot < 0 && SameVisibleCard(entry.Card, card));
-            if (destination != null && (valued || destination.Id != origin?.Id)) {
-                target = destination.Display.EdgeToward(originPose.Center, 5);
-                targetBounds = destination.Display.Bounds;
+            if (destination != null && (allowSelf || destination.Id != originId)) {
+                return new(destination.Display.EdgeToward(originPose.Center, 5), destination.Display.Bounds, PublicChoiceTarget(hit));
             }
             else if (hit.Zone == "Stack") {
                 var effect = new Mana.Renderer.Pose(hit.Bounds.Center.ToVector2(), hit.Bounds.Size.ToVector2());
-                target = effect.EdgeToward(originPose.Center, 5);
-                targetBounds = hit.Bounds;
+                return new(effect.EdgeToward(originPose.Center, 5), hit.Bounds, PublicChoiceTarget(hit));
             }
         } else if (hit?.PlayerId is { } player && CurrentHit(hit) && selection.Players.Contains(player) && heroPositions.TryGetValue(player, out var hero)) {
             var direction = originPose.Center - hero;
             int radius = player == state.ViewerId ? 51 : 40;
-            target = hero + (direction.LengthSquared() > 0 ? Vector2.Normalize(direction) : Vector2.UnitY) * radius;
-            targetBounds = new((int)hero.X - radius, (int)hero.Y - radius, radius * 2, radius * 2);
+            return new(hero + (direction.LengthSquared() > 0 ? Vector2.Normalize(direction) : Vector2.UnitY) * radius,
+                new((int)hero.X - radius, (int)hero.Y - radius, radius * 2, radius * 2),
+                new(TableChoiceTargetKind.Player, player.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         }
-        if (target is { } point) {
-            var start = originPose.EdgeToward(point, 5);
-            canvas.Arrow(start, point, valued ? Red : Blue, 10);
-            if (valued && selection.Effect is { Amount: { } amount, Distribution: not "divided" })
-                PaintPendingDamageMarker(amount, start, point, targetBounds);
-        }
+        return null;
     }
 }
