@@ -387,18 +387,24 @@ test('completed mixed games and real110-trigger projection qualification are man
   const restore = steps.findIndex(step => /restore-package\.ps1 -Directory dist\/ci-inputs -RequireHarness -RequireEngineLauncher/.test(step));
   const natural = steps.findIndex(step => /--qualify-mixed-game --mixed-game-mode polled-background --campaign-profile natural/.test(step));
   const workload = steps.findIndex(step => /--smoke-polled-fanout/.test(step));
+  const payment = steps.findIndex(step => /--smoke-polled-mana-output/.test(step));
   const admit = steps.findIndex(step => /node scripts\/mana-table\/mixed-game-qualification.cjs /.test(step));
-  assert.ok(restore >= 0 && restore < natural && natural < workload && workload < admit);
+  assert.ok(restore >= 0 && restore < natural && natural < workload && workload < payment && payment < admit);
   assert.match(steps[natural], /--engine-jar \(Join-Path \$env:MANA_NATIVE_PACKAGE 'engine\/forge-engine.jar'\)/);
   assert.match(steps[natural], /--profile dist\/mixed-game-qualification-checks\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /);
   assert.match(steps[workload], /--engine-jar \$env:MANA_NATIVE_FIXTURE_LAUNCHER --production-engine-jar \(Join-Path \$env:MANA_NATIVE_PACKAGE 'engine\/forge-engine.jar'\)/);
   assert.match(steps[workload], /--source-revision \$env:GITHUB_SHA --source-manifest dist\/ci-inputs\/ci-engine-manifest.json/);
   assert.match(steps[workload], /--profile dist\/mixed-game-fanout-checks\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /);
+  assert.match(steps[payment], /--engine-jar \$env:MANA_NATIVE_FIXTURE_LAUNCHER --production-engine-jar \(Join-Path \$env:MANA_NATIVE_PACKAGE 'engine\/forge-engine.jar'\)/);
+  assert.match(steps[payment], /--source-revision \$env:GITHUB_SHA --source-manifest dist\/ci-inputs\/ci-engine-manifest.json/);
+  assert.match(steps[payment], /--profile dist\/mixed-game-mana-output-checks\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /);
+  assert.match(steps[admit], /--mana-output dist\/mixed-game-mana-output-checks\/polled-mana-output/);
   assert.match(steps[admit], /--source-revision \$env:GITHUB_SHA --output dist\/mixed-game-qualification-checks\/qualification.json\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /);
   assert.match(job, /name: mana-native-ui-inputs-\$\{\{ github.sha \}\}\n          path: dist\/ci-inputs\n          digest-mismatch: error/);
   assert.match(job, /name: package-windows-x64.zip\n          path: dist\/ci-inputs\n          skip-decompress: true\n          digest-mismatch: error/);
   assert.match(job, /if: always\(\)\n        uses: actions\/upload-artifact@/);
   assert.match(job, /private hands\/observations remain CI evidence/);
+  for (const extension of ['json', 'log', 'jsonl.gz']) assert.ok(job.includes(`dist/mixed-game-mana-output-checks/**/*.${extension}`));
   assert.match(job, /name: mana-native-mixed-game-evidence-[\s\S]*compression-level: 1/,
     'Compress only the new highly repetitive private qualification JSON evidence.');
 });

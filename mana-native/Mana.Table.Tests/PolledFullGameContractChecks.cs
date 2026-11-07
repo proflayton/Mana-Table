@@ -11,6 +11,7 @@ internal static class PolledFullGameContractChecks
 {
     internal static async Task RunAsync(string profile, Action<bool, string> check)
     {
+        await PolledInputReceiptChecks.RunAsync(check);
         MixedGamePublicCohortChecks.Run(check);
         FanoutProjectionCaptureChecks.Run(check);
         FanoutProjectionArchiveChecks.Run(profile, check);
@@ -20,9 +21,43 @@ internal static class PolledFullGameContractChecks
         await RejectedCommandWaitsForOrdinary(profile, check);
         await SourceActionUsesOrdinaryOwner(profile, check);
         await ServerOwnedRoutinePriority(profile, check);
+        await FullControlRoutinePriority(profile, check);
         await ServerHeldActionablePriority(profile, check);
         await RetiredQueuedServerAction(profile, check);
+        await ServerAutoQuiet(profile, check);
+        await ServerAutoResponses(profile, check);
+        await ServerAutoStops(profile, check);
+        await ServerAutoBatchedAttention(profile, check);
         await PolledEvidenceInboxChecks.RunAsync(profile, check);
+        await CampaignOwnerWaitChecks.RunAsync(profile, check);
+        await PollScheduling(profile, check);
+    }
+
+    private static async Task PollScheduling(string profile, Action<bool, string> check)
+    {
+        var state = Priority();
+        using var run = new DriverCase(profile, "poll-scheduling", state, state);
+        check(run.Driver.TimeUntilNextPoll == TimeSpan.Zero && run.Port.Reads == 0,
+            "Reading the next poll deadline does not create a poll or change its schedule");
+        await run.Prime();
+        check(run.Driver.TimeUntilNextPoll == TimeSpan.FromMilliseconds(50),
+            "A no-state bootstrap poll retains its normal 50 ms poll interval");
+        run.Ticks = 49;
+        await run.Driver.ObserveAsync();
+        check(run.Driver.TimeUntilNextPoll == TimeSpan.FromMilliseconds(1) && run.Port.Reads == 1,
+            "The scheduler exposes the remaining poll delay without admitting an early ordinary read");
+        run.Ticks = 50;
+        run.Port.HoldNextRead = true;
+        await run.Driver.ObserveAsync();
+        await run.Port.NextReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        check(run.Driver.TimeUntilNextPoll == null && run.Driver.Client.Polling,
+            "A pending ordinary poll has no timer due until its actual queued completion arrives");
+        run.Port.ReleaseNextRead.TrySetResult(state);
+        await Drain(run.Driver.Client);
+        check(run.Driver.TimeUntilNextPoll == TimeSpan.FromMilliseconds(120),
+            "After its ordinary completion a decision-bearing client preserves the existing 120 ms cadence");
+        run.Driver.Dispose();
+        check(run.Driver.TimeUntilNextPoll == null, "A closed player exposes no future poll deadline");
     }
 
     private static async Task OrdinaryOwner(string profile, Action<bool, string> check)
@@ -206,6 +241,19 @@ internal static class PolledFullGameContractChecks
             "An ordinary polled owner grants server Auto once, observes its certified progress and never queries/evaluates/dispatches a per-prompt fallback for routine priority");
     }
 
+    private static async Task FullControlRoutinePriority(string profile, Action<bool, string> check)
+    {
+        var initial = ServerPriority(PriorityResponseAvailability.Absent);
+        using var run = new DriverCase(profile, "full-control-routine", initial, initial,
+            passing: ConnectedPlayerPassingMode.FullControl);
+        run.Port.PriorityContinuationAvailable = true;
+        run.Port.AfterExecute = initial with { Revision = 11, BoardRevision = 11, Decision = null };
+        await run.Prime(); await run.Driver.ObserveAsync(); await run.Driver.StepAsync();
+        check(run.Port.Commands is [PassPriority] && run.Driver.ProviderAcceptances == 1
+                && run.Driver.AutoEvidence is { AcceptedGrants: 0, CertifiedAutomaticPasses: 0, AcceptedPolicyPriorityPasses: 1 },
+            "An explicitly FullControl ordinary test player passes its own current prompt without installing standing Auto or claiming its receipts");
+    }
+
     private static async Task ServerHeldActionablePriority(string profile, Action<bool, string> check)
     {
         foreach (var availability in new[] { PriorityResponseAvailability.Available, PriorityResponseAvailability.Unknown }) {
@@ -266,6 +314,176 @@ internal static class PolledFullGameContractChecks
         } }
     };
 
+    private static GameSnapshot AutoPriority() => PriorityAcknowledgmentChecks.Quiet() with {
+        PriorityContinuation = new(0, "", null, PriorityContinuationStatus.Idle, "idle", 0, []),
+        Decision = PriorityAcknowledgmentChecks.Quiet().Decision! with { Payload =
+            ((PriorityPayload)PriorityAcknowledgmentChecks.Quiet().Decision!.Payload) with {
+                CanAutoPass = false, ResponseAvailability = PriorityResponseAvailability.Available } }
+    };
+
+    private static void NativeAutoPort(DriverCase run, Func<GameSnapshot, GameSnapshot>? passed = null)
+    {
+        run.Port.PriorityContinuationAvailable = true;
+        run.Port.AfterCommand = command => {
+            var state = run.Port.State;
+            var next = command switch {
+                GrantPriorityContinuation grant => state with { Revision = state.Revision + 1,
+                    PriorityContinuation = Granted(grant, !(state.ActivePlayerId == state.ViewerId && grant.PhaseStops.Contains(state.PhaseKey))
+                        && (grant.Mode == PriorityContinuationMode.Quiet
+                        || ((PriorityPayload)state.Decision!.Payload).ResponseAvailability == PriorityResponseAvailability.Absent)
+                        ? PriorityContinuationStatus.Active : PriorityContinuationStatus.Held) },
+                RevokePriorityContinuation revoke => state with { Revision = state.Revision + 1,
+                    PriorityContinuation = state.PriorityContinuation! with { Sequence = revoke.ThroughSequence,
+                        Status = PriorityContinuationStatus.Revoked, ReasonCode = "withdrawn" } },
+                PassPriority => passed?.Invoke(state) ?? state with { Revision = state.Revision + 1, Decision = null },
+                _ => throw new InvalidDataException("An Auto control fixture cannot invent another command.")
+            };
+            run.Port.RichState = next;
+            return next;
+        };
+    }
+
+    private static async Task PublishAuto(DriverCase run, GameSnapshot state)
+    {
+        run.Port.State = state; run.Port.RichState = state;
+        run.Driver.Client.Poll(true, _ => { }); await Drain(run.Driver.Client);
+        await run.Driver.ObserveAsync(); await Drain(run.Driver.Client);
+    }
+
+    private static async Task ServerAutoQuiet(string profile, Action<bool, string> check)
+    {
+        var initial = AutoPriority();
+        using var run = new DriverCase(profile, "server-auto-quiet", initial, initial,
+            passing: ConnectedPlayerPassingMode.ServerAuto);
+        NativeAutoPort(run);
+        await run.Prime(); await run.Driver.ObserveAsync(); await Drain(run.Driver.Client);
+        await run.Driver.ObserveAsync(); await run.Driver.StepAsync();
+        var original = ((PriorityPayload)initial.Decision!.Payload).QuietYieldToken;
+        check(run.Port.Commands is [GrantPriorityContinuation { Mode: PriorityContinuationMode.Quiet } grant]
+                && grant.QuietYieldToken == original && run.Port.OwnedReads == 0 && run.Policy.Evaluations == 0
+                && run.Driver.ClientAdmissions == 0 && run.Driver.ProviderAcceptances == 0,
+            "Shipping ServerAuto uses the shared attention predicate to consent once to an unchanged opponent window with a playable instant, without policy pass spam or input credit");
+        var active = run.Port.State;
+        await PublishAuto(run, active with { Revision = active.Revision + 1, Status = "resolving", Decision = null,
+            DecisionOwnerId = 1, PriorityPlayerId = 1, ActionClass = "priority" });
+        await run.Driver.StepAsync();
+        check(run.Port.Commands.Count == 1 && run.Policy.Evaluations == 0 && run.Driver.Client.PriorityContinuationReserved,
+            "A foreign priority publication retains the original Quiet grant without answering another seat or creating a second runner");
+        await PublishAuto(run, active with { Revision = run.Port.State.Revision + 1,
+            PriorityContinuation = active.PriorityContinuation! with { AutomaticPasses = 23 } });
+        await run.Driver.StepAsync();
+        check(run.Driver.AutoEvidence is { AcceptedGrants: 1, NoResponseAcceptedGrants: 0, QuietAcceptedGrants: 1,
+                CertifiedAutomaticPasses: 23, NoResponseCertifiedAutomaticPasses: 0, QuietCertifiedAutomaticPasses: 23, QuietConsentWindows: 1 }
+                && run.Driver.ConsentEvidence is { TotalGrants: 1, RetiredPrefix: 0, Receipts.Length: 1 }
+                && run.Driver.ConsentEvidence.Receipts[0].Command.QuietYieldToken == original
+                && run.Driver.ConsentEvidence.Receipts[0].CertifiedAutomaticPasses == 23,
+            "Per-mode Auto evidence credits only an accepted grant's ordinary certified pass high-water and retains its exact original-token private receipt");
+        var changed = run.Port.State with { Revision = run.Port.State.Revision + 1,
+            Decision = run.Port.State.Decision! with { Payload = ((PriorityPayload)run.Port.State.Decision.Payload) with {
+                QuietYieldToken = "unrelated-replacement-token" } } };
+        await PublishAuto(run, changed);
+        check(run.Driver.AutoEvidence.QuietAcceptedGrants == 1 && run.Port.Commands.OfType<GrantPriorityContinuation>().All(command =>
+                command.Mode != PriorityContinuationMode.Quiet || command.QuietYieldToken == original)
+                && run.Port.State.PriorityContinuation?.Mode == PriorityContinuationMode.NoResponse,
+            "A changed permission token ends the original Quiet window and requires attention instead of silently granting a replacement token");
+    }
+
+    private static async Task ServerAutoResponses(string profile, Action<bool, string> check)
+    {
+        foreach (bool newAction in new[] { false, true }) {
+            var initial = AutoPriority();
+            using var run = new DriverCase(profile, "server-auto-response-" + newAction, initial, initial,
+                passing: ConnectedPlayerPassingMode.ServerAuto);
+            NativeAutoPort(run, state => newAction
+                ? PriorityAcknowledgmentChecks.Stack(PriorityAcknowledgmentChecks.Resolve(state), "unacknowledged-next-action")
+                : PriorityAcknowledgmentChecks.Resolve(state));
+            await run.Prime(); await run.Driver.ObserveAsync(); await Drain(run.Driver.Client);
+            var stacked = PriorityAcknowledgmentChecks.Stack(run.Port.State);
+            await PublishAuto(run, stacked);
+            await run.Driver.ObserveAsync();
+            check(run.Port.Commands.OfType<GrantPriorityContinuation>().Count(command => command.Mode == PriorityContinuationMode.Quiet) == 1
+                    && run.Port.State.Stack.Length == 1 && run.Port.State.PriorityContinuation?.Mode == PriorityContinuationMode.NoResponse
+                    && run.Port.OwnedReads == 1 && run.Policy.Evaluations == 0,
+                "An announced stack action interrupts Quiet and remains an actionable ordinary response until the actual manual policy answers it");
+            await run.Driver.StepAsync();
+            await run.Driver.ObserveAsync(); await Drain(run.Driver.Client);
+            await run.Driver.ObserveAsync();
+            check(run.Driver.ClientAdmissions == 1 && run.Driver.ProviderAcceptances == 1
+                    && run.Driver.AutoEvidence.AcceptedPolicyPriorityPasses == 1 && run.Policy.Evaluations == 1,
+                "The exact admitted manual response is counted separately from every NoResponse/Quiet grant and negative consent receipt");
+            check(newAction ? run.Driver.AutoEvidence.QuietAcceptedGrants == 1 && run.Port.State.Stack.Length == 1
+                    : run.Driver.AutoEvidence.QuietAcceptedGrants == 2 && run.Port.State.Stack.IsEmpty
+                        && run.Port.Commands.OfType<GrantPriorityContinuation>().Last().QuietYieldToken == "after-accepted-resolution",
+                newAction ? "A new public action arriving during the accepted pass keeps its own response unacknowledged and blocks automatic Quiet rearming"
+                    : "Only the shared exact-response lineage allows Quiet to resume after correlated resolution, using the current provider token");
+        }
+    }
+
+    private static async Task ServerAutoStops(string profile, Action<bool, string> check)
+    {
+        var initial = AutoPriority();
+        using (var run = new DriverCase(profile, "server-auto-held", initial, initial,
+            passing: ConnectedPlayerPassingMode.ServerAuto)) {
+            NativeAutoPort(run);
+            await run.Prime(); await run.Driver.ObserveAsync(); await Drain(run.Driver.Client);
+            run.Driver.SetAutoHeld(true);
+            await run.Driver.ObserveAsync(); await Drain(run.Driver.Client); await run.Driver.ObserveAsync();
+            check(run.Driver.AutoEvidence.QuietAcceptedGrants == 1 && !run.Driver.Client.PriorityContinuationReserved
+                    && run.Port.State.Decision != null && run.Policy.Evaluations == 0,
+                "Taking control holds native Auto and acknowledges withdrawal without answering or renewing its unchanged window");
+            run.Driver.SetAutoHeld(false);
+            await run.Driver.ObserveAsync(); await Drain(run.Driver.Client);
+            check(run.Driver.AutoEvidence is { QuietAcceptedGrants: 2, QuietConsentWindows: 1 },
+                "Explicitly resuming Auto may consent again to the same unchanged original window without inventing a distinct token");
+            var required = run.Port.State with { Revision = run.Port.State.Revision + 1, ActionClass = "selection", PriorityPlayerId = null,
+                Decision = new("required-number", new(), new NumberPayload("1")) };
+            await PublishAuto(run, required); await run.Driver.ObserveAsync();
+            check(run.Port.State.Decision?.Payload is NumberPayload && run.Driver.AutoEvidence.QuietAcceptedGrants == 2
+                    && run.Driver.ClientAdmissions == 0 && run.Driver.ProviderAcceptances == 0,
+                "A required nonpriority choice ends Quiet and remains unanswered by the Auto coordinator");
+        }
+        var own = initial with { ActivePlayerId = initial.ViewerId, PhaseKey = "MAIN1",
+            Decision = initial.Decision! with { Payload = ((PriorityPayload)initial.Decision.Payload) with {
+                CanAutoPass = true, ResponseAvailability = PriorityResponseAvailability.Absent } } };
+        using (var run = new DriverCase(profile, "server-auto-own-stop", own, own,
+            passing: ConnectedPlayerPassingMode.ServerAuto, phaseStops: ["MAIN1"])) {
+            NativeAutoPort(run);
+            await run.Prime(); await run.Driver.ObserveAsync(); await Drain(run.Driver.Client);
+            check(run.Port.Commands is [GrantPriorityContinuation { Mode: PriorityContinuationMode.NoResponse, PhaseStops: ["MAIN1"] }]
+                    && run.Driver.AutoEvidence.QuietAcceptedGrants == 0 && run.Driver.ClientAdmissions == 0,
+                "An own-turn configured phase stop reaches the server intact and never becomes opponent-style Quiet consent");
+            await run.Driver.ObserveAsync(); await run.Driver.StepAsync();
+            check(run.Driver.AutoEvidence is { NoResponseAcceptedGrants: 1, AcceptedPolicyPriorityPasses: 1, CertifiedAutomaticPasses: 0 }
+                    && run.Driver.ProviderAcceptances == 1 && run.Policy.Evaluations == 1,
+                "Even certified absence of a response cannot bypass an own-turn phase stop: crossing it requires a separate admitted manual policy input");
+        }
+    }
+
+    private static async Task ServerAutoBatchedAttention(string profile, Action<bool, string> check)
+    {
+        var initial = AutoPriority() with { ActivePlayerId = AutoPriority().ViewerId };
+        using var run = new DriverCase(profile, "server-auto-batched-attention", initial, initial,
+            passing: ConnectedPlayerPassingMode.ServerAuto);
+        NativeAutoPort(run);
+        await run.Prime(); await run.Driver.ObserveAsync(); await Drain(run.Driver.Client);
+        var before = run.Port.State;
+        var required = before with { Revision = before.Revision + 1, ActionClass = "selection", PriorityPlayerId = null,
+            Decision = new("intermediate-required-choice", new(), new NumberPayload("1")) };
+        var current = before with { Revision = required.Revision + 1,
+            Decision = before.Decision! with { Id = "current-after-batched-choice" } };
+        run.Driver.Client.Post(() => run.Driver.Client.Accept(required));
+        run.Driver.Client.Post(() => run.Driver.Client.Accept(current));
+        run.Driver.Client.Pump();
+        check(run.Driver.AutoNeedsResponse && ReferenceEquals(run.Driver.Client.State, current)
+                && run.Policy.Evaluations == 0 && run.Driver.ProviderAcceptances == 0,
+            "Each accepted callback feeds shared attention even when one owner pump admits a required-choice frame and the later current priority frame");
+        run.Port.State = current; run.Port.RichState = current;
+        await run.Driver.ObserveAsync(); await run.Driver.StepAsync();
+        check(!run.Driver.AutoNeedsResponse && run.Driver.ClientAdmissions == 1 && run.Driver.ProviderAcceptances == 1
+                && run.Port.Commands.Last() is PassPriority { DecisionId: "current-after-batched-choice" },
+            "An actual manual policy answer acknowledges only the exact current accepted snapshot after a batched pump, with no stale attention revision or metadata input credit");
+    }
+
     private static PriorityContinuationState Granted(GrantPriorityContinuation command, PriorityContinuationStatus status)
         => new(command.Sequence, command.GrantId, command.Mode, status,
             status == PriorityContinuationStatus.Active ? "no-response" : "response-available", 0, command.PhaseStops);
@@ -311,7 +529,9 @@ internal static class PolledFullGameContractChecks
         internal Port Port { get; }
         internal ScriptedPolicy Policy { get; }
         internal ConnectedPlayerDriver Driver { get; }
-        internal DriverCase(string profile, string name, GameSnapshot ordinary, GameSnapshot rich, bool useSource = false)
+        internal long Ticks;
+        internal DriverCase(string profile, string name, GameSnapshot ordinary, GameSnapshot rich, bool useSource = false,
+            ConnectedPlayerPassingMode passing = ConnectedPlayerPassingMode.ServerNoResponse, ImmutableArray<string> phaseStops = default)
         {
             string directory = Path.Combine(profile, "polled-full-game-contracts", name);
             Directory.CreateDirectory(directory);
@@ -319,7 +539,7 @@ internal static class PolledFullGameContractChecks
             Port = new(ordinary, rich) { UseSource = useSource };
             Policy = new(useSource);
             Driver = new(Port, Port, Port, Port, Port, evidence, 261104,
-                MixedGameDriveMode.PolledBackground, Policy, () => 0);
+                MixedGameDriveMode.PolledBackground, Policy, () => Ticks, passing, phaseStops);
             Driver.BindLobby(Port.Lobby);
         }
         internal async Task Prime()

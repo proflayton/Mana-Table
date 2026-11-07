@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Mana.AI;
+using Mana.Client;
 using Mana.Contracts;
 
 namespace Mana.Table;
@@ -12,6 +13,22 @@ namespace Mana.Table;
 // Bot observations never enter a connected human reader.
 internal static class PolledLobbyPorts
 {
+    internal enum PlayerReceiptKind { Input, ObservationAcknowledgement, Control }
+    internal sealed record PlayerReceiptCounts(int Total, int Inputs, int ObservationAcknowledgements, int Controls)
+    {
+        internal bool Conserved => Total == Inputs + ObservationAcknowledgements + Controls;
+    }
+    internal static PlayerReceiptKind ClassifyPlayerReceipt(GameCommand command) => command switch {
+        AcknowledgePriorityObservation => PlayerReceiptKind.ObservationAcknowledgement,
+        GrantPriorityContinuation or RevokePriorityContinuation or GrantFiniteStackYield or RevokeFiniteStackYield
+            or IgnorePriorityAbility or RestorePriorityAbility or UndoAction or UndoLastAction or PassForNow or PassTurn => PlayerReceiptKind.Control,
+        PassPriority or AutoPassPriority or KeepOpeningHand or MulliganOpeningHand or PayMana or AutoPayOptionalPayment or CancelPayment
+            or CompleteAttackers or CompleteBlockers or CompleteSelection or CancelSelection or AcceptConfirmation or DeclineConfirmation
+            or AcknowledgeDecision or AcknowledgeReveal or SelectCard or PlayCard or ActivateCard or UseManaSource or SpendPoolMana
+            or SelectPlayer or ToggleAttackPlayer or ToggleAttackPermanent or ToggleBlock or ChooseOptions or OrderOptions
+            or ChooseNumber or EnterText or AllocateAmounts or SkipAllocation or UseOfferedAction or PlaceFromHand => PlayerReceiptKind.Input,
+        _ => throw new InvalidDataException("The polled receipt observer has no explicit semantic class for " + command.GetType().Name)
+    };
     internal sealed record CommandLatency(string Kind, long StartedTicks, double Milliseconds);
     internal sealed class ReadPort(IMatchConnection inner) : IMatchConnection
     {
@@ -20,16 +37,25 @@ internal static class PolledLobbyPorts
         internal Action<GameSnapshot?>? Observed { get; init; }
         internal Action<GameCommand, GameSnapshot?>? Acknowledged { get; init; }
         private int hold;
-        private int reads, accepted, failures;
+        private int reads, accepted, inputs, observationAcknowledgements, controls, failures;
+        private readonly object receiptGate = new();
         internal int Reads => Volatile.Read(ref reads);
-        internal int Accepted => Volatile.Read(ref accepted);
+        internal PlayerReceiptCounts ReceiptCounts { get { lock (receiptGate) return new(accepted, inputs, observationAcknowledgements, controls); } }
+        internal int Accepted => ReceiptCounts.Total;
+        internal int InputAccepted => ReceiptCounts.Inputs;
         internal int Failures => Volatile.Read(ref failures);
         internal ConcurrentQueue<CommandLatency> CommandLatencies { get; } = new();
         internal GameSnapshot? Held { get; private set; }
         internal int AcceptedAtCapture { get; private set; }
+        internal int InputAcceptedAtCapture { get; private set; }
         internal TaskCompletionSource Captured { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        internal void Arm() => Interlocked.Exchange(ref hold, 1);
+        // Only the owner thread may arm immediately before Client.Poll marks
+        // Polling. An existing metadata readback must finish first, otherwise
+        // that read could steal the intended ordinary-poll witness.
+        internal bool TryArmOrdinaryPoll(ClientSession client)
+            => !client.Closed && !client.Busy && !client.Polling && !client.PriorityObservationInFlight
+                && Interlocked.CompareExchange(ref hold, 1, 0) == 0;
         public async Task<GameSnapshot?> ObserveAsync()
         {
             Interlocked.Increment(ref reads);
@@ -37,7 +63,9 @@ internal static class PolledLobbyPorts
             if (state?.Decision is { } decision) decisions[decision.Id] = state;
             Observed?.Invoke(state);
             if (Interlocked.Exchange(ref hold, 0) == 1) {
-                Held = state; AcceptedAtCapture = Accepted; Captured.TrySetResult(); await Release.Task;
+                Held = state;
+                var captured = ReceiptCounts; AcceptedAtCapture = captured.Total; InputAcceptedAtCapture = captured.Inputs;
+                Captured.TrySetResult(); await Release.Task;
             }
             return state;
         }
@@ -45,8 +73,17 @@ internal static class PolledLobbyPorts
         {
             long started = Stopwatch.GetTimestamp();
             try {
+                var kind = ClassifyPlayerReceipt(command);
                 var before = command is DecisionCommand decision ? decisions.GetValueOrDefault(decision.DecisionId) : null;
-                await inner.ExecuteAsync(command); Interlocked.Increment(ref accepted);
+                await inner.ExecuteAsync(command);
+                lock (receiptGate) {
+                    accepted++;
+                    switch (kind) {
+                        case PlayerReceiptKind.Input: inputs++; break;
+                        case PlayerReceiptKind.ObservationAcknowledgement: observationAcknowledgements++; break;
+                        case PlayerReceiptKind.Control: controls++; break;
+                    }
+                }
                 CommandLatencies.Enqueue(new(command.GetType().Name, started, Stopwatch.GetElapsedTime(started).TotalMilliseconds));
                 Acknowledged?.Invoke(command, before);
             }

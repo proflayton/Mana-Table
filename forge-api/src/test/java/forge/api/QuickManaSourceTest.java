@@ -22,6 +22,69 @@ import static org.testng.Assert.*;
 public class QuickManaSourceTest {
     private static final com.google.gson.Gson JSON = new GsonBuilder().serializeNulls().setPrettyPrinting().create();
 
+    @DataProvider public Object[][] ownedContexts() { return new Object[][] {{false}, {true}}; }
+
+    @Test(dataProvider = "ownedContexts", timeOut = 90000)
+    public void ownedAndOrdinaryOffersShareExactManaCapabilitiesWithoutAddingCostPreviews(boolean payment) throws Exception {
+        var sources = List.of("Wastes", "Forest", "Command Tower", "Simic Growth Chamber", "Crystal Vein", "Ancient Tomb");
+        try (var game = new RulesScenario("owned-mana-capability-" + payment, Map.of(0, sources), "Foundry Inspector", "Progenitus")) {
+            var input = main(game);
+            if (payment) {
+                var spell = zone(viewer(input.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
+                assertTrue(game.answer(input, Map.of("action", "card", "key", text(spell, "key"))));
+                game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").startsWith("InputPayMana"));
+            }
+            HeadlessPlatform.query(game.table, () -> {
+                var before = current(game);
+                var actor = game.table.game.getRegisteredPlayers().get(0);
+                var previews = new java.util.concurrent.atomic.AtomicInteger();
+                try (var boundary = new AutomatedObservationTest.DuringDiscovery(actor, ZoneType.Battlefield,
+                        ManaCostPreviewProjection.class, "describe", previews::incrementAndGet)) {
+                    var owned = JSON.toJsonTree(game.session(0).decisionObservation()).getAsJsonObject();
+                    var domain = owned.getAsJsonObject("domain");
+                    assertEquals(text(domain, "coverage"), "Complete");
+                    assertEquals(previews.get(), 0, "Adding output capabilities cannot add on-demand funding previews to owned discovery");
+                    var catalogs = new java.util.LinkedHashMap<String, JsonObject>();
+                    for (String name : sources) {
+                        var source = card(before.state(), name);
+                        var ownedSource = domain.getAsJsonArray("sources").asList().stream().map(value -> value.getAsJsonObject())
+                                .filter(value -> text(value, "sourceCardKey").equals(text(source, "key"))).findFirst().orElseThrow();
+                        var ordinary = query(game, before, source); catalogs.put(name, ownedSource);
+                        assertEquals(ownedSource.getAsJsonArray("actions").size(), ordinary.getAsJsonArray("actions").size());
+                        for (var value : ownedSource.getAsJsonArray("actions")) {
+                            var action = value.getAsJsonObject();
+                            var ordinaryAction = ordinary.getAsJsonArray("actions").asList().stream().map(row -> row.getAsJsonObject())
+                                    .filter(row -> text(row, "id").equals(text(action, "id"))).findFirst().orElseThrow();
+                            assertEquals(action.get("quickMana"), ordinaryAction.get("quickMana"), "Both readers certify the same exact route output");
+                            assertFalse(action.has("costPreview"), "Owned catalogs retain capability facts without optional cost previews");
+                        }
+                    }
+                    assertEquals(outputs(catalogs.get("Wastes")), List.of(Map.of("C", 1)));
+                    assertEquals(outputs(catalogs.get("Forest")), List.of(Map.of("G", 1)));
+                    assertEquals(Set.copyOf(outputs(catalogs.get("Command Tower"))), colored(1));
+                    assertEquals(outputs(catalogs.get("Simic Growth Chamber")), List.of(Map.of("G", 1, "U", 1)));
+                    assertTrue(outputs(catalogs.get("Ancient Tomb")).isEmpty(), "An additional damage effect is never a quick capability");
+                    var crystal = catalogs.get("Crystal Vein");
+                    assertEquals(outputs(crystal), List.of(Map.of("C", 1)));
+                    var consuming = crystal.getAsJsonArray("actions").asList().stream().map(value -> value.getAsJsonObject())
+                            .filter(action -> !action.has("quickMana")).findFirst().orElseThrow();
+                    var semantics = domain.getAsJsonArray("actions").asList().stream().map(value -> value.getAsJsonObject())
+                            .filter(action -> text(action, "actionId").equals(text(consuming, "id"))).findFirst().orElseThrow();
+                    assertEquals(semantics.getAsJsonObject("production"), JSON.toJsonTree(Map.of("knowledge", "Known",
+                            "alternatives", List.of(Map.of("colors", Map.of("C", 2))))));
+                    assertEquals(current(game).state(), before.state(), "Neither capability reader pays, taps, sacrifices or advances the owned input");
+                    if (!payment) {
+                        var spell = zone(viewer(before.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
+                        query(game, before, spell);
+                        assertEquals(previews.get(), 1, "The same preview hook still witnesses an explicit ordinary cost query");
+                    }
+                    Files.writeString(game.evidence.resolve("owned-and-query-capabilities.json"), JSON.toJson(Map.of("owned", owned, "catalogs", catalogs)));
+                }
+                return null;
+            });
+        }
+    }
+
     @Test(timeOut = 90000)
     public void currentSourceFactsDistinguishOutputChoicesFromAdditionalCostsAndEffects() throws Exception {
         var sources = List.of("Forest", "Breeding Pool", "Command Tower", "High Market", "Lotus Field",

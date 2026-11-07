@@ -76,6 +76,7 @@ internal static partial class HeadlessPresentationSmoke
                     PriorityContinuationChecks.Run(profile, Check);
                 }
                 else if (group == "server-auto") {
+                    Utf8JsonLinesChecks.Run(Check);
                     PriorityContinuationWireChecks.Run(Check);
                     ServerAutoPresentationChecks.Run(profile, Check);
                     VisibleAutoPriorityChecks.Run(profile, Check);
@@ -101,6 +102,7 @@ internal static partial class HeadlessPresentationSmoke
                 return;
             }
             PresentationRunChecks.Run(profile, Check);
+            Utf8JsonLinesChecks.Run(Check);
             StartupPlaybackChecks.Run(profile, Check);
             CheckFinishedTable(profile, Check, trace, performance);
             ProviderIsolationChecks.Run(Check);

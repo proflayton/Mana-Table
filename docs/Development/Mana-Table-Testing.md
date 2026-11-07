@@ -658,16 +658,28 @@ assembly hashes. A local overlay remains an overlay, not a clean release build.
 
 The two scripted player drivers receive only their own connection's optional
 owned-decision observations, query current source offers, and submit through
-`ClientSession` and ordinary `matchAction`. In polled mode they negotiate the
-production server-owned `NoResponse` continuation, with no own-turn phase stops.
+`ClientSession` and ordinary `matchAction`. Polled campaigns explicitly select
+`ServerAuto`, sharing the shipping client's non-rendering `PriorityAttention`
+and `QuietPriorityPolicy`, with no own-turn phase stops. These choose production
+server-owned `NoResponse` or bounded `Quiet` continuation using its originally
+captured window token. A cast, trigger, declared combat or required choice still
+requires attention; Quiet cannot refresh its token to acknowledge that change.
 The script neither evaluates a policy nor sends a replacement `PassPriority`
-for routine priority already owned by that grant. Actual Available/Unknown
-response windows and required choices still use the ordinary policy while
-retaining standing Auto. Explicit Take control, inspection, manual mana or
+while the server owns that priority. Actual response windows and required
+choices still use the ordinary policy. Explicit Take control, inspection, manual mana or
 recovery withdraws consent; manual mana waits for that acknowledgement before
 dispatch. Grant, withdrawal and observation-credit metadata receipts cannot count
 as acceptance of that script action. Both ordinary players must witness actual
-server-certified automatic passes before a completed game qualifies. A rich read can supply
+server-certified `NoResponse` passes before a completed game qualifies. Version2
+manifests and summaries identify the shared `ServerAuto` policy; earlier
+NoResponse-only evidence cannot silently qualify it. Grant/automatic-pass counts
+are reported separately by mode and must sum to their existing aggregates.
+Across all four natural rotations, at least one actual original-token Quiet
+window must have accepted consent and certified progress. A seat which never
+encounters such a window does not invent one. Exact token, interruption, response
+lineage and required-choice controls remain separate from these observed
+counters. Distinct captured windows need not equal grants: explicit hold/resume
+can re-grant the same unchanged original token. A rich read can supply
 policy knowledge only while its full ordinary payload matches the accepted
 replica. Additional rich action-source descriptions never replace that replica
 or its physical card data. Changed private faces, source keys, audiences and
@@ -678,9 +690,21 @@ human UX acceptance. The ordinary CI mixed-lobby prefix and its deadline remain
 unchanged. The same engine job additionally runs the existing 16-turn/45-second
 campaign smoke in polled/background mode, requiring all four roles to develop and
 accept commands, public cohorts to agree, and evidence owners to drain and retire.
+The polled owner waits for queued client/evidence work or its existing poll,
+stale-observation and match deadlines. Notifications never apply work; the same
+serial owner still pumps clients and drains the evidence FIFO. The 50/120 ms
+poll cadence and match limits remain unchanged. Controls cover both sides of
+the enqueue/wait race, cancellation, close/retirement, external ingress, FIFO
+application and canceled-timer cleanup.
+Full private proposal/receipt records remain in the compressed evidence trace.
+Their serializer reuses a UTF8 record buffer instead of allocating a UTF16
+string for every large replay. A failed serialization commits no partial row;
+the existing decoded records and order remain byte-compatible. Local capture
+allocation measurements do not establish a full-game throughput result.
 The independent required `mixed-game-qualification` CI job additionally runs all
 four `natural` rotations against the exact immutable package and source-bound
-harness, then the actual110-trigger rules/presentation workload described below.
+harness, then the actual110-trigger rules/presentation workload described below
+and the ordinary consuming-source payment witness.
 Its20-minute job limit does not change the existing20-minute engine matrix or
 either scenario's original limits. `scripts/mana-table/mixed-game-qualification.cjs`
 checks retained outcomes, four distinct physical roles/deck rotation, public
@@ -690,6 +714,27 @@ Missing rare required-mechanic witnesses remain explicitly Inconclusive; absent
 causal integrity/role evidence, any mechanical failure, or any incomplete natural
 rotation fails this gate. This never substitutes `natural` for the stricter
 `release` causal-mechanic profile or supplies human UX approval.
+
+`--smoke-polled-mana-output` uses the same source/package arguments as
+`--smoke-polled-fanout`. It opens an actual TCP two-human/two-distinct-AI table;
+a private pregame bootstrap supplies Foundry Inspector, Wastes, Crystal Vein
+and Power Play. The declared fixture script keeps each opening hand and then
+delegates every subsequent decision to the production casual policy. Both
+ordinary owners use explicit `FullControl`; campaigns explicitly use
+`ServerAuto`, and targeted controls retain `ServerNoResponse`. This payment witness cannot supply their required Auto
+evidence. The45-second active/90-second total ceilings cover actual payment
+through current ordinary source handles: sacrifice Crystal Vein for two
+colorless, tap Wastes for one, spend three and resolve one Inspector. Committed
+typed history must attribute these resources, both ordinary replicas must stay
+coherent, and all admitted inputs need provider receipts without recovery.
+Exact candidate engine/fixture/harness/policy hashes and source receipts are
+required by CI; its private frames, source queries, commands and history stay
+in `polled-mana-output/`, outside release downloads. This controlled resource
+fixture establishes neither a natural outcome nor human UX approval. The
+graphics-free client suite separately retains the exact CI decision and rejected
+command that exposed the consuming-output defect, plus flexible, bundled and
+missing-capability controls. Funding descriptions alone never authorize a
+`ManaOutput` override; its exact advertised `QuickMana` capability is required.
 
 One bounded, ordered inbox transfers immutable policy, observation and receipt
 events to the campaign's evidence owner. No-match polls before the first owned

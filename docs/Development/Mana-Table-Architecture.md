@@ -47,6 +47,13 @@ that actor may publish. A subject is a closed battlefield-card or stack-item
 reference, never a private hand position, action key or remote pointer coordinate.
 The authority and recipient each check current disclosure and occurrence.
 
+`ClientSession.WaitForQueuedWorkAsync` is a passive owner notification. Posted
+completions, admitted external ingress and closure wake its waiters; waking
+neither pumps callbacks nor adopts observations or authorizes a command. Each
+waiter can cancel independently. Headless campaign owners combine this signal
+with their ordered evidence inbox, next ordinary poll and existing health/match
+deadlines instead of adding a timer delay after every useful completion.
+
 `Mana.Client/TablePresenceSession` owns one actual provider operation at a time,
 with at most four dispatches per second and no queued pointer history. The
 native owner yields dispatch to commands, automatic continuation and polling.
@@ -2478,6 +2485,15 @@ Local action failures remain acknowledged until dismissed or a new action starts
 a successful background poll does not erase them. Host/guest departure confirms
 its consequence; an eliminated seat can watch or leave.
 
+`ClientSession.WaitForQueuedWorkAsync` is a passive owner notification for posted
+callbacks and external observation ingress. It never pumps, accepts snapshots,
+polls or dispatches commands. Closure wakes pending waiters, and canceling one
+waiter leaves the shared queue signal intact. The mixed-game campaign waits on
+both clients and its evidence FIFO until work arrives or an existing poll,
+stalled-poll health check or match deadline is due. It retains the ordinary
+50/120 ms poll cadence and strict five-second recovery threshold; event-driven
+waiting does not create a second command or state owner.
+
 The Forge connection's observed command context also rejects a lower revision
 within the same game. RPC read continuations may finish out of order; an older
 response must not retire the displayed current scope or restore an answered
@@ -3028,8 +3044,13 @@ Explicit Auto pass can use that token on either player's turn. Tokens never
 broaden ordinary `CanAutoPass`, and each path retains its own submitted-prompt
 history. The session still owns submission and reconciliation.
 
-Presentation-owned `PriorityAttention` observes public interruption history,
+Renderer-independent `Mana.Client.PriorityAttention` observes public interruption history,
 the stack-interruption fence and replacement quiet tokens before physical input.
+The game and ordinary connected-player qualification each own an instance of
+the same attention state machine and use its automatic-Quiet start predicate.
+The driver retains the original window token through `QuietPriorityPolicy`,
+records NoResponse and Quiet provider grants/pass certificates separately, and
+does not count consent metadata as an accepted scripted gameplay input.
 New work blocks silent quiet rearming until the player explicitly acts or passes;
 acknowledging one displayed response does not acknowledge a new action arriving
 in flight. A new turn establishes a new quiet opportunity. Normal engine-authorized

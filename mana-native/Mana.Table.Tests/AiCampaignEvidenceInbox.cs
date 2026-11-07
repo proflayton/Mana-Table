@@ -47,6 +47,7 @@ internal sealed class AiCampaignEvidenceInbox(AiCampaignDiagnostics owner, int c
     private readonly object gate = new();
     private readonly TimeProvider time = clock ?? TimeProvider.System;
     private readonly Queue<Entry> pending = [];
+    private TaskCompletionSource queuedWork = NewQueuedWorkSignal();
     private readonly Dictionary<int, int> accepted = [];
     private ImmutableArray<AutomatedSeatObservation> returned = [], processed = [];
     private long enqueued, applied, returnedBatches, processedBatches, processedReturnSequence, discarded;
@@ -64,6 +65,20 @@ internal sealed class AiCampaignEvidenceInbox(AiCampaignDiagnostics owner, int c
     internal ImmutableArray<AutomatedSeatObservation> SnapshotObservations { get { lock (gate) return returned; } }
     internal ImmutableArray<AutomatedSeatObservation> ProcessedObservations { get { lock (gate) return processed; } }
     internal ImmutableDictionary<int, int> AcceptedBySeat { get { lock (gate) return accepted.ToImmutableDictionary(); } }
+
+    private static TaskCompletionSource NewQueuedWorkSignal()
+        => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    // Notification only: the campaign's serial owner still applies the FIFO.
+    internal Task WaitForQueuedWorkAsync(CancellationToken cancellation = default)
+    {
+        if (cancellation.IsCancellationRequested) return Task.FromCanceled(cancellation);
+        lock (gate) {
+            if (pending.Count != 0 || retired || fault != null) return Task.CompletedTask;
+            if (queuedWork.Task.IsCompleted) queuedWork = NewQueuedWorkSignal();
+            return queuedWork.Task.WaitAsync(cancellation);
+        }
+    }
 
     internal void Post(CampaignEvidenceEvent value)
     {
@@ -86,10 +101,12 @@ internal sealed class AiCampaignEvidenceInbox(AiCampaignDiagnostics owner, int c
         if (fault != null) throw fault;
         if (pending.Count >= capacity) {
             fault = new InvalidDataException("The bounded campaign evidence handoff overflowed; qualification is incomplete.");
+            queuedWork.TrySetResult();
             throw fault;
         }
         var stamp = new CampaignEvidenceStamp(++enqueued, time.GetUtcNow(), time.GetTimestamp(), value.GetType().Name);
         pending.Enqueue(new(stamp, value)); highWater = Math.Max(highWater, pending.Count);
+        queuedWork.TrySetResult();
     }
 
     // Called only by the same serialized production AI worker on its next
@@ -165,7 +182,7 @@ internal sealed class AiCampaignEvidenceInbox(AiCampaignDiagnostics owner, int c
                 Entry entry; lock (gate) entry = pending.Dequeue();
                 try { owner.ApplyHandoff(entry.Stamp, entry.Value); }
                 catch (Exception error) {
-                    lock (gate) { fault ??= error; discarded += pending.Count; pending.Clear(); }
+                    lock (gate) { fault ??= error; discarded += pending.Count; pending.Clear(); queuedWork.TrySetResult(); }
                     break;
                 }
                 lock (gate) applied++;
@@ -183,6 +200,7 @@ internal sealed class AiCampaignEvidenceInbox(AiCampaignDiagnostics owner, int c
             if (pending.Count != 0 || Volatile.Read(ref draining) != 0)
                 throw new InvalidOperationException("Drain campaign evidence after stopping its producers before retirement.");
             retired = true;
+            queuedWork.TrySetResult();
         }
     }
 
@@ -192,6 +210,7 @@ internal sealed class AiCampaignEvidenceInbox(AiCampaignDiagnostics owner, int c
     {
         lock (gate) {
             retired = true;
+            queuedWork.TrySetResult();
             if (pending.Count != 0 || Volatile.Read(ref draining) != 0) {
                 fault ??= new InvalidDataException("The evidence owner disposed before its pending handoff was drained.");
                 discarded += pending.Count; pending.Clear();

@@ -47,8 +47,8 @@ internal sealed partial class TableApplication
     private void ArmAutomaticQuietPriority(bool interactionBlocked)
     {
         if (QuietPriorityArmed || ResolvingCapturedStack || !automatic || held || interactionBlocked
-            || priorityAttention.NeedsResponse || busy || polling || commandFailure || !matchPresentation.Ready(now)
-            || !CanOfferQuietPriority || match is not { } state || state.ActivePlayerId == state.ViewerId) return;
+            || busy || polling || commandFailure || !matchPresentation.Ready(now)
+            || !CanOfferQuietPriority || match is not { } state || !priorityAttention.CanStartAutomaticQuiet(state)) return;
         // Ordinary Auto still uses CanAutoPass. This separate scoped token is
         // consent only for unchanged empty opponent windows, even with an instant.
         CaptureQuietPriority(state);

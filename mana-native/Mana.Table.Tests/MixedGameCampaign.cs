@@ -29,14 +29,16 @@ internal static class MixedGameCampaign
         string directory = Path.Combine(paths.Profile, "mixed-game-campaign");
         Directory.CreateDirectory(directory);
         await SaveAsync(Path.Combine(directory, "manifest.json"), new {
-            formatVersion = 1, audience = "host-private", profile, limits, mode = mode.ToString(), source = "ordinary-host-and-tcp-guest-with-two-host-owned-ai",
+            formatVersion = 2, audience = "host-private", profile, limits, mode = mode.ToString(), source = "ordinary-host-and-tcp-guest-with-two-host-owned-ai",
+            passingMode = mode == MixedGameDriveMode.PolledBackground ? "ServerAuto" : "LegacyPolicy",
+            priorityPolicy = mode == MixedGameDriveMode.PolledBackground ? "PriorityAttention+QuietPriorityPolicy" : "policy-only",
             humanSeats = "Scripted through owned observations and ClientSession; human UX review remains pending.",
             observationOwnership = mode == MixedGameDriveMode.PolledBackground
                 ? "Two default-polled ordinary clients; owned rich reads propose only against the exact accepted ordinary payload; one background AI host."
                 : "Legacy manually sampled owned observations and manually stepped AI host.",
             presentationPacing = "No timed presentation pacing is configured; this is not a visual-tempo qualification.",
             priorityOwnership = mode == MixedGameDriveMode.PolledBackground
-                ? "Negotiated server NoResponse continuation; no script fallback for server-owned routine priority. Ordinary responses/choices retain it; manual mana withdraws before dispatch."
+                ? "Shared shipping PriorityAttention and QuietPriorityPolicy choose negotiated server NoResponse or bounded original-token Quiet continuation; no per-prompt policy fallback while the server owns priority. Responses and required choices remain current manual policy answers; manual mana withdraws before dispatch."
                 : "Legacy individually scripted policy answers.",
             engineRandomnessControlled = false, seedScope = "Policy tie breaking only; not a deterministic engine replay.",
             timeCutoffScope = "Checked between bounded engine/client operations, not an exact process wall deadline.",
@@ -49,7 +51,9 @@ internal static class MixedGameCampaign
             var result = await MatchAsync(paths with { Profile = Path.Combine(directory, "match-" + match) }, match, limits, mode);
             results.Add(result);
             await SaveAsync(Path.Combine(directory, "summary.json"), new {
-                formatVersion = 1, audience = "host-private", profile, mode = mode.ToString(), results,
+                formatVersion = 2, audience = "host-private", profile, mode = mode.ToString(), results,
+                passingMode = mode == MixedGameDriveMode.PolledBackground ? "ServerAuto" : "LegacyPolicy",
+                priorityPolicy = mode == MixedGameDriveMode.PolledBackground ? "PriorityAttention+QuietPriorityPolicy" : "policy-only",
                 unrunRotations = Enumerable.Range(results.Count, limits.Matches - results.Count),
                 allRequestedGamesCompleted = results.Count == limits.Matches && results.All(item => item.NaturalOutcomeVerified),
                 humanReview = "pending", allInteractionsClaimed = false,
@@ -79,8 +83,10 @@ internal static class MixedGameCampaign
         var provider = new AiCampaignProvider(engines[0], evidence, inbox: inbox);
         var bots = new AiTableHost(provider, _ => evidence.Record(new CasualCommanderPolicy()),
             limits.PolicySeed + match, new(TimeSpan.FromSeconds(10), 4096), diagnostics: inbox);
-        using var host = new ConnectedPlayerDriver(engines[0], evidence, limits.PolicySeed + match, mode);
-        using var guest = new ConnectedPlayerDriver(engines[1], evidence, limits.PolicySeed + match + 100, mode);
+        using var host = new ConnectedPlayerDriver(engines[0], evidence, limits.PolicySeed + match, mode,
+            passing: mode == MixedGameDriveMode.PolledBackground ? ConnectedPlayerPassingMode.ServerAuto : ConnectedPlayerPassingMode.FullControl);
+        using var guest = new ConnectedPlayerDriver(engines[1], evidence, limits.PolicySeed + match + 100, mode,
+            passing: mode == MixedGameDriveMode.PolledBackground ? ConnectedPlayerPassingMode.ServerAuto : ConnectedPlayerPassingMode.FullControl);
         var trace = new StreamWriter(new GZipStream(File.Create(Path.Combine(paths.Profile, "public-facts.jsonl.gz")), CompressionLevel.Fastest));
         var elapsed = Stopwatch.StartNew();
         MixedGamePublicCohorts? publicCohorts = null;
@@ -158,11 +164,17 @@ internal static class MixedGameCampaign
             // Setup/warm-up time has its own bounded operations. The game budget
             // starts at launch, matching the existing natural AI campaign.
             elapsed.Restart();
+            Task WaitForOwnerWork() => mode == MixedGameDriveMode.PolledBackground
+                ? CampaignOwnerWait.WaitAsync(CampaignOwnerWait.Bound(limits.MatchTime - elapsed.Elapsed,
+                    host.TimeUntilNextPoll, guest.TimeUntilNextPoll,
+                    host.Client.TimeUntilSynchronizationHealthCheck, guest.Client.TimeUntilSynchronizationHealthCheck), evidence.WaitForQueuedWorkAsync,
+                    host.Client, guest.Client)
+                : Task.Delay(1);
             while (true) {
                 if (elapsed.Elapsed >= limits.MatchTime) { stop = "time-budget"; break; }
                 stage = "owned-player-observations";
                 try { await host.ObserveAsync(); await guest.ObserveAsync(); }
-                catch (EngineObservationSupersededException) { continue; }
+                catch (EngineObservationSupersededException) { await WaitForOwnerWork(); continue; }
                 stage = mode == MixedGameDriveMode.PolledBackground ? "background-bot-processing" : "bot-step";
                 if (mode == MixedGameDriveMode.ManualStepped) await bots.StepAsync();
                 evidence.DrainPending();
@@ -171,7 +183,7 @@ internal static class MixedGameCampaign
                 last = new[] { host.Last, guest.Last }.OfType<AutomatedSeatObservation>().Concat(botObservations).ToImmutableArray();
                 steps++;
                 stage = "shared-state-and-visibility";
-                if (mode == MixedGameDriveMode.PolledBackground && last.Length < 4 && !audiencesBound) { await Task.Delay(1); continue; }
+                if (mode == MixedGameDriveMode.PolledBackground && last.Length < 4 && !audiencesBound) { await WaitForOwnerWork(); continue; }
                 if (last.Length != 4 || last.Select(item => item.SeatId).Distinct().Count() != 4)
                     throw new InvalidDataException("The mixed table lost one of its four disjoint owned audiences.");
                 audiencesBound = true;
@@ -180,7 +192,7 @@ internal static class MixedGameCampaign
                         if (item.State.Decision != null || item.State.Players.Length is not (0 or 4)
                             || item.Domain.Coverage != ActionDomainCoverage.NotApplicable)
                             throw new InvalidDataException("An uncommitted starting audience acquired decision authority.");
-                    await Task.Delay(1);
+                    await WaitForOwnerWork();
                     continue;
                 }
                 if (qualification == null) {
@@ -236,7 +248,7 @@ internal static class MixedGameCampaign
                 if (elapsed.Elapsed >= limits.MatchTime) { stop = "time-budget"; break; }
                 stage = "connected-player-client-dispatch";
                 await host.StepAsync(); await guest.StepAsync();
-                await Task.Delay(1);
+                await WaitForOwnerWork();
             }
         } catch (Exception error) {
             stop = "mechanical-failure"; failure = error.ToString();
@@ -252,9 +264,11 @@ internal static class MixedGameCampaign
                 stoppedHistories = bots.Histories;
                 await SaveAsync(Path.Combine(paths.Profile, "private-player-receipts.json"), new {
                     host = new { host.ClientAdmissions, host.ProviderAcceptances, host.History, host.PollCallbacks,
-                        host.OrdinaryPublications, host.RetiredProposals, host.LastRetiredOwnedRead, source = host.Client.SourceActions.View },
+                        host.OrdinaryPublications, host.RetiredProposals, host.LastRetiredOwnedRead, source = host.Client.SourceActions.View,
+                        consent = host.ConsentEvidence },
                     guest = new { guest.ClientAdmissions, guest.ProviderAcceptances, guest.History, guest.PollCallbacks,
-                        guest.OrdinaryPublications, guest.RetiredProposals, guest.LastRetiredOwnedRead, source = guest.Client.SourceActions.View },
+                        guest.OrdinaryPublications, guest.RetiredProposals, guest.LastRetiredOwnedRead, source = guest.Client.SourceActions.View,
+                        consent = guest.ConsentEvidence },
                     automated = new { histories = stoppedHistories, fault = bots.LastFault,
                         historyScope = "Bounded diagnostic rings before owner cancellation; provider acceptance counters are cumulative and separate.",
                         cumulativeProviderAcceptances = provider.AcceptedBySeat, provider.Executing },

@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Mana.Client;
 using Mana.Contracts;
 using Mana.Table.Presentation;
 

@@ -60,8 +60,25 @@ public sealed partial class ClientSession
     public bool Closed { get; private set; }
     public DateTimeOffset? LastSynchronizedAt { get; private set; }
     public string LastConnectionError { get; private set; } = "";
+    private static readonly TimeSpan SynchronizationHealthLimit = TimeSpan.FromSeconds(5);
     public bool NeedsRecovery => recoveryRequired || State != null && Polling && LastSynchronizedAt is { } synchronized
-        && time.GetUtcNow() - synchronized > TimeSpan.FromSeconds(5);
+        && time.GetUtcNow() - synchronized > SynchronizationHealthLimit;
+    /// <summary>The existing stalled-poll health deadline, without starting a
+    /// poll or changing recovery authority. Null means no health timer is due.</summary>
+    public TimeSpan? TimeUntilSynchronizationHealthCheck
+    {
+        get {
+            if (Closed) return null;
+            if (recoveryRequired) return TimeSpan.Zero;
+            if (State == null || !Polling || LastSynchronizedAt is not { } synchronized) return null;
+            // NeedsRecovery uses a strict greater-than comparison. Wake on the
+            // first eligible timer millisecond rather than rounding a tick
+            // down to exact equality and spinning before recovery is due.
+            var remaining = SynchronizationHealthLimit - (time.GetUtcNow() - synchronized) + TimeSpan.FromTicks(1);
+            return remaining > TimeSpan.Zero
+                ? TimeSpan.FromMilliseconds(Math.Ceiling(remaining.TotalMilliseconds)) : TimeSpan.Zero;
+        }
+    }
     public bool UncertainCommand { get; private set; }
     public bool LastFailureWasCommand { get; private set; }
     public event Action<Exception>? Failed;
@@ -78,7 +95,14 @@ public sealed partial class ClientSession
             try { subscriber(diagnostic); } catch { /* A failed observer cannot interrupt play or another observer. */ }
         }
     }
-    public void Post(Action action) => completions.Enqueue(action);
+    public void Post(Action action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        lock (queuedWorkGate) {
+            completions.Enqueue(action);
+            queuedWork.TrySetResult();
+        }
+    }
     public void Pump()
     {
         // External producers can append while handling Changed. Freeze one
@@ -132,7 +156,7 @@ public sealed partial class ClientSession
                     || owner.queuedExternalObservations >= MaximumPendingObservations) return false;
                 var entry = new PendingObservation(state, owner.replica.Epoch);
                 pending.Add(entry); owner.queuedExternalObservations++;
-                owner.completions.Enqueue(() => Deliver(entry));
+                owner.Post(() => Deliver(entry));
                 return true;
             }
         }
@@ -535,6 +559,7 @@ public sealed partial class ClientSession
         StopFiniteIntent(); CancelAdvance(); SourceActions.Close(); History.Close(); pendingSettings.Clear();
         pendingManualCommand = null;
         lock (observationGate) { Closed = true; RevokeObservationIngress(); BeginCommand(); }
+        WakeQueuedWorkWaiters();
         commandTask = RevokeAtCloseAsync(commandTask, finiteRevocations.Values.ToArray());
         commandTask = RevokePriorityAtCloseAsync(commandTask, priorityRevocations.Values.ToArray());
     }

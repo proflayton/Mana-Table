@@ -42,6 +42,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-ai-resources");
         testRun |= args.Contains("--smoke-polled-mixed");
         testRun |= args.Contains("--smoke-polled-fanout");
+        testRun |= args.Contains("--smoke-polled-mana-output");
         testRun |= args.Contains("--check-polled-fanout-projection");
         testRun |= args.Contains("--smoke-whole-seat-ai");
         testRun |= args.Contains("--replay-ai-decision");
@@ -217,6 +218,9 @@ internal static class Program
                 Arg("--source-manifest")).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke")) { NativeSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-polled-mixed")) { PolledMixedLobbyEngineJourney.RunStandaloneAsync(paths).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--smoke-polled-mana-output")) { PolledManaOutputEngineJourney.RunStandaloneAsync(paths,
+                Arg("--production-engine-jar") ?? throw new ArgumentException("The payment fixture requires its actual production engine dependency."),
+                Arg("--source-revision"), Arg("--source-manifest")).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-polled-fanout")) { PolledFanoutEngineJourney.RunStandaloneAsync(paths,
                 Arg("--production-engine-jar") ?? throw new ArgumentException("The polled fanout fixture requires its actual production engine dependency."),
                 Arg("--source-revision"), Arg("--source-manifest")).GetAwaiter().GetResult(); return 0; }

@@ -31,17 +31,20 @@ function digest(file) {
 }
 
 function assess({ sourceRevision, engineHash, harnessHash, policyHash, manifestHash, buildHash, fixtureHash,
-  manifest, summary, rotations, fanout, replays }) {
+  manifest, summary, rotations, fanout, replays, manaOutput }) {
   requireThat(/^[a-f0-9]{40}$/.test(sourceRevision || ''), 'Qualification needs an exact source revision.');
-  requireThat(manifest.profile === 'natural' && manifest.mode === 'PolledBackground' && manifest.engineRandomnessControlled === false
+  requireThat(manifest.formatVersion === 2 && manifest.profile === 'natural' && manifest.mode === 'PolledBackground'
+    && manifest.passingMode === 'ServerAuto' && manifest.priorityPolicy === 'PriorityAttention+QuietPriorityPolicy' && manifest.engineRandomnessControlled === false
     && manifest.limits?.Matches === 4 && manifest.limits.Turns === 160 && manifest.limits.MatchTime === '00:03:00'
     && sameHash(manifest.launchJarSha256, engineHash) && sameHash(manifest.harnessAssemblySha256, harnessHash)
     && sameHash(manifest.policyAssemblySha256, policyHash) && exactly(manifest.decks?.map(deck => deck.Id), DECKS),
   'The natural campaign changed its topology, varied decks, original budgets, randomness scope or exact candidate bytes.');
-  requireThat(summary.profile === 'natural' && summary.mode === 'PolledBackground' && summary.allRequestedGamesCompleted === true
+  requireThat(summary.formatVersion === 2 && summary.profile === 'natural' && summary.mode === 'PolledBackground'
+    && summary.passingMode === 'ServerAuto' && summary.priorityPolicy === 'PriorityAttention+QuietPriorityPolicy' && summary.allRequestedGamesCompleted === true
     && summary.humanReview === 'pending' && summary.allInteractionsClaimed === false && exactly(summary.unrunRotations, [])
     && Array.isArray(summary.results) && summary.results.length === 4 && rotations.length === 4,
   'All four requested natural rotations must complete; a prefix, cutoff or unrun rotation cannot qualify.');
+  let observedQuietGrants = 0, observedQuietPasses = 0;
   for (let index = 0; index < 4; index++) {
     const { result, owners } = rotations[index], combined = summary.results[index];
     requireThat(JSON.stringify(result) === JSON.stringify(combined), 'The campaign summary and retained rotation disagree.');
@@ -66,10 +69,19 @@ function assess({ sourceRevision, engineHash, harnessHash, policyHash, manifestH
     requireThat(result.CausalDecks?.length === 4 && result.CausalDecks.every(deck => deck.MechanicalIntegrity === 'no-observed-integrity-failure'
       && exactly(deck.IntegrityFailures, []) && deck.SampledNaturalGame === 'observed-natural-outcome'),
     'Per-deck causal integrity must remain assessed even when rare mechanic witnesses are unobserved.');
-    for (const auto of [result.HostAuto, result.GuestAuto]) requireThat(positive(auto?.AcceptedGrants) && positive(auto.CertifiedAutomaticPasses)
-      && Number.isSafeInteger(auto.AcceptedWithdrawals) && auto.AcceptedWithdrawals >= 0
-      && Number.isSafeInteger(auto.AcceptedPolicyPriorityPasses) && auto.AcceptedPolicyPriorityPasses >= 0,
-    'Both ordinary owners must witness actual server Auto rather than a script fallback.');
+    for (const auto of [result.HostAuto, result.GuestAuto]) {
+      requireThat(positive(auto?.AcceptedGrants) && positive(auto.CertifiedAutomaticPasses)
+        && nonnegative(auto.AcceptedWithdrawals) && nonnegative(auto.AcceptedPolicyPriorityPasses)
+        && positive(auto.NoResponseAcceptedGrants) && positive(auto.NoResponseCertifiedAutomaticPasses)
+        && nonnegative(auto.QuietAcceptedGrants) && nonnegative(auto.QuietCertifiedAutomaticPasses)
+        && nonnegative(auto.QuietConsentWindows) && (auto.QuietAcceptedGrants === 0 || auto.QuietConsentWindows > 0)
+        && auto.NoResponseAcceptedGrants + auto.QuietAcceptedGrants === auto.AcceptedGrants
+        && auto.NoResponseCertifiedAutomaticPasses + auto.QuietCertifiedAutomaticPasses === auto.CertifiedAutomaticPasses
+        && (auto.QuietCertifiedAutomaticPasses === 0 || auto.QuietAcceptedGrants > 0),
+      'Both ordinary owners must record actual mode-specific server Auto consent and certified progress; metadata is not a scripted input receipt.');
+      observedQuietGrants += auto.QuietAcceptedGrants;
+      observedQuietPasses += auto.QuietCertifiedAutomaticPasses;
+    }
     requireThat(positive(result.PublicComparison?.ComparedFrames) && result.PublicComparison.AudienceCount === 4
       && positive(result.PublicComparison.MaximumRetainedCohorts) && result.PublicComparison.MaximumRetainedCohorts <= 64
       && nonnegative(result.PublicComparison.RetainedCohorts) && result.PublicComparison.RetainedCohorts <= result.PublicComparison.MaximumRetainedCohorts,
@@ -82,6 +94,8 @@ function assess({ sourceRevision, engineHash, harnessHash, policyHash, manifestH
       && owners.host?.ProviderAcceptances === result.HostProviderAcceptances && owners.guest?.ProviderAcceptances === result.GuestProviderAcceptances,
     'Every AI/evidence owner must drain and retire with coherent ordinary command receipts.');
   }
+  requireThat(observedQuietGrants > 0 && observedQuietPasses > 0,
+    'The four-game campaign must actually observe bounded Quiet consent and certified progress; an unobserved window is not a passing witness.');
   const runtime = fanout.runtime;
   requireThat(fanout.passed === true && fanout.failure === null && exactly(fanout.cleanupErrors, []) && fanout.projectionContinuityVerified === true
     && fanout.capturedTriggers === 110 && fanout.optionalPaymentTriggers === 55 && fanout.commonTerminalReceipts === 110
@@ -132,12 +146,37 @@ function assess({ sourceRevision, engineHash, harnessHash, policyHash, manifestH
         && item.CapturedCount === 55 && item.capturedHeadingPainted === true)),
     'Replay must retain the cast and both real55-trigger groups without missing announcements or110 individual display beats.');
   }
-  return { schemaVersion: 1, sourceRevision, naturalRotationsCompleted: 4, actualFanoutTerminalsPerHuman: 110,
+  const paymentRuntime = manaOutput?.runtime;
+  requireThat(manaOutput?.scenario === 'ordinary-polled-consuming-output-payment' && manaOutput.passed === true
+    && manaOutput.failure === null && exactly(manaOutput.cleanupErrors, []) && manaOutput.passing === 'FullControl'
+    && manaOutput.totalBudgetSeconds === 90 && manaOutput.activeBudgetSeconds === 45
+    && typeof manaOutput.creditedTotalSeconds === 'number' && manaOutput.creditedTotalSeconds > 0 && manaOutput.creditedTotalSeconds <= 90
+    && typeof manaOutput.creditedActiveSeconds === 'number' && manaOutput.creditedActiveSeconds > 0 && manaOutput.creditedActiveSeconds <= 45
+    && positive(manaOutput.coherentPublicComparisons) && Array.isArray(manaOutput.players) && manaOutput.players.length === 2
+    && exactly(manaOutput.players.map(player => player.index), [0, 1]) && new Set(manaOutput.players.map(player => player.viewerId)).size === 2
+    && manaOutput.players.every(player => nonnegative(player.viewerId) && positive(player.ClientAdmissions) && player.ProviderAcceptances === player.ClientAdmissions
+      && player.AutoEvidence?.AcceptedGrants === 0 && player.AutoEvidence.CertifiedAutomaticPasses === 0)
+    && manaOutput.publicComparison?.AudienceCount === 2 && positive(manaOutput.publicComparison.ComparedFrames)
+    && positive(manaOutput.publicComparison.MaximumRetainedCohorts) && manaOutput.publicComparison.MaximumRetainedCohorts <= 64
+    && nonnegative(manaOutput.publicComparison.RetainedCohorts)
+    && manaOutput.publicComparison.RetainedCohorts <= manaOutput.publicComparison.MaximumRetainedCohorts
+    && paymentRuntime?.SourceRevision === sourceRevision && paymentRuntime.Provenance === 'source-receipt-verified'
+    && sameHash(paymentRuntime.ProductionEngineSha256, engineHash) && sameHash(paymentRuntime.FixtureLauncherSha256, fixtureHash)
+    && sameHash(paymentRuntime.HarnessAssemblySha256, harnessHash) && sameHash(paymentRuntime.PolicyAssemblySha256, policyHash)
+    && sameHash(paymentRuntime.SourceManifestSha256, manifestHash) && sameHash(paymentRuntime.CandidateBuildSha256, buildHash),
+  'The current ordinary consuming-source payment must complete with exact source/package provenance, conserved receipts and its declared FullControl bounds.');
+  for (const [fact, expected] of Object.entries({ consumingActivationReceipts: 1, explicitConsumingOutputs: 0,
+    resolvedInspectors: 1, sacrificedCrystalVeins: 1, tappedWastes: 1, remainingPool: 0,
+    committedCrystalVeinColorless: 2, committedWastesColorless: 1, committedManaSpent: 3 }))
+    requireThat(manaOutput.facts?.[fact] === expected, 'Actual consuming-source rules/payment accounting disagrees: ' + fact);
+  return { schemaVersion: 3, sourceRevision, naturalRotationsCompleted: 4, actualFanoutTerminalsPerHuman: 110,
+    ordinaryPassingMode: 'ServerAuto', observedQuietGrants, observedQuietPasses,
+    ordinaryConsumingSourcePayment: true,
     projectionViewportsPerHuman: 2, engineRandomnessControlled: false, humanUxAcceptance: false, allInteractionsClaimed: false,
     complexDeckQualification: summary.results.every(result => result.Qualification.Status === 'Passed') ? 'observed-required-mechanics' : 'required-causal-evidence-incomplete' };
 }
 
-function verify({ inputs, packageDirectory, campaign, fanout, sourceRevision }) {
+function verify({ inputs, packageDirectory, campaign, fanout, manaOutput, sourceRevision }) {
   const engineFile = path.join(inputs, 'ci-engine-manifest.json'), engine = read(engineFile), harness = read(path.join(inputs, 'ci-harness-manifest.json'));
   const buildFile = path.join(packageDirectory, 'build.json'), build = read(buildFile);
   requireThat(engine.sourceRevision === sourceRevision && harness.sourceRevision === sourceRevision && build.sourceRevision === sourceRevision
@@ -153,21 +192,22 @@ function verify({ inputs, packageDirectory, campaign, fanout, sourceRevision }) 
     manifest: read(path.join(campaign, 'manifest.json')), summary: read(path.join(campaign, 'summary.json')),
     rotations: DECKS.map((_, index) => ({ result: read(path.join(campaign, `match-${index}/result.json`)),
       owners: read(path.join(campaign, `match-${index}/private-owner-teardown.json`)) })),
-    fanout: read(path.join(fanout, 'result.json')),
+    fanout: read(path.join(fanout, 'result.json')), manaOutput: read(path.join(manaOutput, 'result.json')),
     replays: [0, 1].map(index => read(path.join(fanout, `projection-human-${index}/result.json`))) });
 }
 if (require.main === module) {
   try {
-    const allowed = ['inputs', 'package', 'campaign', 'fanout', 'source-revision', 'output'], values = {};
+    const allowed = ['inputs', 'package', 'campaign', 'fanout', 'mana-output', 'source-revision', 'output'], values = {};
     for (let index = 2; index < process.argv.length; index += 2) {
       const key = process.argv[index].slice(2), value = process.argv[index + 1];
       requireThat(process.argv[index].startsWith('--') && allowed.includes(key) && !Object.hasOwn(values, key) && value && !value.startsWith('--'), 'Unknown or incomplete qualification argument.');
       values[key] = value;
     }
     requireThat(allowed.every(key => values[key]), 'Missing qualification argument.');
-    const result = verify({ inputs: values.inputs, packageDirectory: values.package, campaign: values.campaign, fanout: values.fanout, sourceRevision: values['source-revision'] });
+    const result = verify({ inputs: values.inputs, packageDirectory: values.package, campaign: values.campaign,
+      fanout: values.fanout, manaOutput: values['mana-output'], sourceRevision: values['source-revision'] });
     fs.writeFileSync(values.output, JSON.stringify(result, null, 2) + '\n', { flag: 'wx' });
-    console.log('Four natural mixed games and the actual110-trigger rules/UI workload qualified; rare mechanic coverage and human UX remain separate.');
+    console.log('Four natural mixed games, actual110-trigger rules/UI and ordinary consuming-source payment qualified; rare mechanic coverage and human UX remain separate.');
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
 module.exports = { DECKS, assess, verify };

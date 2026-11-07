@@ -439,8 +439,11 @@ internal static class PolledFanoutEngineJourney
         throw new InvalidDataException("The actual fanout history exceeded its bounded scan.");
     }
 
-    private static ForgePaths PrepareLauncher(ForgePaths paths, string directory, AiReleaseRuntime runtime)
+    internal static ForgePaths PrepareLauncher(ForgePaths paths, string directory, AiReleaseRuntime runtime,
+        string bootstrap = "PolledFanout")
     {
+        if (bootstrap is not ("PolledFanout" or "PolledManaOutput"))
+            throw new ArgumentException("Unknown private polled fixture bootstrap.", nameof(bootstrap));
         // VerifyRuntime already binds the original fixture/engine. Derive only
         // a test-only entry point, with unchanged allowlisted class bytes.
         string dependency = Path.Combine(Path.GetDirectoryName(paths.Jar)!, "forge-engine.jar");
@@ -449,7 +452,8 @@ internal static class PolledFanoutEngineJourney
         string staging = Path.Combine(directory, "engine-launch"); Directory.CreateDirectory(staging);
         File.Copy(dependency, Path.Combine(staging, "forge-engine.jar"), false);
         string wrapper = Path.Combine(staging, "forge-engine-polled-fanout.jar");
-        const string derivedManifest = "Manifest-Version: 1.0\r\nMain-Class: forge.api.AiReleaseFixtureEngine$PolledFanout\r\nClass-Path: forge-engine.jar\r\n\r\n";
+        string derivedManifest = "Manifest-Version: 1.0\r\nMain-Class: forge.api.AiReleaseFixtureEngine$" + bootstrap
+            + "\r\nClass-Path: forge-engine.jar\r\n\r\n";
         string originalManifest;
         string originalManifestHash;
         var classes = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -461,8 +465,8 @@ internal static class PolledFanoutEngineJourney
                 originalManifest = System.Text.Encoding.UTF8.GetString(bytes);
                 originalManifestHash = Convert.ToHexString(SHA256.HashData(bytes));
             }
-            if (source.GetEntry("forge/api/AiReleaseFixtureEngine$PolledFanout.class") == null)
-                throw new InvalidDataException("The source-bound test launcher lacks its private polled-fanout bootstrap.");
+            if (source.GetEntry("forge/api/AiReleaseFixtureEngine$" + bootstrap + ".class") == null)
+                throw new InvalidDataException("The source-bound test launcher lacks its private polled bootstrap: " + bootstrap);
             foreach (var entry in source.Entries.Where(entry => entry.FullName.EndsWith(".class", StringComparison.Ordinal))) {
                 if (!entry.FullName.StartsWith("forge/api/AiReleaseFixtureEngine", StringComparison.Ordinal))
                     throw new InvalidDataException("A non-fixture class cannot enter the derived test launcher.");

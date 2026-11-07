@@ -224,10 +224,16 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 return PaymentAnswer(new SpendPoolMana(state.Id, state.Decision!.Id, pool.Color), "payment-follow-assignment-pool");
             if (step is AiManaStep.Source producer && Offers(request).FirstOrDefault(offer =>
                     offer.Set.SourceCardKey == producer.SourceCardKey && offer.Action.Id == producer.ActionId) is { } planned
-                && CanInitiate(request, planned.Semantics))
-                return PaymentAnswer(new UseOfferedAction(state.Id, state.Decision!.Id, producer.SourceCardKey, producer.ActionId) {
+                && CanInitiate(request, planned.Semantics)) {
+                var action = new UseOfferedAction(state.Id, state.Decision!.Id, producer.SourceCardKey, producer.ActionId);
+                var exact = action with {
                     ManaOutput = new(producer.Output.Where(pair => pair.Value > 0).ToImmutableDictionary())
-                }, "payment-follow-assignment-source");
+                };
+                // Funding describes the intended resources; only the current
+                // offered capability authorizes selecting an exact output.
+                // Other routes retain their ordinary activation/cost/choice path.
+                return PaymentAnswer(request.Frame.Allows(exact) ? exact : action, "payment-follow-assignment-source");
+            }
         }
         var sources = Offers(request).Where(offer => offer.Semantics.ManaAbility && offer.Semantics.ManaAmount > 0
                 && offer.Semantics.Affordability != ActionAffordability.Unavailable

@@ -19,7 +19,8 @@ internal static partial class PolledMixedLobbyEngineJourney
         private PublicChoiceContext? context;
         private TableChoicePreview? aim;
         private string clockId = "";
-        private int[] polls = [], acceptedBefore = [], exchangesBefore = [];
+        private int[] polls = [], exchangesBefore = [];
+        private PolledLobbyPorts.PlayerReceiptCounts[] acceptedBefore = [];
         private HoldPoint[] before = [], after = [];
         private int botAcceptedBefore;
         private double heldAt, resumedAt, completedAt;
@@ -63,7 +64,7 @@ internal static partial class PolledMixedLobbyEngineJourney
                 if (players.Any(player => Clock(player.Client.State!).Phase != TempoPhase.Thinking)) return;
                 if (bots.CaptureProcessing().Executing != 0 || players.Any(player => player.Client.Busy)) return;
                 before = await Points(deadline);
-                acceptedBefore = players.Select(player => player.Port.Accepted).ToArray();
+                acceptedBefore = players.Select(player => player.Port.ReceiptCounts).ToArray();
                 exchangesBefore = players.Select(player => player.InspectionPort.Started).ToArray();
                 botAcceptedBefore = bots.CaptureProcessing().Accepted;
                 heldAt = elapsed.Elapsed.TotalSeconds; holdTicks = Stopwatch.GetTimestamp(); stage = "source";
@@ -100,9 +101,9 @@ internal static partial class PolledMixedLobbyEngineJourney
                     resumedAt = elapsed.Elapsed.TotalSeconds; resumedTicks = Stopwatch.GetTimestamp(); stage = "resuming";
                 }
             }
-            if (stage == "resuming" && players[actor].Port.Accepted > acceptedBefore[actor]
+            if (stage == "resuming" && players[actor].Port.InputAccepted > acceptedBefore[actor].Inputs
                 && players[actor].Client.State?.PublicChoice != context
-                && players.All(player => !player.Client.Busy && player.ClientAdmissions == player.Port.Accepted)) {
+                && players.All(player => !player.Client.Busy && player.InputReceiptsReconciled && player.Port.ReceiptCounts.Conserved)) {
                 completedAt = elapsed.Elapsed.TotalSeconds; ResumedReceiptVerified = true;
                 int maximum = 1 + (int)Math.Ceiling((resumedAt - heldAt) * 4);
                 foreach (var player in players) {
@@ -153,7 +154,9 @@ internal static partial class PolledMixedLobbyEngineJourney
                 "A bot command was admitted while the actual human was holding combat consideration.");
             for (int index = 0; index < players.Length; index++) {
                 var state = players[index].Client.State!; var clock = Clock(state); var prior = before[index].Clock;
-                Need(players[index].Port.Accepted == acceptedBefore[index] && state.PublicChoice == context && RulesHash(state) == before[index].RulesHash,
+                var receipts = players[index].Port.ReceiptCounts;
+                Need(receipts.Conserved && receipts.Inputs == acceptedBefore[index].Inputs && receipts.Controls == acceptedBefore[index].Controls
+                    && state.PublicChoice == context && RulesHash(state) == before[index].RulesHash,
                     "Tentative combat presence changed a human receipt count, rules board, combat, decision or public activity.");
                 Need(clock.Id == clockId && clock.Id == prior.Id && clock.Phase == prior.Phase && clock.LimitMs == prior.LimitMs
                     && clock.Strikes == prior.Strikes && clock.RemainingMs <= prior.RemainingMs,
@@ -183,7 +186,7 @@ internal static partial class PolledMixedLobbyEngineJourney
             }))));
         internal object Evidence => new {
             stage, actorIndex = actor, context, aim, heldAt, resumedAt, completedAt, holdTicks, clearingTicks, exchangesBefore,
-            SawSource, SawTarget, SawClear, HoldIntegrityVerified, TrafficVerified, ResumedReceiptVerified, before, after,
+            SawSource, SawTarget, SawClear, HoldIntegrityVerified, TrafficVerified, ResumedReceiptVerified, before, after, acceptedBefore,
             scope = "Real actor source-only, legal combat aim and clear through actual provider/TCP decoded wire. No tentative rules assignment, hidden source, gameplay command or clock mutation. Times are measured observations, not a separate transport-lane guarantee.",
             endpoints = players.Select(player => new { player.Index, player.InspectionPort.MaximumExecuting,
                 exchanges = player.InspectionPort.Exchanges.Where(call => call.StartedTicks >= holdTicks && (resumedTicks == 0 || call.StartedTicks < resumedTicks)).ToArray(),

@@ -898,15 +898,18 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
     }
 
-    private Map<String, Object> sourceCatalogState(Pending current, SourceActions.Catalog catalog, boolean readOnlyFacts) {
+    private Map<String, Object> sourceCatalogState(Pending current, SourceActions.Catalog catalog, boolean includeQueryPreview) {
         var actions = catalog.actions().stream().filter(action -> actionHostVisible(action.host())).map(action -> {
             var description = map("id", action.id(), "kind", action.kind(), "text", action.text());
-            if (readOnlyFacts) {
+            // Exact output selection is a current capability of this already
+            // authorized route. Owned policy offers and ordinary source reads
+            // must agree; optional funding previews have a separate cost.
+            var quickMana = action.ability().getActivatingPlayer() == human.getPlayer()
+                    ? ManaProductionProjection.quickMana(action.ability()) : null;
+            if (quickMana != null) description.put("quickMana", quickMana);
+            if (includeQueryPreview) {
                 var costPreview = ManaCostPreviewProjection.describe(action.ability(), human.getPlayer(), this::semanticCardId);
                 if (costPreview != null) description.put("costPreview", costPreview);
-                var quickMana = action.ability().getActivatingPlayer() == human.getPlayer()
-                        ? ManaProductionProjection.quickMana(action.ability()) : null;
-                if (quickMana != null) description.put("quickMana", quickMana);
             }
             if (action.host() != catalog.source()) {
                 var preview = cardState(action.host().getView(), null);
@@ -918,7 +921,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var result = map("gameId", id, "decisionId", current.id, "sourceCardKey", catalog.key(),
                 "sourceCardId", catalog.source().isFaceDown()
                         ? combatIds.id(catalog.source().getView()) : activity.visualId(catalog.source().getView()), "actions", actions);
-        if (readOnlyFacts) result.put("revision", revision);
+        if (includeQueryPreview) result.put("revision", revision);
         return result;
     }
 

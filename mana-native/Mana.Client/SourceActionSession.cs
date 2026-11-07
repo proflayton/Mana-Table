@@ -61,7 +61,7 @@ public sealed class SourceActionSession(ISourceActions? source, Action<Action> p
         if (!Supported || View.Status != SourceActionStatus.Ready || View.Context != current
             || View.Actions.FirstOrDefault(action => action.Id == actionId) is not { } action) return null;
         if (manaOutput == null) return new(current.GameId, current.DecisionId, current.SourceCardKey, actionId);
-        if (action.QuickMana is not { } quick || !quick.IsValid()) return null;
+        if (action.QuickMana is not { } quick || !quick.Allows(new(manaOutput))) return null;
         var output = quick.Outputs.FirstOrDefault(output => output.Colors.Count == manaOutput.Count
             && output.Colors.All(part => manaOutput.TryGetValue(part.Key, out int count) && part.Value == count));
         return output == null ? null : new(current.GameId, current.DecisionId, current.SourceCardKey, actionId) {

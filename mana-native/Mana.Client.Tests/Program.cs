@@ -201,6 +201,7 @@ await AiSwarmCombatRegression.RunAsync(Check);
 await CleanupHandReductionRegression.RunAsync(Check);
 await LatestReadRegression.RunAsync(Check);
 await ExternalObservationRegression.RunAsync(Check);
+await QueuedWorkRegression.RunAsync(Check);
 await AppUpdateSessionRegression.RunAsync(Check);
 await DeckWorkspaceRegression.RunAsync(Check);
 await LobbyStateRegression.RunAsync(Check);

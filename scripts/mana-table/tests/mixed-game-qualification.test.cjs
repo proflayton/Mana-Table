@@ -20,18 +20,22 @@ function fixture() {
       Decks: DECKS.map((_, slot) => ({ CandidateId: DECKS[(slot + index) % 4], SourceSha256: (7 + (slot + index) % 4).toString(16).repeat(64) })),
       CausalDecks: DECKS.map(() => ({ MechanicalIntegrity: 'no-observed-integrity-failure', IntegrityFailures: [], SampledNaturalGame: 'observed-natural-outcome' })),
       HostProviderAcceptances: 20, GuestProviderAcceptances: 20,
-      HostAuto: { AcceptedGrants: 8, CertifiedAutomaticPasses: 100, AcceptedWithdrawals: 7, AcceptedPolicyPriorityPasses: 10 },
-      GuestAuto: { AcceptedGrants: 9, CertifiedAutomaticPasses: 101, AcceptedWithdrawals: 8, AcceptedPolicyPriorityPasses: 11 },
+      HostAuto: { AcceptedGrants: 8, CertifiedAutomaticPasses: 100, AcceptedWithdrawals: 7, AcceptedPolicyPriorityPasses: 10,
+        NoResponseAcceptedGrants: 7, QuietAcceptedGrants: 1, NoResponseCertifiedAutomaticPasses: 95, QuietCertifiedAutomaticPasses: 5, QuietConsentWindows: 1 },
+      GuestAuto: { AcceptedGrants: 9, CertifiedAutomaticPasses: 101, AcceptedWithdrawals: 8, AcceptedPolicyPriorityPasses: 11,
+        NoResponseAcceptedGrants: 8, QuietAcceptedGrants: 1, NoResponseCertifiedAutomaticPasses: 96, QuietCertifiedAutomaticPasses: 5, QuietConsentWindows: 1 },
       PublicComparison: { ComparedFrames: 40, AudienceCount: 4, MaximumRetainedCohorts: 64, RetainedCohorts: 64 } };
     return { result, owners: { Executing: 0, orderedEvidence: { Pending: 0, Retired: true, MissingOwnedBatch: false, Failure: null,
       Enqueued: 100, Applied: 100, DiscardedAfterFault: 0 }, host: { ProviderAcceptances: 20 }, guest: { ProviderAcceptances: 20 } } };
   });
-  return { sourceRevision, ...hashes,
-    manifest: { profile: 'natural', mode: 'PolledBackground', engineRandomnessControlled: false,
+  const f = { sourceRevision, ...hashes,
+    manifest: { formatVersion: 2, profile: 'natural', mode: 'PolledBackground', passingMode: 'ServerAuto',
+      priorityPolicy: 'PriorityAttention+QuietPriorityPolicy', engineRandomnessControlled: false,
       limits: { Matches: 4, Turns: 160, MatchTime: '00:03:00' }, launchJarSha256: hashes.engineHash,
       harnessAssemblySha256: hashes.harnessHash, policyAssemblySha256: hashes.policyHash,
       decks: DECKS.map((Id, index) => ({ Id, Hash: (7 + index).toString(16).repeat(64) })) },
-    summary: { profile: 'natural', mode: 'PolledBackground', allRequestedGamesCompleted: true, humanReview: 'pending',
+    summary: { formatVersion: 2, profile: 'natural', mode: 'PolledBackground', passingMode: 'ServerAuto',
+      priorityPolicy: 'PriorityAttention+QuietPriorityPolicy', allRequestedGamesCompleted: true, humanReview: 'pending',
       allInteractionsClaimed: false, unrunRotations: [], results: rotations.map(row => row.result) }, rotations,
     fanout: { passed: true, failure: null, cleanupErrors: [], projectionContinuityVerified: true, capturedTriggers: 110,
       optionalPaymentTriggers: 55, commonTerminalReceipts: 110, setupBudgetSeconds: 45, activeMatchBudgetSeconds: 90,
@@ -53,12 +57,24 @@ function fixture() {
         { Name: 'Shamanic Revelation', CapturedCount: 1 }, { Name: 'Toothy, Imaginary Friend', CapturedCount: 55, capturedHeadingPainted: true },
         { Name: "Mind's Eye", CapturedCount: 55, capturedHeadingPainted: true }
       ] })) })) };
+  f.manaOutput = { scenario: 'ordinary-polled-consuming-output-payment', passed: true, failure: null, cleanupErrors: [],
+    passing: 'FullControl', totalBudgetSeconds: 90, activeBudgetSeconds: 45, creditedTotalSeconds: 35, creditedActiveSeconds: 9,
+    coherentPublicComparisons: 10, publicComparison: { AudienceCount: 2, ComparedFrames: 30, MaximumRetainedCohorts: 20, RetainedCohorts: 20 },
+    players: [0, 1].map(index => ({ index, viewerId: index, ClientAdmissions: 8, ProviderAcceptances: 8,
+      AutoEvidence: { AcceptedGrants: 0, CertifiedAutomaticPasses: 0 } })), runtime: structuredClone(f.fanout.runtime),
+    facts: { consumingActivationReceipts: 1, explicitConsumingOutputs: 0, resolvedInspectors: 1, sacrificedCrystalVeins: 1,
+      tappedWastes: 1, remainingPool: 0, committedCrystalVeinColorless: 2, committedWastesColorless: 1, committedManaSpent: 3 } };
+  return f;
 }
 
 test('four real natural rotations and the actual source-bound110-trigger UI workload admit scoped release evidence', () => {
   const result = assess(fixture());
   assert.equal(result.naturalRotationsCompleted, 4);
   assert.equal(result.actualFanoutTerminalsPerHuman, 110);
+  assert.equal(result.ordinaryConsumingSourcePayment, true);
+  assert.equal(result.ordinaryPassingMode, 'ServerAuto');
+  assert.equal(result.observedQuietGrants, 8);
+  assert.equal(result.observedQuietPasses, 40);
   assert.equal(result.complexDeckQualification, 'required-causal-evidence-incomplete');
   assert.equal(result.engineRandomnessControlled, false);
   assert.equal(result.humanUxAcceptance, false);
@@ -85,6 +101,38 @@ test('cutoffs, missing rotations, fake topologies and removed server Auto cannot
   ]) {
     const f = fixture(); mutate(f); assert.throws(() => assess(f));
   }
+});
+
+test('actual shared Auto requires conserved mode-specific consent and a genuinely observed Quiet window', () => {
+  for (const mutate of [
+    f => { f.manifest.formatVersion = 1; }, f => { f.summary.formatVersion = 1; },
+    f => { f.manifest.passingMode = 'ServerNoResponse'; }, f => { f.summary.passingMode = 'FullControl'; },
+    f => { f.manifest.priorityPolicy = 'policy-only'; }, f => { delete f.summary.priorityPolicy; },
+    f => { delete f.rotations[0].result.HostAuto.NoResponseAcceptedGrants; },
+    f => { f.rotations[1].result.GuestAuto.NoResponseCertifiedAutomaticPasses = 0; },
+    f => { f.rotations[2].result.HostAuto.QuietAcceptedGrants = '1'; },
+    f => { f.rotations[3].result.GuestAuto.QuietCertifiedAutomaticPasses = null; },
+    f => { f.rotations[0].result.HostAuto.QuietConsentWindows = 0; },
+    f => { f.rotations[0].result.HostAuto.AcceptedGrants++; },
+    f => { f.rotations[1].result.GuestAuto.CertifiedAutomaticPasses++; },
+    f => { const auto = f.rotations[2].result.HostAuto; auto.NoResponseAcceptedGrants++; auto.QuietAcceptedGrants = 0; },
+    f => { for (const row of f.rotations) for (const auto of [row.result.HostAuto, row.result.GuestAuto]) {
+      auto.NoResponseAcceptedGrants = auto.AcceptedGrants; auto.NoResponseCertifiedAutomaticPasses = auto.CertifiedAutomaticPasses;
+      auto.QuietAcceptedGrants = 0; auto.QuietCertifiedAutomaticPasses = 0; auto.QuietConsentWindows = 0;
+    } }
+  ]) { const f = fixture(); mutate(f); assert.throws(() => assess(f)); }
+  const f = fixture();
+  for (const row of f.rotations) for (const auto of [row.result.HostAuto, row.result.GuestAuto]) {
+    auto.NoResponseAcceptedGrants = auto.AcceptedGrants; auto.NoResponseCertifiedAutomaticPasses = auto.CertifiedAutomaticPasses;
+    auto.QuietAcceptedGrants = 0; auto.QuietCertifiedAutomaticPasses = 0; auto.QuietConsentWindows = 0;
+  }
+  assert.throws(() => assess(f), /actually observe bounded Quiet/);
+  const first = f.rotations[0].result.HostAuto;
+  first.NoResponseAcceptedGrants--; first.QuietAcceptedGrants = 1; first.NoResponseCertifiedAutomaticPasses -= 5;
+  first.QuietCertifiedAutomaticPasses = 5; first.QuietConsentWindows = 1;
+  assert.equal(assess(f).observedQuietPasses, 5, 'A seat with no actual quiet opportunity need not fabricate one; the campaign still observes real Quiet progress.');
+  first.NoResponseAcceptedGrants--; first.QuietAcceptedGrants++;
+  assert.equal(assess(f).observedQuietGrants, 2, 'An explicit hold/resume can legitimately re-grant the same original-token window.');
 });
 
 test('strict causal integrity, public coherence and drained receipt owners remain mandatory', () => {
@@ -151,11 +199,28 @@ test('typed identity sets and bounded evidence counters reject JSON coercion and
   assert.equal(assess(reordered).naturalRotationsCompleted, 4, 'The check preserves legitimate order-independent typed identity sets.');
 });
 
+test('consuming-source admission rejects missing witnesses, inferred outputs, stale receipts and substituted provenance', () => {
+  for (const mutate of [
+    f => { delete f.manaOutput; }, f => { f.manaOutput.passed = false; }, f => { f.manaOutput.failure = 'declined'; },
+    f => { f.manaOutput.cleanupErrors = ['stuck host']; }, f => { f.manaOutput.passing = 'ServerNoResponse'; },
+    f => { f.manaOutput.activeBudgetSeconds = 60; }, f => { f.manaOutput.creditedActiveSeconds = 46; },
+    f => { f.manaOutput.creditedTotalSeconds = '35'; }, f => { f.manaOutput.creditedTotalSeconds = null; },
+    f => { f.manaOutput.coherentPublicComparisons = 0; }, f => { f.manaOutput.players.pop(); },
+    f => { f.manaOutput.players[1].index = '1'; }, f => { f.manaOutput.players[1].viewerId = 0; },
+    f => { f.manaOutput.publicComparison.AudienceCount = 1; }, f => { f.manaOutput.publicComparison.RetainedCohorts = '20'; },
+    f => { f.manaOutput.players[0].ProviderAcceptances--; }, f => { f.manaOutput.players[1].AutoEvidence.AcceptedGrants = 1; },
+    f => { f.manaOutput.runtime.SourceRevision = 'b'.repeat(40); }, f => { f.manaOutput.runtime.PolicyAssemblySha256 = 'f'.repeat(64); },
+    f => { f.manaOutput.runtime.Provenance = 'unbound-source'; }, f => { f.manaOutput.runtime.FixtureLauncherSha256 = 'f'.repeat(64); },
+    ...Object.keys(fixture().manaOutput.facts).map(key => f => { f.manaOutput.facts[key]++; }),
+    f => { f.manaOutput.facts.explicitConsumingOutputs = '0'; }
+  ]) { const f = fixture(); mutate(f); assert.throws(() => assess(f)); }
+});
+
 test('the actual file verifier binds transferred engine/harness/package bytes, including legitimate UTF8 BOM manifests', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mana-mixed-qualification-'));
   try {
     const f = fixture(), inputs = path.join(root, 'inputs'), packageDirectory = path.join(root, 'package');
-    const campaign = path.join(root, 'campaign'), fanout = path.join(root, 'fanout');
+    const campaign = path.join(root, 'campaign'), fanout = path.join(root, 'fanout'), manaOutput = path.join(root, 'mana-output');
     const put = (file, content) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, content); };
     const json = (file, value, bom = false) => put(file, (bom ? '\uFEFF' : '') + JSON.stringify(value));
     const hash = content => crypto.createHash('sha256').update(content).digest('hex');
@@ -170,14 +235,16 @@ test('the actual file verifier binds transferred engine/harness/package bytes, i
     Object.assign(f.manifest, { launchJarSha256: engineHash, harnessAssemblySha256: harnessHash, policyAssemblySha256: policyHash });
     Object.assign(f.fanout.runtime, { ProductionEngineSha256: engineHash, HarnessAssemblySha256: harnessHash, PolicyAssemblySha256: policyHash,
       FixtureLauncherSha256: fixtureHash, SourceManifestSha256: hash(fs.readFileSync(engineFile)), CandidateBuildSha256: hash(fs.readFileSync(buildFile)) });
+    f.manaOutput.runtime = structuredClone(f.fanout.runtime);
     json(path.join(campaign, 'manifest.json'), f.manifest); json(path.join(campaign, 'summary.json'), f.summary);
     for (let index = 0; index < 4; index++) {
       json(path.join(campaign, `match-${index}/result.json`), f.rotations[index].result);
       json(path.join(campaign, `match-${index}/private-owner-teardown.json`), f.rotations[index].owners);
     }
     json(path.join(fanout, 'result.json'), f.fanout);
+    json(path.join(manaOutput, 'result.json'), f.manaOutput);
     for (let index = 0; index < 2; index++) json(path.join(fanout, `projection-human-${index}/result.json`), f.replays[index]);
-    const options = { inputs, packageDirectory, campaign, fanout, sourceRevision: f.sourceRevision };
+    const options = { inputs, packageDirectory, campaign, fanout, manaOutput, sourceRevision: f.sourceRevision };
     assert.equal(verify(options).naturalRotationsCompleted, 4);
     put(path.join(packageDirectory, 'Mana.AI.dll'), 'later different policy bytes');
     assert.throws(() => verify(options), /candidate bytes|provenance/);

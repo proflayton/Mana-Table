@@ -83,9 +83,22 @@ public class TableCompletionPolicyTest {
             var driver = new Driver(endpoints, caster); table.start();
             var main = driver.until(states -> priority(states.get(2)));
             driver.cast(main.get(2));
-            var humansLost = driver.until(states -> viewer(states.get(0)).get("eliminated").getAsBoolean()
-                    && viewer(states.get(1)).get("eliminated").getAsBoolean());
+            // Loss facts can already be committed while a previously admitted
+            // pass is still retiring its private input. Observe the actual next
+            // coherent owned decision before asserting continued play.
+            var humansLost = driver.until(TableCompletionPolicyTest::completedContinuationAfterHumanLoss);
             Files.writeString(evidence.resolve("after-first-real-drain.json"), JSON.toJson(humansLost));
+            int continuingOwner = humansLost.get(0).get("decisionOwnerId").getAsInt();
+            HeadlessPlatform.query(table, () -> {
+                var actual = table.automatedSeat(continuingOwner).publicDecision();
+                assertNotNull(actual, "The surviving bot's published continuation must still own an actual rules decision");
+                assertEquals(actual.ownerId(), continuingOwner); assertEquals(actual.actionClass(), "priority");
+                var controller = (forge.player.PlayerControllerHuman)table.game.getPlayer(continuingOwner).getController();
+                var input = controller.getInputQueue().getInput();
+                assertTrue(input instanceof forge.gamemodes.match.input.InputPassPriority priority && priority.isPriorityActive());
+                assertSame(controller.getInputProxy().getInput(), input);
+                return null;
+            });
             assertFalse(table.game.isGameOver(), "Both human seats lost to a real spell, but two actual bots still own the rules contest");
             assertEquals(table.game.getPlayers().size(), 2);
             for (var state : humansLost) {
@@ -116,6 +129,21 @@ public class TableCompletionPolicyTest {
     private static boolean priority(JsonObject state) {
         return text(state, "phaseKey").equals("MAIN1") && state.get("viewerId").equals(state.get("activePlayerId"))
                 && state.get("prompt").isJsonObject() && text(state.getAsJsonObject("prompt"), "inputType").equals("InputPassPriority");
+    }
+
+    private static boolean completedContinuationAfterHumanLoss(List<JsonObject> states) {
+        if (!viewer(states.get(0)).get("eliminated").getAsBoolean()
+                || !viewer(states.get(1)).get("eliminated").getAsBoolean()
+                || states.stream().anyMatch(state -> !text(state, "status").equals("playing") || !state.getAsJsonArray("stack").isEmpty()))
+            return false;
+        var first = states.get(0);
+        var owner = first.get("decisionOwnerId");
+        if (owner == null || owner.isJsonNull() || states.stream().anyMatch(state -> !state.get("boardRevision").equals(first.get("boardRevision"))
+                || !text(state, "actionClass").equals("priority") || !owner.equals(state.get("decisionOwnerId"))
+                || !owner.equals(state.get("priorityPlayerId")))) return false;
+        return states.subList(2, 4).stream().anyMatch(state -> owner.equals(state.get("viewerId"))
+                && !viewer(state).get("eliminated").getAsBoolean() && state.get("prompt").isJsonObject()
+                && text(state.getAsJsonObject("prompt"), "inputType").equals("InputPassPriority"));
     }
 
     private static final class Driver {

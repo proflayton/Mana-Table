@@ -8,6 +8,10 @@ namespace Mana.Contracts;
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record QuickMana([property: JsonRequired] ImmutableArray<ManaProductionAlternative> Outputs)
 {
+    public bool Allows(ManaOutputChoice choice) => choice is { } && choice.IsValid() && IsValid()
+        && Outputs.Any(output => output.Colors.Count == choice.Colors.Count
+            && output.Colors.All(pair => choice.Colors.TryGetValue(pair.Key, out int count) && count == pair.Value));
+
     public bool IsValid()
     {
         if (Outputs.IsDefaultOrEmpty || Outputs.Length > 32) return false;
