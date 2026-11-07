@@ -166,16 +166,12 @@ internal sealed class ConnectedPlayerDriver : IDisposable
     private async Task ObservePolledAsync()
     {
         RequireHealthy();
-        long now = ticks();
-        if (!client.Busy && !client.Polling && now >= nextPoll) {
-            nextPoll = now + (client.State?.Decision == null ? 50 : 120);
-            client.Poll(true, _ => PollCallbacks++);
-        }
         client.Pump(); evidence.DrainPending(); RequireHealthy();
         if (passing == ConnectedPlayerPassingMode.ServerAuto) {
             if (client.State is { } automaticState) UpdateServerAuto(automaticState);
         }
-        if (client.State is not { } state || client.Busy || client.Polling) return;
+        if (client.Busy || client.Polling) return;
+        if (client.State is not { } state) { PollWhenDue(); return; }
         if (state.Status is "error" || state.Error != null) throw new InvalidDataException(state.Error ?? "Rules error.");
         // The script uses the same standing authority as the shipping client.
         // A routine prompt is never answered by a second, per-prompt owner.
@@ -185,13 +181,14 @@ internal sealed class ConnectedPlayerDriver : IDisposable
             client.EnsurePriorityContinuation(PriorityContinuationMode.NoResponse, phaseStops);
             if (client.Busy || client.Polling) return;
         }
-        if (queried != null && SameOrdinaryPublication(state, queried)) return;
+        if (queried != null && SameOrdinaryPublication(state, queried)) { PollWhenDue(); return; }
         queried = state;
         if (state.Status != "playing" || state.Decision == null || state.Viewer?.Eliminated != false || ServerOwnsRoutinePriority(state)) {
             proposal = null;
             Last = new(state.ViewerId, state, DecisionActionDomain.None, new());
             evidence.Observe(Last);
             await history.DrainOwnedAsync(ownedHistory, new(state, DecisionActionDomain.None, new()), evidence.QualificationEvidence);
+            PollWhenDue();
             return;
         }
         var generation = audienceGeneration;
@@ -213,6 +210,18 @@ internal sealed class ConnectedPlayerDriver : IDisposable
         Last = proposal;
         evidence.Observe(proposal);
         await history.DrainOwnedAsync(ownedHistory, new(accepted, own.Domain, own.Semantics), evidence.QualificationEvidence);
+    }
+
+    private void PollWhenDue()
+    {
+        // Like TableApplication.Update, give current Auto/local decision work
+        // precedence over another observation. A slow poll may already exceed
+        // this cadence when it completes; it must not starve its accepted input.
+        long now = ticks();
+        if (!client.Busy && !client.Polling && now >= nextPoll) {
+            nextPoll = now + (client.State?.Decision == null ? 50 : 120);
+            client.Poll(true, _ => PollCallbacks++);
+        }
     }
 
     private void RequireHealthy()

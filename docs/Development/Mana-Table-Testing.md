@@ -696,6 +696,11 @@ serial owner still pumps clients and drains the evidence FIFO. The 50/120 ms
 poll cadence and match limits remain unchanged. Controls cover both sides of
 the enqueue/wait race, cancellation, close/retirement, external ingress, FIFO
 application and canceled-timer cleanup.
+Like the native update loop, the scripted owner prepares current Auto or local
+decision work before starting another due poll. A poll which completes after
+its cadence must not immediately start a replacement poll ahead of that accepted
+decision. A controlled delayed completion verifies current owned evaluation and
+one ordinary command; the previous poll-first order fails that regression.
 Full private proposal/receipt records remain in the compressed evidence trace.
 Their serializer reuses a UTF8 record buffer instead of allocating a UTF16
 string for every large replay. A failed serialization commits no partial row;

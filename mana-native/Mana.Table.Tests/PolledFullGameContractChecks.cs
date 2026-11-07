@@ -31,6 +31,8 @@ internal static class PolledFullGameContractChecks
         await PolledEvidenceInboxChecks.RunAsync(profile, check);
         await CampaignOwnerWaitChecks.RunAsync(profile, check);
         await PollScheduling(profile, check);
+        await DuePollCannotStarveAuto(profile, check);
+        await SlowPollCannotStarveDecision(profile, check);
     }
 
     private static async Task PollScheduling(string profile, Action<bool, string> check)
@@ -58,6 +60,76 @@ internal static class PolledFullGameContractChecks
             "After its ordinary completion a decision-bearing client preserves the existing 120 ms cadence");
         run.Driver.Dispose();
         check(run.Driver.TimeUntilNextPoll == null, "A closed player exposes no future poll deadline");
+    }
+
+    private static async Task SlowPollCannotStarveDecision(string profile, Action<bool, string> check)
+    {
+        var first = Opening();
+        using var run = new DriverCase(profile, "slow-poll-decision-progress", first, first,
+            passing: ConnectedPlayerPassingMode.FullControl);
+        await run.Prime();
+        await run.Driver.ObserveAsync();
+        run.Ticks = 50;
+        run.Port.HoldNextRead = true;
+        await run.Driver.ObserveAsync();
+        await run.Port.NextReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var current = first with { Revision = 11, BoardRevision = 11,
+            Decision = first.Decision! with { Id = "decision-after-slow-poll" } };
+        run.Port.State = run.Port.RichState = current;
+        // The poll took longer than its existing 120 ms cadence. A ready
+        // accepted decision gets the same precedence as native local input.
+        run.Ticks = 250;
+        run.Port.ReleaseNextRead.TrySetResult(current);
+        await Drain(run.Driver.Client);
+        run.Port.NextReadStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        run.Port.ReleaseNextRead = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        run.Port.HoldNextRead = true;
+        run.Port.AfterExecute = current with { Revision = 12, BoardRevision = 12, Decision = null };
+        try {
+            await run.Driver.ObserveAsync();
+            check(run.Port.Reads == 2 && run.Port.OwnedReads == 2 && !run.Driver.Client.Polling,
+                "A poll completing after its cadence prepares the accepted current decision before starting another ordinary poll");
+            run.Port.HoldNextRead = false;
+            await run.Driver.StepAsync();
+            check(run.Port.Reads == 3 && run.Port.OwnedReads == 2 && run.Policy.Evaluations == 1
+                    && run.Port.Commands is [KeepOpeningHand { DecisionId: "decision-after-slow-poll" }]
+                    && run.Driver.ClientAdmissions == 1 && run.Driver.ProviderAcceptances == 1
+                    && !run.Driver.Client.Polling,
+                "A poll completing after its cadence cannot start another poll ahead of the accepted current decision and starve ordinary policy progress");
+        } finally {
+            run.Port.ReleaseNextRead.TrySetResult(run.Port.State);
+            await Drain(run.Driver.Client);
+        }
+    }
+
+    private static async Task DuePollCannotStarveAuto(string profile, Action<bool, string> check)
+    {
+        var initial = AutoPriority();
+        using var run = new DriverCase(profile, "due-poll-auto-progress", initial, initial,
+            passing: ConnectedPlayerPassingMode.ServerAuto);
+        NativeAutoPort(run);
+        await run.Prime();
+        // The accepted frame arrived after the previous observation's cadence.
+        // Hold whichever read starts next to distinguish an ordinary poll from
+        // the exact Quiet grant's normal command readback without timing races.
+        run.Ticks = 250;
+        run.Port.HoldNextRead = true;
+        string original = ((PriorityPayload)initial.Decision!.Payload).QuietYieldToken;
+        try {
+            await run.Driver.ObserveAsync();
+            await run.Port.NextReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            check(run.Port.Commands is [GrantPriorityContinuation { Mode: PriorityContinuationMode.Quiet } grant]
+                    && grant.QuietYieldToken == original && run.Driver.Client.Busy && !run.Driver.Client.Polling
+                    && run.Port.OwnedReads == 0 && run.Policy.Evaluations == 0,
+                "An accepted automatic Quiet window dispatches its original-token consent before another due ordinary poll, without a per-prompt policy fallback");
+        } finally {
+            run.Port.ReleaseNextRead.TrySetResult(run.Port.State);
+            await Drain(run.Driver.Client);
+        }
+        check(run.Driver.AutoEvidence is { AcceptedGrants: 1, QuietAcceptedGrants: 1, QuietConsentWindows: 1,
+                AcceptedPolicyPriorityPasses: 0 } && run.Driver.ClientAdmissions == 0 && run.Driver.ProviderAcceptances == 0
+                && run.Driver.ConsentEvidence.Receipts.Single().Command.QuietYieldToken == original,
+            "The delayed-poll Auto gesture retains one accepted original-token grant and no invented player-input receipt");
     }
 
     private static async Task OrdinaryOwner(string profile, Action<bool, string> check)
@@ -589,8 +661,8 @@ internal static class PolledFullGameContractChecks
         internal TaskCompletionSource<GameSnapshot?> ReleaseOrdinary { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource OwnedStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource<OwnedDecisionObservation?> ReleaseOwned { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        internal TaskCompletionSource NextReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        internal TaskCompletionSource<GameSnapshot?> ReleaseNextRead { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource NextReadStarted { get; set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource<GameSnapshot?> ReleaseNextRead { get; set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource SourceStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource<SourceActionSet> ReleaseSource { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal Lobby Lobby { get; } = new("host", "playing", null, false, null, true, "", null, [], [], "controlled-table");

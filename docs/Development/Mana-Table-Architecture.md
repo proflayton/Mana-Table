@@ -2493,6 +2493,9 @@ both clients and its evidence FIFO until work arrives or an existing poll,
 stalled-poll health check or match deadline is due. It retains the ordinary
 50/120 ms poll cadence and strict five-second recovery threshold; event-driven
 waiting does not create a second command or state owner.
+The scripted owner follows the native loop's precedence: prepare work for the
+accepted current decision before starting another due observation. A delayed
+poll completion cannot starve that decision by immediately starting a new poll.
 
 The Forge connection's observed command context also rejects a lower revision
 within the same game. RPC read continuations may finish out of order; an older
