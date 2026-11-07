@@ -180,6 +180,7 @@ await AiFrameworkRegression.RunAsync(Check);
 AiSemanticRegression.Run(Check);
 await AiHostRegression.RunAsync(Check);
 await AiHostLoopRegression.RunAsync(Check);
+await AiAutomatedPriorityRegression.RunAsync(Check);
 await AiRepeatedCadenceRegression.RunAsync(Check);
 await AiObservationSupersededRegression.RunAsync(Check);
 await AiPolicyRegression.RunAsync(Check);

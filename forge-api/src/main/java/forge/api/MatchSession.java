@@ -99,7 +99,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private final FiniteStackYield finiteStackYield = new FiniteStackYield();
     private final PriorityContinuation priorityContinuation = new PriorityContinuation();
     private final PriorityObservation priorityObservation = new PriorityObservation();
-    private record ObservationPublication(long board, long activity, long executions) { }
+    private record ObservationPublication(long board, long activity, long executions, long readSignature) { }
     private ObservationPublication stagedObservation;
     private final CombatChoiceScope combatChoices = new CombatChoiceScope();
     private Input combatRefreshQueued;
@@ -173,7 +173,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (!priorityObservation.initialized() && !MatchTable.isAutomated(human.getPlayer())) {
             activity.beginDelivery(); executions.beginDelivery();
         }
-        priorityObservation.published(staged.board(), staged.activity(), staged.executions());
+        priorityObservation.published(staged.board(), staged.activity(), staged.executions(), staged.readSignature());
         stagedObservation = null;
     }
 
@@ -327,6 +327,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         finiteStackYield.revoke("connection-ended");
         priorityContinuation.revoke("connection-ended");
         closed = true;
+        synchronizeExternalPriorityAvailability();
         inspectionInput = null; inspectionContext = null; choiceContextInput = null; choiceContext = null;
         if (latest.get("publicInspection") != null || latest.get("publicChoice") != null) {
             var retired = new LinkedHashMap<>(latest); retired.put("revision", ++revision);
@@ -469,6 +470,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         game.getAction().withState(this::publishInputInState);
     }
     private void publishInputInState() {
+        publishInputInState(false);
+    }
+    private void publishInputInState(boolean requireFullPublication) {
         synchronized (gate) {
             if (closed || error != null || conceded && !viewer.getHasLost()) return;
             if (game.isGameOver()) { releaseInput(); return; }
@@ -476,6 +480,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (pending != null && !pending.kind.equals("input")) return;
             Input current = human.getInputQueue().getInput();
             if (current == null || current != displayedInput || current != human.getInputProxy().getInput() || game.isGameOver()) return;
+            // The exact displayed InputQueue/InputProxy owner is waiting.
+            // Commit delayed views before even testing view-owned loss facts.
+            game.getTracker().flushForCommittedObservation();
+            if (current != human.getInputQueue().getInput() || current != human.getInputProxy().getInput()) return;
             if (viewer.getHasLost()) {
                 // A loss while resolving a spell can leave priority pointing at
                 // the departed controller. Hiding that input strands its latch,
@@ -484,7 +492,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 // releasing it, and let surviving human seats keep playing.
                 pending = null;
                 table.finishIfNoHumans();
-                table.publish();
+                table.publishCurrentDecision();
                 if (game.isGameOver()) table.releaseInputs();
                 else if (current instanceof InputSynchronized departed) departed.stop();
                 else releaseInput();
@@ -546,7 +554,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             pending = next;
             // Every skipped publication is only a priority hop. Real rules
             // events, phases and choices still commit their full cohort.
-            if (current instanceof InputPassPriority && table.canElidePriorityPublication()
+            if (!requireFullPublication && current instanceof InputPassPriority && table.canElidePriorityPublication()
                     && automaticPriorityReady(next)) {
                 queuePriorityContinuation();
                 if (next.continuationQueued) return;
@@ -644,8 +652,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private boolean automaticPriorityReady(Pending current) {
         refreshFiniteStackYield();
         refreshPriorityContinuation(current);
-        if (!table.priorityObserversReady()) {
-            priorityContinuation.hold(table.priorityObservationReason());
+        if (!priorityObserversReady()) {
+            priorityContinuation.hold(priorityObservationReason());
             return false;
         }
         return current != null && current.input instanceof InputPassPriority && sourceInputCurrent(current)
@@ -678,7 +686,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 refreshFiniteStackYield(); refreshPriorityContinuation(current);
                 boolean consent = finiteGrant != null ? finiteStackYield.active() && finiteGrant.equals(finiteStackYield.id())
                         : priorityContinuation.current(standing) && priorityContinuation.frame().status() == PriorityContinuation.Status.ACTIVE;
-                if (consent && table.priorityObserversReady() && inputOwnerCurrent(input)
+                if (consent && priorityObserversReady() && inputOwnerCurrent(input)
                         && human.getInputProxy().getInputSequence() == inputSequence && sourceActionVersion.get() == sourceVersion) {
                     input.passPriority();
                     if (!input.isPriorityActive()) {
@@ -694,9 +702,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private void refreshPriorityContinuation(Pending current) {
+        synchronizeExternalPriorityAvailability();
         if (!priorityContinuation.accepted()) return;
         if (closed || error != null || conceded || viewer.getHasLost() || game.isGameOver()) {
-            priorityContinuation.revoke("match-ended"); return;
+            priorityContinuation.revoke("match-ended"); synchronizeExternalPriorityAvailability(); return;
         }
         var instruction = priorityContinuation.instruction();
         if (instruction.mode() == PriorityContinuation.Mode.QUIET
@@ -720,6 +729,33 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         priorityContinuation.ready();
     }
 
+    private void synchronizeExternalPriorityAvailability() {
+        if (human.isExternallyAutomated()) human.setExternalPriorityAvailabilityRequested(priorityContinuation.accepted()
+                && priorityContinuation.instruction().mode() == PriorityContinuation.Mode.NO_RESPONSE
+                && !closed && error == null && !conceded && !human.getPlayer().hasLost() && !game.isGameOver());
+    }
+
+    /** Bots have no native presentation owner. Their explicit continuation
+     * must consume their own accepted-frame credit as well as human credit. */
+    private boolean priorityObserversReady() {
+        return table.priorityObserversReady() && (!automatedNoResponseAccepted()
+                || priorityObserverRegistered() && priorityObserverHasCredit()
+                    && priorityObservation.hasReadSignature(table.stackInterruption.version()));
+    }
+    private String priorityObservationReason() {
+        if (automatedNoResponseAccepted()) {
+            if (priorityObserverOverflowed()) return "observation-overflow";
+            if (!priorityObserverRegistered()) return "awaiting-observation-registration";
+            if (!priorityObserverHasCredit()) return "awaiting-observation";
+            if (!priorityObservation.hasReadSignature(table.stackInterruption.version())) return "awaiting-observation";
+        }
+        return table.priorityObservationReason();
+    }
+    private boolean automatedNoResponseAccepted() {
+        return human.isExternallyAutomated() && priorityContinuation.accepted()
+                && priorityContinuation.instruction().mode() == PriorityContinuation.Mode.NO_RESPONSE;
+    }
+
     boolean priorityObserverRegistered() { return priorityObservation.registered(); }
     boolean priorityObserverHasCredit() { return priorityObservation.hasCredit(activity.sequence()) && !priorityObserverOverflowed(); }
     boolean priorityObserverOverflowed() { return activity.deliveryOverflow() || executions.deliveryOverflow(); }
@@ -728,7 +764,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     private void refreshContinuationProjection() {
         refreshPriorityContinuation(pending);
-        if (!table.priorityObserversReady()) priorityContinuation.hold(table.priorityObservationReason());
+        if (!priorityObserversReady()) priorityContinuation.hold(priorityObservationReason());
         var next = new LinkedHashMap<>(latest);
         next.put("revision", ++revision);
         next.put("priorityContinuation", priorityContinuation.frame());
@@ -743,6 +779,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             table.presence.disconnected(viewer.getId());
             finiteStackYield.revoke("connection-ended");
             priorityContinuation.disconnected(); priorityObservation.disconnected(); activity.retireDelivery(); executions.retireDelivery();
+            synchronizeExternalPriorityAvailability();
             if (!closed && error == null) table.publish();
         } });
     }
@@ -1230,8 +1267,14 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (action.equals("acknowledgePriorityObservation")) {
                 requireSession(request);
                 long board = finiteYieldVersion(request, "boardRevision"), sequence = finiteYieldVersion(request, "publicActivitySequence");
+                if (human.isExternallyAutomated() && (closed || human.getPlayer().hasLost() || game.isGameOver()))
+                    throw new AutomatedPriorityControlRetired();
                 if (priorityObserverOverflowed()) throw new IllegalArgumentException("Priority observation overflowed; reload the table before enabling Auto");
+                boolean registering = !priorityObservation.registered();
                 long executionSequence = priorityObservation.acknowledge(board, sequence);
+                if (registering && human.isExternallyAutomated()) {
+                    activity.beginDelivery(sequence); executions.beginDelivery(executionSequence);
+                }
                 activity.acknowledgeDelivery(priorityObservation.acknowledgedActivity());
                 executions.acknowledgeDelivery(executionSequence);
                 refreshContinuationProjection(); table.continuePriority(); return latest;
@@ -1794,16 +1837,30 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 string(request, "grantId"), mode, phases, string(request, "quietYieldToken"));
         if (priorityContinuation.repeated(instruction)) { refreshContinuationProjection(); return latest; }
         Pending current = pending;
+        if (human.isExternallyAutomated() && mode == PriorityContinuation.Mode.NO_RESPONSE
+                && (closed || human.getPlayer().hasLost() || game.isGameOver())) throw new AutomatedPriorityControlRetired();
         if (finiteStackYield.active()) throw new IllegalArgumentException("Withdraw the finite queue before enabling standing Auto");
         if (!priorityObservation.registered() || priorityObserverOverflowed()) throw new IllegalArgumentException("Observe this table before enabling Auto");
-        if (current == null || !current.id.equals(string(request, "promptId"))
-                || !(current.input instanceof InputPassPriority) || !sourceInputCurrent(current) || !okEnabled
-                || request.has("expectedTask") && !string(request, "expectedTask").equals("priority"))
+        if (request.has("expectedTask") && !string(request, "expectedTask").equals("priority"))
             throw new IllegalArgumentException("That priority decision changed before enabling Auto");
+        if (current == null || !current.id.equals(string(request, "promptId"))
+                || !(current.input instanceof InputPassPriority) || !sourceInputCurrent(current)) {
+            if (human.isExternallyAutomated() && mode == PriorityContinuation.Mode.NO_RESPONSE) throw new AutomatedPriorityControlRetired();
+            throw new IllegalArgumentException("That priority decision changed before enabling Auto");
+        }
+        if (!okEnabled) throw new IllegalArgumentException("That priority decision changed before enabling Auto");
         if (mode == PriorityContinuation.Mode.QUIET && (!Objects.equals(current.prompt.get("quietYieldToken"), instruction.quietYieldToken())
                 || !permitsQuietYield(current, instruction.quietYieldToken())))
             throw new IllegalArgumentException("The public table changed before enabling Quiet Auto");
         priorityContinuation.begin(instruction);
+        synchronizeExternalPriorityAvailability();
+        if (human.isExternallyAutomated() && mode == PriorityContinuation.Mode.NO_RESPONSE
+                && human.refreshExternalPriorityAvailability((InputPassPriority)current.input)
+                && pending == current && sourceInputCurrent(current)) {
+            // The control receipt must include this actual completed scan,
+            // even when its first automatic pass could elide a priority hop.
+            publishInputInState(true);
+        }
         refreshContinuationProjection(); queuePriorityContinuation(); return latest;
     }
 
@@ -2410,6 +2467,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private void publish(Pending prompt) {
+        if (prompt == null || pending != prompt || prompt.response.isDone()
+                || prompt.kind.equals("input") && !inputOwnerCurrent(prompt.input)) return;
         if (prompt != null && !(prompt.input instanceof InputPassPriority) && prompt.executionId == null) {
             // A nested source's callback can restore the outer payment before
             // its own execution scope unwinds. The input explicitly owns the
@@ -2425,7 +2484,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 prompt.executionId = execution.id();
             }
         }
-        pending = prompt; table.publish();
+        pending = prompt; table.publishCurrentDecision();
     }
 
     void refreshVisibility() { activity.refreshVisibility(); }
@@ -2630,10 +2689,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         inspectionSubjects = nextSubjects;
         choiceReferences = nextReferences; choiceDomain = nextChoiceDomain; choicePublishedInput = prompt == null ? null : prompt.input;
         inspectionSubjectsBoardRevision = boardRevision;
-        stagedObservation = new ObservationPublication(boardRevision, activity.sequence(), publication.executions().lastSequence());
+        stagedObservation = new ObservationPublication(boardRevision, activity.sequence(), publication.executions().lastSequence(),
+                ((Number)snapshot.get("stackInterruptionVersion")).longValue());
         snapshot.put("priorityObservation", priorityObservation.projectedFrame(boardRevision, stagedObservation.activity(), priorityObserverOverflowed()));
         refreshPriorityContinuation(prompt);
-        if (!table.priorityObserversReady()) priorityContinuation.hold(table.priorityObservationReason());
+        if (!priorityObserversReady()) priorityContinuation.hold(priorityObservationReason());
         snapshot.put("priorityContinuation", priorityContinuation.frame());
         latest = freezePublishedView(snapshot);
         publishedSourceActionVersion = publicationSourceVersion;

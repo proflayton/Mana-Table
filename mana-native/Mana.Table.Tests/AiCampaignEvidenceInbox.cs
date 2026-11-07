@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using Mana.AI;
 using Mana.Contracts;
 
@@ -90,7 +91,7 @@ internal sealed class AiCampaignEvidenceInbox(AiCampaignDiagnostics owner, int c
     {
         lock (gate) {
             if (retired) throw new InvalidOperationException("The campaign evidence handoff has retired.");
-            if (fault != null) throw fault;
+            if (fault != null) ExceptionDispatchInfo.Throw(fault);
         }
     }
 
@@ -98,11 +99,11 @@ internal sealed class AiCampaignEvidenceInbox(AiCampaignDiagnostics owner, int c
     {
         if (capacity < 1) throw new ArgumentOutOfRangeException(nameof(capacity));
         if (retired) throw new InvalidOperationException("The campaign evidence handoff has retired.");
-        if (fault != null) throw fault;
+        if (fault != null) ExceptionDispatchInfo.Throw(fault);
         if (pending.Count >= capacity) {
             fault = new InvalidDataException("The bounded campaign evidence handoff overflowed; qualification is incomplete.");
             queuedWork.TrySetResult();
-            throw fault;
+            ExceptionDispatchInfo.Throw(fault);
         }
         var stamp = new CampaignEvidenceStamp(++enqueued, time.GetUtcNow(), time.GetTimestamp(), value.GetType().Name);
         pending.Enqueue(new(stamp, value)); highWater = Math.Max(highWater, pending.Count);
@@ -115,7 +116,7 @@ internal sealed class AiCampaignEvidenceInbox(AiCampaignDiagnostics owner, int c
     {
         lock (gate) {
             if (retired) throw new InvalidOperationException("The campaign evidence handoff has retired.");
-            if (fault != null) throw fault;
+            if (fault != null) ExceptionDispatchInfo.Throw(fault);
             // A superseded/failed next read can enter again without returning a
             // new batch. A completion marker names that prior return only once.
             if (returnedBatches == processedReturnSequence) return;
@@ -133,7 +134,7 @@ internal sealed class AiCampaignEvidenceInbox(AiCampaignDiagnostics owner, int c
         if (observations.IsDefault) throw new InvalidDataException("A campaign batch must be an immutable initialized value.");
         lock (gate) {
             if (retired) throw new InvalidOperationException("The campaign evidence handoff has retired.");
-            if (fault != null) throw fault;
+            if (fault != null) ExceptionDispatchInfo.Throw(fault);
             if (observations.IsEmpty && !ownedBatchSeen) {
                 returned = observations; lastReturnIdle = true;
                 returnedBatches++; idleReturnedBatches++;
@@ -190,7 +191,7 @@ internal sealed class AiCampaignEvidenceInbox(AiCampaignDiagnostics owner, int c
             Exception? failure; bool record;
             lock (gate) { failure = fault; record = failure != null && !faultRecorded; if (record) faultRecorded = true; }
             if (record) owner.RecordHandoffFailure(failure!);
-            if (failure != null) throw failure;
+            if (failure != null) ExceptionDispatchInfo.Throw(failure);
         } finally { Volatile.Write(ref draining, 0); }
     }
 

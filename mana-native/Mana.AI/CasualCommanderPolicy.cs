@@ -11,7 +11,7 @@ namespace Mana.AI;
 /// </summary>
 public sealed class CasualCommanderPolicy : IAiPolicy
 {
-    public AiPolicyDescriptor Descriptor { get; } = new("casual-commander.v5", AiTasks.All);
+    public AiPolicyDescriptor Descriptor { get; } = new("casual-commander.v5", AiTasks.All, AiPriorityAutomation.NoResponse);
 
     public Task<AiProposal> EvaluateAsync(AiDecisionRequest request, CancellationToken cancellation)
     {

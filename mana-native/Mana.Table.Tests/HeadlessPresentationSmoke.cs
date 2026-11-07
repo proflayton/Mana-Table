@@ -76,6 +76,7 @@ internal static partial class HeadlessPresentationSmoke
                     PriorityContinuationChecks.Run(profile, Check);
                 }
                 else if (group == "server-auto") {
+                    AutomatedPriorityProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                     Utf8JsonLinesChecks.Run(Check);
                     PriorityContinuationWireChecks.Run(Check);
                     ServerAutoPresentationChecks.Run(profile, Check);
@@ -108,6 +109,7 @@ internal static partial class HeadlessPresentationSmoke
             ProviderIsolationChecks.Run(Check);
             ManaFundingWireChecks.Run(Check);
             AutomatedWireFailureChecks.Run(profile, Check);
+            AutomatedPriorityProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             CostOrderingWireChecks.Run(Check);
             ExecutionWireChecks.Run(Check);
             MatchOutcomeWireChecks.Run(Check);

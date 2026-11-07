@@ -42,6 +42,7 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         public bool TablePresenceAvailable { get; set; }
         public bool TableChoicesAvailable { get; set; }
         public bool PriorityContinuationAvailable { get; set; }
+        public bool AutomatedPriorityContinuationAvailable { get; set; }
         public ForgeCommandScope Commands { get; } = new();
         public volatile Exception? Failure;
         public volatile bool FramingFailed;
@@ -97,6 +98,7 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
                             owner.TablePresenceAvailable = capabilities.Contains("table-presence");
                             owner.TableChoicesAvailable = capabilities.Contains("table-choices-v1");
                             owner.PriorityContinuationAvailable = capabilities.Contains("priority-continuation-v1");
+                            owner.AutomatedPriorityContinuationAvailable = capabilities.Contains("automated-priority-continuation-v1");
                             owner.Ready.TrySetResult();
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
@@ -132,11 +134,13 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         if (current != owner) return;
         foreach (var item in pending) if (pending.TryRemove(item.Key, out var reply)) reply.Completion.TrySetException(ex);
     }
-    private async Task<JsonElement> Request(string method, object? arguments = null, CancellationToken cancellation = default)
+    private async Task<JsonElement> Request(string method, object? arguments = null, CancellationToken cancellation = default,
+        EngineProcess? expectedOwner = null, Action? beforeDispatch = null)
     {
         cancellation.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(disposed, this);
-        var owner = current ?? throw new IOException("The engine is not running");
+        var owner = expectedOwner ?? current ?? throw new IOException("The engine is not running");
+        if (expectedOwner != null && current != expectedOwner) throw new EngineObservationSupersededException();
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(45), requestTime);
         using var operation = CancellationTokenSource.CreateLinkedTokenSource(cancellation, deadline.Token);
         var token = operation.Token;
@@ -161,6 +165,7 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
             try {
                 token.ThrowIfCancellationRequested();
                 if (current != owner || owner.Failure != null || owner.Process.HasExited) throw new IOException("The engine is not running");
+                beforeDispatch?.Invoke();
                 phase = EngineRequestPhase.Writing;
                 var writing = owner.Process.StandardInput.WriteLineAsync(line.AsMemory(), token);
                 ObserveAbandonedRequestFault(writing);
@@ -201,6 +206,8 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     internal static Exception RequestFailure(string method, JsonElement message)
     {
+        if (method == "automatedAction" && Text(message, "errorCode") == "automated-priority-control-retired")
+            return new ForgeAutomatedPriorityRetiredException();
         if (method == "tablePresence" && Text(message, "errorCode") == "table-presence-superseded")
             return new EngineObservationSupersededException();
         if (method == "matchSourceActions") {

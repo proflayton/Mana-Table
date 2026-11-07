@@ -29,6 +29,14 @@ command reply remains uncertainty until a fresh observation reconciles it.
 The boundary audit maps these contracts to ordinary CI journeys and separates
 stale-authority refusal from resource refunds and live-game recovery.
 
+Published views also need a committed rules cut. Forge's zone collections can
+change while frozen card properties still describe the preceding state. A
+validated waiting input, required dialog or completed rules outcome may flush
+those committed properties through `Tracker.flushForCommittedObservation`,
+preserving every enclosing freeze. Incidental refreshes retain the previous
+coherent cohort while frozen. Speculative queries cannot request that cut, and
+historical portraits never acquire new current occurrence identities.
+
 Java CI isolates API tests in two process-owned workspaces while keeping methods
 and upstream modules serial. Its opt-in Maven profile and shared accounting
 checker bind current compiled inputs, process owners, reports and invocation
@@ -534,6 +542,16 @@ scoped bot knowledge and complete timing-legal source domains; remote players
 and the renderer cannot access it. Normal authoritative input controllers execute
 all bot choices, including manual producer and floating-pool payment. Forge's
 strategic controller is never a fallback for that negotiated mode.
+The optional host-only `IAutomatedPriorityContinuation` port represents only
+observation acknowledgement, `NoResponse` consent and withdrawal. It cannot
+carry gameplay, Quiet or finite-yield commands. The policy descriptor explicitly
+opts into `NoResponse`; custom policies default to full control. `AiTableHost`
+owns sequence fences and observed certificates per game, seat and provider epoch,
+separately from policy decisions and gameplay receipts. A known retired control
+requires fresh authority; an unknown affirmative receipt cannot authorize another
+play. Reading and pacing gates still control progression. A provider without the
+dedicated `automated-priority-continuation-v1` capability retains its ordinary
+policy path; human continuation support alone does not imply bot support.
 `IAutomatedSimulation` supports explicit all-bot tables with a separate public,
 non-acting spectator. Live tables retain their human requirement. Forecasting,
 deeper deck planning and human evaluation of the policy remain future work.
@@ -1148,6 +1166,10 @@ may contain private hands. Stable reason codes alone cross the public fault
 port. Storage failure cannot prevent fail-closed automation shutdown. The
 historical `provider-failed` report without its original exception cannot by
 itself establish a rules, strategy or wire-decoding cause.
+Campaign public-invariant validation separately retains its exact first rejected
+decoded batch before throwing. It does not relabel the last valid batch as the
+failure, invent other audiences or replace the original exception with a storage
+error. Later evidence-inbox operations preserve that original validation stack.
 
 A real mixed-deck investigation reproduced a different boundary outcome:
 `automatedState` can lose its owned input during source discovery. The adapter

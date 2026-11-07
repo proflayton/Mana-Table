@@ -4,7 +4,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { DECKS, assess, verify } = require('../mixed-game-qualification.cjs');
+const { DECKS, assessNatural, assess, verify } = require('../mixed-game-qualification.cjs');
+// Key names/types come from an actual serialized campaign record; all values
+// are neutralized so this checked-in shape contains no private game identities.
+const serializedEvidence = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/mixed-game-campaign-evidence.json'), 'utf8'));
 
 function fixture() {
   const hashes = { engineHash: '1'.repeat(64), harnessHash: '2'.repeat(64), policyHash: '3'.repeat(64),
@@ -12,10 +15,10 @@ function fixture() {
   const sourceRevision = 'a'.repeat(40);
   const rotations = [0, 1, 2, 3].map(index => {
     const result = { Rotation: index, DriveMode: 'PolledBackground', Failure: null, StopReason: 'natural-outcome',
-      NaturalOutcomeVerified: true, Turns: 42, Outcome: { Kind: 'win' },
+      NaturalOutcomeVerified: true, Turns: 42, Outcome: { GameId: `game-${index}`, Kind: 'win' },
       Qualification: { Status: 'Inconclusive', TypedNaturalGameCompleted: true, FailureReasons: [],
         MissingEvidence: ['slot-0/owned-equipment-attachment/unobserved'] },
-      Evidence: { DiagnosticErrors: [] }, PublicComparisons: 12, FourAudienceCohorts: 4, DevelopedSeats: [0, 1, 2, 3],
+      Evidence: structuredClone(serializedEvidence), PublicComparisons: 12, FourAudienceCohorts: 4, DevelopedSeats: [0, 1, 2, 3],
       Participants: [0, 1, 2, 3].map(slot => ({ SlotIndex: slot, PlayerId: slot, Role: ['Host', 'Guest', 'Ai', 'Ai'][slot], ProviderAcceptances: 20 })),
       Decks: DECKS.map((_, slot) => ({ CandidateId: DECKS[(slot + index) % 4], SourceSha256: (7 + (slot + index) % 4).toString(16).repeat(64) })),
       CausalDecks: DECKS.map(() => ({ MechanicalIntegrity: 'no-observed-integrity-failure', IntegrityFailures: [], SampledNaturalGame: 'observed-natural-outcome' })),
@@ -24,17 +27,21 @@ function fixture() {
         NoResponseAcceptedGrants: 7, QuietAcceptedGrants: 1, NoResponseCertifiedAutomaticPasses: 95, QuietCertifiedAutomaticPasses: 5, QuietConsentWindows: 1 },
       GuestAuto: { AcceptedGrants: 9, CertifiedAutomaticPasses: 101, AcceptedWithdrawals: 8, AcceptedPolicyPriorityPasses: 11,
         NoResponseAcceptedGrants: 8, QuietAcceptedGrants: 1, NoResponseCertifiedAutomaticPasses: 96, QuietCertifiedAutomaticPasses: 5, QuietConsentWindows: 1 },
+      AutomatedPriorityContinuations: [2, 3].map(SeatId => ({ GameId: `game-${index}`, SeatId, Epoch: 1,
+        AcceptedAcknowledgements: 2, AcceptedGrants: 1, AcceptedWithdrawals: 1, CertifiedAutomaticPasses: 100,
+        LastSequence: 1, LastAcknowledgedBoardRevision: 42, LastAcknowledgedPublicActivitySequence: 70, Retired: true })),
       PublicComparison: { ComparedFrames: 40, AudienceCount: 4, MaximumRetainedCohorts: 64, RetainedCohorts: 64 } };
-    return { result, owners: { Executing: 0, orderedEvidence: { Pending: 0, Retired: true, MissingOwnedBatch: false, Failure: null,
-      Enqueued: 100, Applied: 100, DiscardedAfterFault: 0 }, host: { ProviderAcceptances: 20 }, guest: { ProviderAcceptances: 20 } } };
+    return { result, owners: { Executing: 0, PriorityControlsExecuting: 0, orderedEvidence: { Pending: 0, Retired: true, MissingOwnedBatch: false, Failure: null,
+      Enqueued: 100, Applied: 100, DiscardedAfterFault: 0 }, host: { ProviderAcceptances: 20 }, guest: { ProviderAcceptances: 20 },
+      cumulativeProviderAcceptances: { 2: 20, 3: 20 }, automatedPriorityContinuations: structuredClone(result.AutomatedPriorityContinuations) } };
   });
   const f = { sourceRevision, ...hashes,
-    manifest: { formatVersion: 2, profile: 'natural', mode: 'PolledBackground', passingMode: 'ServerAuto',
+    manifest: { formatVersion: 3, profile: 'natural', mode: 'PolledBackground', passingMode: 'ServerAuto', automatedPriorityPolicy: 'NoResponse',
       priorityPolicy: 'PriorityAttention+QuietPriorityPolicy', engineRandomnessControlled: false,
       limits: { Matches: 4, Turns: 160, MatchTime: '00:03:00' }, launchJarSha256: hashes.engineHash,
       harnessAssemblySha256: hashes.harnessHash, policyAssemblySha256: hashes.policyHash,
       decks: DECKS.map((Id, index) => ({ Id, Hash: (7 + index).toString(16).repeat(64) })) },
-    summary: { formatVersion: 2, profile: 'natural', mode: 'PolledBackground', passingMode: 'ServerAuto',
+    summary: { formatVersion: 3, profile: 'natural', mode: 'PolledBackground', passingMode: 'ServerAuto', automatedPriorityPolicy: 'NoResponse',
       priorityPolicy: 'PriorityAttention+QuietPriorityPolicy', allRequestedGamesCompleted: true, humanReview: 'pending',
       allInteractionsClaimed: false, unrunRotations: [], results: rotations.map(row => row.result) }, rotations,
     fanout: { passed: true, failure: null, cleanupErrors: [], projectionContinuityVerified: true, capturedTriggers: 110,
@@ -75,6 +82,9 @@ test('four real natural rotations and the actual source-bound110-trigger UI work
   assert.equal(result.ordinaryPassingMode, 'ServerAuto');
   assert.equal(result.observedQuietGrants, 8);
   assert.equal(result.observedQuietPasses, 40);
+  assert.equal(result.automatedPriorityPolicy, 'NoResponse');
+  assert.equal(result.observedAutomatedNoResponseGrants, 8);
+  assert.equal(result.observedAutomatedNoResponsePasses, 800);
   assert.equal(result.complexDeckQualification, 'required-causal-evidence-incomplete');
   assert.equal(result.engineRandomnessControlled, false);
   assert.equal(result.humanUxAcceptance, false);
@@ -87,6 +97,27 @@ test('a natural finish never upgrades unobserved rare mechanics to full deck qua
   assert.equal(assess(f).complexDeckQualification, 'observed-required-mechanics');
   f.rotations[0].result.CausalDecks[0].IntegrityFailures = [{ Consequence: 'bad payment' }];
   assert.throws(() => assess(f), /causal integrity/);
+});
+
+test('natural-only admission consumes the real serialized diagnostic shape without inventing unrelated workload evidence', () => {
+  const naturalInputs = f => ({ engineHash: f.engineHash, harnessHash: f.harnessHash, policyHash: f.policyHash,
+    manifest: f.manifest, summary: f.summary, rotations: f.rotations });
+  const result = assessNatural(naturalInputs(fixture()));
+  assert.equal(result.naturalRotationsCompleted, 4);
+  assert.equal(Object.hasOwn(result, 'actualFanoutTerminalsPerHuman'), false);
+  assert.equal(Object.hasOwn(result, 'ordinaryConsumingSourcePayment'), false);
+  assert.equal(Object.hasOwn(serializedEvidence, 'diagnosticErrors'), true);
+  assert.equal(Object.hasOwn(serializedEvidence, 'DiagnosticErrors'), false);
+  for (const mutate of [
+    evidence => { evidence.diagnosticErrors = ['real capture failure']; evidence.DiagnosticErrors = []; },
+    evidence => { delete evidence.diagnosticErrors; evidence.DiagnosticErrors = []; },
+    evidence => { evidence.diagnosticErrors = null; }, evidence => { evidence.diagnosticErrors = {}; }
+  ]) {
+    const f = fixture(); mutate(f.rotations[0].result.Evidence);
+    assert.throws(() => assessNatural(naturalInputs(f)), /integrity failure/);
+  }
+  const incomplete = fixture(); incomplete.summary.allRequestedGamesCompleted = false;
+  assert.throws(() => assessNatural(naturalInputs(incomplete)), /All four requested/);
 });
 
 test('cutoffs, missing rotations, fake topologies and removed server Auto cannot enter natural release qualification', () => {
@@ -140,12 +171,71 @@ test('strict causal integrity, public coherence and drained receipt owners remai
     r => { r.result.Failure = 'rules crash'; }, r => { r.result.Qualification.Status = 'Failed'; },
     r => { r.result.Qualification.MissingEvidence = ['slot-0/causal-qualification-missing']; },
     r => { r.result.Qualification.Status = 'Passed'; }, r => { r.result.Decks[0].SourceSha256 = 'f'.repeat(64); },
-    r => { r.result.Evidence.DiagnosticErrors = ['lost record']; }, r => { r.result.FourAudienceCohorts = 0; },
+    r => { r.result.Evidence.diagnosticErrors = ['lost record']; }, r => { r.result.FourAudienceCohorts = 0; },
     r => { r.result.PublicComparison.AudienceCount = 3; }, r => { r.result.PublicComparison.RetainedCohorts = 65; },
     r => { r.owners.Executing = 1; }, r => { r.owners.orderedEvidence.Pending = 1; },
     r => { r.owners.orderedEvidence.MissingOwnedBatch = true; }, r => { r.owners.orderedEvidence.Enqueued++; },
     r => { r.owners.orderedEvidence.Retired = false; }, r => { r.owners.guest.ProviderAcceptances--; }
   ]) { const f = fixture(); mutate(f.rotations[0]); assert.throws(() => assess(f)); }
+});
+
+test('AI NoResponse certification requires explicit intent, actual owned controls and the matching retired game epoch', () => {
+  for (const mutate of [
+    f => { f.manifest.formatVersion = 2; }, f => { f.summary.formatVersion = 2; },
+    f => { delete f.manifest.automatedPriorityPolicy; }, f => { f.summary.automatedPriorityPolicy = 'FullControl'; },
+    f => { delete f.rotations[0].result.AutomatedPriorityContinuations; },
+    f => { f.rotations[0].result.AutomatedPriorityContinuations.pop(); },
+    f => { f.rotations[0].result.AutomatedPriorityContinuations[1].SeatId = 2; },
+    f => { f.rotations[0].result.AutomatedPriorityContinuations[0].SeatId = 0; },
+    f => { f.rotations[0].result.AutomatedPriorityContinuations[0].SeatId = '2'; },
+    f => { f.rotations[0].result.AutomatedPriorityContinuations[0].GameId = 'another-game'; },
+    f => { delete f.rotations[0].result.Outcome.GameId; },
+    f => { f.rotations[0].result.AutomatedPriorityContinuations[0].Retired = false; },
+    f => { f.rotations[0].result.AutomatedPriorityContinuations[0].Retired = 'true'; },
+    f => { f.rotations[0].result.AutomatedPriorityContinuations[0].QuietToken = 'unadvertised-extra-authority'; },
+    f => { delete f.rotations[0].owners.automatedPriorityContinuations; },
+    f => { f.rotations[0].owners.automatedPriorityContinuations[0].CertifiedAutomaticPasses++; },
+    f => { f.rotations[0].owners.automatedPriorityContinuations[0].Epoch++; },
+    f => { f.rotations[0].owners.automatedPriorityContinuations[0].UndeclaredControl = 1; },
+    f => { delete f.rotations[0].owners.cumulativeProviderAcceptances; },
+    f => { f.rotations[0].owners.cumulativeProviderAcceptances[2] = '20'; },
+    f => { f.rotations[0].owners.cumulativeProviderAcceptances[2]++; },
+    f => { f.rotations[0].owners.cumulativeProviderAcceptances[0] = 20; }
+  ]) { const f = fixture(); mutate(f); assert.throws(() => assess(f)); }
+  for (const field of ['Epoch', 'AcceptedAcknowledgements', 'AcceptedGrants', 'CertifiedAutomaticPasses', 'LastSequence'])
+    for (const invalid of [0, -1, '1', null, true, Number.MAX_SAFE_INTEGER + 1]) {
+      const f = fixture();
+      f.rotations[0].result.AutomatedPriorityContinuations[0][field] = invalid;
+      f.rotations[0].owners.automatedPriorityContinuations[0][field] = invalid;
+      assert.throws(() => assess(f), undefined, field + ':' + invalid);
+    }
+  for (const field of ['AcceptedWithdrawals', 'LastAcknowledgedBoardRevision', 'LastAcknowledgedPublicActivitySequence'])
+    for (const invalid of [-1, '0', null, true, Number.MAX_SAFE_INTEGER + 1]) {
+      const f = fixture();
+      f.rotations[0].result.AutomatedPriorityContinuations[0][field] = invalid;
+      f.rotations[0].owners.automatedPriorityContinuations[0][field] = invalid;
+      assert.throws(() => assess(f), undefined, field + ':' + invalid);
+    }
+  for (const field of ['AcceptedGrants', 'CertifiedAutomaticPasses']) {
+    const f = fixture();
+    f.rotations[0].result.AutomatedPriorityContinuations[0][field] = Number.MAX_SAFE_INTEGER;
+    f.rotations[0].owners.automatedPriorityContinuations[0][field] = Number.MAX_SAFE_INTEGER;
+    assert.throws(() => assess(f), /totals must remain finite/);
+  }
+  const reordered = fixture();
+  reordered.rotations[0].owners.automatedPriorityContinuations.reverse();
+  assert.equal(assess(reordered).observedAutomatedNoResponsePasses, 800,
+    'Physical owned identities establish the exact retired records independently of array order.');
+});
+
+test('drained gameplay receipts cannot hide an in-flight automated priority control', () => {
+  for (const pending of [1, -1, '0', null, true, undefined]) {
+    const f = fixture();
+    f.rotations[0].owners.PriorityControlsExecuting = pending;
+    assert.equal(f.rotations[0].owners.Executing, 0);
+    assert.throws(() => assess(f), /drain and retire/, 'A separate metadata owner must actually finish: ' + pending);
+  }
+  assert.equal(assess(fixture()).naturalRotationsCompleted, 4);
 });
 
 test('stale source/package bytes, workload cutoffs, relaxed deadlines and incomplete replay all fail closed', () => {

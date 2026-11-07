@@ -1,0 +1,20 @@
+{
+  "OfferedEffects": [],
+  "SelectedEffects": [],
+  "BoardWitnesses": [],
+  "DecisionWitnesses": [],
+  "ResolvedSources": [],
+  "Tasks": [],
+  "Accepted": 0,
+  "Commands": {},
+  "TargetRecipients": {},
+  "UnmodeledOperationSources": [],
+  "findings": [],
+  "numericInvestments": [],
+  "StaleAuthorityProbes": [],
+  "PaymentCancellations": [],
+  "privateReplayCases": [],
+  "diagnosticErrors": [],
+  "missingBoardWitnesses": [],
+  "interpretation": ""
+}

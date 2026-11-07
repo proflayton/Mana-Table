@@ -470,12 +470,24 @@ internal sealed class AiCampaignDiagnostics : IDisposable
 
     internal static JsonElement DescribeFailure(Exception error, string stage, int completedSteps,
         ImmutableArray<AutomatedSeatObservation> observations, AiDecisionReplayCase? lastPolicyRequest,
-        bool rawCaptured, IEnumerable<string> secondaryErrors, bool rejectedWireCaptured = false) => JsonSerializer.SerializeToElement(new {
-            formatVersion = 1, audience = "host-private", kind = "raw-observation-failure-context", authority = "none",
+        bool rawCaptured, IEnumerable<string> secondaryErrors, bool rejectedWireCaptured = false)
+    {
+        var rejectedProjection = ForgePublicProjectionChecks.FindFailureEvidence(error);
+        return JsonSerializer.SerializeToElement(new {
+            formatVersion = 2, audience = "host-private", kind = "raw-observation-failure-context", authority = "none",
             stage, completedSteps, exception = error.ToString(),
             rejectedWireObservation = new {
                 file = "private-rejected-observation.json", captured = rejectedWireCaptured, capturePhase = "adapter-decode",
                 role = "rejected raw wire batch; not an executable command or policy replay"
+            },
+            rejectedPublicProjection = new {
+                file = ForgePublicProjectionChecks.RejectedBatchFile, captured = rejectedProjection?.Captured == true,
+                capturePhase = "public-invariant-validation", earlierFailureRetained = rejectedProjection?.EarlierFailureRetained == true,
+                captureError = rejectedProjection?.CaptureError,
+                audienceCount = rejectedProjection?.Scopes.Length ?? 0,
+                role = "Exact supplied immutable batch rejected after adapter decode; not accepted state, a command or policy replay.",
+                scopes = (rejectedProjection?.Scopes ?? []).Select(item => new { seatId = item.SeatId, gameId = item.GameId,
+                    viewerId = item.ViewerId, revision = item.Revision, boardRevision = item.BoardRevision, decisionId = item.DecisionId })
             },
             rawObservation = new {
                 file = "private-final-observations.json", captured = rawCaptured, capturePhase = "before-teardown",
@@ -487,13 +499,14 @@ internal sealed class AiCampaignDiagnostics : IDisposable
             lastPolicyRequest = lastPolicyRequest == null ? null : new {
                 file = Path.Combine("private-replays", "last-before-mechanical-failure.json"),
                 role = "last-policy-evaluated-request; not the rejected-observation artifact",
-                note = "This request can precede the failure. Adapter decode failures require the separate rejected-wire artifact; the last completed batch may be valid.",
+                note = "This request can precede the failure. Rejected adapter wire and public-invariant batches have separate artifacts; the last completed batch may be valid.",
                 lastPolicyRequest.Id, gameId = lastPolicyRequest.State.Id, seatId = lastPolicyRequest.State.ViewerId,
                 decisionId = lastPolicyRequest.State.Decision?.Id, revision = lastPolicyRequest.State.Revision,
                 offerVersion = lastPolicyRequest.Domain.Version
             },
             secondaryDiagnosticErrors = secondaryErrors.ToArray()
         });
+    }
 
     internal AiCampaignEvidence Summary() => new(OfferedEffects.Order().ToImmutableArray(), SelectedEffects.Order().ToImmutableArray(),
         BoardWitnesses.Order().ToImmutableArray(), DecisionWitnesses.Order().ToImmutableArray(), ResolvedSources.Order().ToImmutableArray(),
@@ -516,13 +529,29 @@ internal sealed class AiCampaignDiagnostics : IDisposable
 
 internal sealed class AiCampaignProvider(IAutomatedSeatProvider inner, AiCampaignDiagnostics diagnostics,
     Func<int, GameSnapshot, GameSnapshot, DecisionCommand, string, Task>? staleReplay = null,
-    AiCampaignEvidenceInbox? inbox = null) : IAutomatedSeatProvider
+    AiCampaignEvidenceInbox? inbox = null) : IAutomatedSeatProvider, IAutomatedPriorityContinuation
 {
     private readonly AiCampaignStaleAuthority? stale = staleReplay == null ? null : new();
     private ConfiguredSimulationStart? configured;
     private readonly AiCausalHistoryReader history = new();
     private ImmutableArray<AutomatedSeatObservation> last = [];
     private int executing;
+    private int controlsExecuting;
+    public bool SupportsAutomatedPriorityContinuation => inner is IAutomatedPriorityContinuation {
+        SupportsAutomatedPriorityContinuation: true };
+    public long AutomatedPriorityEpoch => inner is IAutomatedPriorityContinuation port ? port.AutomatedPriorityEpoch : 0;
+    internal int PriorityControlsExecuting => Volatile.Read(ref controlsExecuting);
+    public async Task<AutomatedPriorityControlResult> ExecuteAutomatedPriorityControlAsync(long epoch, int seatId,
+        AutomatedPriorityControl control, CancellationToken cancellation = default)
+    {
+        RequireHandoff();
+        if (inner is not IAutomatedPriorityContinuation port) return AutomatedPriorityControlResult.Retired;
+        Interlocked.Increment(ref controlsExecuting);
+        try { return await port.ExecuteAutomatedPriorityControlAsync(epoch, seatId, control, cancellation); }
+        finally { Interlocked.Decrement(ref controlsExecuting); }
+        // No Receipt/AcceptedBySeat: consent and observation metadata are not
+        // gameplay commands or policy acceptance. Host certificates stay separate.
+    }
     internal void BindConfigured(ConfiguredSimulationStart start)
     {
         if (configured != null) throw new InvalidOperationException("The campaign provider is already bound to a configured game.");

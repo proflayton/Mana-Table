@@ -104,6 +104,17 @@ public final class MatchActivity {
     }
     synchronized boolean finiteOverflow() { return finiteOverflow; }
     synchronized void beginDelivery() { deliveryStarted = true; }
+    /** Initial bot registration may acknowledge an older actual cohort. Retain
+     * its unread suffix only when the existing audience history is complete. */
+    synchronized void beginDelivery(long through) {
+        deliveryStarted = true;
+        long next = through + 1;
+        for (var entry : snapshot()) if (entry.id() > through) {
+            if (entry.id() != next) deliveryOverflow = true;
+            retainDelivery(entry); next = entry.id() + 1;
+        }
+        if (next != sequence + 1) deliveryOverflow = true;
+    }
     synchronized boolean deliveryOverflow() { return deliveryOverflow; }
     synchronized void acknowledgeDelivery(long through) { deliveryEntries.keySet().removeIf(id -> id <= through); }
     synchronized void retireDelivery() { deliveryStarted = false; deliveryOverflow = false; deliveryEntries.clear(); }

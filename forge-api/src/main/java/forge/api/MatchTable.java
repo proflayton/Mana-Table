@@ -297,8 +297,21 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
 
     // Only called at controller input boundaries, while the game is waiting.
     void publish() {
+        publish(false);
+    }
+
+    /** The validated input/dialog owner may need a choice before an outer
+     * effect unfreezes. Such a cut flushes committed views, retaining its depth. */
+    void publishCurrentDecision() {
+        publish(true);
+    }
+
+    private void publish(boolean currentDecision) {
         game.getAction().withState(() -> { synchronized (gate) {
             if (faulted) return;
+            if (currentDecision || game.isGameOver() && game.getOutcome() != null)
+                game.getTracker().flushForCommittedObservation();
+            else if (game.getTracker().isFrozen()) return;
             observeStackChoices();
             long revision = ++boardRevision;
             boolean publicationClosed = closed;

@@ -121,6 +121,7 @@ public sealed class AiDecisionFrame
     public bool Allows(DecisionCommand? command)
     {
         if (command == null || !GameCommandPermissions.Allows(State, command)) return false;
+        if (command is GrantPriorityContinuation or GrantFiniteStackYield) return false;
         // A legacy click can open an unspecified ability chooser. A policy must
         // choose the offered route explicitly, including while paying mana.
         if (command is PlayCard or ActivateCard or UseManaSource) return false;

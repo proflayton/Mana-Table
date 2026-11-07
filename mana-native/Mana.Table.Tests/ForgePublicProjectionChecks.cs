@@ -1,4 +1,6 @@
 using System.Collections.Immutable;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Mana.Contracts;
 
 namespace Mana.Table;
@@ -9,7 +11,23 @@ namespace Mana.Table;
 // occurrences by matching printed names; stack occurrences compare separately.
 internal static class ForgePublicProjectionChecks
 {
+    internal const string RejectedBatchFile = "private-rejected-public-projection.json";
+    private static readonly object FailureEvidenceKey = new();
+    internal sealed record FailureScope(int SeatId, string GameId, int ViewerId, long Revision,
+        long BoardRevision, string? DecisionId);
+    internal sealed record FailureEvidence(bool Captured, bool EarlierFailureRetained, string? CaptureError,
+        ImmutableArray<FailureScope> Scopes);
+
     internal static int ValidateBatch(ImmutableArray<AutomatedSeatObservation> observations, string profile)
+    {
+        try { return ValidateBatchCore(observations, profile); }
+        catch (InvalidDataException error) {
+            PreserveRejectedBatch(observations, profile, error);
+            throw;
+        }
+    }
+
+    private static int ValidateBatchCore(ImmutableArray<AutomatedSeatObservation> observations, string profile)
     {
         foreach (var item in observations)
             foreach (var player in item.State.Players)
@@ -36,13 +54,54 @@ internal static class ForgePublicProjectionChecks
         return comparisons;
     }
 
+    internal static FailureEvidence? FindFailureEvidence(Exception error)
+    {
+        for (Exception? cause = error; cause != null; cause = cause.InnerException)
+            if (cause.Data[FailureEvidenceKey] is FailureEvidence evidence) return evidence;
+        return null;
+    }
+
+    private static void PreserveRejectedBatch(ImmutableArray<AutomatedSeatObservation> observations,
+        string profile, InvalidDataException error)
+    {
+        if (FindFailureEvidence(error) != null) return;
+        bool captured = false, earlier = false;
+        string? secondary = null, pending = null;
+        try {
+            Directory.CreateDirectory(profile);
+            string target = Path.Combine(profile, RejectedBatchFile);
+            if (File.Exists(target)) earlier = true;
+            else {
+                pending = target + ".pending-" + Guid.NewGuid().ToString("N");
+                using (var stream = new FileStream(pending, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    JsonSerializer.Serialize(stream, new {
+                        formatVersion = 1, audience = "host-private", capturePhase = "public-invariant-validation", authority = "none",
+                        role = "Exact supplied immutable batch rejected after adapter decode; not accepted state, a command or policy replay.",
+                        audienceCount = observations.Length, audiencePlayerIds = observations.Select(item => item.SeatId),
+                        exception = error.ToString(), batch = observations
+                    });
+                try { File.Move(pending, target); captured = true; }
+                catch (IOException) when (File.Exists(target)) { earlier = true; }
+            }
+        } catch (Exception captureError) { secondary = captureError.ToString(); }
+        finally {
+            if (pending != null) try { File.Delete(pending); }
+                catch (Exception cleanupError) { secondary = (secondary == null ? "" : secondary + "\n") + cleanupError; }
+        }
+        // Preserve the original exception object and its stack. A failed
+        // private export is evidence about capture, never a replacement fault.
+        error.Data[FailureEvidenceKey] = new FailureEvidence(captured, earlier, secondary,
+            observations.Select(item => new FailureScope(item.SeatId, item.State.Id, item.State.ViewerId,
+                item.State.Revision, item.State.BoardRevision, item.State.Decision?.Id)).ToImmutableArray());
+    }
+
     internal static void Run(string profile, Action<bool, string> check)
     {
         ForgePublicProjectionFactChecks.Run(profile, check);
         string directory = Path.Combine(profile, "expected-public-projection-rejections");
         Directory.CreateDirectory(directory);
-        AutomatedSeatObservation Audience(int seat, long board = 20) {
-            var players = Enumerable.Range(0, 2).Select(player => new Player(player, "Player " + player, 40, false, false,
+        AutomatedSeatObservation Audience(int seat, long board = 20, int playerCount = 2) {
+            var players = Enumerable.Range(0, playerCount).Select(player => new Player(player, "Player " + player, 40, false, false,
                 ImmutableDictionary<string, int>.Empty, [
                     new("Battlefield", 1, [new Card { Name = "Same printed creature", VisualId = "public-" + player,
                         CombatId = "public-" + player, Type = "Creature", Power = 2, Toughness = 2 }], null),
@@ -101,7 +160,7 @@ internal static class ForgePublicProjectionChecks
             var face = owner.Zone("Battlefield").Cards[0] with { VisualId = null!, CombatId = null!, Selectable = selectable };
             owner = owner with { Eliminated = eliminated, Zones = [new("Battlefield", 1, [face], null), owner.Zone("Hand")] };
             return observation with { State = observation.State with { Status = status,
-                Players = [owner, observation.State.Players[1]] } };
+                Players = observation.State.Players.SetItem(0, owner) } };
         }
         bool MissingRejected(params AutomatedSeatObservation[] observations) {
             try { ValidateBatch(observations.ToImmutableArray(), directory); return false; }
@@ -122,5 +181,64 @@ internal static class ForgePublicProjectionChecks
             "Terminal or explicitly retired read-only faces compare without fabricating current identities or throwing on legacy null fields");
         check(MissingRejected(MissingIdentity(first, "finished", true, selectable: true)),
             "An identity-free retired face cannot regain target-selection authority through its display flags");
+        FailureCapture(profile, check, Enumerable.Range(0, 4).Select(seat =>
+            MissingIdentity(Audience(seat, playerCount: 4), "playing", false)).ToImmutableArray(), [first, other]);
+    }
+
+    private static void FailureCapture(string profile, Action<bool, string> check,
+        ImmutableArray<AutomatedSeatObservation> rejectedBatch, ImmutableArray<AutomatedSeatObservation> lastValid)
+    {
+        string directory = Path.Combine(profile, "public-projection-first-failure");
+        using var evidence = new AiCampaignDiagnostics(Directory.CreateDirectory(directory).FullName);
+        var inbox = evidence.EnableOrderedHandoff();
+        inbox.Returned(rejectedBatch);
+        InvalidDataException? original = null;
+        try { evidence.DrainPending(); } catch (InvalidDataException error) { original = error; }
+        var captured = original == null ? null : FindFailureEvidence(original);
+        using (var retained = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, RejectedBatchFile))))
+            check(original != null && captured is { Captured: true, EarlierFailureRetained: false, CaptureError: null, Scopes.Length: 4 }
+                    && retained.RootElement.GetProperty("capturePhase").GetString() == "public-invariant-validation"
+                    && retained.RootElement.GetProperty("authority").GetString() == "none"
+                    && retained.RootElement.GetProperty("audienceCount").GetInt32() == 4
+                    && JsonNode.DeepEquals(JsonNode.Parse(retained.RootElement.GetProperty("batch").GetRawText()),
+                        JsonSerializer.SerializeToNode(rejectedBatch)),
+                "The first public-invariant rejection retains the exact supplied four-audience immutable batch, including private faces, before rejecting it");
+        var originalStack = original!.StackTrace;
+        Exception? later = null;
+        try { inbox.EnsureActive(); } catch (Exception error) { later = error; }
+        check(ReferenceEquals(original, later) && originalStack?.Contains(nameof(ForgePublicProjectionChecks), StringComparison.Ordinal) == true
+                && later!.StackTrace?.Contains(originalStack, StringComparison.Ordinal) == true,
+            "Later evidence-inbox operations preserve the original invariant exception object and validation stack instead of replacing its origin");
+        evidence.PreserveObservations(lastValid);
+        evidence.PreserveFailure(original, "ordered-public-validation", 1, lastValid);
+        using (var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "private-failure-manifest.json")))) {
+            var failure = manifest.RootElement.GetProperty("rejectedPublicProjection");
+            check(failure.GetProperty("captured").GetBoolean()
+                    && failure.GetProperty("capturePhase").GetString() == "public-invariant-validation"
+                    && failure.GetProperty("scopes").GetArrayLength() == 4
+                    && !manifest.RootElement.GetProperty("rejectedWireObservation").GetProperty("captured").GetBoolean()
+                    && manifest.RootElement.GetProperty("rawObservation").GetProperty("scopes").GetArrayLength() == 2,
+                "The failure manifest distinguishes the exact rejected public-invariant batch from adapter-decode errors and the separate last valid audience batch");
+        }
+        byte[] firstBytes = File.ReadAllBytes(Path.Combine(directory, RejectedBatchFile));
+        InvalidDataException? repeated = null;
+        try { ValidateBatch(rejectedBatch.RemoveAt(0), directory); } catch (InvalidDataException error) { repeated = error; }
+        check(File.ReadAllBytes(Path.Combine(directory, RejectedBatchFile)).SequenceEqual(firstBytes)
+                && repeated != null && FindFailureEvidence(repeated) is { Captured: false, EarlierFailureRetained: true },
+            "A later failing batch cannot overwrite or relabel the retained first public-invariant failure");
+        string twoAudiences = Path.Combine(profile, "public-projection-two-audience-failure");
+        try { ValidateBatch(rejectedBatch.Take(2).ToImmutableArray(), twoAudiences); } catch (InvalidDataException) { }
+        using (var retained = JsonDocument.Parse(File.ReadAllText(Path.Combine(twoAudiences, RejectedBatchFile))))
+            check(retained.RootElement.GetProperty("audienceCount").GetInt32() == 2
+                    && retained.RootElement.GetProperty("batch").GetArrayLength() == 2
+                    && retained.RootElement.GetProperty("audiencePlayerIds").EnumerateArray().Select(item => item.GetInt32()).SequenceEqual([0, 1]),
+                "A rejected two-audience provider batch retains only its supplied participants without synthesizing other table views");
+        string blocked = Path.Combine(profile, "public-projection-blocked-capture");
+        File.WriteAllText(blocked, "The profile path is deliberately a file.");
+        InvalidDataException? uncaptured = null;
+        try { ValidateBatch(rejectedBatch, blocked); } catch (InvalidDataException error) { uncaptured = error; }
+        check(uncaptured?.Message == original.Message && FindFailureEvidence(uncaptured!) is { Captured: false, CaptureError.Length: > 0 }
+                && uncaptured.StackTrace?.Contains(nameof(ForgePublicProjectionChecks), StringComparison.Ordinal) == true,
+            "A failed private batch export records its secondary capture error while preserving the original invariant rejection");
     }
 }

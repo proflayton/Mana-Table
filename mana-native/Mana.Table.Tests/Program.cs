@@ -15,6 +15,7 @@ internal static class Program
             if (args.Contains(AutomatedHistoryProtocolProbe.Marker)) return AutomatedHistoryProtocolProbe.Serve(args);
             if (args.Contains(ForgeRequestCancellationProtocolProbe.Marker)) return ForgeRequestCancellationProtocolProbe.Serve(args);
             if (args.Contains(OwnedDecisionObservationProtocolProbe.Marker)) return OwnedDecisionObservationProtocolProbe.Serve(args);
+            if (args.Contains(AutomatedPriorityProtocolProbe.Marker)) return AutomatedPriorityProtocolProbe.Serve(args);
         } catch (Exception error) {
             Console.Error.WriteLine(error);
             return 1;

@@ -1577,6 +1577,20 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
 
     private final PriorityAbilityPass priorityAbilityPass = new PriorityAbilityPass();
     private volatile InputPassPriority cachedPriorityInput;
+    private volatile boolean externalPriorityAvailabilityRequested;
+
+    /** Explicit host consent requests the same completed action scan as a
+     * human controller. It never enables the legacy strategic/yield owner. */
+    public void setExternalPriorityAvailabilityRequested(boolean requested) {
+        if (!isExternallyAutomated()) throw new IllegalStateException("Only an externally owned controller requests this scan");
+        externalPriorityAvailabilityRequested = requested;
+    }
+
+    /** Admit the first opt-in against the actual still-owned priority input.
+     * Subsequent priority windows use the same ordinary controller scan. */
+    public boolean refreshExternalPriorityAvailability(InputPassPriority input) {
+        return isExternallyAutomated() && externalPriorityAvailabilityRequested && refreshPriorityAvailability(input);
+    }
 
     /** Cached legal abilities for the exact current priority window; no graph scan. */
     public List<PriorityAbility> getPriorityAbilities() {
@@ -1651,6 +1665,10 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     /** Recompute rules-owned availability after administrative restoration,
      * retaining the same waiting input, clock and explicit ability preferences. */
     public boolean refreshRestoredPriority(InputPassPriority input) {
+        return refreshPriorityAvailability(input);
+    }
+
+    private boolean refreshPriorityAvailability(InputPassPriority input) {
         if (cachedPriorityInput != input || !isCurrentPriorityInput()) return false;
         scanPriorityActions();
         if (cachedPriorityInput != input || !isCurrentPriorityInput()) return false;
@@ -1783,7 +1801,9 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         // Compute the actionable set when APINA / suggestions / highlights need it.
         boolean highlightsEnabled = yieldController.getBoolPref(FPref.UI_SHOW_ACTIONABLE_HIGHLIGHTS);
         boolean availabilityVerified = false;
-        if (!correctingManualTap && !isExternallyAutomated() && !yieldController.shouldAutoYield() && (needsAvailableActions() || highlightsEnabled)) {
+        boolean availabilityRequested = isExternallyAutomated() ? externalPriorityAvailabilityRequested
+                : !yieldController.shouldAutoYield() && (needsAvailableActions() || highlightsEnabled);
+        if (!correctingManualTap && availabilityRequested) {
             // Keep highlighting all legal cards, while independently deciding which
             // activated abilities the player currently wants Auto to stop for.
             scanPriorityActions();

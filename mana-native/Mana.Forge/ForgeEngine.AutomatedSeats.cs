@@ -166,6 +166,9 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
     public async Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default)
     {
         cancellation.ThrowIfCancellationRequested();
+        if (command is GrantPriorityContinuation or RevokePriorityContinuation or AcknowledgePriorityObservation
+            or GrantFiniteStackYield or RevokeFiniteStackYield)
+            throw new EngineCommandRejectedException("Automatic priority consent belongs to the host control port, not a policy answer.");
         Dictionary<string, object?> args;
         lock (worldScopeGate) {
             if (command is UndoAction && current?.CertifiedUndoAvailable != true)

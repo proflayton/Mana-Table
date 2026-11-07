@@ -7,11 +7,11 @@ import java.util.Map;
  * frame can replenish automatic progress; polling alone grants no credit. */
 final class PriorityObservation {
     static final int MAXIMUM_LEAD = 64;
-    private record Publication(long activity, long executions) { }
+    private record Publication(long activity, long executions, long readSignature) { }
     private final Map<Long, Publication> publications = new LinkedHashMap<>();
     private long board, activity, acknowledgedBoard, acknowledgedActivity;
     private boolean initialized, registered;
-    private long acknowledgedExecutions;
+    private long acknowledgedExecutions, acknowledgedReadSignature;
 
     record Frame(long boardRevision, long publicActivitySequence, long acknowledgedBoardRevision,
                  long acknowledgedPublicActivitySequence, boolean registered, boolean overflowed) { }
@@ -20,8 +20,11 @@ final class PriorityObservation {
         published(revision, sequence, 0);
     }
     void published(long revision, long sequence, long executions) {
+        published(revision, sequence, executions, 0);
+    }
+    void published(long revision, long sequence, long executions, long readSignature) {
         initialized = true; board = revision; activity = sequence;
-        publications.put(revision, new Publication(sequence, executions));
+        publications.put(revision, new Publication(sequence, executions, readSignature));
         while (publications.size() > MatchActivity.MAXIMUM_FINITE_ENTRIES)
             publications.remove(publications.keySet().iterator().next());
     }
@@ -37,11 +40,13 @@ final class PriorityObservation {
         if (revision < acknowledgedBoard || sequence < acknowledgedActivity) return acknowledgedExecutions;
         registered = true; acknowledgedBoard = revision; acknowledgedActivity = sequence;
         acknowledgedExecutions = actual.executions();
+        acknowledgedReadSignature = actual.readSignature();
         publications.entrySet().removeIf(entry -> entry.getKey() < acknowledgedBoard);
         return acknowledgedExecutions;
     }
 
     boolean hasCredit(long current) { return registered && current - acknowledgedActivity < MAXIMUM_LEAD; }
+    boolean hasReadSignature(long current) { return registered && acknowledgedReadSignature == current; }
     Frame frame(boolean overflowed) {
         return new Frame(board, activity, acknowledgedBoard, acknowledgedActivity, registered, overflowed);
     }
@@ -51,6 +56,6 @@ final class PriorityObservation {
     void disconnected() {
         publications.clear(); initialized = false; registered = false;
         board = 0; activity = 0; acknowledgedBoard = 0; acknowledgedActivity = 0;
-        acknowledgedExecutions = 0;
+        acknowledgedExecutions = 0; acknowledgedReadSignature = 0;
     }
 }

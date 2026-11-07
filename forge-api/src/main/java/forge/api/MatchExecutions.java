@@ -63,13 +63,7 @@ final class MatchExecutions {
                 occurrence.kind(), occurrence.actorPlayerId(), cardId, name, occurrence.step(), occurrence.outcome(),
                 occurrence.ruleKind(), occurrence.ruleResult()));
         transitions.addLast(new Transition(transition.sequence(), occurrence.id(), occurrence.step(), occurrence.outcome(), occurrence.ruleResult()));
-        if (deliveryStarted) {
-            if (deliveryTransitions.size() >= MatchActivity.MAXIMUM_FINITE_ENTRIES) deliveryOverflow = true;
-            else {
-                deliveryTransitions.put(transition.sequence(), transitions.peekLast());
-                deliveryExecutions.add(occurrence.id());
-            }
-        }
+        retainDelivery(transitions.peekLast());
         recordHistory(admitted.get(occurrence.id()), transitions.peekLast(), publicZone && visible);
         retainFinite(occurrence.id());
         copyFrame();
@@ -166,6 +160,22 @@ final class MatchExecutions {
     }
     synchronized boolean finiteOverflow() { return finiteOverflow; }
     synchronized void beginDelivery() { deliveryStarted = true; }
+    /** Gaps within the retained rules range can be audience-private. A cursor
+     * before that range cannot certify which public transitions were lost. */
+    synchronized void beginDelivery(long through) {
+        deliveryStarted = true;
+        if (through < rules.firstSequence() - 1) deliveryOverflow = true;
+        for (var transition : transitions) if (transition.sequence() > through) retainDelivery(transition);
+        copyFrame();
+    }
+    private void retainDelivery(Transition transition) {
+        if (!deliveryStarted) return;
+        if (deliveryTransitions.size() >= MatchActivity.MAXIMUM_FINITE_ENTRIES) deliveryOverflow = true;
+        else {
+            deliveryTransitions.put(transition.sequence(), transition);
+            deliveryExecutions.add(transition.executionId());
+        }
+    }
     synchronized boolean deliveryOverflow() { return deliveryOverflow; }
     synchronized void acknowledgeDelivery(long through) {
         deliveryTransitions.keySet().removeIf(sequence -> sequence <= through);

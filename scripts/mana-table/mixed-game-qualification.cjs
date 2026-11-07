@@ -3,6 +3,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const DECKS = ['rhys-token-equipment.v1', 'pir-toothy-counter-ramp.v1', 'balmor-spells-multitarget.v1', 'traxos-colorless-artifacts.v1'];
+const AUTOMATED_PRIORITY_FIELDS = ['GameId', 'SeatId', 'Epoch', 'AcceptedAcknowledgements', 'AcceptedGrants',
+  'AcceptedWithdrawals', 'CertifiedAutomaticPasses', 'LastSequence', 'LastAcknowledgedBoardRevision',
+  'LastAcknowledgedPublicActivitySequence', 'Retired'];
 function requireThat(value, message) { if (!value) throw new Error(message); }
 function positive(value) { return Number.isSafeInteger(value) && value > 0; }
 function nonnegative(value) { return Number.isSafeInteger(value) && value >= 0; }
@@ -30,21 +33,23 @@ function digest(file) {
   return hash.digest('hex');
 }
 
-function assess({ sourceRevision, engineHash, harnessHash, policyHash, manifestHash, buildHash, fixtureHash,
-  manifest, summary, rotations, fanout, replays, manaOutput }) {
-  requireThat(/^[a-f0-9]{40}$/.test(sourceRevision || ''), 'Qualification needs an exact source revision.');
-  requireThat(manifest.formatVersion === 2 && manifest.profile === 'natural' && manifest.mode === 'PolledBackground'
+// This pure prefix certifies only the completed natural campaign. Full release
+// admission additionally needs the exact source, fanout, replay and payment data.
+function assessNatural({ engineHash, harnessHash, policyHash, manifest, summary, rotations }) {
+  requireThat(manifest.formatVersion === 3 && manifest.profile === 'natural' && manifest.mode === 'PolledBackground'
+    && manifest.automatedPriorityPolicy === 'NoResponse'
     && manifest.passingMode === 'ServerAuto' && manifest.priorityPolicy === 'PriorityAttention+QuietPriorityPolicy' && manifest.engineRandomnessControlled === false
     && manifest.limits?.Matches === 4 && manifest.limits.Turns === 160 && manifest.limits.MatchTime === '00:03:00'
     && sameHash(manifest.launchJarSha256, engineHash) && sameHash(manifest.harnessAssemblySha256, harnessHash)
     && sameHash(manifest.policyAssemblySha256, policyHash) && exactly(manifest.decks?.map(deck => deck.Id), DECKS),
   'The natural campaign changed its topology, varied decks, original budgets, randomness scope or exact candidate bytes.');
-  requireThat(summary.formatVersion === 2 && summary.profile === 'natural' && summary.mode === 'PolledBackground'
+  requireThat(summary.formatVersion === 3 && summary.profile === 'natural' && summary.mode === 'PolledBackground'
+    && summary.automatedPriorityPolicy === 'NoResponse'
     && summary.passingMode === 'ServerAuto' && summary.priorityPolicy === 'PriorityAttention+QuietPriorityPolicy' && summary.allRequestedGamesCompleted === true
     && summary.humanReview === 'pending' && summary.allInteractionsClaimed === false && exactly(summary.unrunRotations, [])
     && Array.isArray(summary.results) && summary.results.length === 4 && rotations.length === 4,
   'All four requested natural rotations must complete; a prefix, cutoff or unrun rotation cannot qualify.');
-  let observedQuietGrants = 0, observedQuietPasses = 0;
+  let observedQuietGrants = 0, observedQuietPasses = 0, observedAutomatedNoResponseGrants = 0, observedAutomatedNoResponsePasses = 0;
   for (let index = 0; index < 4; index++) {
     const { result, owners } = rotations[index], combined = summary.results[index];
     requireThat(JSON.stringify(result) === JSON.stringify(combined), 'The campaign summary and retained rotation disagree.');
@@ -56,7 +61,7 @@ function assess({ sourceRevision, engineHash, harnessHash, policyHash, manifestH
       && exactly(assessment.FailureReasons, []) && Array.isArray(assessment.MissingEvidence)
       && (assessment.Status === 'Passed' ? assessment.MissingEvidence.length === 0 : assessment.MissingEvidence.length > 0)
       && assessment.MissingEvidence.every(reason => typeof reason === 'string' && /^slot-[0-3]\/[^/]+\/unobserved$/.test(reason))
-      && exactly(result.Evidence?.DiagnosticErrors, []) && positive(result.PublicComparisons) && positive(result.FourAudienceCohorts),
+      && exactly(result.Evidence?.diagnosticErrors, []) && positive(result.PublicComparisons) && positive(result.FourAudienceCohorts),
     'A natural rotation lacks a coherent typed outcome, retains an integrity failure or substitutes missing infrastructure evidence for rare mechanic coverage.');
     requireThat(Array.isArray(participants) && participants.length === 4
       && exactly(participants.map(row => row.SlotIndex), [0, 1, 2, 3]) && new Set(participants.map(row => row.PlayerId)).size === 4
@@ -66,6 +71,28 @@ function assess({ sourceRevision, engineHash, harnessHash, policyHash, manifestH
       && result.Decks?.every((deck, slot) => deck.CandidateId === DECKS[(slot + index) % 4]
         && sameHash(deck.SourceSha256, manifest.decks[(slot + index) % 4].Hash)) && result.Decks.length === 4,
     'Every rotation needs two ordinary players, two distinct configured AI decks and four progressing physical roles.');
+    const aiIds = participants.filter(row => row.Role === 'Ai').map(row => row.PlayerId);
+    const automated = result.AutomatedPriorityContinuations, retired = owners.automatedPriorityContinuations;
+    requireThat(typeof result.Outcome.GameId === 'string' && result.Outcome.GameId.length > 0
+      && Array.isArray(automated) && automated.length === 2 && exactly(automated.map(row => row?.SeatId), aiIds)
+      && Array.isArray(retired) && retired.length === 2 && exactly(retired.map(row => row?.SeatId), aiIds),
+    'Both actual AI participants need their own source-bound continuation evidence and a matching retired-owner snapshot.');
+    for (const value of automated) {
+      const final = retired.find(row => row.SeatId === value.SeatId);
+      requireThat(exactly(Object.keys(value), AUTOMATED_PRIORITY_FIELDS) && exactly(Object.keys(final), AUTOMATED_PRIORITY_FIELDS)
+        && value.GameId === result.Outcome.GameId && positive(value.Epoch) && nonnegative(value.SeatId)
+        && positive(value.AcceptedAcknowledgements) && positive(value.AcceptedGrants) && positive(value.CertifiedAutomaticPasses)
+        && nonnegative(value.AcceptedWithdrawals) && positive(value.LastSequence)
+        && nonnegative(value.LastAcknowledgedBoardRevision) && nonnegative(value.LastAcknowledgedPublicActivitySequence)
+        && value.Retired === true && AUTOMATED_PRIORITY_FIELDS.every(field => final[field] === value[field]),
+      'AI NoResponse controls need closed typed receipt/certificate counters, an actual game/epoch and exact post-disposal retirement evidence.');
+      observedAutomatedNoResponseGrants += value.AcceptedGrants;
+      observedAutomatedNoResponsePasses += value.CertifiedAutomaticPasses;
+    }
+    const gameplay = owners.cumulativeProviderAcceptances;
+    requireThat(gameplay && !Array.isArray(gameplay) && exactly(Object.keys(gameplay), aiIds.map(String))
+      && aiIds.every(id => positive(gameplay[id]) && gameplay[id] === participants.find(row => row.PlayerId === id).ProviderAcceptances),
+    'AI continuation controls and certified passes cannot replace the separate cumulative gameplay provider receipts.');
     requireThat(result.CausalDecks?.length === 4 && result.CausalDecks.every(deck => deck.MechanicalIntegrity === 'no-observed-integrity-failure'
       && exactly(deck.IntegrityFailures, []) && deck.SampledNaturalGame === 'observed-natural-outcome'),
     'Per-deck causal integrity must remain assessed even when rare mechanic witnesses are unobserved.');
@@ -87,15 +114,28 @@ function assess({ sourceRevision, engineHash, harnessHash, policyHash, manifestH
       && nonnegative(result.PublicComparison.RetainedCohorts) && result.PublicComparison.RetainedCohorts <= result.PublicComparison.MaximumRetainedCohorts,
     'The bounded immutable-frame public comparison evidence is missing.');
     const inbox = owners.orderedEvidence;
-    requireThat(owners.Executing === 0 && inbox?.Pending === 0 && inbox.Retired === true && inbox.MissingOwnedBatch === false
+    requireThat(owners.Executing === 0 && owners.PriorityControlsExecuting === 0
+      && inbox?.Pending === 0 && inbox.Retired === true && inbox.MissingOwnedBatch === false
       && inbox.Failure === null && nonnegative(inbox.Enqueued) && nonnegative(inbox.Applied)
       && inbox.Enqueued === inbox.Applied && inbox.DiscardedAfterFault === 0
       && positive(result.HostProviderAcceptances) && positive(result.GuestProviderAcceptances)
       && owners.host?.ProviderAcceptances === result.HostProviderAcceptances && owners.guest?.ProviderAcceptances === result.GuestProviderAcceptances,
     'Every AI/evidence owner must drain and retire with coherent ordinary command receipts.');
   }
+  requireThat(positive(observedAutomatedNoResponseGrants) && positive(observedAutomatedNoResponsePasses),
+    'Certified AI continuation totals must remain finite typed counts.');
   requireThat(observedQuietGrants > 0 && observedQuietPasses > 0,
     'The four-game campaign must actually observe bounded Quiet consent and certified progress; an unobserved window is not a passing witness.');
+  return { naturalRotationsCompleted: 4, ordinaryPassingMode: 'ServerAuto', observedQuietGrants, observedQuietPasses,
+    automatedPriorityPolicy: 'NoResponse', observedAutomatedNoResponseGrants, observedAutomatedNoResponsePasses,
+    complexDeckQualification: summary.results.every(result => result.Qualification.Status === 'Passed')
+      ? 'observed-required-mechanics' : 'required-causal-evidence-incomplete' };
+}
+
+function assess({ sourceRevision, engineHash, harnessHash, policyHash, manifestHash, buildHash, fixtureHash,
+  manifest, summary, rotations, fanout, replays, manaOutput }) {
+  requireThat(/^[a-f0-9]{40}$/.test(sourceRevision || ''), 'Qualification needs an exact source revision.');
+  const natural = assessNatural({ engineHash, harnessHash, policyHash, manifest, summary, rotations });
   const runtime = fanout.runtime;
   requireThat(fanout.passed === true && fanout.failure === null && exactly(fanout.cleanupErrors, []) && fanout.projectionContinuityVerified === true
     && fanout.capturedTriggers === 110 && fanout.optionalPaymentTriggers === 55 && fanout.commonTerminalReceipts === 110
@@ -169,11 +209,9 @@ function assess({ sourceRevision, engineHash, harnessHash, policyHash, manifestH
     resolvedInspectors: 1, sacrificedCrystalVeins: 1, tappedWastes: 1, remainingPool: 0,
     committedCrystalVeinColorless: 2, committedWastesColorless: 1, committedManaSpent: 3 }))
     requireThat(manaOutput.facts?.[fact] === expected, 'Actual consuming-source rules/payment accounting disagrees: ' + fact);
-  return { schemaVersion: 3, sourceRevision, naturalRotationsCompleted: 4, actualFanoutTerminalsPerHuman: 110,
-    ordinaryPassingMode: 'ServerAuto', observedQuietGrants, observedQuietPasses,
+  return { schemaVersion: 4, sourceRevision, ...natural, actualFanoutTerminalsPerHuman: 110,
     ordinaryConsumingSourcePayment: true,
-    projectionViewportsPerHuman: 2, engineRandomnessControlled: false, humanUxAcceptance: false, allInteractionsClaimed: false,
-    complexDeckQualification: summary.results.every(result => result.Qualification.Status === 'Passed') ? 'observed-required-mechanics' : 'required-causal-evidence-incomplete' };
+    projectionViewportsPerHuman: 2, engineRandomnessControlled: false, humanUxAcceptance: false, allInteractionsClaimed: false };
 }
 
 function verify({ inputs, packageDirectory, campaign, fanout, manaOutput, sourceRevision }) {
@@ -210,4 +248,4 @@ if (require.main === module) {
     console.log('Four natural mixed games, actual110-trigger rules/UI and ordinary consuming-source payment qualified; rare mechanic coverage and human UX remain separate.');
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
-module.exports = { DECKS, assess, verify };
+module.exports = { DECKS, assessNatural, assess, verify };

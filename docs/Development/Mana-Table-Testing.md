@@ -670,8 +670,9 @@ choices still use the ordinary policy. Explicit Take control, inspection, manual
 recovery withdraws consent; manual mana waits for that acknowledgement before
 dispatch. Grant, withdrawal and observation-credit metadata receipts cannot count
 as acceptance of that script action. Both ordinary players must witness actual
-server-certified `NoResponse` passes before a completed game qualifies. Version2
-manifests and summaries identify the shared `ServerAuto` policy; earlier
+server-certified `NoResponse` passes before a completed game qualifies. Version3
+manifests and summaries identify the shared `ServerAuto` policy and derive the
+bot's `automatedPriorityPolicy` from the actual policy descriptor; earlier
 NoResponse-only evidence cannot silently qualify it. Grant/automatic-pass counts
 are reported separately by mode and must sum to their existing aggregates.
 Across all four natural rotations, at least one actual original-token Quiet
@@ -715,6 +716,13 @@ either scenario's original limits. `scripts/mana-table/mixed-game-qualification.
 checks retained outcomes, four distinct physical roles/deck rotation, public
 cohorts, ordinary receipts, Auto progress, retired evidence owners and exact
 engine/harness/package provenance before the Windows aggregate can publish.
+Version4 admission also requires actual acknowledged `NoResponse` grants and
+certified automatic passes for both configured bot IDs in every rotation. Their
+closed per-owner records carry the exact game and provider epoch, separate
+control counts, and retired ownership after disposal; the result and teardown
+must agree. These records never count as gameplay acceptances or invent policy
+decisions. The controlled fanout's bot port does not expose this optional
+capability, so its 220 explicit bot queue passes retain their original meaning.
 Missing rare required-mechanic witnesses remain explicitly Inconclusive; absent
 causal integrity/role evidence, any mechanical failure, or any incomplete natural
 rotation fails this gate. This never substitutes `natural` for the stricter
@@ -1473,13 +1481,28 @@ On failure, `private-failure-manifest.json` identifies the last completed raw
 observation batch, exact seat scopes, stage and original exception before teardown.
 If decoding failed before that batch could be accepted, the separate
 `private-rejected-observation.json` retains the actual rejected wire batch.
+If decoding succeeds but public projection validation rejects the supplied batch,
+`private-rejected-public-projection.json` retains that exact batch before rejection.
+Its `public-invariant-validation` phase is distinct from `adapter-decode`; it
+records only the audiences actually supplied, including their private faces.
+The first artifact is committed atomically and cannot be replaced by a later
+failure. The evidence inbox preserves the original exception object and stack
+through subsequent faulted operations. Controls cover failed private export,
+two- and four-audience batches and separate last-valid observations.
 The last completed batch can be valid and must not be mistaken for the failing
-input. Both are host-private diagnostics, never policy inputs or capabilities.
+input. These are host-private diagnostics, never policy inputs or capabilities.
 The manifest labels
 `last-before-mechanical-failure.json` as the last policy-evaluated request, which
 can precede a frame-validation failure. The raw batch is diagnostic data without
 execution authority; it can reproduce contract validation without replaying a
 command. Secondary artifact errors do not replace the original failure.
+
+`CurrentZonePublicationTest` uses real rules zone moves, loss and final outcomes
+under one and two tracker freezes. It checks zone counts, disclosed faces,
+occurrence IDs, private-hand visibility, retained incidental cohorts and terminal
+progress without another input. The same cases fail against the prior engine.
+This establishes the publication defect class; a previously unretained rejected
+batch cannot establish which particular face caused that historic failure.
 
 Campaign disclosure checks compare the bot's private-zone windows with its
 current disclosed faces and action permissions. They are consistency checks,

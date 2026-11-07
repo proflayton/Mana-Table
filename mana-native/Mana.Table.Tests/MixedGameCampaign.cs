@@ -28,8 +28,10 @@ internal static class MixedGameCampaign
         };
         string directory = Path.Combine(paths.Profile, "mixed-game-campaign");
         Directory.CreateDirectory(directory);
+        string automatedPriorityPolicy = new CasualCommanderPolicy().Descriptor.PriorityAutomation.ToString();
         await SaveAsync(Path.Combine(directory, "manifest.json"), new {
-            formatVersion = 2, audience = "host-private", profile, limits, mode = mode.ToString(), source = "ordinary-host-and-tcp-guest-with-two-host-owned-ai",
+            formatVersion = 3, audience = "host-private", profile, limits, mode = mode.ToString(), source = "ordinary-host-and-tcp-guest-with-two-host-owned-ai",
+            automatedPriorityPolicy,
             passingMode = mode == MixedGameDriveMode.PolledBackground ? "ServerAuto" : "LegacyPolicy",
             priorityPolicy = mode == MixedGameDriveMode.PolledBackground ? "PriorityAttention+QuietPriorityPolicy" : "policy-only",
             humanSeats = "Scripted through owned observations and ClientSession; human UX review remains pending.",
@@ -51,7 +53,7 @@ internal static class MixedGameCampaign
             var result = await MatchAsync(paths with { Profile = Path.Combine(directory, "match-" + match) }, match, limits, mode);
             results.Add(result);
             await SaveAsync(Path.Combine(directory, "summary.json"), new {
-                formatVersion = 2, audience = "host-private", profile, mode = mode.ToString(), results,
+                formatVersion = 3, audience = "host-private", profile, mode = mode.ToString(), results, automatedPriorityPolicy,
                 passingMode = mode == MixedGameDriveMode.PolledBackground ? "ServerAuto" : "LegacyPolicy",
                 priorityPolicy = mode == MixedGameDriveMode.PolledBackground ? "PriorityAttention+QuietPriorityPolicy" : "policy-only",
                 unrunRotations = Enumerable.Range(results.Count, limits.Matches - results.Count),
@@ -101,6 +103,7 @@ internal static class MixedGameCampaign
         string? failure = null;
         bool verified = false, audiencesBound = false;
         ImmutableArray<AiSeatHistory> stoppedHistories = [];
+        ImmutableArray<AiAutomatedPriorityEvidence> finalPriorityContinuations = [];
         AiCampaignQualificationTracker? qualification = null;
         string configurationId = "mixed-lobby-rotation-" + match, configurationHash = "";
         void CleanupFailure(string operation, Exception error) {
@@ -235,7 +238,8 @@ internal static class MixedGameCampaign
                         && item.State.BoardRevision == state.BoardRevision
                         && ForgePublicProjectionFacts.Capture(item.State) == ForgePublicProjectionFacts.Capture(state));
                     if (verified) foreach (var item in last) MatchOutcomeFacts.Validate(item.State);
-                    if (verified && mode == MixedGameDriveMode.PolledBackground && provider.Executing != 0) verified = false;
+                    if (verified && mode == MixedGameDriveMode.PolledBackground
+                        && (provider.Executing != 0 || provider.PriorityControlsExecuting != 0)) verified = false;
                     if (!verified) { stop = "terminal-audiences-not-yet-coherent"; }
                     else {
                         if (mode == MixedGameDriveMode.PolledBackground && new[] { host.AutoEvidence, guest.AutoEvidence }
@@ -271,7 +275,7 @@ internal static class MixedGameCampaign
                         consent = guest.ConsentEvidence },
                     automated = new { histories = stoppedHistories, fault = bots.LastFault,
                         historyScope = "Bounded diagnostic rings before owner cancellation; provider acceptance counters are cumulative and separate.",
-                        cumulativeProviderAcceptances = provider.AcceptedBySeat, provider.Executing },
+                        cumulativeProviderAcceptances = provider.AcceptedBySeat, provider.Executing, provider.PriorityControlsExecuting },
                     orderedEvidence = evidence.HandoffStatus
                 });
             });
@@ -290,8 +294,10 @@ internal static class MixedGameCampaign
                 await ProtectCleanup("Final owned history", () => provider.DrainHistoryAsync(force: true));
             await ProtectCleanup("Retire ordered evidence", () => { evidence.RetireHandoff(); return Task.CompletedTask; });
             await ProtectCleanup("Final receipt evidence", async () => {
+                finalPriorityContinuations = bots.PriorityContinuations;
                 await SaveAsync(Path.Combine(paths.Profile, "private-owner-teardown.json"), new {
-                    cumulativeProviderAcceptances = provider.AcceptedBySeat, provider.Executing,
+                    cumulativeProviderAcceptances = provider.AcceptedBySeat, provider.Executing, provider.PriorityControlsExecuting,
+                    automatedPriorityContinuations = finalPriorityContinuations,
                     orderedEvidence = evidence.HandoffStatus,
                     host = new { host.ClientAdmissions, host.ProviderAcceptances },
                     guest = new { guest.ClientAdmissions, guest.ProviderAcceptances }
@@ -317,7 +323,8 @@ internal static class MixedGameCampaign
                             && record.Outcome == AiDecisionOutcome.Accepted))).ToImmutableArray() ?? [],
                 CausalDecks = qualification?.Summary(stop, verified, failure) ?? [],
                 PublicComparison = publicCohorts?.Evidence,
-                HostAuto = host.AutoEvidence, GuestAuto = guest.AutoEvidence
+                HostAuto = host.AutoEvidence, GuestAuto = guest.AutoEvidence,
+                AutomatedPriorityContinuations = finalPriorityContinuations
             };
         result = result with { Qualification = MixedGameQualification.Assess(result, last) };
         await SaveAsync(Path.Combine(paths.Profile, "result.json"), result);
@@ -342,4 +349,5 @@ internal sealed record MixedGameResult(int Rotation, string StopReason, string? 
     public MixedPublicComparisonEvidence? PublicComparison { get; init; }
     public ConnectedPlayerAutoEvidence? HostAuto { get; init; }
     public ConnectedPlayerAutoEvidence? GuestAuto { get; init; }
+    public ImmutableArray<AiAutomatedPriorityEvidence> AutomatedPriorityContinuations { get; init; } = [];
 }
