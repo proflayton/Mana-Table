@@ -45,7 +45,8 @@ internal sealed class CommandExchange(IMatchConnection connection, ClientCommand
                 if (currentPrefix) UndoFacts.ValidateProgress(previous, next);
             }
             ExecutionCursor.ValidateProgress(currentPrefix ? previous : null, next);
-            if (next != null) { FiniteResolutionFacts.Validate(next); FiniteStackYieldFacts.Validate(next); }
+            if (next != null) { FiniteResolutionFacts.Validate(next); FiniteStackYieldFacts.Validate(next);
+                PriorityContinuationFacts.Validate(next); HumanParticipationFacts.Validate(next); }
             validate?.Invoke(next);
             return next;
         } catch (Exception error) {

@@ -16,6 +16,43 @@ import static org.testng.Assert.*;
 
 /** Authored emission/eviction fixtures, not a replacement gameplay simulator. */
 public class FiniteYieldRetentionTest {
+    @Test public void acknowledgedDeliveryKeepsAdmittedCausalReceiptsPastTheGlobalRingWithoutExposingPrivateExecutions() throws Exception {
+        try (var table = table()) {
+            var owner = table.game.getPlayers().get(0); var other = table.game.getPlayers().get(1);
+            var source = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Loch Mare"), owner);
+            owner.getZone(ZoneType.Battlefield).add(source, null, null);
+            var activity = new MatchActivity(owner.getView()); var rules = table.game.getExecutions();
+            var projection = new MatchExecutions(rules, owner.getView(), activity);
+            activity.executionFilter(projection::reference);
+            table.game.subscribeToEvents(projection); table.game.subscribeToEvents(activity);
+            activity.beginDelivery(); projection.beginDelivery();
+            String first = null;
+            for (int count = 0; count < 350; count++) {
+                var ability = new SpellAbility.EmptySa(source, owner); String id = rules.prepare(ability);
+                if (first == null) first = id;
+                try (var execution = rules.enter(ability)) {
+                    table.game.fireEvent(new GameEventCardCounters(source, CounterEnumType.P1P1, count, count + 1));
+                }
+                rules.complete(ability, RESOLVED);
+            }
+            String retained = first; assertNull(rules.occurrence(retained));
+            var capture = MatchActivity.capture(activity::frame, projection::frame);
+            assertEquals(capture.activity().entries().size(), 350);
+            assertEquals(capture.activity().entries().get(0).executionId(), retained);
+            assertTrue(capture.executions().occurrences().stream().anyMatch(value -> value.id().equals(retained) && "complete".equals(value.step())));
+            assertTrue(capture.executions().transitions().stream().anyMatch(value -> value.executionId().equals(retained) && "complete".equals(value.step())));
+            var hidden = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Island"), other);
+            other.getZone(ZoneType.Hand).add(hidden, null, null);
+            var secret = new SpellAbility.EmptySa(hidden, other); String secretId = rules.prepare(secret);
+            try (var execution = rules.enter(secret)) { }
+            rules.complete(secret, RESOLVED);
+            assertTrue(projection.frame().occurrences().stream().noneMatch(value -> value.id().equals(secretId)));
+            assertTrue(projection.frame().transitions().stream().noneMatch(value -> value.executionId().equals(secretId)));
+            activity.acknowledgeDelivery(activity.sequence()); projection.acknowledgeDelivery(projection.frame().lastSequence());
+            assertTrue(projection.frame().occurrences().stream().noneMatch(value -> value.id().equals(retained)));
+            assertEquals(activity.snapshot().size(), 120);
+        }
+    }
     @Test public void oneAudienceRetainsExactOwnedHistoryAndParentsPastTheNormalRings() throws Exception {
         try (var table = table()) {
             var owner = table.game.getPlayers().get(0); var other = table.game.getPlayers().get(1);

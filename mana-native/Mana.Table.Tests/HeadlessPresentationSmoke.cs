@@ -75,6 +75,15 @@ internal static partial class HeadlessPresentationSmoke
                     QuietPriorityPresentationChecks.Run(profile, Check);
                     PriorityContinuationChecks.Run(profile, Check);
                 }
+                else if (group == "server-auto") {
+                    Utf8JsonLinesChecks.Run(Check);
+                    PriorityContinuationWireChecks.Run(Check);
+                    ServerAutoPresentationChecks.Run(profile, Check);
+                    VisibleAutoPriorityChecks.Run(profile, Check);
+                    QuietPriorityPresentationChecks.Run(profile, Check);
+                    PriorityContinuationChecks.Run(profile, Check);
+                    PolledFullGameContractChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+                }
                 else if (group == "pending-effects") {
                     FiniteResolutionPresentationChecks.RunFreshClick(profile, Check);
                     PendingEffectPresentationChecks.Run(profile, Check);
@@ -93,6 +102,7 @@ internal static partial class HeadlessPresentationSmoke
                 return;
             }
             PresentationRunChecks.Run(profile, Check);
+            Utf8JsonLinesChecks.Run(Check);
             StartupPlaybackChecks.Run(profile, Check);
             CheckFinishedTable(profile, Check, trace, performance);
             ProviderIsolationChecks.Run(Check);
@@ -122,6 +132,8 @@ internal static partial class HeadlessPresentationSmoke
             GameplayUndoWireChecks.Run(Check);
             FiniteResolutionWireChecks.Run(Check);
             FiniteStackYieldWireChecks.Run(Check);
+            PriorityContinuationWireChecks.Run(Check);
+            ServerAutoPresentationChecks.Run(profile, Check);
             ProjectionRecordingChecks.Run(profile, Check);
             PendingOperationsWireChecks.Run(Check);
             BlockingCapacityWireChecks.Run(Check);

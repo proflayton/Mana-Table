@@ -20,12 +20,14 @@ internal sealed class PresentationRun : IDisposable
     private bool disposed;
 
     internal PresentationRun(TableServices services, string profile, GameSnapshot initial, Point viewport,
-        ObservationDeliveryMode delivery = ObservationDeliveryMode.External, bool allowErrors = false, bool automated = true)
+        ObservationDeliveryMode delivery = ObservationDeliveryMode.External, bool allowErrors = false, bool automated = true,
+        ClientSessionAuthority authority = ClientSessionAuthority.Interactive)
     {
         this.allowErrors = allowErrors;
         Viewport = viewport;
         Delivery = delivery;
-        application = new(services, profile, initialState: initial, clock: clock, observationDelivery: delivery) { Automated = automated };
+        application = new(services, profile, initialState: initial, clock: clock, observationDelivery: delivery,
+            authority: authority) { Automated = automated };
         try {
             application.Initialize();
             if (delivery == ObservationDeliveryMode.External) {

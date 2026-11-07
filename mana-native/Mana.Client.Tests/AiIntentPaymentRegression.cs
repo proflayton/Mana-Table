@@ -127,7 +127,7 @@ internal static class AiIntentPaymentRegression
         if (!pool) foreach (var source in battlefield.Where(card => !card.Tapped)) {
             string color = source.VisualId == "blue" ? "U" : "C", id = "mana-" + source.VisualId + "-" + revision;
             bool usable = unpaid.IsDefault || unpaid.Contains("{1}") || unpaid.Contains("{" + color + "}");
-            offers.Add((source, new(id, "activate", "Localized producer"), new(id, ActionEffectKind.Mana, [ActionEffectKind.Mana],
+            offers.Add((source, new(id, "activate", "Localized producer") { QuickMana = new([new(Mana((color, 1)))]) }, new(id, ActionEffectKind.Mana, [ActionEffectKind.Mana],
                 [new(ActionCostKind.Tap, 1, true, "")], ActionAffordability.Payable) {
                 StableId = "mana-" + source.VisualId, ManaAbility = true, ManaColors = [color], PaymentManaColors = usable ? [color] : [], ManaAmount = 1,
                 Production = new(SemanticKnowledge.Known, [new(Mana((color, 1)))]) }));

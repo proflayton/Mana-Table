@@ -84,9 +84,9 @@ internal static partial class PolledMixedLobbyEngineJourney
                 if (ai.LastFault != null) throw new InvalidDataException("The background host faulted: " + JsonSerializer.Serialize(ai.LastFault));
                 if (players[0].Port.Captured.Task.IsCompletedSuccessfully && !captured) {
                     captured = true; guestReadsAtHold = players[1].PollCallbacks; botReadsAtHold = botPort.Reads;
-                    hostCommandsAtHold = players[0].Port.AcceptedAtCapture;
+                    hostCommandsAtHold = players[0].Port.InputAcceptedAtCapture;
                 }
-                if (captured && !released && players[0].Port.Accepted > hostCommandsAtHold && !players[0].Client.Busy
+                if (captured && !released && players[0].Port.InputAccepted > hostCommandsAtHold && !players[0].Client.Busy
                     && players[1].PollCallbacks > guestReadsAtHold && botPort.Reads > botReadsAtHold) {
                     players[0].Port.Release.TrySetResult(); released = true;
                 }
@@ -116,7 +116,7 @@ internal static partial class PolledMixedLobbyEngineJourney
                     var bots = host.Players.Where(player => !humanIds.Contains(player.Id)).ToArray();
                     bool humansDeveloped = players.All(player => player.Client.State!.Viewer!.Zone("Battlefield").Cards.Any(card => card.Type.Contains("Land", StringComparison.Ordinal))
                         && player.Client.State.Viewer.Zone("Battlefield").Cards.Any(card => card.Name == "Rograkh, Son of Rohgahh")
-                        && player.Port.Accepted >= 3);
+                        && player.Port.InputAccepted >= 3);
                     var botProcessing = botPort.CaptureProcessing();
                     bool botsDeveloped = bots.Length == 2 && bots.All(bot => bot.Zone("Battlefield").Cards.Any(card => card.Type.Contains("Land", StringComparison.Ordinal))
                         && botProcessing.ProcessedNonPassBySeat.GetValueOrDefault(bot.Id) > 0);
@@ -124,7 +124,8 @@ internal static partial class PolledMixedLobbyEngineJourney
                         && cohorts.TryGetValue((host.Id, host.BoardRevision), out var shared) && shared.Viewers.Count == 2;
                     if (sameBoard && humansDeveloped && botsDeveloped) coherent++;
                     ordinaryComplete = released && !players[0].Client.Polling && humansDeveloped && botsDeveloped && coherent > 0
-                        && players.All(player => !player.Client.Busy) && botProcessing.Executing == 0
+                        && players.All(player => !player.Client.Busy && player.InputReceiptsReconciled && player.Port.ReceiptCounts.Conserved)
+                        && botProcessing.Executing == 0
                         && botProcessing.ProcessedAccepted == botProcessing.Accepted && botPort.Faults.IsEmpty
                         && players.Any(player => player.Client.State?.Decision?.Payload is PriorityPayload);
                     if (ordinaryComplete) qualifyingBotProcessing = botProcessing;
@@ -138,7 +139,7 @@ internal static partial class PolledMixedLobbyEngineJourney
                 await Task.Delay(1);
             }
             Require(players.All(player => player.Client.ObservationDelivery == ObservationDeliveryMode.Polled
-                    && player.PollCallbacks > 0 && player.Port.Reads > 0 && player.ClientAdmissions == player.Port.Accepted),
+                    && player.PollCallbacks > 0 && player.Port.Reads > 0 && player.InputReceiptsReconciled && player.Port.ReceiptCounts.Conserved),
                 "Both real player endpoints use default ordinary lobby/match polling and reconcile every locally admitted command's provider receipt");
             Require(captured && released && players[0].HeldPublications == 0
                     && players[1].PollCallbacks > guestReadsAtHold && botPort.Reads > botReadsAtHold,
@@ -205,6 +206,7 @@ internal static partial class PolledMixedLobbyEngineJourney
                 presence = presence.Evidence,
                 choices = choices.Evidence,
                 players = players.Select(player => new { player.Index, player.ClientAdmissions, providerAcceptances = player.Port.Accepted,
+                    scriptedInputAcceptances = player.Port.InputAccepted, receiptCounts = player.Port.ReceiptCounts,
                     ordinaryReads = player.Port.Reads, player.PollCallbacks, player.Publications, player.HeldPublications,
                     player.Port.Failures, commandLatencies = player.Port.CommandLatencies.ToArray(),
                     viewer = player.Client.State?.ViewerId, board = player.Client.State?.BoardRevision })
@@ -225,6 +227,7 @@ internal static partial class PolledMixedLobbyEngineJourney
         internal readonly TablePresenceSession Inspection;
         internal readonly List<object> Receipts = [];
         internal int ClientAdmissions, PollCallbacks, Publications, HeldPublications;
+        internal bool InputReceiptsReconciled => ClientAdmissions == Port.InputAccepted;
         private readonly ConcurrentQueue<Exception> failures = new();
         private GameSnapshot? prior;
         private (string Game, long Revision, string Decision)? handed;
@@ -257,7 +260,8 @@ internal static partial class PolledMixedLobbyEngineJourney
             if (Client.Busy || Client.Polling) return;
             if (Index == 0 && !armed && Client.State?.Decision?.Payload is PriorityPayload
                 && Client.State.ActivePlayerId == Client.State.ViewerId && Client.State.PhaseKey == "MAIN1") {
-                Port.Arm(); armed = true;
+                if (!Port.TryArmOrdinaryPoll(Client)) return;
+                armed = true;
                 nextPoll = now;
             }
             if (now < nextPoll) return;

@@ -4,6 +4,7 @@ using Mana.Contracts;
 namespace Mana.Client;
 
 public enum ObservationDeliveryMode { Polled, External }
+public enum ClientSessionAuthority { Interactive, ObserveOnly }
 
 /// <summary>Serial commands and ordered snapshots for every connection, without a graphics dependency.</summary>
 public sealed partial class ClientSession
@@ -26,22 +27,26 @@ public sealed partial class ClientSession
     private Task commandTask = Task.CompletedTask;
     private readonly Queue<RestorePriorityAbility> pendingSettings = [];
     private RestorePriorityAbility? activeSetting;
+    private GameCommand? pendingManualCommand;
     public ClientSession(IMatchConnection connection, ITableSetup? setup = null, TimeProvider? clock = null,
         ISourceActions? sourceActions = null, ObservationDeliveryMode observationDelivery = ObservationDeliveryMode.Polled,
-        IMatchHistory? history = null)
+        IMatchHistory? history = null, ClientSessionAuthority authority = ClientSessionAuthority.Interactive)
     {
         if (!Enum.IsDefined(observationDelivery)) throw new ArgumentOutOfRangeException(nameof(observationDelivery));
+        if (!Enum.IsDefined(authority)) throw new ArgumentOutOfRangeException(nameof(authority));
+        Authority = authority;
         this.connection = connection;
         this.setup = setup;
         time = clock ?? TimeProvider.System;
         diagnostics = new(RecordDiagnostic, () => replica.Epoch, () => DiagnosticRecorded != null,
             context => CurrentSourceContext(State, context.SourceCardKey) == context);
         advance = new(connection, diagnostics, AdmitAdvanceObservationAsync, time);
-        SourceActions = new(sourceActions, Post) { Diagnostics = diagnostics };
+        SourceActions = new(authority == ClientSessionAuthority.Interactive ? sourceActions : null, Post) { Diagnostics = diagnostics };
         History = new(history, Post);
         ObservationDelivery = observationDelivery;
     }
     public ObservationDeliveryMode ObservationDelivery { get; }
+    public ClientSessionAuthority Authority { get; }
     public SourceActionSession SourceActions { get; }
     public MatchHistorySession History { get; }
     public GameSnapshot? State => replica.Current;
@@ -55,8 +60,25 @@ public sealed partial class ClientSession
     public bool Closed { get; private set; }
     public DateTimeOffset? LastSynchronizedAt { get; private set; }
     public string LastConnectionError { get; private set; } = "";
+    private static readonly TimeSpan SynchronizationHealthLimit = TimeSpan.FromSeconds(5);
     public bool NeedsRecovery => recoveryRequired || State != null && Polling && LastSynchronizedAt is { } synchronized
-        && time.GetUtcNow() - synchronized > TimeSpan.FromSeconds(5);
+        && time.GetUtcNow() - synchronized > SynchronizationHealthLimit;
+    /// <summary>The existing stalled-poll health deadline, without starting a
+    /// poll or changing recovery authority. Null means no health timer is due.</summary>
+    public TimeSpan? TimeUntilSynchronizationHealthCheck
+    {
+        get {
+            if (Closed) return null;
+            if (recoveryRequired) return TimeSpan.Zero;
+            if (State == null || !Polling || LastSynchronizedAt is not { } synchronized) return null;
+            // NeedsRecovery uses a strict greater-than comparison. Wake on the
+            // first eligible timer millisecond rather than rounding a tick
+            // down to exact equality and spinning before recovery is due.
+            var remaining = SynchronizationHealthLimit - (time.GetUtcNow() - synchronized) + TimeSpan.FromTicks(1);
+            return remaining > TimeSpan.Zero
+                ? TimeSpan.FromMilliseconds(Math.Ceiling(remaining.TotalMilliseconds)) : TimeSpan.Zero;
+        }
+    }
     public bool UncertainCommand { get; private set; }
     public bool LastFailureWasCommand { get; private set; }
     public event Action<Exception>? Failed;
@@ -73,7 +95,14 @@ public sealed partial class ClientSession
             try { subscriber(diagnostic); } catch { /* A failed observer cannot interrupt play or another observer. */ }
         }
     }
-    public void Post(Action action) => completions.Enqueue(action);
+    public void Post(Action action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        lock (queuedWorkGate) {
+            completions.Enqueue(action);
+            queuedWork.TrySetResult();
+        }
+    }
     public void Pump()
     {
         // External producers can append while handling Changed. Freeze one
@@ -82,8 +111,15 @@ public sealed partial class ClientSession
         int remaining = ObservationDelivery == ObservationDeliveryMode.External
             ? completions.Count : int.MaxValue;
         while (remaining-- > 0 && completions.TryDequeue(out var action)) if (!Closed) action();
+        DrainPriorityContinuation();
         DrainFiniteRevocation();
+        if (!Busy && !Polling && !NeedsRecovery && finiteRevocations.Count == 0 && priorityRevocations.Count == 0
+            && pendingManualCommand is { } manual) {
+            pendingManualCommand = null;
+            if (State != null && GameCommandPermissions.Allows(State, manual)) Submit(manual);
+        }
         while (!Busy && !NeedsRecovery && pendingSettings.TryDequeue(out var setting)) Submit(setting);
+        DrainPriorityObservation();
     }
     public ObservationIngress OpenObservationIngress(string gameId, int viewerId)
     {
@@ -120,7 +156,7 @@ public sealed partial class ClientSession
                     || owner.queuedExternalObservations >= MaximumPendingObservations) return false;
                 var entry = new PendingObservation(state, owner.replica.Epoch);
                 pending.Add(entry); owner.queuedExternalObservations++;
-                owner.completions.Enqueue(() => Deliver(entry));
+                owner.Post(() => Deliver(entry));
                 return true;
             }
         }
@@ -174,7 +210,7 @@ public sealed partial class ClientSession
     }
     public bool AcceptLobby(Lobby state) => !Closed && Lobby != null && state.TableId == Lobby.TableId
         && lobbyReplica.Accept(state, lobbyReplica.Epoch);
-    public void Reset() { RevokeObservationIngress(); StopFiniteIntent(); CancelAdvance(); SourceActions.Clear(); pendingSettings.Clear(); LastFailureWasCommand = false; BeginCommand(); Accept(null); }
+    public void Reset() { RevokeObservationIngress(); StopFiniteIntent(); CancelAdvance(); SourceActions.Clear(); pendingSettings.Clear(); pendingManualCommand = null; LastFailureWasCommand = false; BeginCommand(); Accept(null); }
     private bool Accept(GameSnapshot? state, long epoch, ObservationIngress? ingress = null, bool commandObservation = false,
         CommandFailurePhase? observationFailurePhase = null)
     {
@@ -199,24 +235,26 @@ public sealed partial class ClientSession
             // An explicit audience handoff retires work admitted for the old
             // viewer. Capture its negative consent before replacing the replica.
             if (audienceChanged) {
-                StopFiniteIntent(); advancing?.Cancel();
+                StopFiniteIntent(); RevokePriorityContinuation(); advancing?.Cancel();
                 // Cleanup still belongs to the existing connection/audience.
                 // The owner must retry handoff after its exact negative ACK;
                 // neither replacement state nor a different port proves it.
-                if (state != null && finiteRevocations.Count > 0) return false;
+                if (state != null && (finiteRevocations.Count > 0 || priorityRevocations.Count > 0)) return false;
             }
             // Reset or explicit null can clear presentation before cleanup is
             // observed. Its negative capability still belongs to the old audience.
             if (state != null && finiteRevocations.Values.Any(item => item.Command.GameId != state.Id || item.ViewerId != state.ViewerId))
                 return false;
+            if (state != null && priorityRevocations.Values.Any(item => item.Command.GameId != state.Id || item.Viewer != state.ViewerId)) return false;
             if (!replica.Accept(state, epoch)) return false;
+            acceptedObservationVersion++;
             RestorationChanged = restored;
             if (RestorationChanged || audienceChanged) {
                 // Restoration, retirement and audience handoff replace current
                 // action ownership before Changed.
                 finiteIntent?.Stop(); finiteIntent = null;
                 advance.RetireFiniteReadCadence();
-                advancing?.Cancel(); SourceActions.Clear(); pendingSettings.Clear(); activeSetting = null;
+                advancing?.Cancel(); SourceActions.Clear(); pendingSettings.Clear(); activeSetting = null; pendingManualCommand = null;
                 ClearAllOptionalPaymentPolicies(); optionalSubmissions.Clear(); optionalPaymentsPaused = false;
                 if (RestorationChanged) {
                     foreach (var item in finiteRevocations.Where(item => item.Key.Game == state!.Id
@@ -232,7 +270,10 @@ public sealed partial class ClientSession
             if (SourceActions.View.Context is { } context && CurrentSourceContext(state, context.SourceCardKey) != context)
                 SourceActions.Clear();
             recovered = NeedsRecovery;
-            ReconcileFiniteYield(state, recovered);
+            if (Authority == ClientSessionAuthority.Interactive) {
+                ReconcileFiniteYield(state, recovered);
+                ReconcilePriorityContinuation(state, recovered);
+            }
             PruneFiniteAcknowledgement(state);
             ExecutionChanges = executions.Observe(state, baseline: recovered || RestorationChanged);
             ObserveOptionalPayments(previous, state, recovered || RestorationChanged);
@@ -262,8 +303,10 @@ public sealed partial class ClientSession
             && finiteRevocations.Values.Any(item => item.Command.GameId == state.Id && item.ViewerId == state.ViewerId
                 && item.Command.GrantId == restoringGrant.GrantId)) throw new FiniteYieldOwnershipException();
         executions.Validate(state);
-        if (state != null) { FiniteResolutionFacts.Validate(state); FiniteStackYieldFacts.Validate(state); }
+        if (state != null) { FiniteResolutionFacts.Validate(state); FiniteStackYieldFacts.Validate(state);
+            PriorityContinuationFacts.Validate(state); HumanParticipationFacts.Validate(state); }
         ValidateFiniteAcknowledgement(state);
+        ValidatePriorityAcknowledgement(state);
         return restored;
     }
 
@@ -297,7 +340,7 @@ public sealed partial class ClientSession
     }
     public void Run(Func<Task> operation)
     {
-        if (Busy || Closed) return;
+        if (Busy || Closed || Authority != ClientSessionAuthority.Interactive) return;
         Run(_ => operation());
     }
     // Catalog/setup reads do not withdraw match consent. Operations that leave,
@@ -305,11 +348,18 @@ public sealed partial class ClientSession
     public void RunMatchOperation(Func<Task> operation)
     {
         ArgumentNullException.ThrowIfNull(operation);
-        if (Busy || Closed) return;
+        if (Busy || Closed || Authority != ClientSessionAuthority.Interactive) return;
         StopFiniteIntent();
+        RevokePriorityContinuation();
         ClearAllOptionalPaymentPolicies();
         var pending = finiteRevocations.Values.ToArray();
+        var pendingPriority = priorityRevocations.Values.ToArray();
         Run(async epoch => {
+            foreach (var item in pendingPriority) {
+                var next = await ObservePriorityRevocationAsync(item);
+                if (!PriorityRevoked(next, item)) throw new IOException("Priority withdrawal must be observed before changing the match connection.");
+                Post(() => RecordPriorityRevocation(next, item));
+            }
             foreach (var item in pending) {
                 var next = await ObserveFiniteRevocationAsync(item);
                 if (RemainsActive(next, item.Command))
@@ -321,13 +371,13 @@ public sealed partial class ClientSession
                     finiteRevocations.Remove((item.Command.GameId, item.Command.GrantId));
                 });
             }
-            if (pending.Length > 0) Post(() => RecoverRetiredFiniteCleanup(epoch));
+            if (pending.Length > 0 || pendingPriority.Length > 0) Post(() => RecoverRetiredConsentCleanup(epoch));
             await operation();
         });
     }
     private void Run(Func<long, Task> operation)
     {
-        if (Busy || Closed) return;
+        if (Busy || Closed || Authority != ClientSessionAuthority.Interactive) return;
         long epoch = BeginCommand(); Busy = true;
         commandTask = Task.Run(async () => {
             try { await operation(epoch); }
@@ -371,6 +421,7 @@ public sealed partial class ClientSession
     }
     public bool Submit(GameCommand command)
     {
+        if (Authority != ClientSessionAuthority.Interactive) return false;
         ClientDiagnosticFailure? decline = Busy ? ClientDiagnosticFailure.Busy : Closed ? ClientDiagnosticFailure.Closed
             : NeedsRecovery ? ClientDiagnosticFailure.RecoveryRequired : State == null ? ClientDiagnosticFailure.MissingState
             : !GameCommandPermissions.Allows(State, command) ? ClientDiagnosticFailure.NotOffered : null;
@@ -381,6 +432,13 @@ public sealed partial class ClientSession
         }
         command.Validate();
         StopFiniteIntent();
+        if (command is UseManaSource or SpendPoolMana) RevokePriorityContinuation();
+        if (priorityRevocations.Count > 0 && finiteRevocations.Count == 0) {
+            // This command has not entered transport. Preserve one explicit
+            // gesture through withdrawal, then recheck its exact prompt offer.
+            if (pendingManualCommand != null) return false;
+            pendingManualCommand = command; return true;
+        }
         if (finiteRevocations.Count > 0) { diagnostics.Decline(State, command, ClientDiagnosticFailure.FiniteRevocationPending); return false; }
         if (command is RestorePriorityAbility restore) activeSetting = restore;
         var initial = State!;
@@ -398,7 +456,7 @@ public sealed partial class ClientSession
     // has priority. Finish any in-flight command before sending the setting.
     public bool SubmitSetting(RestorePriorityAbility command)
     {
-        if (Closed || NeedsRecovery || State == null || !GameCommandPermissions.Allows(State, command)) return false;
+        if (Closed || NeedsRecovery || Authority != ClientSessionAuthority.Interactive || State == null || !GameCommandPermissions.Allows(State, command)) return false;
         command.Validate(); StopFiniteIntent(); CancelAdvance();
         if (activeSetting == command || pendingSettings.Contains(command)) return false;
         if (!Busy && finiteRevocations.Count == 0) return Submit(command);
@@ -406,7 +464,7 @@ public sealed partial class ClientSession
     }
     public bool Advance(Func<GameSnapshot, bool> canPass, Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
         => StartAdvance(canPass, (initial, cancellation, _) => advance.RunAsync(initial, canPass, shouldPresent, cancellation));
-    public void CancelAdvance() { advancing?.Cancel(); advance.RetireFiniteReadCadence(); QueueFiniteRevocation(); }
+    public void CancelAdvance() { advancing?.Cancel(); advance.RetireFiniteReadCadence(); QueueFiniteRevocation(); RevokePriorityContinuation(); }
     public bool AdvanceQuietly(string token, Func<GameSnapshot, bool> canContinue,
         Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
         => StartAdvance(initial => QuietPriorityPolicy.CanPass(initial, token) && canContinue(initial),
@@ -425,6 +483,7 @@ public sealed partial class ClientSession
     internal bool AdvanceFiniteCore(IFiniteDecisionPolicy intent, Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
     {
         ArgumentNullException.ThrowIfNull(intent); ArgumentNullException.ThrowIfNull(shouldPresent);
+        RevokePriorityContinuation();
         return StartAdvance(state => !intent.IsPaused && intent.CanContinue(state),
             (initial, cancellation, observed) => advance.RunFiniteAsync(initial, intent, shouldPresent, observed, cancellation),
             intent, streamObservations: true);
@@ -433,7 +492,8 @@ public sealed partial class ClientSession
         Func<GameSnapshot, CancellationToken, Action<GameSnapshot>?, Task<GameSnapshot?>> operation,
         IFiniteDecisionPolicy? nextFiniteIntent = null, bool streamObservations = false)
     {
-        if (Busy || Polling || Closed || NeedsRecovery || finiteRevocations.Count > 0 || State is not { } initial || !canStart(initial)) return false;
+        if (Busy || Polling || Closed || NeedsRecovery || Authority != ClientSessionAuthority.Interactive || finiteRevocations.Count > 0 || PriorityContinuationReserved
+            || State is not { } initial || !canStart(initial)) return false;
         if (!ReferenceEquals(finiteIntent, nextFiniteIntent)) StopFiniteIntent();
         if (finiteRevocations.Count > 0) return false;
         finiteIntent = nextFiniteIntent;
@@ -472,8 +532,9 @@ public sealed partial class ClientSession
         if (phase != null) command = phase != CommandFailurePhase.Observation;
         StopFiniteIntent();
         ClearAllOptionalPaymentPolicies();
+        pendingManualCommand = null;
         LastFailureWasCommand = command;
-        if (State != null || finiteRevocations.Count > 0) {
+        if (State != null || finiteRevocations.Count > 0 || priorityRevocations.Count > 0) {
             CancelAdvance();
             if (!rejected) {
                 recoveryRequired = true; UncertainCommand |= command;
@@ -496,7 +557,10 @@ public sealed partial class ClientSession
     {
         ClearAllOptionalPaymentPolicies();
         StopFiniteIntent(); CancelAdvance(); SourceActions.Close(); History.Close(); pendingSettings.Clear();
+        pendingManualCommand = null;
         lock (observationGate) { Closed = true; RevokeObservationIngress(); BeginCommand(); }
+        WakeQueuedWorkWaiters();
         commandTask = RevokeAtCloseAsync(commandTask, finiteRevocations.Values.ToArray());
+        commandTask = RevokePriorityAtCloseAsync(commandTask, priorityRevocations.Values.ToArray());
     }
 }

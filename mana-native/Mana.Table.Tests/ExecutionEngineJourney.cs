@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Text.Json;
 using Mana.Contracts;
+using Mana.Client;
 using Mana.Forge;
 using Mana.Scenarios;
 using Mana.Table.Presentation;

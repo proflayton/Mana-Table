@@ -87,6 +87,9 @@ public sealed record PriorityPayload(DecisionReply Pass, PriorityReply? Alternat
     public DecisionReply Pass { get => pass; init => pass = DecisionValue.Required(value, nameof(Pass)); }
     public string QuietYieldToken { get => quietYieldToken; init => quietYieldToken = DecisionValue.Text(value); }
     public ImmutableArray<PriorityAbility> Abilities { get => abilities; init => abilities = DecisionValue.Items(value); }
+    // Certified by the existing completed controller scan. Missing means an
+    // older provider, never an inferred absence of responses.
+    public PriorityResponseAvailability? ResponseAvailability { get; init; }
 }
 public sealed record OpeningHandPayload(DecisionReply Keep, DecisionReply Mulligan, OpeningHandContext? Consequence = null) : DecisionPayload
 {

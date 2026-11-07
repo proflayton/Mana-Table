@@ -64,6 +64,24 @@ public class PregameSetupTest {
     }
 
     @Test(timeOut = 90000)
+    public void explicitPrivateManaOutputRegistrationKeepsTwoOrdinaryOwnersAndAnActualConsumingPaymentSetup() throws Exception {
+        try (var fixture = new Fixture("polled-mana-output-registration", AiReleaseFixtureEngine::configurePolledManaOutput)) {
+            fixture.host.selectDeck(deck("AI gate consuming-output-payment", "Wastes", "Traxos, Scourge of Kroog"), "Commander");
+            fixture.host.ready(true); fixture.host.start();
+            var frames = main(fixture.endpoints()); var host = frames.get(0); var guest = frames.get(1);
+            assertEquals(named(host, "Wastes"), 1); assertEquals(named(host, "Crystal Vein"), 1);
+            assertEquals(zone(viewer(host), "Battlefield").getAsJsonArray("cards").size(), 2);
+            assertTrue(zone(viewer(host), "Hand").getAsJsonArray("cards").asList().stream()
+                    .allMatch(value -> text(value.getAsJsonObject(), "name").equals("Foundry Inspector")));
+            assertEquals(host.get("turn").getAsInt(), 1, "A real Power Play pregame rule starts the declared ordinary host");
+            assertTrue(viewer(host).getAsJsonObject("mana").entrySet().stream().allMatch(value -> value.getValue().getAsInt() == 0));
+            assertTrue(zone(player(guest, host.get("viewerId").getAsInt()), "Hand").getAsJsonArray("cards").isEmpty());
+            assertEquals(zone(viewer(guest), "Battlefield").getAsJsonArray("cards").size(), 0);
+            assertEquals(fixture.host.automatedSeats().size(), 2); assertTrue(fixture.guest.automatedSeats().isEmpty());
+        }
+    }
+
+    @Test(timeOut = 90000)
     public void ordinaryDefaultSetupPreservesTheSelectedDeckAndCreatesNoFixturePermanents() throws Exception {
         try (var fixture = new Fixture("polled-pregame-default", SyncLobby.PregameSetup.NONE)) {
             fixture.host.start(); var frames = main(fixture.endpoints());

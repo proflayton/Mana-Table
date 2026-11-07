@@ -12,6 +12,14 @@ internal static class TablePresenceRegression
         var publicB = new TableInspectionSubject(TableInspectionKind.BattlefieldCard, "public-b");
         var privateCard = new TableInspectionSubject(TableInspectionKind.BattlefieldCard, "private-hand");
         var owner = State(0);
+        foreach (bool eliminated in new[] { false, true }) {
+            var solo = owner with { HumanPlayerIds = eliminated ? [0, 1] : [0],
+                Players = owner.Players.Select(player => player.Id == 1 && eliminated ? player with { Eliminated = true } : player).ToImmutableArray() };
+            using var run = new Run(solo);
+            for (int frame = 0; frame < 100; frame++) run.Session.Update(frame, publicA, true, true);
+            check(run.Port.Requests.IsEmpty && run.Session.Supported,
+                "An authoritative roster with no other active human disables cosmetic polling without losing negotiated capability");
+        }
         using (var run = new Run(owner)) {
             run.Session.Update(0, publicA, true, true);
             var first = await run.Request();
@@ -44,7 +52,7 @@ internal static class TablePresenceRegression
             check(run.Session.Visible(1.5).Length == 0,
                 "Attention expires at its original dispatch lease even without a further observation");
         }
-        foreach (string change in new[] { "board", "input", "audience", "background", "close" }) {
+        foreach (string change in new[] { "board", "input", "audience", "background", "solo-roster", "close" }) {
             using var run = new Run(State(1));
             run.Session.Update(0, null, true, true);
             var request = await run.Request();
@@ -57,6 +65,8 @@ internal static class TablePresenceRegression
                 run.Session.Observe(run.State with { ViewerId = 2 }); run.Session.Observe(run.State);
             } else if (change == "background") {
                 run.Session.Suspend(); run.Session.Update(.1, null, true, true);
+            } else if (change == "solo-roster") {
+                run.Session.Observe(run.State with { HumanPlayerIds = [run.State.ViewerId] }); run.Session.Observe(run.State);
             } else run.Session.Close();
             request.Reply.SetResult(Frame(run.State, publicA)); await run.Drain();
             check(run.Session.Visible(.2).Length == 0,

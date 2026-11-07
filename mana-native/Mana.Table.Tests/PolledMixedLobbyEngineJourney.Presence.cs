@@ -82,7 +82,7 @@ internal static partial class PolledMixedLobbyEngineJourney
         private readonly PresencePreparation preparation = new();
         private string stage = "waiting", clockId = "";
         private int actor = -1;
-        private int[] acceptedBefore = [];
+        private PolledLobbyPorts.PlayerReceiptCounts[] acceptedBefore = [];
         private PublicInspectionContext? context;
         private TableInspectionSubject[] subjects = [];
         private HoldPoint[] before = [], after = [];
@@ -133,7 +133,7 @@ internal static partial class PolledMixedLobbyEngineJourney
                 Need(subjects.Length == 2, "The developed real table must disclose two actual public inspection occurrences to both humans.");
                 var histories = await Histories(deadline);
                 before = players.Select((player, index) => Point(player.Client.State!, histories[index])).ToArray();
-                acceptedBefore = players.Select(player => player.Port.Accepted).ToArray();
+                acceptedBefore = players.Select(player => player.Port.ReceiptCounts).ToArray();
                 botAcceptedBefore = bots.CaptureProcessing().Accepted;
                 heldAt = elapsed.Elapsed.TotalSeconds;
                 stage = "holding";
@@ -171,8 +171,8 @@ internal static partial class PolledMixedLobbyEngineJourney
                 presenceExecutingAtResume = players.Any(player => player.InspectionPort.Executing > 0);
                 stage = "resuming";
             }
-            if (stage == "resuming" && players[actor].Port.Accepted > acceptedBefore[actor]
-                && players.All(player => !player.Client.Busy && player.ClientAdmissions == player.Port.Accepted)
+            if (stage == "resuming" && players[actor].Port.InputAccepted > acceptedBefore[actor].Inputs
+                && players.All(player => !player.Client.Busy && player.InputReceiptsReconciled && player.Port.ReceiptCounts.Conserved)
                 && players[actor].Client.State?.PublicInspection != context) {
                 ResumedReceiptVerified = true;
                 completedAt = elapsed.Elapsed.TotalSeconds;
@@ -203,7 +203,8 @@ internal static partial class PolledMixedLobbyEngineJourney
                 "Public presence must not admit an AI action while the real human holds ordinary priority.");
             for (int index = 0; index < players.Length; index++) {
                 var state = players[index].Client.State!;
-                Need(players[index].Port.Accepted == acceptedBefore[index]
+                var receipts = players[index].Port.ReceiptCounts;
+                Need(receipts.Conserved && receipts.Inputs == acceptedBefore[index].Inputs && receipts.Controls == acceptedBefore[index].Controls
                     && state.PublicInspection == context && RulesHash(state) == before[index].RulesHash,
                     "Presence changed a held human command count, rules board, decision, stack, activity or execution facts.");
                 var clock = Clock(state);
@@ -279,7 +280,7 @@ internal static partial class PolledMixedLobbyEngineJourney
             HoldIntegrityVerified, TrafficVerified, ResumedReceiptVerified, presenceExecutingAtResume,
             botAcceptedBefore,
             measurementStartedTicks, exchangesBefore,
-            observations = seen.ToArray(), before, after,
+            observations = seen.ToArray(), before, after, acceptedBefore,
             scope = "Actual TablePresenceSession and ForgeEngine host/TCP ports. Contract byte totals exclude transport envelopes; latencies are observations, not a zero head-of-line guarantee.",
             endpoints = players.Select(player => new { player.Index,
                 player.InspectionPort.Started, player.InspectionPort.MaximumExecuting, executing = player.InspectionPort.Executing,

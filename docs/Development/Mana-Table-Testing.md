@@ -658,7 +658,28 @@ assembly hashes. A local overlay remains an overlay, not a clean release build.
 
 The two scripted player drivers receive only their own connection's optional
 owned-decision observations, query current source offers, and submit through
-`ClientSession` and ordinary `matchAction`. In polled mode, a rich read can supply
+`ClientSession` and ordinary `matchAction`. Polled campaigns explicitly select
+`ServerAuto`, sharing the shipping client's non-rendering `PriorityAttention`
+and `QuietPriorityPolicy`, with no own-turn phase stops. These choose production
+server-owned `NoResponse` or bounded `Quiet` continuation using its originally
+captured window token. A cast, trigger, declared combat or required choice still
+requires attention; Quiet cannot refresh its token to acknowledge that change.
+The script neither evaluates a policy nor sends a replacement `PassPriority`
+while the server owns that priority. Actual response windows and required
+choices still use the ordinary policy. Explicit Take control, inspection, manual mana or
+recovery withdraws consent; manual mana waits for that acknowledgement before
+dispatch. Grant, withdrawal and observation-credit metadata receipts cannot count
+as acceptance of that script action. Both ordinary players must witness actual
+server-certified `NoResponse` passes before a completed game qualifies. Version2
+manifests and summaries identify the shared `ServerAuto` policy; earlier
+NoResponse-only evidence cannot silently qualify it. Grant/automatic-pass counts
+are reported separately by mode and must sum to their existing aggregates.
+Across all four natural rotations, at least one actual original-token Quiet
+window must have accepted consent and certified progress. A seat which never
+encounters such a window does not invent one. Exact token, interruption, response
+lineage and required-choice controls remain separate from these observed
+counters. Distinct captured windows need not equal grants: explicit hold/resume
+can re-grant the same unchanged original token. A rich read can supply
 policy knowledge only while its full ordinary payload matches the accepted
 replica. Additional rich action-source descriptions never replace that replica
 or its physical card data. Changed private faces, source keys, audiences and
@@ -669,7 +690,51 @@ human UX acceptance. The ordinary CI mixed-lobby prefix and its deadline remain
 unchanged. The same engine job additionally runs the existing 16-turn/45-second
 campaign smoke in polled/background mode, requiring all four roles to develop and
 accept commands, public cohorts to agree, and evidence owners to drain and retire.
-The longer natural qualification is a separate manual release gate.
+The polled owner waits for queued client/evidence work or its existing poll,
+stale-observation and match deadlines. Notifications never apply work; the same
+serial owner still pumps clients and drains the evidence FIFO. The 50/120 ms
+poll cadence and match limits remain unchanged. Controls cover both sides of
+the enqueue/wait race, cancellation, close/retirement, external ingress, FIFO
+application and canceled-timer cleanup.
+Full private proposal/receipt records remain in the compressed evidence trace.
+Their serializer reuses a UTF8 record buffer instead of allocating a UTF16
+string for every large replay. A failed serialization commits no partial row;
+the existing decoded records and order remain byte-compatible. Local capture
+allocation measurements do not establish a full-game throughput result.
+The independent required `mixed-game-qualification` CI job additionally runs all
+four `natural` rotations against the exact immutable package and source-bound
+harness, then the actual110-trigger rules/presentation workload described below
+and the ordinary consuming-source payment witness.
+Its20-minute job limit does not change the existing20-minute engine matrix or
+either scenario's original limits. `scripts/mana-table/mixed-game-qualification.cjs`
+checks retained outcomes, four distinct physical roles/deck rotation, public
+cohorts, ordinary receipts, Auto progress, retired evidence owners and exact
+engine/harness/package provenance before the Windows aggregate can publish.
+Missing rare required-mechanic witnesses remain explicitly Inconclusive; absent
+causal integrity/role evidence, any mechanical failure, or any incomplete natural
+rotation fails this gate. This never substitutes `natural` for the stricter
+`release` causal-mechanic profile or supplies human UX approval.
+
+`--smoke-polled-mana-output` uses the same source/package arguments as
+`--smoke-polled-fanout`. It opens an actual TCP two-human/two-distinct-AI table;
+a private pregame bootstrap supplies Foundry Inspector, Wastes, Crystal Vein
+and Power Play. The declared fixture script keeps each opening hand and then
+delegates every subsequent decision to the production casual policy. Both
+ordinary owners use explicit `FullControl`; campaigns explicitly use
+`ServerAuto`, and targeted controls retain `ServerNoResponse`. This payment witness cannot supply their required Auto
+evidence. The45-second active/90-second total ceilings cover actual payment
+through current ordinary source handles: sacrifice Crystal Vein for two
+colorless, tap Wastes for one, spend three and resolve one Inspector. Committed
+typed history must attribute these resources, both ordinary replicas must stay
+coherent, and all admitted inputs need provider receipts without recovery.
+Exact candidate engine/fixture/harness/policy hashes and source receipts are
+required by CI; its private frames, source queries, commands and history stay
+in `polled-mana-output/`, outside release downloads. This controlled resource
+fixture establishes neither a natural outcome nor human UX approval. The
+graphics-free client suite separately retains the exact CI decision and rejected
+command that exposed the consuming-output defect, plus flexible, bundled and
+missing-capability controls. Funding descriptions alone never authorize a
+`ManaOutput` override; its exact advertised `QuickMana` capability is required.
 
 One bounded, ordered inbox transfers immutable policy, observation and receipt
 events to the campaign's evidence owner. No-match polls before the first owned
@@ -688,7 +753,13 @@ including turn/phase, identities and attachments, graveyard/exile contents,
 stack order/controllers/targets, and combat assignments. Hidden hand/library
 contents, private offers, prose and source portraits are excluded. A bounded
 cohort cache also catches contradictions between repeated observations of one
-audience. Stack execution references are optional audience-admitted correlation,
+audience. The comparer processes each accepted immutable frame once, skipping
+only the identical retained object. Fresh same-board objects still undergo every
+public/correlation check. Per-owner baselines survive bounded global cohort
+eviction, and an omitted optional reference cannot erase a prior admitted join.
+Forty thousand repeated script samples plus fresh contradictions, private-face
+changes, cache eviction and correlation controls exercise this boundary without
+making the natural games longer. Stack execution references are optional audience-admitted correlation,
 not universal public fields: each supplied reference must join a structurally
 valid local admitted frame. Historical actor, source-generation and execution-kind
 metadata do not redefine current stack control, visibility or spell-wrapper facts.
@@ -1038,6 +1109,52 @@ original source receipt. The local `--smoke-polled-fanout` flag invokes this
 same maintained journey. These checks establish this declared mass-trigger
 composition, not natural-game completion, strategy quality, all interactions or
 human gameplay approval.
+
+The ordinary human clients retain every distinct complete accepted immutable
+playing payload from before the cast, with first-callback monotonic offsets and a
+hard512-checkpoint bound. Only adjacent byte-equivalent complete payloads with
+the same publication identity share one checkpoint; their callbacks are counted
+and actual later time gaps/final dwell remain. Fresh same-ID private faces,
+activity or execution changes remain separate checkpoints, covered by controls.
+One per-human archive stores those complete payloads once across both authored
+review viewports. Streaming byte measurement divides it into recording files
+within the unchanged64MiB file ceiling; the archive still has at most512 total
+distinct checkpoints. Its private manifest binds each part's ordinal range,
+global start/end offsets, byte length and SHA256. Playback verifies those parts
+and feeds their original global offsets into one continuous production session;
+a storage seam cannot restart the camera, card identities or announcement state.
+Round-trip controls cover equal-time seams, changed bytes, moved ordinals/offsets,
+foreign paths and attempts to exceed the total checkpoint bound. The new CI
+qualification artifact uses compression level1 for repetitive private JSON; it
+does not change the existing artifact jobs or publish these observations.
+Overflow fails evidence rather than dropping an early cast or trigger. Both
+private windows replay through production presentation at1000x740 and1540x980
+with normal motion. The explicit `ClientSessionAuthority.ObserveOnly` composition
+validates original snapshots while owning no commands, source discovery,
+observation credit or adoption/revocation of recorded grants. Display-only finite
+grouping comes from the recorded member identities and source equivalence; it
+cannot create transport consent. Checks retain all110 distinct terminal IDs,
+complete scene/cohort membership and physical ownership, settled Toothy counters,
+the Revelation announcement and both actually painted55-trigger source headings without an
+individual110-entry display backlog. These complement the separate actual
+gesture/hover/Take-control interruption checks.
+
+Replay timestamps describe actual client acceptance callbacks, with authored
+viewport/settings. They do not record original pointer/camera input, GPU/artwork
+timing, the original finite gesture or live presentation-credit timing. A declared
+12-second final display-only drain gives queued announcements time to be checked;
+it contributes no rules outcome and does not extend the unchanged45-second setup,
+90-second active match,135-second total or15-second semantic-stall limits. Private
+`projection-human-*/result.json` reports record that scope. CI supplies
+`--source-revision` and `--source-manifest` to `--smoke-polled-fanout`, additionally
+requiring exact release-package provenance; local unbound overlays remain local
+diagnostic evidence.
+When real rules already completed and only projection persistence/checks failed,
+`--check-polled-fanout-projection '<retained-polled-fanout-directory>' --profile '<fresh-replay-directory>'`
+stream-loads the retained accepted windows and reruns only production presentation.
+It records original result/evidence hashes and cannot manufacture another rules
+completion, change its deadlines or supply clean release provenance. CI still
+runs the complete workload afresh against its unified exact-source package.
 
 The required native verification `engine` case now runs this existing `--smoke`
 route after the headless engine suite, using the verified **production** engine

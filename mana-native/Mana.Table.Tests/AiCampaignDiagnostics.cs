@@ -14,7 +14,7 @@ internal sealed record AiCampaignFinding(string Code, int Seat, int Turn, string
 // trace so a questionable decision can be replayed through the ordinary policy.
 internal sealed class AiCampaignDiagnostics : IDisposable
 {
-    private readonly StreamWriter decisions;
+    private readonly Utf8JsonLines decisions;
     private readonly string directory;
     private AiDecisionReplayCase? latestCase;
     private readonly Dictionary<int, AiDecisionReplayCase> latestBySeat = [];
@@ -54,6 +54,8 @@ internal sealed class AiCampaignDiagnostics : IDisposable
         return inbox = new(this, capacity, clock);
     }
     internal void DrainPending() => inbox?.Drain();
+    internal Task WaitForQueuedWorkAsync(CancellationToken cancellation = default)
+        => inbox?.WaitForQueuedWorkAsync(cancellation) ?? Task.Delay(Timeout.Infinite, cancellation);
     internal void RetireHandoff() => inbox?.Retire();
     internal bool OwnsHandoff(AiCampaignEvidenceInbox handoff) => ReferenceEquals(inbox, handoff);
 
@@ -67,7 +69,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
             CampaignEvidenceEvent.StepCompleted item => item.ReturnedBatchSequence,
             _ => null
         };
-        decisions.WriteLine(JsonSerializer.Serialize(new { kind = "evidence-handoff", stamp, returnedBatchSequence }));
+        decisions.Write(new { kind = "evidence-handoff", stamp, returnedBatchSequence });
         switch (value) {
             case CampaignEvidenceEvent.Owned item: ObserveCore(item.Observation); break;
             case CampaignEvidenceEvent.Batch item:
@@ -84,7 +86,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
             case CampaignEvidenceEvent.HostFault item:
                 CapturedHostFault ??= item.Fault;
                 diagnosticErrors.Add("background-host-fault: " + item.Fault.ReasonCode);
-                decisions.WriteLine(JsonSerializer.Serialize(new { kind = "background-host-fault", item.Fault, item.Error }));
+                decisions.Write(new { kind = "background-host-fault", item.Fault, item.Error });
                 break;
             case CampaignEvidenceEvent.StepCompleted: break;
             default: throw new InvalidDataException("Unknown campaign evidence handoff event.");
@@ -186,12 +188,12 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     {
         SetLatestCase(recorded);
         var answer = proposal as AiProposal.Answer;
-        decisions.WriteLine(JsonSerializer.Serialize(new {
+        decisions.Write(new {
             kind = "proposal", frame.Stamp, replay = recorded,
             policy = proposal is AiProposal.Unavailable unavailable ? unavailable.Capability : null,
             reason = answer?.ReasonCode, commandType = answer?.Command.GetType().Name,
             command = answer == null ? (JsonElement?)null : JsonSerializer.SerializeToElement(answer.Command, answer.Command.GetType())
-        }));
+        });
         if (answer == null) return;
         var state = frame.State;
         if (answer.Command is ChooseNumber numericChoice && frame.Semantics.Numeric is { } numeric && numericInvestments.Count < 128) {
@@ -250,9 +252,9 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     private void ReceiptCore(AutomatedSeatObservation? observation, GameCommand command, bool accepted, string? error)
     {
         qualification?.Receipt(observation, command, accepted, error);
-        decisions.WriteLine(JsonSerializer.Serialize(new { kind = "receipt", seat = observation?.SeatId,
+        decisions.Write(new { kind = "receipt", seat = observation?.SeatId,
             command.GameId, decision = (command as DecisionCommand)?.DecisionId, accepted, error,
-            commandType = command.GetType().Name, command = JsonSerializer.SerializeToElement(command, command.GetType()) }));
+            commandType = command.GetType().Name, command = JsonSerializer.SerializeToElement(command, command.GetType()) });
         if (observation != null && command is ChooseNumber number
             && numericInvestments.TryGetValue((observation.SeatId, number.DecisionId), out var numeric))
             numeric.Receipt(accepted, error);
@@ -298,8 +300,8 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     {
         StaleAuthorityProbes.Add(result);
         try {
-            decisions.WriteLine(JsonSerializer.Serialize(new { kind = "stale-authority-probe", result,
-                command = JsonSerializer.SerializeToElement(command, command.GetType()) }));
+            decisions.Write(new { kind = "stale-authority-probe", result,
+                command = JsonSerializer.SerializeToElement(command, command.GetType()) });
         } catch (Exception error) {
             diagnosticErrors.Add("stale-probe-capture: " + error);
             throw;

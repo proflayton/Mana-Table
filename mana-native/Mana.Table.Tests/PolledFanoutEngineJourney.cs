@@ -18,9 +18,11 @@ namespace Mana.Table;
 // consent and receipt then uses the real ordinary TCP/polled composition.
 internal static class PolledFanoutEngineJourney
 {
-    internal static async Task RunStandaloneAsync(ForgePaths paths, string productionJar)
+    internal static async Task RunStandaloneAsync(ForgePaths paths, string productionJar,
+        string? sourceRevision = null, string? sourceManifest = null)
     {
-        var runtime = AiReleaseEvaluation.VerifyRuntime(paths, productionJar);
+        var runtime = AiReleaseEvaluation.VerifyRuntime(paths, productionJar, verifyPackage: sourceRevision != null,
+            sourceRevision: sourceRevision, sourceManifest: sourceManifest);
         await RunAsync(paths, runtime, (passed, message) => {
             if (!passed) throw new InvalidDataException(message);
         });
@@ -58,7 +60,7 @@ internal static class PolledFanoutEngineJourney
         int steps = 0, coherent = 0;
         var stages = new List<object>();
         void Stage(string name) => stages.Add(new { name, seconds = elapsed.Elapsed.TotalSeconds });
-        bool complete = false, startingPlayerVerified = false;
+        bool complete = false, startingPlayerVerified = false, projectionReplayStarted = false, projectionContinuityVerified = false;
         double? providerInitializationStartedSeconds = null, providerInitializationReturnedSeconds = null;
         double? matchStartRequestSeconds = null, matchStartAcknowledgedSeconds = null;
         long? evidenceSamplingStartedTimestamp = null, evidenceSamplingFinishedTimestamp = null;
@@ -172,6 +174,13 @@ internal static class PolledFanoutEngineJourney
                             player.Client.AdvanceFinite(player.Intent, player.PauseForRetiredPaymentProbe);
                         }
                     } else if (!player.Client.Busy && !player.Client.Polling) {
+                        // Both ordinary observers must own a real pre-cast
+                        // baseline before the controlled host can advance its
+                        // turn. A late initial poll is not replay evidence of
+                        // a card announcement the observer never received.
+                        if (player.Index == 0 && beforeCast == null && players.Any(participant => participant.Projection.Count == 0)) {
+                            player.Poll(); continue;
+                        }
                         if (!startingPlayerVerified && player.Index == 0 && beforeCast == null
                                 && state.Decision?.Payload is PriorityPayload && state.ActivePlayerId == state.ViewerId
                                 && state.PhaseKey == "MAIN1" && state.Stack.IsEmpty) {
@@ -281,9 +290,19 @@ internal static class PolledFanoutEngineJourney
             Guard();
             File.WriteAllText(Path.Combine(directory, "private-history.json"), JsonSerializer.Serialize(history));
             clock.Complete();
+            var projectionWindows = players.Select(player => player.Projection.Complete()).ToArray();
+            projectionReplayStarted = true;
+            foreach (var player in players) {
+                var recorded = projectionWindows[player.Index];
+                File.WriteAllText(Path.Combine(directory, "private-accepted-human-" + player.Index + ".json"),
+                    JsonSerializer.Serialize(recorded));
+                FanoutProjectionContinuityChecks.Run(directory, runtime.SourceRevision, player.Index,
+                    recorded, beforeCast!, burst!, captured, Require);
+            }
+            projectionContinuityVerified = true;
         } catch (Exception error) {
             failure = error;
-            failurePhase = clock.InWorkload ? "queue-resolution" : clock.InActiveMatch ? "match-preparation" : "setup";
+            failurePhase = projectionReplayStarted ? "projection-replay" : clock.InWorkload ? "queue-resolution" : clock.InActiveMatch ? "match-preparation" : "setup";
             File.WriteAllText(Path.Combine(directory, "primary-error.txt"), error.ToString());
         }
         finally {
@@ -296,6 +315,7 @@ internal static class PolledFanoutEngineJourney
                 players = players.Select(player => CaptureStoppedPlayer(player.Client.State, player.Client.SourceActions.View,
                     player.Acknowledgements, player.Terminals, player.Intent?.Progress, player.Intent?.StopReason,
                     player.SourceErrors, player.SourceTrace)).ToImmutableArray(),
+                acceptedProjections = players.Select(player => player.Projection.Count == 0 ? null : player.Projection.Complete()).ToImmutableArray(),
                 histories = ai.Histories, botReceipts = botPort.Receipts.ToArray(), faults = botPort.Faults.ToArray() };
             evidenceSamplingFinishedTimestamp = Stopwatch.GetTimestamp();
             foreach (var player in players) player.Port.Release.TrySetResult();
@@ -321,7 +341,7 @@ internal static class PolledFanoutEngineJourney
                 failure ??= new IOException("Fanout evidence could not be preserved.", error);
             }
             File.WriteAllText(Path.Combine(directory, "result.json"), JsonSerializer.Serialize(new {
-                formatVersion = 3, scenario = "real-polled-tcp-fifty-five-draws", passed = complete && failure == null,
+                formatVersion = 3, scenario = "real-polled-tcp-fifty-five-draws", passed = complete && projectionContinuityVerified && failure == null,
                 failure = failure?.ToString(), failurePhase, cleanupErrors, checks, facts, stages, steps, elapsedSeconds = elapsed.Elapsed.TotalSeconds,
                 stagesOrigin = "Case Stopwatch created before the qualification clock; stage seconds are case-relative and elapsedSeconds includes cleanup. New phase/init/start fields use the qualification clock origin.",
                 phaseContract = new { version = JourneyProgressClock.PhaseContractVersion, name = JourneyProgressClock.PhaseContractName,
@@ -350,6 +370,11 @@ internal static class PolledFanoutEngineJourney
                     purpose = "The actual pregame rule puts the host's controlled cast on turn one without changing AI strategy or pacing." },
                 aiHistoryCapacity = 1024,
                 capturedTriggers = captured.Count, optionalPaymentTriggers = eyeTriggers.Count, coherentPublicCheckpoints = coherent,
+                projectionContinuityVerified,
+                acceptedProjectionWindows = players.Select(player => new { player.Index, player.Projection.Count,
+                    player.Projection.AcceptedCallbacks, player.Projection.IdenticalCallbacks,
+                    clock = "Actual ordinary ClientSession.Changed callbacks; monotonic offsets from first captured playing frame.",
+                    scope = "Viewer-private accepted observations; no presentation, pointer, camera, asset-loading or human UX timing was recorded." }),
                 runtime, launch = new { fixture = Hash(paths.Jar), derivedFixture = Hash(launch.Jar), bootstrap = "forge.api.AiReleaseFixtureEngine$PolledFanout" },
                 scope = "Controlled pregame resources; actual ordinary TCP, default polling, finite consent and background AI with shipping timed pacing. No host deck legality, natural-outcome, strategic-quality or human UX claim."
             }, new JsonSerializerOptions { WriteIndented = true }));
@@ -414,8 +439,11 @@ internal static class PolledFanoutEngineJourney
         throw new InvalidDataException("The actual fanout history exceeded its bounded scan.");
     }
 
-    private static ForgePaths PrepareLauncher(ForgePaths paths, string directory, AiReleaseRuntime runtime)
+    internal static ForgePaths PrepareLauncher(ForgePaths paths, string directory, AiReleaseRuntime runtime,
+        string bootstrap = "PolledFanout")
     {
+        if (bootstrap is not ("PolledFanout" or "PolledManaOutput"))
+            throw new ArgumentException("Unknown private polled fixture bootstrap.", nameof(bootstrap));
         // VerifyRuntime already binds the original fixture/engine. Derive only
         // a test-only entry point, with unchanged allowlisted class bytes.
         string dependency = Path.Combine(Path.GetDirectoryName(paths.Jar)!, "forge-engine.jar");
@@ -424,7 +452,8 @@ internal static class PolledFanoutEngineJourney
         string staging = Path.Combine(directory, "engine-launch"); Directory.CreateDirectory(staging);
         File.Copy(dependency, Path.Combine(staging, "forge-engine.jar"), false);
         string wrapper = Path.Combine(staging, "forge-engine-polled-fanout.jar");
-        const string derivedManifest = "Manifest-Version: 1.0\r\nMain-Class: forge.api.AiReleaseFixtureEngine$PolledFanout\r\nClass-Path: forge-engine.jar\r\n\r\n";
+        string derivedManifest = "Manifest-Version: 1.0\r\nMain-Class: forge.api.AiReleaseFixtureEngine$" + bootstrap
+            + "\r\nClass-Path: forge-engine.jar\r\n\r\n";
         string originalManifest;
         string originalManifestHash;
         var classes = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -436,8 +465,8 @@ internal static class PolledFanoutEngineJourney
                 originalManifest = System.Text.Encoding.UTF8.GetString(bytes);
                 originalManifestHash = Convert.ToHexString(SHA256.HashData(bytes));
             }
-            if (source.GetEntry("forge/api/AiReleaseFixtureEngine$PolledFanout.class") == null)
-                throw new InvalidDataException("The source-bound test launcher lacks its private polled-fanout bootstrap.");
+            if (source.GetEntry("forge/api/AiReleaseFixtureEngine$" + bootstrap + ".class") == null)
+                throw new InvalidDataException("The source-bound test launcher lacks its private polled bootstrap: " + bootstrap);
             foreach (var entry in source.Entries.Where(entry => entry.FullName.EndsWith(".class", StringComparison.Ordinal))) {
                 if (!entry.FullName.StartsWith("forge/api/AiReleaseFixtureEngine", StringComparison.Ordinal))
                     throw new InvalidDataException("A non-fixture class cannot enter the derived test launcher.");
@@ -503,6 +532,7 @@ internal static class PolledFanoutEngineJourney
         internal readonly ConcurrentQueue<string> SourceErrors = new();
         internal readonly ConcurrentQueue<object> SourceTrace = new();
         internal readonly HashSet<string> Terminals = new(StringComparer.Ordinal);
+        internal readonly FanoutAcceptedProjection Projection = new();
         internal ImmutableHashSet<string> Captured = [];
         internal FiniteResolutionIntent? Intent;
         internal GameSnapshot? Compared;
@@ -530,6 +560,7 @@ internal static class PolledFanoutEngineJourney
                     throw new InvalidDataException("An ordinary fanout publication changed audience or rolled back.");
                 if (state.Status is "error" or "finished") throw new InvalidDataException(state.Error ?? "The fanout match ended prematurely.");
                 if (!AiCampaignVisibility.PrivateWindowsAreDisclosed(state)) throw new InvalidDataException("The ordinary fanout viewer received an unauthorized private face.");
+                if (state.Status == "playing" && state.Viewer != null) Projection.Observe(state);
                 foreach (var item in Client.ExecutionChanges.Transitions.Where(item => item.Step == ExecutionStep.Complete)) Terminals.Add(item.ExecutionId);
                 prior = state; Publications++;
             };
