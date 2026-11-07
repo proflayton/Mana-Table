@@ -1,6 +1,7 @@
 using Mana.Client;
 using Mana.Contracts;
 using Mana.Table.Presentation;
+using System.Collections.Immutable;
 
 namespace Mana.Table;
 
@@ -85,6 +86,12 @@ internal sealed partial class TableApplication
         if (interactionBlocked) { session.CancelAdvance(); return true; }
         bool ready = quietStartReading is { } reading
             ? matchPresentation.ReadyForQuietStart(now, reading) : matchPresentation.Ready(now);
+        if (session.SupportsPriorityContinuation) {
+            if (ready || session.PriorityContinuationReserved)
+                session.EnsurePriorityContinuation(PriorityContinuationMode.Quiet,
+                    preferences.Stops.Order(StringComparer.Ordinal).ToImmutableArray(), quietYieldToken);
+            return true;
+        }
         if (busy || polling || !ready) return true;
         if (QuietPriorityPolicy.CanPass(state, quietYieldToken)) {
             // Capture the baseline, never replace it with a subsequently issued token.

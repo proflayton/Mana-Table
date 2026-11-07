@@ -28,6 +28,7 @@ internal sealed class ConnectedPlayerDriver : IDisposable
     private GameSnapshot? queried;
     private AiDecisionStamp? retired;
     private long nextPoll, audienceGeneration;
+    private readonly Dictionary<string, int> automaticPasses = [];
     internal AutomatedSeatObservation? Last { get; private set; }
     internal ClientSession Client => client;
     internal AiSeatHistory? History => policy?.History;
@@ -36,6 +37,8 @@ internal sealed class ConnectedPlayerDriver : IDisposable
     internal int PollCallbacks { get; private set; }
     internal int OrdinaryPublications { get; private set; }
     internal int RetiredProposals { get; private set; }
+    internal ConnectedPlayerAutoEvidence AutoEvidence => new(connection.GrantedContinuations,
+        connection.RevokedContinuations, automaticPasses.Values.Sum(), connection.AcceptedPriorityPasses);
     internal RetiredOwnedReadEvidence? LastRetiredOwnedRead { get; private set; }
 
     internal sealed record RetiredOwnedReadEvidence(GameSnapshot CapturedOrdinary, OwnedDecisionObservation ReturnedRich,
@@ -73,6 +76,8 @@ internal sealed class ConnectedPlayerDriver : IDisposable
             if (!AiCampaignVisibility.PrivateWindowsAreDisclosed(current))
                 throw new InvalidDataException("An ordinary polled player received an unauthorized private window.");
             OrdinaryPublications++;
+            if (current.PriorityContinuation is { GrantId.Length: > 0 } continuation)
+                automaticPasses[continuation.GrantId] = Math.Max(automaticPasses.GetValueOrDefault(continuation.GrantId), continuation.AutomaticPasses);
             Last = new(current.ViewerId, current, DecisionActionDomain.None, new());
             if (proposal != null && !SameOrdinaryPublication(current, proposal.State)) proposal = null;
         };
@@ -124,9 +129,16 @@ internal sealed class ConnectedPlayerDriver : IDisposable
         client.Pump(); evidence.DrainPending(); RequireHealthy();
         if (client.State is not { } state || client.Busy || client.Polling) return;
         if (state.Status is "error" || state.Error != null) throw new InvalidDataException(state.Error ?? "Rules error.");
+        // The script uses the same standing authority as the shipping client.
+        // A routine prompt is never answered by a second, per-prompt owner.
+        if (state.Status == "playing" && state.Viewer is { Eliminated: false } && client.SupportsPriorityContinuation
+            && !client.PriorityContinuationReserved) {
+            client.EnsurePriorityContinuation(PriorityContinuationMode.NoResponse, []);
+            if (client.Busy || client.Polling) return;
+        }
         if (queried != null && SameOrdinaryPublication(state, queried)) return;
         queried = state;
-        if (state.Status != "playing" || state.Decision == null || state.Viewer?.Eliminated != false) {
+        if (state.Status != "playing" || state.Decision == null || state.Viewer?.Eliminated != false || ServerOwnsRoutinePriority(state)) {
             proposal = null;
             Last = new(state.ViewerId, state, DecisionActionDomain.None, new());
             evidence.Observe(Last);
@@ -161,6 +173,12 @@ internal sealed class ConnectedPlayerDriver : IDisposable
             throw new InvalidDataException("A polled campaign player entered recovery or command uncertainty.");
     }
 
+    private bool ServerOwnsRoutinePriority(GameSnapshot state) => client.SupportsPriorityContinuation
+        && client.PriorityContinuationReserved && state.Decision?.Payload is PriorityPayload priority
+        && (client.PriorityContinuationPending || client.PriorityContinuationWithdrawing
+            || state.PriorityContinuation?.Status == PriorityContinuationStatus.Active
+            || priority.ResponseAvailability == PriorityResponseAvailability.Absent);
+
     internal async Task StepAsync()
     {
         client.Pump(); evidence.DrainPending();
@@ -171,6 +189,7 @@ internal sealed class ConnectedPlayerDriver : IDisposable
         bool Current() => mode != MixedGameDriveMode.PolledBackground || generation == audienceGeneration
             && !client.Busy && client.State is { } current && SameOrdinaryPublication(state, current);
         if (!Current()) { proposal = null; return; }
+        if (mode == MixedGameDriveMode.PolledBackground && ServerOwnsRoutinePriority(state)) return;
         policy ??= new(state.Id, state.ViewerId, evidence.Record(testPolicy ?? new CasualCommanderPolicy()), seed,
             new(TimeSpan.FromSeconds(10), 4096));
         policy.ObserveRestoration(state);
@@ -209,12 +228,20 @@ internal sealed class ConnectedPlayerDriver : IDisposable
                 if (client.SourceActions.View.Status != SourceActionStatus.Ready)
                     throw new EngineCommandRejectedException("The source query did not retain current authority.");
             }
-            failure = null; connection.Accepted = false;
+            failure = null; connection.Expect(ticket.Command);
             if (!client.Submit(ticket.Command))
                 throw new EngineCommandRejectedException("The connected player's client declined the command.");
             submitted = true;
             ClientAdmissions++;
             await PumpUntilAsync(() => !client.Busy);
+            if (!connection.ExpectedDispatched && mode == MixedGameDriveMode.PolledBackground && !Current()
+                && !client.NeedsRecovery && !client.UncertainCommand) {
+                // The command was queued behind negative consent, then its
+                // exact prompt retired before dispatch. Withdrawal is no ACK
+                // for the script action and must not count as one.
+                policy.Report(ticket, AiExecutionReceipt.Rejected); recorded = true;
+                proposal = null; RetiredProposals++; return;
+            }
             // Submit is local admission. Only a successful normal rules-port
             // receipt establishes provider acceptance. Neither proves resolution.
             if (connection.Accepted) {
@@ -247,6 +274,9 @@ internal sealed class ConnectedPlayerDriver : IDisposable
     private async Task PumpUntilAsync(Func<bool> done)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+        // A locally queued manual gesture can begin its withdrawal on the next
+        // pump; idle before that pump is not completion of the gesture.
+        client.Pump(); evidence.DrainPending();
         while (!done()) {
             client.Pump();
             evidence.DrainPending();
@@ -260,8 +290,25 @@ internal sealed class ConnectedPlayerDriver : IDisposable
     private sealed class ReceiptConnection(IMatchConnection inner) : IMatchConnection
     {
         internal bool Accepted;
+        internal bool ExpectedDispatched;
+        private GameCommand? expected;
+        internal int GrantedContinuations, RevokedContinuations, AcceptedPriorityPasses;
+        public bool SupportsPriorityContinuation => inner.SupportsPriorityContinuation;
+        internal void Expect(GameCommand command) { expected = command; Accepted = false; ExpectedDispatched = false; }
         public Task<GameSnapshot?> ObserveAsync() => inner.ObserveAsync();
         public Task ConcedeAsync(string gameId) => throw new InvalidOperationException("Qualification never forces a player concession.");
-        public async Task ExecuteAsync(GameCommand command) { await inner.ExecuteAsync(command); Accepted = true; }
+        public async Task ExecuteAsync(GameCommand command)
+        {
+            bool matches = ReferenceEquals(command, expected);
+            if (matches) ExpectedDispatched = true;
+            await inner.ExecuteAsync(command);
+            if (command is GrantPriorityContinuation) Interlocked.Increment(ref GrantedContinuations);
+            if (command is RevokePriorityContinuation) Interlocked.Increment(ref RevokedContinuations);
+            if (command is PassPriority) Interlocked.Increment(ref AcceptedPriorityPasses);
+            if (matches) Accepted = true;
+        }
     }
 }
+
+internal sealed record ConnectedPlayerAutoEvidence(int AcceptedGrants, int AcceptedWithdrawals,
+    int CertifiedAutomaticPasses, int AcceptedPolicyPriorityPasses);

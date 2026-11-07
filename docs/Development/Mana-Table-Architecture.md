@@ -59,6 +59,11 @@ returns a closed current/unsupported/superseded result: transport retirement
 cannot impersonate absent capability when public context values are unchanged.
 Unsupported providers quietly disable the optional feature for that binding;
 joining a new game or audience resets this optional capability decision.
+The optional authoritative `HumanPlayerIds` roster uses actual registered player
+IDs, not seat ordinals or the viewer-relative legacy player `human` flag. With a
+known roster containing no other active human, the native presence owner sends
+no cosmetic exchanges. Entering/leaving that condition retires old results; an
+absent legacy roster preserves previous polling behavior.
 Superseded work clears activity and its retired revision cursor, permitting a
 fresh exchange. Failures clear activity and
 back off without entering match recovery or an error overlay.
@@ -1060,11 +1065,38 @@ on the next step; it never retains an answer across the beat. Headless campaigns
 use the fast default without this presentation cadence. A local client's Auto
 pause alone cannot govern AI progression or actions inside one rules execution.
 
-The [priority continuation proposal](Mana-Table-Priority-Continuation.md)
-describes the next incremental server consent boundary. It distinguishes the
-already server-owned finite grant from still client-owned ordinary Auto/quiet
-intent, and defines revocation, privacy and paced mixed-table gates. That
-standing-policy extension is not implemented or released.
+The [priority continuation contract](Mana-Table-Priority-Continuation.md)
+describes the implemented source candidate for server-owned ordinary Auto,
+explicit Quiet and finite consent. `IMatchConnection.SupportsPriorityContinuation`
+defaults false. Forge enables the new path only with negotiated
+`priority-continuation-v1` and the actual host's private frame; older remote
+hosts retain the client runner. Current controller scans expose closed
+`Absent`/`Available`/`Unknown` response evidence. One existing server dispatcher
+owns the real priority operations, with input/resource/scan leases rechecked
+at execution and mutually exclusive finite/standing consent.
+
+Native grants and prompt-free sequence-fenced withdrawals use the existing
+closed `GameCommand` lane. `ClientSession` coalesces desired intent, retains
+negative authority across reset/close/handoff, and never falls back to a local
+Auto worker while server ownership is pending or uncertain. Ordinary required
+answers may retain NoResponse consent; Take control, reading, manual mana and
+recovery withdraw it. Quiet never refreshes its original token automatically.
+
+Accepted-frame `PriorityObservationState` and prompt-free
+`AcknowledgePriorityObservation` provide bounded publication credit. Every active
+human registers; then at most 64 meaningful public events may lead an observer.
+Audience-safe activity retention is bounded at 4,096 and overflow holds Auto.
+The native owner registers once and coalesces after 16 events or a server hold,
+gated by the actual game's presentation readiness. One optional metadata task
+does not set user-action Busy/Polling, consume inputs, reset clocks or create
+history/undo intent; stale results still obey the replica epoch and audience.
+The provider's decoded cache cannot mint this accepted-frame credit.
+
+`ClientSessionAuthority.ObserveOnly` is an explicit read-only composition for
+recorded projection replay. All immutable-frame validators remain active, while
+manual/automatic commands, source-action reads, server ACKs and orphan-grant
+cleanup are disabled. Recorded grant fields remain intact. This source slice's
+release and exact-candidate human review are separate pending gates.
 
 `AiResolutionProgress` adds read-only public occurrence evidence to that cadence
 port. `TimedAiHostPacing` can retain the initial 2.4-second announcement beat for

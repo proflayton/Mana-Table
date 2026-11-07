@@ -52,6 +52,10 @@ internal sealed partial class TableApplication
         internal Mana.Client.OptionalPaymentOffer? CurrentOptionalPayment => game.session.CurrentOptionalPayment;
         internal bool OptionalPaymentsPaused => game.session.OptionalPaymentsPaused;
         internal int AnnouncementCount => game.matchPresentation.AnnouncementCount;
+        internal StackArrivalPresentation.Announcement? CurrentAnnouncement => game.matchPresentation.Announcement(game.now);
+        internal int IncompleteAnnouncements => game.matchPresentation.IncompleteAnnouncements;
+        internal bool PriorityContinuationReserved => game.session.PriorityContinuationReserved;
+        internal bool PriorityContinuationWithdrawing => game.session.PriorityContinuationWithdrawing;
         internal string? AnnouncementId => game.matchPresentation.Announcement(game.now)?.Id;
         internal ManaJourneyPaint? ManaJourney => game.manaJourneyPaint;
         internal IReadOnlyList<ManaSourcePaint> ManaSources => game.manaSourcePaint;

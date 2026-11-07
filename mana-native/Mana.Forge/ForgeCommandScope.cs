@@ -75,6 +75,15 @@ internal sealed class ForgeCommandScope
             case UndoAction value:
                 Action("undoCertifiedAction"); args["offerId"] = value.OfferId; args["actionId"] = value.ActionId;
                 args["undoBarrierVersion"] = value.BarrierVersion; break;
+            case GrantPriorityContinuation value:
+                Action("grantPriorityContinuation"); args["sequence"] = value.Sequence; args["grantId"] = value.GrantId;
+                args["mode"] = value.Mode.ToString(); args["phaseStops"] = value.PhaseStops;
+                args["quietYieldToken"] = value.QuietYieldToken; break;
+            case RevokePriorityContinuation value:
+                Action("revokePriorityContinuation"); args["throughSequence"] = value.ThroughSequence; break;
+            case AcknowledgePriorityObservation value:
+                Action("acknowledgePriorityObservation"); args["boardRevision"] = value.BoardRevision;
+                args["publicActivitySequence"] = value.PublicActivitySequence; break;
             case GrantFiniteStackYield value:
                 Action("grantFiniteStackYield"); args["grantId"] = value.GrantId; args["executionIds"] = value.ExecutionIds;
                 args["stackActionVersion"] = value.StackActionVersion; args["resolutionChoiceVersion"] = value.ResolutionChoiceVersion;

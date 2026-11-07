@@ -61,14 +61,22 @@ public class InputPassPriority extends InputSyncronizedBase {
     private List<SpellAbility> chosenSa;
     private boolean availabilityVerified;
 
+    /** Completed controller-scan evidence, not a second funding or action scan. */
+    public enum ResponseAvailability { Absent, Available, Unknown }
+
+    public ResponseAvailability getResponseAvailability() {
+        if (!availabilityVerified || isFinished() || !getController().isPriorityAvailabilityCurrent(this))
+            return ResponseAvailability.Unknown;
+        return getOwner().hasAvailableActions() ? ResponseAvailability.Available : ResponseAvailability.Absent;
+    }
+
     /** Set only after the engine has scanned actions for this priority window. */
     public void setAvailabilityVerified(final boolean verified) {
         availabilityVerified = verified;
     }
 
     public boolean canAutoPass() {
-        return availabilityVerified && !isFinished() && getController().isPriorityAvailabilityCurrent(this)
-                && !getOwner().hasAvailableActions();
+        return getResponseAvailability() == ResponseAvailability.Absent;
     }
 
     /** Any positively funded route on this card, not permission for a particular

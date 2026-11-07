@@ -42,6 +42,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-ai-resources");
         testRun |= args.Contains("--smoke-polled-mixed");
         testRun |= args.Contains("--smoke-polled-fanout");
+        testRun |= args.Contains("--check-polled-fanout-projection");
         testRun |= args.Contains("--smoke-whole-seat-ai");
         testRun |= args.Contains("--replay-ai-decision");
         testRun |= args.Contains("--replay-projection");
@@ -166,6 +167,9 @@ internal static class Program
             if (Arg("--replay-projection") is { } projectionReplay) {
                 ProjectionReplaySession.RunFile(projectionReplay, profile); return 0;
             }
+            if (Arg("--check-polled-fanout-projection") is { } retainedFanout) {
+                FanoutProjectionContinuityChecks.ReplayRetainedAsync(retainedFanout, profile).GetAwaiter().GetResult(); return 0;
+            }
             var bundle = Arg("--engine-resources") ?? Path.Combine(AppContext.BaseDirectory, "engine");
             if (!Directory.Exists(bundle)) throw new IOException("Missing bundled engine. Run the native packaging script first, or pass --engine-resources pointing to the package's resources directory.");
             var backend = Arg("--engine") ?? "forge";
@@ -214,7 +218,8 @@ internal static class Program
             if (args.Contains("--smoke")) { NativeSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-polled-mixed")) { PolledMixedLobbyEngineJourney.RunStandaloneAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-polled-fanout")) { PolledFanoutEngineJourney.RunStandaloneAsync(paths,
-                Arg("--production-engine-jar") ?? throw new ArgumentException("The polled fanout fixture requires its actual production engine dependency.")).GetAwaiter().GetResult(); return 0; }
+                Arg("--production-engine-jar") ?? throw new ArgumentException("The polled fanout fixture requires its actual production engine dependency."),
+                Arg("--source-revision"), Arg("--source-manifest")).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-ai")) { AiSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-cleanup")) { CleanupSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-analysis-adapter")) { AnalysisRegression.RunAsync(paths).GetAwaiter().GetResult(); return 0; }

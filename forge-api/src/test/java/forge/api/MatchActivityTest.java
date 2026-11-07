@@ -14,6 +14,22 @@ import org.testng.annotations.Test;
 import static org.testng.Assert.*;
 
 public class MatchActivityTest {
+    @Test public void acknowledgedDeliveryRetainsAnAtomicBurstBeyondTheRollingTailAndReleasesOnlyConfirmedEvents() {
+        var viewer = new PlayerView(1, null); var activity = new MatchActivity(viewer);
+        var target = publicCard(401, "Public target", viewer);
+        activity.beginDelivery();
+        for (int i = 0; i < 300; i++) activity.onGameEvent(new GameEventCardTapped(target, i % 2 == 0));
+        assertEquals(activity.snapshot().size(), 300, "An atomic draw/trigger burst must survive the ordinary rolling tail");
+        assertEquals(activity.snapshot().get(0).id(), 1L);
+        activity.acknowledgeDelivery(150); assertEquals(activity.snapshot().get(0).id(), 151L);
+        activity.acknowledgeDelivery(300); assertEquals(activity.snapshot().size(), 120);
+        assertFalse(activity.deliveryOverflow());
+        for (int i = 0; i <= MatchActivity.MAXIMUM_FINITE_ENTRIES; i++)
+            activity.onGameEvent(new GameEventCardTapped(target, i % 2 == 0));
+        assertTrue(activity.deliveryOverflow(), "Bounded delivery exhaustion is explicit rather than silently treated as observed");
+        activity.acknowledgeDelivery(activity.sequence()); assertTrue(activity.deliveryOverflow(), "ACK cannot certify a missing overflowed gap");
+        activity.retireDelivery(); assertFalse(activity.deliveryOverflow());
+    }
     @Test public void tapEventsKeepTheirCommittedControllerAndOnlyDiscloseCurrentBattlefieldObjects() {
         var viewer = new PlayerView(1, null); var owner = new PlayerView(2, null); var later = new PlayerView(3, null);
         var target = publicCard(310, "Visible target", owner);

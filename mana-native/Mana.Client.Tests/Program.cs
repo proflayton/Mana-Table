@@ -168,6 +168,8 @@ await OptionalPaymentRegression.RunAsync(Check);
 FiniteResolutionProgressRegression.Run(Check);
 await CombatAssignmentRegression.RunAsync(Check);
 await FiniteYieldLifecycleRegression.RunAsync(Check);
+await PriorityContinuationRegression.RunAsync(Check);
+await PriorityObservationRegression.RunAsync(Check);
 await SourceActionSessionRegression.RunAsync(Check);
 await SourceReadDiagnosticRegression.RunAsync(Check);
 ExecutionRegression.Run(Check);

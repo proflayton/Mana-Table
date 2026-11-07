@@ -97,6 +97,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private long resolutionChoiceVersion;
     private String lastDeclineOfferId = "";
     private final FiniteStackYield finiteStackYield = new FiniteStackYield();
+    private final PriorityContinuation priorityContinuation = new PriorityContinuation();
+    private final PriorityObservation priorityObservation = new PriorityObservation();
+    private record ObservationPublication(long board, long activity, long executions) { }
+    private ObservationPublication stagedObservation;
     private final CombatChoiceScope combatChoices = new CombatChoiceScope();
     private Input combatRefreshQueued;
     private volatile boolean closed;
@@ -157,7 +161,20 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     /** Normal publication effects belong to the completed table, not a seat. */
     void completePublication(BooleanSupplier current) {
         notifyPlaytest(current);
-        if (current.getAsBoolean()) queueFiniteStackPass();
+        if (current.getAsBoolean()) queuePriorityContinuation();
+    }
+
+    /** The table calls this for every audience only after the entire immutable
+     * cohort is current. A projected but aborted seat never certifies delivery. */
+    void commitPublication(long boardRevision) {
+        var staged = stagedObservation;
+        if (staged == null || staged.board() != boardRevision || !Objects.equals(latest.get("boardRevision"), boardRevision))
+            throw new IllegalStateException("Observation delivery requires the actual completed audience cohort");
+        if (!priorityObservation.initialized() && !MatchTable.isAutomated(human.getPlayer())) {
+            activity.beginDelivery(); executions.beginDelivery();
+        }
+        priorityObservation.published(staged.board(), staged.activity(), staged.executions());
+        stagedObservation = null;
     }
 
     /** One completed source query owns its copied domain and extra portraits. */
@@ -201,7 +218,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         int size, min, max;
         int amount;
         boolean atLeastOne, numeric, maySkip;
-        boolean finiteYieldQueued;
+        boolean continuationQueued;
         List<Integer> limits = List.of();
         java.util.function.Consumer<List<Integer>> validateOrder;
         int defenderIndex = -1;
@@ -308,6 +325,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     void cancelDecision() {
         combatChoices.clear();
         finiteStackYield.revoke("connection-ended");
+        priorityContinuation.revoke("connection-ended");
         closed = true;
         inspectionInput = null; inspectionContext = null; choiceContextInput = null; choiceContext = null;
         if (latest.get("publicInspection") != null || latest.get("publicChoice") != null) {
@@ -323,6 +341,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
     void releaseInput() { human.getInputQueue().onGameOver(true); }
     boolean eliminated() { return viewer.getHasLost(); }
+    int playerId() { return viewer.getId(); }
     void closeTable() { table.close(); }
     List<MatchSession> automatedSeats() { return table.automatedSeats(); }
     MatchSession automatedSeat(int playerId) { return table.automatedSeat(playerId); }
@@ -508,6 +527,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     "message", message, "ok", ok, "cancel", cancel, "okEnabled", okEnabled, "cancelEnabled", cancelEnabled,
                     "canAttackAll", current instanceof InputAttack, "playerChoices", List.of(),
                     "canAutoPass", canAutoPass(current));
+            if (current instanceof InputPassPriority) next.prompt.put("responseAvailability", responseAvailability(current).name());
             next.handReductionOffer = current instanceof InputSelectHandSizeDiscard discard ? discard.getHandReductionOffer() : null;
             if (next.handReductionOffer != null) next.prompt.put("kind", "choice");
             projectPriorityAlternative(next.prompt, current);
@@ -524,20 +544,30 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     && payment.getPaidForAbility().getHostCard() != null ? payment.getPaidForAbility().getHostCard().getView() : promptSource;
             describeSource(next, inputSource, card -> cardState(card, null), false, true, true);
             pending = next;
+            // Every skipped publication is only a priority hop. Real rules
+            // events, phases and choices still commit their full cohort.
+            if (current instanceof InputPassPriority && table.canElidePriorityPublication()
+                    && automaticPriorityReady(next)) {
+                queuePriorityContinuation();
+                if (next.continuationQueued) return;
+            }
             publish(next);
         }
     }
 
     private boolean canAutoPass(Input input) {
-        var view = game.getView();
         // The controller refreshes this conservative action scan before publishing
         // priority. It includes planned payments and unresolved manual routes in
         // playable zones. Timeouts remain conservative; mana abilities alone do not count.
         // Land plays and castable commanders count as actions too. A main phase
         // with no remaining play is eligible; the client applies saved phase stops.
         // Never infer this permission from card highlighting in the renderer.
-        return input instanceof InputPassPriority priority && okEnabled && view.getTurn() > 0
-                && priority.canAutoPass();
+        return responseAvailability(input) == InputPassPriority.ResponseAvailability.Absent;
+    }
+
+    private InputPassPriority.ResponseAvailability responseAvailability(Input input) {
+        return input instanceof InputPassPriority priority && okEnabled && game.getView().getTurn() > 0
+                ? priority.getResponseAvailability() : InputPassPriority.ResponseAvailability.Unknown;
     }
 
     private Map<String, Object> pendingEffect(SpellAbility ability) {
@@ -611,22 +641,100 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 liveStackWitness(), executions.frame(), requiredChoiceEpisode(), optional);
     }
 
-    private void queueFiniteStackPass() {
+    private boolean automaticPriorityReady(Pending current) {
+        refreshFiniteStackYield();
+        refreshPriorityContinuation(current);
+        if (!table.priorityObserversReady()) {
+            priorityContinuation.hold(table.priorityObservationReason());
+            return false;
+        }
+        return current != null && current.input instanceof InputPassPriority && sourceInputCurrent(current)
+                && okEnabled && (finiteStackYield.active()
+                    || priorityContinuation.accepted() && priorityContinuation.frame().status() == PriorityContinuation.Status.ACTIVE);
+    }
+
+    /** One dispatcher owns finite and standing consent. Its lease is captured
+     * from the actual completed controller input, not an invented UI capture. */
+    private void queuePriorityContinuation() {
         Pending current = pending;
-        if (!finiteStackYield.active() || current == null || current.finiteYieldQueued
-                || !(current.input instanceof InputPassPriority) || !sourceInputCurrent(current)
-                || !Boolean.TRUE.equals(current.prompt.get("okEnabled"))) return;
-        String grantId = finiteStackYield.id();
-        current.finiteYieldQueued = true;
+        if (current == null || current.continuationQueued || !automaticPriorityReady(current)) return;
+        String finiteGrant = finiteStackYield.active() ? finiteStackYield.id() : null;
+        var standing = finiteGrant == null ? priorityContinuation.instruction() : null;
+        InputPassPriority input = (InputPassPriority) current.input;
+        long inputSequence = human.getInputProxy().getInputSequence(), sourceVersion = sourceActionVersion.get();
+        current.continuationQueued = true;
         HeadlessPlatform.later(() -> game.getAction().withState(() -> { synchronized (gate) {
-            current.finiteYieldQueued = false;
-            if (pending != current || !sourceInputCurrent(current)) return;
-            refreshFiniteStackYield();
-            if (!finiteStackYield.active() || !finiteStackYield.id().equals(grantId)) return;
-            var request = new JsonObject(); request.addProperty("sessionId", id); request.addProperty("promptId", current.id);
-            request.addProperty("action", "passPriority"); request.addProperty("finiteStackYieldGrantId", grantId);
-            actionInState(request, false);
+            current.continuationQueued = false;
+            if (pending != current || !sourceInputCurrent(current)
+                    || human.getInputProxy().getInputSequence() != inputSequence || sourceActionVersion.get() != sourceVersion
+                    || !automaticPriorityReady(current)
+                    || finiteGrant != null && (!finiteStackYield.active() || !finiteGrant.equals(finiteStackYield.id()))
+                    || standing != null && !priorityContinuation.current(standing)) return;
+            table.invalidateUndo("automatic-priority-pass");
+            pending = null; inputActionQueued = true; markBusy(current);
+            try {
+                // Revalidate after metadata/observer callbacks and immediately
+                // before invoking the engine's real priority transition.
+                refreshFiniteStackYield(); refreshPriorityContinuation(current);
+                boolean consent = finiteGrant != null ? finiteStackYield.active() && finiteGrant.equals(finiteStackYield.id())
+                        : priorityContinuation.current(standing) && priorityContinuation.frame().status() == PriorityContinuation.Status.ACTIVE;
+                if (consent && table.priorityObserversReady() && inputOwnerCurrent(input)
+                        && human.getInputProxy().getInputSequence() == inputSequence && sourceActionVersion.get() == sourceVersion) {
+                    input.passPriority();
+                    if (!input.isPriorityActive()) {
+                        if (finiteGrant != null) finiteStackYield.passed(); else priorityContinuation.passed();
+                        refreshContinuationProjection();
+                    }
+                }
+            } finally {
+                inputActionQueued = false;
+                if (inputOwnerCurrent(input)) { pending = current; publishInputInState(); }
+            }
         } }));
+    }
+
+    private void refreshPriorityContinuation(Pending current) {
+        if (!priorityContinuation.accepted()) return;
+        if (closed || error != null || conceded || viewer.getHasLost() || game.isGameOver()) {
+            priorityContinuation.revoke("match-ended"); return;
+        }
+        var instruction = priorityContinuation.instruction();
+        if (instruction.mode() == PriorityContinuation.Mode.QUIET
+                && !quietYield.permits(instruction.quietYieldToken(), activity.quietSequence())) {
+            priorityContinuation.revoke("public-action"); return;
+        }
+        if (current == null || !(current.input instanceof InputPassPriority) || !inputOwnerCurrent(current.input) || !okEnabled) {
+            priorityContinuation.hold("required-choice"); return;
+        }
+        var phase = game.getPhaseHandler().getPhase();
+        if (game.getPhaseHandler().getPlayerTurn() == human.getPlayer() && phase != null
+                && instruction.phaseStops().contains(phase.name())) { priorityContinuation.hold("phase-stop"); return; }
+        if (instruction.mode() == PriorityContinuation.Mode.QUIET) {
+            if (!canQuietYield(current.input)) { priorityContinuation.revoke("public-action"); return; }
+        } else {
+            var availability = responseAvailability(current.input);
+            if (availability != InputPassPriority.ResponseAvailability.Absent) {
+                priorityContinuation.hold(availability == InputPassPriority.ResponseAvailability.Available ? "response-available" : "response-unknown"); return;
+            }
+        }
+        priorityContinuation.ready();
+    }
+
+    boolean priorityObserverRegistered() { return priorityObservation.registered(); }
+    boolean priorityObserverHasCredit() { return priorityObservation.hasCredit(activity.sequence()) && !priorityObserverOverflowed(); }
+    boolean priorityObserverOverflowed() { return activity.deliveryOverflow() || executions.deliveryOverflow(); }
+    boolean activeHuman() { return !viewer.getHasLost() && !closed && error == null; }
+    void continuePriority() { queuePriorityContinuation(); }
+
+    private void refreshContinuationProjection() {
+        refreshPriorityContinuation(pending);
+        if (!table.priorityObserversReady()) priorityContinuation.hold(table.priorityObservationReason());
+        var next = new LinkedHashMap<>(latest);
+        next.put("revision", ++revision);
+        next.put("priorityContinuation", priorityContinuation.frame());
+        next.put("finiteStackYield", finiteStackYield.frame(table.stackInterruption.actionVersion(), resolutionChoiceVersion));
+        next.put("priorityObservation", priorityObservation.frame(priorityObserverOverflowed()));
+        latest = freezePublishedView(next);
     }
 
     void revokeFiniteYieldForConnection() {
@@ -634,6 +742,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             inspectionInput = null; inspectionContext = null; choiceContextInput = null; choiceContext = null;
             table.presence.disconnected(viewer.getId());
             finiteStackYield.revoke("connection-ended");
+            priorityContinuation.disconnected(); priorityObservation.disconnected(); activity.retireDelivery(); executions.retireDelivery();
             if (!closed && error == null) table.publish();
         } });
     }
@@ -1110,6 +1219,20 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             String action = suppliedAction.isEmpty() && request.has("choices") && pending != null
                     && pending.handReductionOffer != null && pending.input instanceof InputSelectHandSizeDiscard
                     ? "choose" : suppliedAction;
+            if (action.equals("revokePriorityContinuation")) {
+                if (!id.equals(string(request, "sessionId"))) throw new IllegalArgumentException("This match is no longer active");
+                priorityContinuation.revokeThrough(finiteYieldVersion(request, "throughSequence"));
+                refreshContinuationProjection(); return latest;
+            }
+            if (action.equals("acknowledgePriorityObservation")) {
+                requireSession(request);
+                long board = finiteYieldVersion(request, "boardRevision"), sequence = finiteYieldVersion(request, "publicActivitySequence");
+                if (priorityObserverOverflowed()) throw new IllegalArgumentException("Priority observation overflowed; reload the table before enabling Auto");
+                long executionSequence = priorityObservation.acknowledge(board, sequence);
+                activity.acknowledgeDelivery(priorityObservation.acknowledgedActivity());
+                executions.acknowledgeDelivery(executionSequence);
+                refreshContinuationProjection(); table.continuePriority(); return latest;
+            }
             if (action.equals("revokeFiniteStackYield")) {
                 if (!id.equals(string(request, "sessionId"))) throw new IllegalArgumentException("This match is no longer active");
                 if (!finiteStackYield.id().equals(string(request, "grantId")) || finiteStackYield.id().isEmpty())
@@ -1119,6 +1242,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 return latest;
             }
             requireSession(request);
+            if (action.equals("grantPriorityContinuation")) return grantPriorityContinuation(request);
             if (action.equals("grantFiniteStackYield")) return grantFiniteStackYield(request);
             String automaticGrant = null;
             if (request.has("finiteStackYieldGrantId")) {
@@ -1633,6 +1757,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (new HashSet<>(members).size() != members.size()) throw new IllegalArgumentException("A finite yield cannot repeat an execution");
         long action = finiteYieldVersion(request, "stackActionVersion"), choice = finiteYieldVersion(request, "resolutionChoiceVersion");
         if (finiteStackYield.repeated(grantId, decisionId, members, action, choice)) return latest;
+        if (priorityContinuation.accepted()) throw new IllegalArgumentException("Withdraw standing Auto before resolving a finite queue");
         Pending current = pending;
         var live = liveStackWitness();
         if (request.has("expectedTask") && !string(request, "expectedTask").equals("priority")
@@ -1646,6 +1771,37 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         executions.finiteGrant(grantId, members);
         activity.finiteGrant(grantId, members);
         table.publish(); return latest;
+    }
+
+    private Map<String, Object> grantPriorityContinuation(JsonObject request) {
+        var rawMode = string(request, "mode");
+        PriorityContinuation.Mode mode = switch (rawMode) {
+            case "NoResponse" -> PriorityContinuation.Mode.NO_RESPONSE;
+            case "Quiet" -> PriorityContinuation.Mode.QUIET;
+            default -> throw new IllegalArgumentException("Choose a supported priority continuation policy");
+        };
+        var rawPhases = request.get("phaseStops");
+        if (rawPhases == null || !rawPhases.isJsonArray()) throw new IllegalArgumentException("Priority phase stops are required");
+        var phases = new ArrayList<String>();
+        for (var phase : rawPhases.getAsJsonArray()) {
+            if (!phase.isJsonPrimitive() || !phase.getAsJsonPrimitive().isString()) throw new IllegalArgumentException("Invalid priority phase stop");
+            phases.add(phase.getAsString());
+        }
+        var instruction = new PriorityContinuation.Instruction(finiteYieldVersion(request, "sequence"),
+                string(request, "grantId"), mode, phases, string(request, "quietYieldToken"));
+        if (priorityContinuation.repeated(instruction)) { refreshContinuationProjection(); return latest; }
+        Pending current = pending;
+        if (finiteStackYield.active()) throw new IllegalArgumentException("Withdraw the finite queue before enabling standing Auto");
+        if (!priorityObservation.registered() || priorityObserverOverflowed()) throw new IllegalArgumentException("Observe this table before enabling Auto");
+        if (current == null || !current.id.equals(string(request, "promptId"))
+                || !(current.input instanceof InputPassPriority) || !sourceInputCurrent(current) || !okEnabled
+                || request.has("expectedTask") && !string(request, "expectedTask").equals("priority"))
+            throw new IllegalArgumentException("That priority decision changed before enabling Auto");
+        if (mode == PriorityContinuation.Mode.QUIET && (!Objects.equals(current.prompt.get("quietYieldToken"), instruction.quietYieldToken())
+                || !permitsQuietYield(current, instruction.quietYieldToken())))
+            throw new IllegalArgumentException("The public table changed before enabling Quiet Auto");
+        priorityContinuation.begin(instruction);
+        refreshContinuationProjection(); queuePriorityContinuation(); return latest;
     }
 
     private static long finiteYieldVersion(JsonObject request, String key) {
@@ -1715,11 +1871,18 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (current != null && current.input instanceof InputPassPriority) {
             var prompt = new LinkedHashMap<>(current.prompt);
             prompt.put("canAutoPass", canAutoPass(current.input));
+            prompt.put("responseAvailability", responseAvailability(current.input).name());
             prompt.put("priorityAbilities", priorityAbilities(human.getPriorityAbilities(), current));
             current.prompt = prompt;
             next.put("prompt", prompt);
         }
         latest = freezePublishedView(next);
+        if (priorityContinuation.accepted()) {
+            // The preference updates the controller's existing completed scan.
+            // Its newly eligible window must re-enter the same authority-owned
+            // dispatcher without waiting for another UI command or board event.
+            refreshContinuationProjection(); queuePriorityContinuation();
+        }
         return latest;
     }
 
@@ -1803,6 +1966,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         next.put("players", resolvingPlayers(consumed));
         next.put("playAccesses", PlayAccessProjection.withoutCurrentOffers(next.get("playAccesses")));
         next.put("finiteStackYield", finiteStackYield.frame(table.stackInterruption.actionVersion(), resolutionChoiceVersion));
+        next.put("priorityContinuation", priorityContinuation.frame());
         latest = freezePublishedView(next);
         table.refreshDecisionState();
     }
@@ -2404,6 +2568,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             projectedPrompt.put("executionStep", captured.executionStep());
             if (prompt.input instanceof InputPassPriority) {
                 projectedPrompt.put("canAutoPass", canAutoPass(prompt.input));
+                projectedPrompt.put("responseAvailability", responseAvailability(prompt.input).name());
                 projectedPrompt.put("priorityAbilities", priorityAbilities(human.getPriorityAbilities(), prompt));
                 projectPriorityAlternative(projectedPrompt, prompt.input);
             }
@@ -2414,6 +2579,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "stackInterruptionVersion", table.stackInterruption.version(),
                 "stackActionVersion", table.stackInterruption.actionVersion(), "resolutionChoiceVersion", resolutionChoiceVersion,
                 "finiteStackYield", finiteStackYield.frame(table.stackInterruption.actionVersion(), resolutionChoiceVersion),
+                "priorityContinuation", priorityContinuation.frame(), "humanPlayerIds", table.humanPlayerIds(),
                 "error", error, "playerCount", allPlayers.size(), "viewerId", viewer.getId(), "turn", view.getTurn(), "phase", view.getPhase() == null ? "Pregame" : view.getPhase().nameForUi,
                 "phaseKey", view.getPhase() == null ? "PREGAME" : view.getPhase().name(),
                 "activePlayerId", view.getPlayerTurn() == null ? null : view.getPlayerTurn().getId(), "players", players,
@@ -2461,6 +2627,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         inspectionSubjects = nextSubjects;
         choiceReferences = nextReferences; choiceDomain = nextChoiceDomain; choicePublishedInput = prompt == null ? null : prompt.input;
         inspectionSubjectsBoardRevision = boardRevision;
+        stagedObservation = new ObservationPublication(boardRevision, activity.sequence(), publication.executions().lastSequence());
+        snapshot.put("priorityObservation", priorityObservation.projectedFrame(boardRevision, stagedObservation.activity(), priorityObserverOverflowed()));
+        refreshPriorityContinuation(prompt);
+        if (!table.priorityObserversReady()) priorityContinuation.hold(table.priorityObservationReason());
+        snapshot.put("priorityContinuation", priorityContinuation.frame());
         latest = freezePublishedView(snapshot);
         publishedSourceActionVersion = publicationSourceVersion;
         return true;

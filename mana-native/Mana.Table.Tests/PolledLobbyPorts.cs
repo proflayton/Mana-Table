@@ -15,6 +15,7 @@ internal static class PolledLobbyPorts
     internal sealed record CommandLatency(string Kind, long StartedTicks, double Milliseconds);
     internal sealed class ReadPort(IMatchConnection inner) : IMatchConnection
     {
+        public bool SupportsPriorityContinuation => inner.SupportsPriorityContinuation;
         private readonly ConcurrentDictionary<string, GameSnapshot> decisions = new(StringComparer.Ordinal);
         internal Action<GameSnapshot?>? Observed { get; init; }
         internal Action<GameCommand, GameSnapshot?>? Acknowledged { get; init; }

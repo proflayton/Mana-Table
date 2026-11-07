@@ -11,11 +11,17 @@ internal static class PolledFullGameContractChecks
 {
     internal static async Task RunAsync(string profile, Action<bool, string> check)
     {
+        MixedGamePublicCohortChecks.Run(check);
+        FanoutProjectionCaptureChecks.Run(check);
+        FanoutProjectionArchiveChecks.Run(profile, check);
         await OrdinaryOwner(profile, check);
         await RetiredRichReads(profile, check);
         await HeldRichRead(profile, check);
         await RejectedCommandWaitsForOrdinary(profile, check);
         await SourceActionUsesOrdinaryOwner(profile, check);
+        await ServerOwnedRoutinePriority(profile, check);
+        await ServerHeldActionablePriority(profile, check);
+        await RetiredQueuedServerAction(profile, check);
         await PolledEvidenceInboxChecks.RunAsync(profile, check);
     }
 
@@ -178,6 +184,92 @@ internal static class PolledFullGameContractChecks
             [new("controlled-play", "play", "Play this land")]) { Revision = state.Revision };
     }
 
+    private static async Task ServerOwnedRoutinePriority(string profile, Action<bool, string> check)
+    {
+        var initial = ServerPriority(PriorityResponseAvailability.Absent);
+        using var run = new DriverCase(profile, "server-routine-owner", initial, initial);
+        run.Port.PriorityContinuationAvailable = true;
+        run.Port.AfterCommand = command => command is GrantPriorityContinuation grant
+            ? initial with { Revision = 11, PriorityContinuation = Granted(grant, PriorityContinuationStatus.Active) } : null;
+        await run.Prime(); await run.Driver.ObserveAsync(); await Drain(run.Driver.Client);
+        await run.Driver.ObserveAsync(); await run.Driver.StepAsync();
+        var advanced = run.Port.State with { Revision = 12,
+            PriorityContinuation = run.Port.State.PriorityContinuation! with { AutomaticPasses = 17 } };
+        run.Port.State = advanced;
+        run.Driver.Client.Poll(true, _ => { }); await Drain(run.Driver.Client);
+        await run.Driver.ObserveAsync(); await run.Driver.StepAsync();
+        check(run.Driver.Client.SupportsPriorityContinuation && ReferenceEquals(run.Driver.Client.State, advanced)
+                && run.Port.Commands is [GrantPriorityContinuation { Mode: PriorityContinuationMode.NoResponse, PhaseStops.IsEmpty: true }]
+                && run.Port.OwnedReads == 0 && run.Policy.Evaluations == 0
+                && run.Driver.ClientAdmissions == 0 && run.Driver.ProviderAcceptances == 0
+                && run.Driver.AutoEvidence is { AcceptedGrants: 1, CertifiedAutomaticPasses: 17, AcceptedPolicyPriorityPasses: 0 },
+            "An ordinary polled owner grants server Auto once, observes its certified progress and never queries/evaluates/dispatches a per-prompt fallback for routine priority");
+    }
+
+    private static async Task ServerHeldActionablePriority(string profile, Action<bool, string> check)
+    {
+        foreach (var availability in new[] { PriorityResponseAvailability.Available, PriorityResponseAvailability.Unknown }) {
+            var initial = ServerPriority(availability);
+            using var run = new DriverCase(profile, "server-held-" + availability, initial, initial);
+            run.Port.PriorityContinuationAvailable = true;
+            run.Port.AfterCommand = command => command switch {
+                GrantPriorityContinuation grant => initial with { Revision = 11, PriorityContinuation = Granted(grant, PriorityContinuationStatus.Held) },
+                RevokePriorityContinuation => run.Port.State with { Revision = 12,
+                    PriorityContinuation = run.Port.State.PriorityContinuation! with { Status = PriorityContinuationStatus.Revoked, ReasonCode = "withdrawn" } },
+                PassPriority => run.Port.State with { Revision = 13, BoardRevision = 11, Decision = null },
+                _ => null
+            };
+            await run.Prime(); await run.Driver.ObserveAsync(); await Drain(run.Driver.Client);
+            run.Port.RichState = run.Port.State;
+            await run.Driver.ObserveAsync(); await run.Driver.StepAsync();
+            check(run.Port.Commands is [GrantPriorityContinuation, PassPriority]
+                    && run.Policy.Evaluations == 1 && run.Port.OwnedReads == 1
+                    && run.Driver.ClientAdmissions == 1 && run.Driver.ProviderAcceptances == 1
+                    && run.Driver.AutoEvidence is { AcceptedGrants: 1, AcceptedWithdrawals: 0, AcceptedPolicyPriorityPasses: 1 }
+                    && run.Driver.Client.PriorityContinuationReserved
+                    && !run.Driver.Client.NeedsRecovery && !run.Driver.Client.UncertainCommand,
+                "A server-held " + availability + " window preserves standing Auto while counting only the ordinary policy action's actual command receipt");
+        }
+    }
+
+    private static async Task RetiredQueuedServerAction(string profile, Action<bool, string> check)
+    {
+        var initial = ServerPriority(PriorityResponseAvailability.Available);
+        using var run = new DriverCase(profile, "server-retired-queued-action", initial, initial);
+        run.Port.PriorityContinuationAvailable = true;
+        run.Port.AfterCommand = command => command switch {
+            GrantPriorityContinuation grant => initial with { Revision = 11, PriorityContinuation = Granted(grant, PriorityContinuationStatus.Held) },
+            RevokePriorityContinuation => run.Port.State with { Revision = 13,
+                Decision = run.Port.State.Decision! with { Id = "new-prompt-after-negative-consent" },
+                PriorityContinuation = run.Port.State.PriorityContinuation! with { Status = PriorityContinuationStatus.Revoked, ReasonCode = "withdrawn" } },
+            _ => throw new InvalidDataException("A retired queued action must never reach the controlled provider.")
+        };
+        await run.Prime(); await run.Driver.ObserveAsync(); await Drain(run.Driver.Client);
+        var payment = run.Port.State with { Revision = 12, BoardRevision = 11,
+            Decision = new("manual-mana-prompt", new DecisionContext(Message: "Pay mana."), new PaymentPayload(new("Pay", true), new("Cancel", true))),
+            Players = run.Port.State.Players.Select(player => player.Id == initial.ViewerId
+                ? player with { Mana = ImmutableDictionary<string, int>.Empty.Add("U", 1) } : player).ToImmutableArray() };
+        run.Port.State = payment; run.Port.RichState = payment;
+        run.Driver.Client.Poll(true, _ => { }); await Drain(run.Driver.Client);
+        await run.Driver.ObserveAsync(); await run.Driver.StepAsync();
+        check(run.Port.Commands is [GrantPriorityContinuation, RevokePriorityContinuation]
+                && run.Driver.ClientAdmissions == 1 && run.Driver.ProviderAcceptances == 0
+                && run.Driver.RetiredProposals == 1 && run.Driver.AutoEvidence.AcceptedWithdrawals == 1
+                && !run.Driver.Client.NeedsRecovery && !run.Driver.Client.UncertainCommand,
+            "A negative consent receipt cannot be credited as manual mana when its queued payment prompt retires before dispatch");
+    }
+
+    private static GameSnapshot ServerPriority(PriorityResponseAvailability availability) => Priority() with {
+        PriorityContinuation = new(0, "", null, PriorityContinuationStatus.Idle, "idle", 0, []),
+        Decision = Priority().Decision! with { Payload = ((PriorityPayload)Priority().Decision!.Payload) with {
+            CanAutoPass = availability == PriorityResponseAvailability.Absent, ResponseAvailability = availability
+        } }
+    };
+
+    private static PriorityContinuationState Granted(GrantPriorityContinuation command, PriorityContinuationStatus status)
+        => new(command.Sequence, command.GrantId, command.Mode, status,
+            status == PriorityContinuationStatus.Active ? "no-response" : "response-available", 0, command.PhaseStops);
+
     private static DecisionActionDomain Domain(GameSnapshot state) => new(state.Revision, ActionDomainCoverage.Complete,
         [Offers(state)], [new("controlled-play", ActionEffectKind.Land, [ActionEffectKind.Land], [], ActionAffordability.Payable)]);
 
@@ -250,6 +342,8 @@ internal static class PolledFullGameContractChecks
             Evaluations++; PhysicalState = request.Frame.State;
             DecisionCommand answer = useSource ? new UseOfferedAction(PhysicalState.Id, PhysicalState.Decision!.Id,
                 request.Frame.SourceActions[0].SourceCardKey, request.Frame.SourceActions[0].Actions[0].Id)
+                : PhysicalState.Decision!.Payload is PaymentPayload && PhysicalState.Viewer!.Mana.GetValueOrDefault("U") > 0
+                ? new SpendPoolMana(PhysicalState.Id, PhysicalState.Decision.Id, "U")
                 : PhysicalState.Decision!.Payload is OpeningHandPayload
                 ? new KeepOpeningHand(PhysicalState.Id, PhysicalState.Decision.Id)
                 : new PassPriority(PhysicalState.Id, PhysicalState.Decision.Id);
@@ -264,9 +358,12 @@ internal static class PolledFullGameContractChecks
         internal GameSnapshot State { get => Volatile.Read(ref state); set => Volatile.Write(ref state, value); }
         internal GameSnapshot RichState { get; set; } = rich;
         internal GameSnapshot? AfterExecute;
+        internal Func<GameCommand, GameSnapshot?>? AfterCommand;
         internal Exception? ExecuteError;
         internal int Reads, OwnedReads, SourceReads, HistoryReads;
         internal bool HoldOwned, HoldNextRead, HoldSource, UseSource;
+        internal bool PriorityContinuationAvailable;
+        public bool SupportsPriorityContinuation => PriorityContinuationAvailable;
         internal List<GameCommand> Commands { get; } = [];
         internal TaskCompletionSource OrdinaryStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource<GameSnapshot?> ReleaseOrdinary { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -287,7 +384,8 @@ internal static class PolledFullGameContractChecks
         {
             Commands.Add(command);
             if (ExecuteError is { } error) return Task.FromException(error);
-            if (AfterExecute is { } next) State = next;
+            if (AfterCommand?.Invoke(command) is { } response) State = response;
+            else if (AfterExecute is { } next) State = next;
             return Task.CompletedTask;
         }
         public Task ConcedeAsync(string gameId) => throw new InvalidOperationException("No synthetic concession is permitted.");
@@ -295,8 +393,11 @@ internal static class PolledFullGameContractChecks
         {
             Interlocked.Increment(ref OwnedReads); OwnedStarted.TrySetResult();
             return HoldOwned ? ReleaseOwned.Task : Task.FromResult<OwnedDecisionObservation?>(new(RichState,
-                UseSource ? Domain(RichState) : RichState.Decision?.Payload is PriorityPayload
-                    ? new(RichState.Revision, ActionDomainCoverage.Complete, [], []) : DecisionActionDomain.None, new()));
+                UseSource ? Domain(RichState) : RichState.Decision?.Payload is PriorityPayload or PaymentPayload
+                    ? new(RichState.Revision, ActionDomainCoverage.Complete, [], []) {
+                        PoolManaColors = RichState.Decision.Payload is PaymentPayload
+                            ? RichState.Viewer!.Mana.Where(pair => pair.Value > 0).Select(pair => pair.Key).ToImmutableArray() : []
+                    } : DecisionActionDomain.None, new()));
         }
         public Task<SourceActionSet> SourceActionsAsync(string gameId, string decisionId, string sourceCardKey)
         {

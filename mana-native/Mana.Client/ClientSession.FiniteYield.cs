@@ -26,6 +26,7 @@ public sealed partial class ClientSession
 
     private void QueueFiniteRevocation()
     {
+        if (Authority != ClientSessionAuthority.Interactive) return;
         if (finiteIntent is FiniteResolutionIntent finite && finite.CaptureServerRevocation() is { } owned)
             QueueFiniteRevocation(owned.Command, owned.ViewerId, owned.MinimumRevision);
         if (State?.FiniteStackYield is { Status: FiniteStackYieldStatus.Active } observed)
@@ -59,9 +60,9 @@ public sealed partial class ClientSession
             && (state == null || state.Id != ack.Game || state.ViewerId != ack.Viewer || state.FiniteStackYield?.GrantId != ack.Grant))
             acknowledgedFiniteRevoke = null;
     }
-    private void RecoverRetiredFiniteCleanup(long epoch)
+    private void RecoverRetiredConsentCleanup(long epoch)
     {
-        if (epoch != replica.Epoch || State != null || finiteRevocations.Count != 0
+        if (epoch != replica.Epoch || State != null || finiteRevocations.Count != 0 || priorityRevocations.Count != 0
             || !recoveryRequired || !UncertainCommand || !LastFailureWasCommand) return;
         // Explicit work observed every outstanding negative acknowledgement.
         // Retired gameplay stays retired; no snapshot or affirmative input is

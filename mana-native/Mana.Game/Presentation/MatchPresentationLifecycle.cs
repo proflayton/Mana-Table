@@ -31,6 +31,8 @@ internal sealed class MatchPresentationLifecycle
     private (string Game, int Viewer)? scope;
     private double finiteBeatUntil;
     private long presentationGeneration;
+    private string recordedFiniteGrant = "";
+    private (string Execution, string Group)[] recordedFiniteGroups = [];
 
     // Presentation-only receipt for one explicit quiet start. No decision,
     // engine token, command permission or mutable rule state belongs here.
@@ -89,6 +91,19 @@ internal sealed class MatchPresentationLifecycle
         // even when the engine's game identity has not changed.
         var before = changed || restored ? null : previous;
         if (restored) execution = null;
+        // A recorded grant is evidence of an already captured queue, never a
+        // new gesture or authority to send commands. Replays and other observers
+        // use the same rules-supplied repetition identities as the live reader.
+        if (current.FiniteStackYield is { Status: FiniteStackYieldStatus.Active } captured) {
+            if (recordedFiniteGrant != captured.GrantId) {
+                recordedFiniteGrant = captured.GrantId;
+                var ids = captured.ExecutionIds.ToHashSet(StringComparer.Ordinal);
+                recordedFiniteGroups = current.Stack.Where(item => ids.Contains(item.ExecutionId) && item.Repetition != null)
+                    .Select(item => (Execution: item.ExecutionId, Group: item.Repetition!.GroupKey))
+                    .GroupBy(item => item.Group, StringComparer.Ordinal).Where(group => group.Count() > 1).SelectMany(group => group).ToArray();
+            }
+            stackArrival.BeginFinite(recordedFiniteGroups, now);
+        }
         var batch = activity.Observe(before, current, execution?.Transitions ?? [], execution?.Baseline ?? false, execution?.Gap ?? false);
         effects.Observe(batch, now); presence.Observe(batch, now);
         actions.Observe(batch, now); changes.Observe(batch, now); impacts.Observe(batch, now);
@@ -113,6 +128,7 @@ internal sealed class MatchPresentationLifecycle
 
     internal void Reset()
     {
+        recordedFiniteGrant = ""; recordedFiniteGroups = [];
         scope = null;
         ClearTransientFeedback();
     }

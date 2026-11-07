@@ -41,6 +41,7 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         public bool PrivateActionFacesAvailable { get; set; }
         public bool TablePresenceAvailable { get; set; }
         public bool TableChoicesAvailable { get; set; }
+        public bool PriorityContinuationAvailable { get; set; }
         public ForgeCommandScope Commands { get; } = new();
         public volatile Exception? Failure;
         public volatile bool FramingFailed;
@@ -49,6 +50,8 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
     private long sequence;
     private bool disposed;
     public string Name => "Forge";
+    public bool SupportsPriorityContinuation => current is { PriorityContinuationAvailable: true, Failure: null } owner
+        && owner.Ready.Task.IsCompletedSuccessfully && !owner.Process.HasExited;
     public async Task InitializeAsync()
     {
         ObjectDisposedException.ThrowIf(disposed, this);
@@ -93,6 +96,7 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
                             owner.PrivateActionFacesAvailable = capabilities.Contains("private-action-faces");
                             owner.TablePresenceAvailable = capabilities.Contains("table-presence");
                             owner.TableChoicesAvailable = capabilities.Contains("table-choices-v1");
+                            owner.PriorityContinuationAvailable = capabilities.Contains("priority-continuation-v1");
                             owner.Ready.TrySetResult();
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
@@ -436,6 +440,9 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         var owner = current ?? throw new IOException("The engine is not running");
         if (command is UndoAction && !owner.CertifiedUndoAvailable)
             throw new EngineCommandRejectedException("This engine does not support certified gameplay Undo.");
+        if (command is GrantPriorityContinuation or RevokePriorityContinuation or AcknowledgePriorityObservation
+            && !owner.PriorityContinuationAvailable)
+            throw new EngineCommandRejectedException("This engine does not support server-owned priority continuation.");
         var args = owner.Commands.Encode(command);
         if (current != owner || owner.Failure != null) throw new IOException("The engine is not running");
         await Request("matchAction", args);
