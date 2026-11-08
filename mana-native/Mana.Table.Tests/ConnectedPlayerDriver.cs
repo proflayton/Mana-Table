@@ -8,6 +8,16 @@ using System.Text.Json;
 namespace Mana.Table;
 
 internal enum ConnectedPlayerPassingMode { ServerNoResponse, FullControl, ServerAuto }
+internal enum ConnectedPlayerWaitStatus { None, AwaitingAuthority, Retired, Expired }
+internal enum ConnectedPlayerWaitRetirement { None, FreshOwnedAuthority, NoOwnedInput, Finished, Eliminated, Closed }
+
+internal sealed record ConnectedPlayerProgressEvidence(long TimestampFrequency, long CapturedTicks,
+    long AcceptedWaits, long RetiredWaits, long ExpiredWaits, ConnectedPlayerWaitStatus Status,
+    AiDecisionStamp? AcceptedStamp, long? AcceptedAtTicks, AiDecisionStamp? LastOwnedStamp,
+    long? RetiredAtTicks, ConnectedPlayerWaitRetirement Retirement, double WaitElapsedMilliseconds)
+{
+    public string Scope => "Bounded scripted-owner authority wait; acceptance and a newer authority stamp do not prove a rules consequence or natural completion.";
+}
 
 // Test driver for an ordinary connected player. It never receives the host's
 // automated-seat port. The same policy is used to exercise decisions, not to
@@ -24,6 +34,8 @@ internal sealed class ConnectedPlayerDriver : IDisposable
     private readonly ConnectedPlayerPassingMode passing;
     private readonly IAiPolicy? testPolicy;
     private readonly Func<long> ticks;
+    private readonly TimeProvider operationTime;
+    private static readonly TimeSpan ObservationTimeout = TimeSpan.FromSeconds(45);
     private readonly ImmutableArray<string> phaseStops;
     private readonly PriorityAttention attention = new();
     private sealed record QuietWindow(string Game, int Viewer, int Turn, int? Active, string Token, long Activity);
@@ -39,6 +51,12 @@ internal sealed class ConnectedPlayerDriver : IDisposable
     private GameSnapshot? queried;
     private AiDecisionStamp? retired;
     private long nextPoll, audienceGeneration;
+    private AiDecisionStamp? acceptedStamp, lastOwnedStamp;
+    private long? acceptedAt, retiredAt;
+    private long acceptedWaits, retiredWaits, expiredWaits;
+    private ConnectedPlayerWaitStatus waitStatus;
+    private ConnectedPlayerWaitRetirement waitRetirement;
+    private TimeoutException? progressFailure;
     private readonly Dictionary<string, (PriorityContinuationMode Mode, int Count)> automaticPasses = [];
     internal AutomatedSeatObservation? Last { get; private set; }
     internal ClientSession Client => client;
@@ -49,6 +67,14 @@ internal sealed class ConnectedPlayerDriver : IDisposable
     internal int PollCallbacks { get; private set; }
     internal int OrdinaryPublications { get; private set; }
     internal int RetiredProposals { get; private set; }
+    internal ConnectedPlayerProgressEvidence ProgressEvidence {
+        get {
+            long now = operationTime.GetTimestamp();
+            return new(operationTime.TimestampFrequency, now, acceptedWaits, retiredWaits, expiredWaits, waitStatus,
+                acceptedStamp, acceptedAt, lastOwnedStamp, retiredAt, waitRetirement,
+                acceptedAt is { } start ? operationTime.GetElapsedTime(start, retiredAt ?? now).TotalMilliseconds : 0);
+        }
+    }
     internal ConnectedPlayerAutoEvidence AutoEvidence {
         get {
             var counts = connection.Counts;
@@ -88,18 +114,20 @@ internal sealed class ConnectedPlayerDriver : IDisposable
     internal ConnectedPlayerDriver(IMatchConnection rules, ITableSetup setup, ISourceActions sources,
         IOwnedDecisionObservations owned, IMatchHistory ownedHistory, AiCampaignDiagnostics evidence, long seed,
         MixedGameDriveMode mode, IAiPolicy? testPolicy = null, Func<long>? ticks = null,
-        ConnectedPlayerPassingMode passing = ConnectedPlayerPassingMode.ServerNoResponse, ImmutableArray<string> phaseStops = default)
+        ConnectedPlayerPassingMode passing = ConnectedPlayerPassingMode.ServerNoResponse, ImmutableArray<string> phaseStops = default,
+        TimeProvider? operationClock = null)
     {
         if (!Enum.IsDefined(passing)) throw new ArgumentOutOfRangeException(nameof(passing));
         this.phaseStops = phaseStops.IsDefault ? [] : phaseStops;
         if (!PriorityContinuationFacts.Stops(this.phaseStops)) throw new ArgumentException("A player uses the same closed own-turn stops as native Auto.", nameof(phaseStops));
         this.owned = owned; this.ownedHistory = ownedHistory; this.evidence = evidence; this.seed = seed;
         this.mode = mode; this.testPolicy = testPolicy; this.ticks = ticks ?? (() => Environment.TickCount64);
+        operationTime = operationClock ?? TimeProvider.System;
         this.passing = passing;
-        connection = new(rules);
+        connection = new(rules, operationTime);
         client = mode == MixedGameDriveMode.PolledBackground
-            ? new(connection, setup, sourceActions: sources)
-            : new(connection, sourceActions: sources, observationDelivery: ObservationDeliveryMode.External);
+            ? new(connection, setup, clock: operationTime, sourceActions: sources)
+            : new(connection, clock: operationTime, sourceActions: sources, observationDelivery: ObservationDeliveryMode.External);
         client.Failed += error => failure = error;
         if (mode == MixedGameDriveMode.PolledBackground) client.Changed += (previous, current) => {
             if (passing == ConnectedPlayerPassingMode.ServerAuto) {
@@ -152,7 +180,17 @@ internal sealed class ConnectedPlayerDriver : IDisposable
     {
         client.Pump();
         evidence.DrainPending();
-        if (mode == MixedGameDriveMode.PolledBackground) { await ObservePolledAsync(); return; }
+        if (mode == MixedGameDriveMode.PolledBackground) {
+            try { await ObservePolledAsync(); }
+            catch (EngineObservationSupersededException) {
+                // Supersession is an ordinary discovery result. Repeated
+                // superseded reads cannot grant an accepted input another wait.
+                CheckAcceptedProgress();
+                throw;
+            }
+            CheckAcceptedProgress();
+            return;
+        }
         var own = await owned.ObserveDecisionAsync();
         if (own == null) throw new InvalidDataException("The connected player lost its match.");
         if (!AiCampaignVisibility.PrivateWindowsAreDisclosed(own.State, own.Semantics, own.Domain))
@@ -208,6 +246,8 @@ internal sealed class ConnectedPlayerDriver : IDisposable
         var accepted = current!;
         proposal = new(accepted.ViewerId, accepted, own.Domain, own.Semantics);
         Last = proposal;
+        if (waitStatus == ConnectedPlayerWaitStatus.AwaitingAuthority)
+            ObserveAcceptedAuthority(new(accepted, domain: own.Domain, semantics: own.Semantics));
         evidence.Observe(proposal);
         await history.DrainOwnedAsync(ownedHistory, new(accepted, own.Domain, own.Semantics), evidence.QualificationEvidence);
     }
@@ -229,6 +269,50 @@ internal sealed class ConnectedPlayerDriver : IDisposable
         if (failure != null) throw failure;
         if (client.NeedsRecovery || client.UncertainCommand)
             throw new InvalidDataException("A polled campaign player entered recovery or command uncertainty.");
+    }
+
+    private void ObserveAcceptedAuthority(AiDecisionFrame frame)
+    {
+        lastOwnedStamp = frame.Stamp;
+        if (waitStatus != ConnectedPlayerWaitStatus.AwaitingAuthority || acceptedStamp is not { } prior) return;
+        // Only the normal owned-admission path supplies this frame. A changed
+        // revision is fresh authority, including metadata-only revision changes;
+        // it is deliberately not reported as rules or strategic progress.
+        if (frame.Stamp.GameId == prior.GameId && frame.Stamp.SeatId == prior.SeatId
+            && frame.Stamp.Revision >= prior.Revision && frame.Stamp.BoardRevision >= prior.BoardRevision
+            && (frame.Stamp.Revision != prior.Revision || frame.Stamp.OfferVersion >= prior.OfferVersion)
+            && frame.Stamp != prior)
+            RetireAcceptedWait(ConnectedPlayerWaitRetirement.FreshOwnedAuthority);
+    }
+
+    private void RetireAcceptedWait(ConnectedPlayerWaitRetirement reason)
+    {
+        if (waitStatus != ConnectedPlayerWaitStatus.AwaitingAuthority) return;
+        waitStatus = ConnectedPlayerWaitStatus.Retired; waitRetirement = reason;
+        retiredAt = operationTime.GetTimestamp(); retiredWaits++;
+    }
+
+    private void CheckAcceptedProgress()
+    {
+        if (mode != MixedGameDriveMode.PolledBackground) return;
+        if (progressFailure != null) throw progressFailure;
+        if (waitStatus != ConnectedPlayerWaitStatus.AwaitingAuthority || acceptedStamp is not { } prior) return;
+        var current = client.State;
+        if (client.Closed) RetireAcceptedWait(ConnectedPlayerWaitRetirement.Closed);
+        else if (current != null && current.Id == prior.GameId && current.ViewerId == prior.SeatId
+            && current.Revision >= prior.Revision && current.BoardRevision >= prior.BoardRevision) {
+            if (current.Status == "finished") RetireAcceptedWait(ConnectedPlayerWaitRetirement.Finished);
+            else if (current.Viewer?.Eliminated == true) RetireAcceptedWait(ConnectedPlayerWaitRetirement.Eliminated);
+            else if (current.Status != "playing" || current.Decision == null
+                || current.DecisionOwnerId is { } owner && owner != current.ViewerId
+                || current.Decision.Payload is PriorityPayload && current.PriorityPlayerId is { } responder && responder != current.ViewerId)
+                RetireAcceptedWait(ConnectedPlayerWaitRetirement.NoOwnedInput);
+        }
+        if (waitStatus != ConnectedPlayerWaitStatus.AwaitingAuthority
+            || acceptedAt is not { } started || operationTime.GetElapsedTime(started) < ObservationTimeout) return;
+        waitStatus = ConnectedPlayerWaitStatus.Expired; retiredAt = operationTime.GetTimestamp(); expiredWaits++;
+        progressFailure = new TimeoutException("The connected player's accepted command received no new owned decision authority within 45 seconds.");
+        throw progressFailure;
     }
 
     private bool ServerOwnsRoutinePriority(GameSnapshot state) => client.SupportsPriorityContinuation
@@ -285,6 +369,7 @@ internal sealed class ConnectedPlayerDriver : IDisposable
     {
         client.Pump(); evidence.DrainPending();
         if (mode == MixedGameDriveMode.PolledBackground) RequireHealthy();
+        CheckAcceptedProgress();
         if ((mode == MixedGameDriveMode.PolledBackground ? proposal : Last) is not { } observation) return;
         var state = observation.State;
         long generation = audienceGeneration;
@@ -299,6 +384,7 @@ internal sealed class ConnectedPlayerDriver : IDisposable
             policy.Observe(null); return;
         }
         var frame = new AiDecisionFrame(state, domain: observation.Domain, semantics: observation.Semantics);
+        ObserveAcceptedAuthority(frame);
         if (mode == MixedGameDriveMode.PolledBackground && retired == frame.Stamp) return;
         if (rejected == frame.Stamp) throw new InvalidDataException("A rejected player command retained the same authority.");
         rejected = null;
@@ -353,6 +439,14 @@ internal sealed class ConnectedPlayerDriver : IDisposable
                 ProviderAcceptances++;
                 evidence.Receipt(observation, ticket.Command, true, null);
                 policy.Report(ticket, AiExecutionReceipt.Accepted); recorded = true;
+                if (mode == MixedGameDriveMode.PolledBackground) {
+                    acceptedStamp = ticket.Stamp;
+                    acceptedAt = connection.AcceptedAtTicks
+                        ?? throw new InvalidDataException("An accepted ordinary receipt has no owner timestamp.");
+                    acceptedWaits++; retiredAt = null; waitRetirement = ConnectedPlayerWaitRetirement.None;
+                    waitStatus = ConnectedPlayerWaitStatus.AwaitingAuthority;
+                    CheckAcceptedProgress();
+                }
                 await history.DrainOwnedAsync(ownedHistory, new(observation.State, observation.Domain, observation.Semantics),
                     evidence.QualificationEvidence, force: true);
             }
@@ -393,12 +487,13 @@ internal sealed class ConnectedPlayerDriver : IDisposable
         }
     }
 
-    public void Dispose() { client.Close(); policy?.Dispose(); }
+    public void Dispose() { RetireAcceptedWait(ConnectedPlayerWaitRetirement.Closed); client.Close(); policy?.Dispose(); }
 
-    private sealed class ReceiptConnection(IMatchConnection inner) : IMatchConnection
+    private sealed class ReceiptConnection(IMatchConnection inner, TimeProvider clock) : IMatchConnection
     {
         internal bool Accepted;
         internal bool ExpectedDispatched;
+        internal long? AcceptedAtTicks;
         private GameCommand? expected;
         private int grantedContinuations, revokedContinuations, acceptedPriorityPasses, noResponseGrants, quietGrants;
         private readonly object grantsGate = new();
@@ -414,7 +509,7 @@ internal sealed class ConnectedPlayerDriver : IDisposable
             lock (grantsGate) return grants.TryGetValue(id, out var accepted) && accepted == mode;
         }
         public bool SupportsPriorityContinuation => inner.SupportsPriorityContinuation;
-        internal void Expect(GameCommand command) { expected = command; Accepted = false; ExpectedDispatched = false; }
+        internal void Expect(GameCommand command) { expected = command; Accepted = false; ExpectedDispatched = false; AcceptedAtTicks = null; }
         public Task<GameSnapshot?> ObserveAsync() => inner.ObserveAsync();
         public Task ConcedeAsync(string gameId) => throw new InvalidOperationException("Qualification never forces a player concession.");
         public async Task ExecuteAsync(GameCommand command)
@@ -422,6 +517,7 @@ internal sealed class ConnectedPlayerDriver : IDisposable
             bool matches = ReferenceEquals(command, expected);
             if (matches) ExpectedDispatched = true;
             await inner.ExecuteAsync(command);
+            if (matches) AcceptedAtTicks = clock.GetTimestamp();
             if (command is GrantPriorityContinuation grant) {
                 lock (grantsGate) {
                     if (grants.TryAdd(grant.GrantId, grant.Mode)) {

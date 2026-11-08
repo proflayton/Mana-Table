@@ -646,6 +646,13 @@ Every action/event pair, source/controller check, terminal outcome and witness
 limit remains in the evidence owner. The lookups end with that observation, so
 later frames supply their own execution facts and outcomes.
 
+The mixed-game test host owns a separate bounded progress ledger. It records
+closed owner stages, observation attempts and superseded reads, without retaining
+state graphs or command handles. Board-cohort capture, accepted input, fresh
+authority and transport activity remain distinct evidence. Its active-run clock
+stops before cleanup; aggregate stage maxima survive the bounded recent tail.
+This ledger cannot issue commands, choose retries or alter release qualification.
+
 The same verifier now consumes bounded owned-seat history for historic-cast
 untaps and explicit colorless payment. It requires a fresh accepted cast,
 disclosed execution ancestry, actual committed effects or spending, and an

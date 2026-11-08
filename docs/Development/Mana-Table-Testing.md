@@ -560,6 +560,16 @@ host receipts. Missing strategic capabilities are explicit; these checks do not
 demonstrate a production bot or enjoyable behavior. The assembly dependency check
 keeps AI independent of Forge, rendering and the updater.
 
+Aggregate combat regressions also stage fresh offered declarations against one
+defender in an explicitly identified three/four-player free-for-all. The bounded
+forecast counts each public block slot once and preserves retained resources.
+Eliminating a player must leave nominal life and commander-damage headroom against
+all other survivors' ordinary creatures, including bodies which can untap or
+phase in. Missing team/damage facts, unsupported mechanics, uncertain capacity
+and insufficient shared work retain the existing fallback. This is a narrow
+public combat estimate, not a complete multiplayer strategy or prediction of
+hidden responses.
+
 The source cancellation candidate extends that same client lane with held
 observation, execution and fault-report operations, plus shutdown during
 background and directly driven observations, and an observation provider that
@@ -777,6 +787,29 @@ either scenario's original limits. `scripts/mana-table/mixed-game-qualification.
 checks retained outcomes, four distinct physical roles/deck rotation, public
 cohorts, ordinary receipts, Auto progress, retired evidence owners and exact
 engine/harness/package provenance before the Windows aggregate can publish.
+Mixed-game results also retain a bounded scalar owner-stage ledger: observation
+attempts (including superseded reads before a counted step), separate host/guest
+reads and dispatches, automated history drains, owner waits, and the last captured
+new public-board cohort. Per-stage maxima survive eviction from its 32-span
+tail. Timestamps share the recorded monotonic frequency; these are elapsed owner
+intervals, not CPU measurements. `ActiveElapsedMilliseconds` stops before failure
+capture or cleanup, while `ElapsedMilliseconds` retains its existing end-to-end
+meaning and `CleanupElapsedMilliseconds` reports the difference. Repeated polls
+and evidence handoffs do not establish rules progress or game completion.
+`MixedGameProgressChecks` covers superseded-read churn, a long stage surviving
+tail eviction, immutable snapshots and cleanup-time separation with a fixed
+clock in the existing configured/full headless lane. This evidence does not
+change the four natural-outcome requirement or any match deadline.
+Each ordinary audience retains its own observation turn: a superseded host read
+still allows the guest's queued publication/poll/ACK work to run, and vice versa.
+That incomplete round receives no new policy-dispatch or comparison credit;
+other failures still abort immediately. Controlled real-driver ports check both
+directions and repeated retirement without launching another engine game.
+The scripted ordinary drivers also retain normal-return acceptance time and a
+bounded authority-wait witness. Identical successful polls cannot reset their
+45-second fresh-authority guard. A validated newer owned stamp or retired input
+ends that wait; metadata freshness does not establish a rules consequence. This
+guard belongs to automated test scripts and does not add a human decision timer.
 Version4 admission also requires actual acknowledged `NoResponse` grants and
 certified automatic passes for both configured bot IDs in every rotation. Their
 closed per-owner records carry the exact game and provider epoch, separate
