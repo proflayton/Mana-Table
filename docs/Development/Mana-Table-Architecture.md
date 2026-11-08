@@ -74,6 +74,13 @@ returns a closed current/unsupported/superseded result: transport retirement
 cannot impersonate absent capability when public context values are unchanged.
 Unsupported providers quietly disable the optional feature for that binding;
 joining a new game or audience resets this optional capability decision.
+This latest-value port does not promise delivery of every transient hover.
+Qualification therefore holds a subject until the peer's current `Visible`
+projection admits it, then sustains the next subject. Provider return, a queued
+completion, owner application and visible sampling are separate observations;
+none can stand in for another or grant a game command. The real prefix retains
+its original hold limit rather than extending a lease or adding a late pump to
+credit an unseen subject.
 The optional authoritative `HumanPlayerIds` roster uses actual registered player
 IDs, not seat ordinals or the viewer-relative legacy player `human` flag. With a
 known roster containing no other active human, the native presence owner sends

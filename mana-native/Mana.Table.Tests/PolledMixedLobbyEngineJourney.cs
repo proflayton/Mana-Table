@@ -236,7 +236,7 @@ internal static partial class PolledMixedLobbyEngineJourney
         internal PlayerOwner(ForgeEngine engine, int index)
         {
             Index = index; Engine = engine; Port = new(engine); Client = new(Port, engine, sourceActions: engine);
-            InspectionPort = new(engine); Inspection = new(InspectionPort, Client.Post);
+            InspectionPort = new(engine); Inspection = new(InspectionPort, callback => InspectionPort.Post(Client.Post, callback));
             Client.Failed += failures.Enqueue;
             Client.Changed += (_, state) => {
                 if (state == null) { if (prior != null) throw new InvalidDataException("A polled player lost its bound match."); return; }

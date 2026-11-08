@@ -68,6 +68,7 @@ internal static partial class HeadlessPresentationSmoke
                     CheckTablePresence(profile, Check);
                     TablePresenceWireChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     PolledMixedLobbyEngineJourney.CheckPresencePreparation(Check);
+                    PolledPresenceSequenceChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                 }
                 else if (group == "table-choices") CheckTableChoices(profile, Check);
                 else if (group == "attachment-stack") AttachmentStackChecks.Run(profile, Check);
@@ -165,6 +166,7 @@ internal static partial class HeadlessPresentationSmoke
             CheckTableChoices(profile, Check);
             TablePresenceWireChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             PolledMixedLobbyEngineJourney.CheckPresencePreparation(Check);
+            PolledPresenceSequenceChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             CheckMatchFailure(profile, Check, trace, performance);
             ConcessionLifetimeChecks.Run(profile, Check);
             GameplayUndoPresentationChecks.Run(profile, Check);

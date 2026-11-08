@@ -121,6 +121,26 @@ required choice still uses the existing current-command permission path;
 disabled replies do not acquire an answer. Once the measurement baseline is
 established, all scripted replies are held and unexpected rules changes fail.
 
+The real inspection gesture sustains subject A until the peer's matching
+`Visible` sample, then sustains B. Both samples must qualify within the original
+1.75-second hold; the four-Hz, history, rules, clock and resumed-command checks
+remain intact. This tests two deliberate latest-value changes rather than
+requiring every wall-clock hover oscillation to survive gameplay polling.
+`PolledPresenceSequenceChecks`, registered in `table-presence` and the full
+headless suite, drives the actual presence owner, post queue and fixture selector
+through a fixed polling-gap schedule. Its old-sequence control can receive B at
+the endpoint while terminal visible samples still contain only A. Late callbacks
+are retained as diagnostics and earn no completion credit. Existing client
+regressions separately cover rapid sample coalescing, rate limits and expiry.
+
+Failure evidence records native Stopwatch ticks/frequency, held and sampled
+points, bounded desired-subject changes, provider-return ticks and a bounded
+128-row posted/applying/returned callback journal with dropped-row counts.
+Callback IDs are local diagnostics, not inferred request-sequence links, and a
+returned callback does not prove cue acceptance. The original native438 capture
+lacked these callback clocks: the controlled schedule demonstrates a reachable
+sampling failure, not the exact chronology of that capture.
+
 The focused native profile retains `public-card-inspection.json` drawing-frame
 exports under each window-size journey. These are authored projected states;
 headless composition loads no GPU artwork and supplies no human UX approval.

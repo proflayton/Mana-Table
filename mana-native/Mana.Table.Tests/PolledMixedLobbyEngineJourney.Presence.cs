@@ -9,6 +9,15 @@ namespace Mana.Table;
 
 internal static partial class PolledMixedLobbyEngineJourney
 {
+    internal const double PresenceHoldSeconds = 1.75;
+
+    // Presence is latest-only, so sustain the next gesture until the peer has
+    // actually displayed the first. Wall-clock oscillation can alias with
+    // ordinary polling and never offer the peer a sustained second subject.
+    internal static TableInspectionSubject DesiredPresenceSubject(IReadOnlyList<TableInspectionSubject> subjects,
+        IReadOnlySet<string> observed)
+        => subjects[observed.Contains(subjects[0].Id) ? 1 : 0];
+
     private sealed record PresenceCohort(int Actor, PublicInspectionContext Context, string ClockId, bool Thinking);
 
     // Admission is deliberately separate from the optional exchange. A command
@@ -76,8 +85,13 @@ internal static partial class PolledMixedLobbyEngineJourney
         private sealed record HistoryPoint(long FirstSequence, long LastSequence, long NextSequence);
         private sealed record HoldPoint(int Viewer, long Board, string? Decision, string RulesHash,
             DecisionClock Clock, HistoryPoint History);
-        private sealed record Seen(double ElapsedSeconds, int Observer, string Subject, int RemainingMilliseconds);
+        private sealed record Seen(double ElapsedSeconds, int Observer, string Subject, int RemainingMilliseconds,
+            long SampleTicks, int SubjectOrdinal);
+        private sealed record DesiredPoint(long MonotonicTicks, double ElapsedSeconds, int SubjectOrdinal,
+            bool Busy, bool Polling, bool Advancing, bool PresenceInFlight);
+        private const int desiredCapacity = 8;
         private readonly List<Seen> seen = [];
+        private readonly List<DesiredPoint> desiredPoints = [];
         private readonly HashSet<string> remoteSubjects = new(StringComparer.Ordinal);
         private readonly PresencePreparation preparation = new();
         private string stage = "waiting", clockId = "";
@@ -91,6 +105,8 @@ internal static partial class PolledMixedLobbyEngineJourney
         private int botAcceptedBefore;
         private bool presenceExecutingAtResume;
         private long measurementStartedTicks;
+        private long heldAtTicks;
+        private int lastDesiredOrdinal = int.MinValue, desiredDropped;
         private int[] exchangesBefore = [];
         internal bool ShouldHoldReply(GameSnapshot? state) => preparation.ShouldHoldReply(state, stage == "holding");
         internal bool Completed => stage == "completed";
@@ -136,6 +152,7 @@ internal static partial class PolledMixedLobbyEngineJourney
                 acceptedBefore = players.Select(player => player.Port.ReceiptCounts).ToArray();
                 botAcceptedBefore = bots.CaptureProcessing().Accepted;
                 heldAt = elapsed.Elapsed.TotalSeconds;
+                heldAtTicks = Stopwatch.GetTimestamp();
                 stage = "holding";
             }
             if (stage is not ("holding" or "resuming")) return;
@@ -143,19 +160,29 @@ internal static partial class PolledMixedLobbyEngineJourney
             foreach (var player in players) {
                 player.Inspection.Observe(player.Client.State);
                 var desired = stage == "holding" && player.Index == actor
-                    ? subjects[(int)((now - heldAt) / .5) % subjects.Length] : null;
-                player.Inspection.Update(now, desired, true,
-                    !player.Client.Busy && !player.Client.Polling && !player.Client.IsAdvancing);
+                    ? DesiredPresenceSubject(subjects, remoteSubjects) : null;
+                if (player.Index == actor) {
+                    int ordinal = desired == null ? -1 : Array.IndexOf(subjects, desired);
+                    if (ordinal != lastDesiredOrdinal) {
+                        lastDesiredOrdinal = ordinal;
+                        if (desiredPoints.Count == desiredCapacity) { desiredPoints.RemoveAt(0); desiredDropped++; }
+                        desiredPoints.Add(new(Stopwatch.GetTimestamp(), now - heldAt, ordinal,
+                            player.Client.Busy, player.Client.Polling, player.Client.IsAdvancing, player.Inspection.InFlight));
+                    }
+                }
+                player.Inspection.Update(now, desired, true, !player.Client.Busy && !player.Client.Polling && !player.Client.IsAdvancing);
                 Need(player.InspectionPort.MaximumExecuting <= 1, "A human presence session dispatched overlapping actual provider tasks.");
             }
             foreach (var cue in players[1 - actor].Inspection.Visible(now)) {
                 if (cue.PlayerId == context!.PlayerId && cue.ContextId == context.Id
+                    && now - heldAt <= PresenceHoldSeconds
                     && subjects.Contains(cue.Subject) && remoteSubjects.Add(cue.Subject.Id))
-                    seen.Add(new(now - heldAt, players[1 - actor].Index, cue.Subject.Id, cue.RemainingMilliseconds));
+                    seen.Add(new(now - heldAt, players[1 - actor].Index, cue.Subject.Id, cue.RemainingMilliseconds,
+                        Stopwatch.GetTimestamp(), Array.IndexOf(subjects, cue.Subject)));
             }
             if (stage == "holding") {
                 CheckHeld();
-                if (now - heldAt < 1.75) return;
+                if (now - heldAt < PresenceHoldSeconds) return;
                 var histories = await Histories(deadline);
                 after = players.Select((player, index) => Point(player.Client.State!, histories[index])).ToArray();
                 CheckHeld();
@@ -279,15 +306,19 @@ internal static partial class PolledMixedLobbyEngineJourney
             holdSeconds = resumedAt > 0 ? resumedAt - heldAt : 0,
             HoldIntegrityVerified, TrafficVerified, ResumedReceiptVerified, presenceExecutingAtResume,
             botAcceptedBefore,
-            measurementStartedTicks, exchangesBefore,
+            measurementStartedTicks, heldAtTicks, timestampFrequency = Stopwatch.Frequency, exchangesBefore,
+            holdLimitSeconds = PresenceHoldSeconds, desiredCapacity, desiredDropped, desiredPoints = desiredPoints.ToArray(),
             observations = seen.ToArray(), before, after, acceptedBefore,
             scope = "Actual TablePresenceSession and ForgeEngine host/TCP ports. Contract byte totals exclude transport envelopes; latencies are observations, not a zero head-of-line guarantee.",
             endpoints = players.Select(player => new { player.Index,
                 player.InspectionPort.Started, player.InspectionPort.MaximumExecuting, executing = player.InspectionPort.Executing,
+                player.InspectionPort.CallbackCapacity, player.InspectionPort.CallbackDropped,
+                callbacks = player.InspectionPort.CallbackTrace.Where(point => point.MonotonicTicks >= measurementStartedTicks).ToArray(),
                 exchanges = player.InspectionPort.Exchanges.Where(call => call.StartedTicks >= measurementStartedTicks).ToArray(),
                 resumedCommands = player.Port.CommandLatencies.Where(command => resumedTicks > 0
                     && command.StartedTicks >= resumedTicks).ToArray()
-            })
+            }),
+            diagnosticScope = "Native Stopwatch ticks share the recorded frequency. Callback IDs are local diagnostic identities, not inferred request-sequence links; a returned callback is not proof of an accepted visible cue. Only matching pre-cutoff Visible samples qualify."
         };
         private static void Need(bool condition, string message) { if (!condition) throw new InvalidDataException(message); }
         private static TimeSpan Remaining(DateTime deadline) => TimeSpan.FromMilliseconds(Math.Max(1, (deadline - DateTime.UtcNow).TotalMilliseconds));
