@@ -309,6 +309,10 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 : Missing("mana-reduction-completion");
         var intent = EffectiveIntent(request.Frame.Semantics);
         bool cost = request.Frame.Semantics.SelectionIsCost || intent is DecisionIntent.Discard or DecisionIntent.Sacrifice;
+        // An already legal subset needs no extra recipient. Unknown effect
+        // direction is not positive value, even when the counter type is known;
+        // coupled transfers cannot be priced as free counter creation.
+        bool unknownOptional = !cost && complete.Enabled && intent == DecisionIntent.Unknown;
         bool damage = intent == DecisionIntent.Damage || request.Frame.Semantics.OperationGraph.Operations
             .Any(node => node.Id == request.Frame.Semantics.OperationId && node.Effect == ActionEffectKind.Damage);
         var cards = CardViews.InZones(state).Where(item => item.Card.Selectable && item.Card.Key.Length > 0 && !item.Card.Highlighted)
@@ -348,7 +352,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 : damage ? (opponent ? DamageThreat(occurrence.PlayerId) : benefit > 0 ? -100 : -1)
                 : IsHarm(intent) ? (opponent ? 20 + value + CasualTableAssessment.OpponentScore(request, occurrence.PlayerId) : benefit > 0 ? -100 : -1)
                 : 1 + CasualTableAssessment.Tie(request.Seed, identity);
-            if (stagedDamage) score = double.NegativeInfinity;
+            if (stagedDamage || unknownOptional) score = double.NegativeInfinity;
             if (!cost && request.Frame.Semantics.OperationId is { } operation) {
                 var assessment = CasualActionAssessment.Target(state, request.Frame.Semantics.OperationGraph, operation,
                     new(identity, SemanticEntityKind.Card, identity, ControllerId: occurrence.PlayerId), localWork,
@@ -375,7 +379,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 : damage ? (opponent ? DamageThreat(player) : benefit > 0 ? -100 : -1)
                 : IsHarm(intent) ? (opponent ? CasualTableAssessment.OpponentScore(request, player) : benefit > 0 ? -100 : -1)
                 : CasualTableAssessment.Tie(request.Seed, player.ToString(CultureInfo.InvariantCulture));
-            if (stagedDamage) score = double.NegativeInfinity;
+            if (stagedDamage || unknownOptional) score = double.NegativeInfinity;
             if (!cost && request.Frame.Semantics.OperationId is { } operation) {
                 var assessment = CasualActionAssessment.Target(state, request.Frame.Semantics.OperationGraph, operation,
                     new("player:" + player, SemanticEntityKind.Player, PlayerId: player), localWork,
@@ -398,7 +402,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         }
         var best = options.OrderByDescending(option => option.PreservesFunding).ThenByDescending(option => option.Score)
             .ThenBy(option => option.Tie).FirstOrDefault();
-        if (best.Command != null && ((damage && !cost ? best.Score > 0 : best.Score >= 0) || !complete.Enabled)) return Answer(request, best.Command,
+        if (best.Command != null && (((damage || unknownOptional) && !cost ? best.Score > 0 : best.Score >= 0) || !complete.Enabled)) return Answer(request, best.Command,
             best.PreservesFunding ? "selection-preserve-current-cost-funding"
                 : limited ? "selection-bounded-known-candidate" : cost ? "selection-pay-lowest-opportunity-cost" : "selection-public-effect-recipient");
         if (complete.Enabled) return Answer(request, new CompleteSelection(state.Id, state.Decision!.Id), "selection-decline-optional-target");

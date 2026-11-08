@@ -2002,6 +2002,14 @@ completion and its actual resulting zone changes. `AiTargetContinuationRegressio
 checks that existing policy consumes these current facts and that fresh prompt
 UUIDs cannot renew a single actual input's work allowance. These protect a
 no-progress loop independently of wall-clock campaign timeouts.
+The same policy regression covers unknown optional card/player selections with
+legal completion, including 57 eligible cards and a 42-card staged subset.
+Renamed/reordered candidates, known counter labels and fixed policy seeds cannot
+turn absent effect knowledge into an extra recipient. Required additions and
+positive typed estimates remain actionable. These authored cases reproduce the
+decision shape retained in the native437 cutoff; they do not prove that this
+behavior caused its elapsed time or qualify counter redistribution as a fully
+modeled strategy.
 The crowded-field window journey also joins the fast release set, sharing the
 three-player lobby shard. It uses the production battlefield faces at the former
 threshold, mixed states, duplicate tokens, distinct names and the canonical

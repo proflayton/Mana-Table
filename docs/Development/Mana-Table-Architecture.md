@@ -855,6 +855,14 @@ card. `Mana.Contracts.ActionOperationValidation` validates both adapter and poli
 inputs; unknown effects remain unknown. The engine describes mechanics, the policy
 estimates consequences, and neither estimate grants a command.
 
+For an optional non-cost recipient selection, legal completion supplies a valid
+subset. Unknown effect direction cannot justify adding another card or player
+through a seeded tie or social preference; a positive typed target estimate can.
+Required additions keep their bounded legal fallback, and known productive
+optional additions remain available. A counter type alone does not describe a
+coupled transfer's donor budget, recipients or quantities. Unsupported transfer
+facts stay unknown rather than being projected as free counter creation.
+
 `AiSeatSession` also owns immutable versioned `AiTurnPlan` memory. Policies propose
 transitions alongside current answers; only accepted, still-valid submissions can
 retain them. Observed resource loss or turn changes invalidate memory and prevent
