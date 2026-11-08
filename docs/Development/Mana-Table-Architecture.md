@@ -190,6 +190,15 @@ closed diagnostic categories. Neither result retries the same context or proves
 that a gameplay command failed, succeeded or should be replayed. A later ordinary
 observation may admit a new source context through the existing reader lifecycle.
 
+External observation delivery assigns that publication work to its explicit
+producer. Updating presentation only drains what the producer has already
+posted; it cannot refresh a stale source context by itself. An external driver
+therefore keeps ordinary observation/ingress active while preparing reader
+readiness, then leaves the subsequent direct read-purity sequence quiescent.
+Source catalogs remain read results rather than replacement snapshots or retry
+permission. The real-engine smoke retains a bounded tail from the existing
+privacy-safe source-read diagnostics to distinguish these refusal paths.
+
 Shipping composition supplies a `ClientDiagnosticJournal` callback through
 `TableServices`; neither the renderer nor the rules provider owns file storage.
 Its bounded queue keeps writes off the game loop. The callback may run on the

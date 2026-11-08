@@ -45,7 +45,7 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "configured-simulation") {
                     PolledReceiptProcessingChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     PolledFullGameContractChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
-                    SmokeSourceReadChecks.RunAsync(Check).GetAwaiter().GetResult();
+                    SmokeSourceReadChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     JourneyProgressClockChecks.Run(Check);
                     ConfiguredSimulationWireChecks.Run(Check);
                     AiCampaignQualificationChecks.Run(Check);
@@ -118,7 +118,7 @@ internal static partial class HeadlessPresentationSmoke
             ConfiguredSimulationWireChecks.Run(Check);
             PolledReceiptProcessingChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             PolledFullGameContractChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
-            SmokeSourceReadChecks.RunAsync(Check).GetAwaiter().GetResult();
+            SmokeSourceReadChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             JourneyProgressClockChecks.Run(Check);
             AiCampaignQualificationChecks.Run(Check);
             MixedGameQualificationChecks.Run(Check);

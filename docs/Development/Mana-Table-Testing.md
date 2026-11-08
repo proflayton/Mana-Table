@@ -2674,8 +2674,24 @@ through the production update pump and audience/epoch/revision fences; a second
 background polling owner cannot race these deliberate samples. Separate client
 regressions cover ordinary polling, including superseded discovery and uncertain
 command readback. This journey does not substitute for default-polling timing or
-human playtesting. Its
-same opening now takes two Commander mulligans: the first returns directly to
+human playtesting. While preparing a card reader, the explicit producer continues
+ordinary observations through that same ingress so a changed revision can enter
+the normal source-query lifecycle. The later primed/repeated direct source reads
+still require unchanged scope and revision and fail unexpected rejection without
+retry. The opening watchdog remains 90 seconds. A bounded source-read diagnostic
+tail records typed reasons and numeric scope generations on failure; it does not
+infer a successful command or expose provider exception text.
+
+`SmokeSourceReadChecks` in the configured-simulation and full headless groups
+also drives production pointer/composition with authored external observations.
+A same-revision source reply becomes ready directly. A newer-revision reply,
+adapter rejection or typed supersession stays stopped during Tick-only updates;
+one ordinary fresh publication starts the normal current query. Reading and
+publication send no gameplay command. Fixed case artifacts belong to the
+caller's profile. These controls establish a reachable external-producer
+deadwait; the original CI fixture did not retain its exact source-read reason.
+
+The opening takes two Commander mulligans: the first returns directly to
 Keep with seven cards, and the second projects exactly one required bottom card.
 It verifies that reading a
 bottom-card candidate does not select it, its explicit reader action selects it,
