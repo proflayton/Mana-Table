@@ -146,6 +146,9 @@ they do not guarantee unlimited boards or every possible interaction. Receivers
 validate the complete retained union without numeric truncation. Exceeding a
 journal's entry bound explicitly holds Auto; the transport's frame ceiling is a
 separate limit, especially for unusually large boards or atomic event bursts.
+The socket reader buffers bounded character chunks and retains the next frame's
+prefix when packets contain several frames. This changes framing work, not the
+character ceiling, JSON values, sequence/replay rules or rules dispatch.
 
 `ClientSession` derives ACKs from frames it accepted, not the provider's decoded
 cache or a rejected poll. It registers the initial baseline, then coalesces after

@@ -10,6 +10,16 @@ internal static class AutomatedWireFailureChecks
 {
     internal static void Run(string profile, Action<bool, string> check)
     {
+        using (var retired = JsonDocument.Parse("""{"error":"retired control","errorCode":"automated-priority-control-retired"}""")) {
+            check(ForgeEngine.RequestFailure("automatedPriorityControl", retired.RootElement) is ForgeAutomatedPriorityRetiredException
+                && ForgeEngine.RequestFailure("automatedAction", retired.RootElement) is ForgeAutomatedPriorityRetiredException
+                && ForgeEngine.RequestFailure("matchAction", retired.RootElement) is EngineCommandRejectedException
+                && ForgeEngine.RequestFailure("automatedState", retired.RootElement) is EngineCommandRejectedException,
+                "Typed control retirement belongs only to negotiated or legacy host-control methods, never gameplay or observation");
+        }
+        using (var uncertain = JsonDocument.Parse("""{"error":"retired control"}"""))
+            check(ForgeEngine.RequestFailure("automatedPriorityControl", uncertain.RootElement) is EngineCommandRejectedException,
+                "Retirement prose without its exact code leaves a compact current-world control receipt uncertain");
         const string staleMessage = "The automated input changed during discovery";
         using (var typed = JsonDocument.Parse(JsonSerializer.Serialize(new { error = staleMessage, errorCode = "observation-superseded" }))) {
             check(ForgeEngine.RequestFailure("automatedState", typed.RootElement) is EngineObservationSupersededException

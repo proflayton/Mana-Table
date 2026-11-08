@@ -77,7 +77,7 @@ public sealed partial class ForgeEngine : IAutomatedPriorityContinuation
         }
         System.Text.Json.JsonElement raw;
         try {
-            raw = await Request("automatedAction", args, cancellation, owner, () => {
+            raw = await Request(owner.AutomatedPriorityMetadataAvailable ? "automatedPriorityControl" : "automatedAction", args, cancellation, owner, () => {
                 lock (worldScopeGate) {
                     if (current != owner || epoch != AutomatedPriorityEpoch) throw new EngineObservationSupersededException();
                 }
@@ -96,25 +96,48 @@ public sealed partial class ForgeEngine : IAutomatedPriorityContinuation
             if (current != owner || owner.Failure != null || epoch != AutomatedPriorityEpoch)
                 return new AutomatedPriorityControlResult.Retired();
         }
-        var receipt = ForgeSnapshotDecoder.Decode(raw, certifiedUndo: owner.CertifiedUndoAvailable);
-        if (receipt?.Id == control.GameId && receipt.ViewerId == seatId
-            && control is AutomatedPriorityControl.NoResponse requested
-            && receipt.PriorityContinuation is { } later && later.Sequence > requested.Sequence)
-            return new AutomatedPriorityControlResult.Retired();
-        bool valid = receipt?.Id == control.GameId && receipt.ViewerId == seatId && control switch {
-            AutomatedPriorityControl.Acknowledge value => receipt.PriorityObservation is { Registered: true } credit
-                && credit.AcknowledgedBoardRevision >= value.BoardRevision
-                && credit.AcknowledgedPublicActivitySequence >= value.PublicActivitySequence,
-            AutomatedPriorityControl.NoResponse value => receipt.PriorityContinuation is { } consent
-                && consent.Sequence == value.Sequence
-                && consent.GrantId == value.GrantId && consent.Mode == PriorityContinuationMode.NoResponse,
-            AutomatedPriorityControl.Withdraw value => receipt.PriorityContinuation is { } consent
-                && consent.Sequence >= value.ThroughSequence && (consent.Sequence > value.ThroughSequence
-                    || consent.Status is not (PriorityContinuationStatus.Active or PriorityContinuationStatus.Held)),
-            _ => false
-        };
-        if (!valid) throw new IOException("The automated priority receipt did not confirm its owned metadata transition.");
-        var metadata = PriorityReceipt(epoch, receipt!);
+        AutomatedPriorityReceipt metadata;
+        if (owner.AutomatedPriorityMetadataAvailable) {
+            metadata = ForgeAutomatedPriorityMetadataDecoder.Decode(raw, epoch);
+            if (metadata.GameId != control.GameId || metadata.SeatId != seatId)
+                throw new IOException("The automated priority receipt belongs to another audience.");
+            if (control is AutomatedPriorityControl.NoResponse requested && metadata.Continuation.Sequence > requested.Sequence)
+                return new AutomatedPriorityControlResult.Retired();
+            bool valid = control switch {
+                AutomatedPriorityControl.Acknowledge value => metadata.Observation.Registered
+                    && metadata.Observation.AcknowledgedBoardRevision >= value.BoardRevision
+                    && metadata.Observation.AcknowledgedPublicActivitySequence >= value.PublicActivitySequence,
+                AutomatedPriorityControl.NoResponse value => metadata.Continuation.Sequence == value.Sequence
+                    && metadata.Continuation.GrantId == value.GrantId && metadata.Continuation.Mode == PriorityContinuationMode.NoResponse,
+                AutomatedPriorityControl.Withdraw value => metadata.Continuation.Sequence >= value.ThroughSequence
+                    && (metadata.Continuation.Sequence > value.ThroughSequence
+                        || metadata.Continuation.Status is not (PriorityContinuationStatus.Active or PriorityContinuationStatus.Held)),
+                _ => false
+            };
+            if (!valid) throw new IOException("The automated priority receipt did not confirm its owned metadata transition.");
+        } else {
+            // Older engines retain their complete snapshot decoding and all
+            // existing validation. A malformed negotiated reply never falls back.
+            var receipt = ForgeSnapshotDecoder.Decode(raw, certifiedUndo: owner.CertifiedUndoAvailable);
+            if (receipt?.Id == control.GameId && receipt.ViewerId == seatId
+                && control is AutomatedPriorityControl.NoResponse requested
+                && receipt.PriorityContinuation is { } later && later.Sequence > requested.Sequence)
+                return new AutomatedPriorityControlResult.Retired();
+            bool valid = receipt?.Id == control.GameId && receipt.ViewerId == seatId && control switch {
+                AutomatedPriorityControl.Acknowledge value => receipt.PriorityObservation is { Registered: true } credit
+                    && credit.AcknowledgedBoardRevision >= value.BoardRevision
+                    && credit.AcknowledgedPublicActivitySequence >= value.PublicActivitySequence,
+                AutomatedPriorityControl.NoResponse value => receipt.PriorityContinuation is { } consent
+                    && consent.Sequence == value.Sequence
+                    && consent.GrantId == value.GrantId && consent.Mode == PriorityContinuationMode.NoResponse,
+                AutomatedPriorityControl.Withdraw value => receipt.PriorityContinuation is { } consent
+                    && consent.Sequence >= value.ThroughSequence && (consent.Sequence > value.ThroughSequence
+                        || consent.Status is not (PriorityContinuationStatus.Active or PriorityContinuationStatus.Held)),
+                _ => false
+            };
+            if (!valid) throw new IOException("The automated priority receipt did not confirm its owned metadata transition.");
+            metadata = PriorityReceipt(epoch, receipt!);
+        }
         lock (worldScopeGate) {
             if (current != owner || epoch != AutomatedPriorityEpoch) return new AutomatedPriorityControlResult.Retired();
             var key = (control.GameId, seatId);

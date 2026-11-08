@@ -167,7 +167,7 @@ public final class SyncTransport {
     public static final class Remote implements Connection {
         private final InetSocketAddress address;
         private Socket socket;
-        private BufferedReader input;
+        private FrameReader input;
         private BufferedWriter output;
         private String token = "";
         private long sequence;
@@ -247,16 +247,41 @@ public final class SyncTransport {
         }
         return JSON.fromJson(receipt.get("result"), Object.class);
     }
-    private static BufferedReader reader(Socket socket) throws IOException { return new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8)); }
+    private static FrameReader reader(Socket socket) throws IOException {
+        return new FrameReader(new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8)));
+    }
     private static BufferedWriter writer(Socket socket) throws IOException { return new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8)); }
-    private static JsonObject read(BufferedReader input) throws IOException {
-        var line = new StringBuilder();
-        for (int c; (c = input.read()) != -1;) {
-            if (c == '\n') return JsonParser.parseString(line.toString()).getAsJsonObject();
-            if (line.length() >= MAX_FRAME) throw new IOException("Synchronization frame too large");
-            line.append((char)c);
+    /** Owns the bounded decoded stream across frames, including any following
+     * frame already read from the socket. Limits count UTF16 characters, just
+     * as the original character reader did; UTF8 decoding remains upstream. */
+    private static final class FrameReader implements Closeable {
+        private final Reader input;
+        private final char[] buffer = new char[8192];
+        private int offset;
+        private int limit;
+        FrameReader(Reader input) { this.input = input; }
+        String next() throws IOException {
+            var line = new StringBuilder();
+            for (;;) {
+                if (limit < 0) throw new EOFException("Connection closed");
+                if (offset == limit) {
+                    limit = input.read(buffer, 0, buffer.length);
+                    offset = 0;
+                    if (limit == -1) throw new EOFException("Connection closed");
+                }
+                int newline = offset;
+                while (newline < limit && buffer[newline] != '\n') newline++;
+                int length = newline - offset;
+                if (length > MAX_FRAME - line.length()) throw new IOException("Synchronization frame too large");
+                line.append(buffer, offset, length);
+                offset = newline;
+                if (offset < limit) { offset++; return line.toString(); }
+            }
         }
-        throw new EOFException("Connection closed");
+        @Override public void close() throws IOException { input.close(); }
+    }
+    private static JsonObject read(FrameReader input) throws IOException {
+        return JsonParser.parseString(input.next()).getAsJsonObject();
     }
     private static void write(BufferedWriter output, JsonElement value) throws IOException {
         String line = JSON.toJson(value);

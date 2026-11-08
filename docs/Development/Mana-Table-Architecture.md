@@ -107,6 +107,10 @@ replay. Its owner exposes only detached local values or framed writes, preservin
 caller mutation isolation without cloning the retained tree. Sequence, connection
 generation and revocation checks still precede replay. The existing network
 ceiling remains 8,388,608 UTF-16 characters, checked at the same read/write boundary.
+Its connection-owned buffered reader retains characters after a newline for the
+next frame. Fragmented UTF-8, coalesced frames, trailing carriage returns,
+partial EOF and oversized frames keep their existing framing semantics; bulk
+reads do not replace the bound with an unbounded `readLine`.
 
 ### Tentative public plans: source candidate
 
@@ -571,6 +575,16 @@ seat cycle. Each control rechecks pacing. These receipts cannot enter gameplay
 scopes or policy observations; gameplay always needs a fresh owned rich read.
 The adapter keeps a separate metadata cursor anchored to that rich observation;
 late replies cannot replace a newer cursor or revive an advanced input.
+The optional `automated-priority-metadata-v1` capability makes that separation
+explicit on the private process wire. `automatedPriorityControl` accepts only
+the three closed continuation controls and returns a versioned metadata receipt
+from that action's exact committed audience publication. It carries no cards,
+action domain, timer or provider epoch. Native code supplies its captured process
+epoch and validates the closed receipt before reconciling consent. An unchanged
+priority certificate needs an active player, positive turn and exact current
+decision and priority owners. Older engines keep the existing rich
+`automatedAction` response and full snapshot decoder. Neither receipt path can
+install a policy observation or gameplay scope.
 `IAutomatedSimulation` supports explicit all-bot tables with a separate public,
 non-acting spectator. Live tables retain their human requirement. Forecasting,
 deeper deck planning and human evaluation of the policy remain future work.

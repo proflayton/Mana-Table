@@ -119,7 +119,9 @@ wire records. A late serialization failure must write no partial protocol bytes
 before the existing complete error reply.
 `SyncTransportTest` checks retained receipt ownership through nested handler and
 caller mutation, exact request replay, coded failures, reconnect/revocation and
-the existing frame ceiling. Optimization must preserve every capture and failure
+the existing frame ceiling. Framing cases include fragmented Unicode,
+coalesced successor frames, both TCP reader directions, exact UTF-16-character
+limits, a one-character excess, malformed JSON and partial EOF. Optimization must preserve every capture and failure
 boundary; elapsed-time microbenchmarks do not replace these checks.
 An active or prospective finite-yield grant also holds audience replacement at
 the old owner until its negative acknowledgement completes; an explicit retry
@@ -752,6 +754,15 @@ ACK/grant/held-withdrawal chain and a fresh rich observation before policy work.
 They advance the board, action signature and input independently, change pacing
 between controls, and deliver actual child-process ACK replies out of order.
 Metadata receipts cannot install policy scopes or revive a replaced input.
+The optional compact-control wire route must exercise those same owner, cursor,
+epoch, withdrawal and fresh-rich-read checks. Require schema-version-1 closed
+keys, integer/range/enum validation, malformed and duplicate-field rejection,
+negotiated selection and the unchanged older-engine rich-decoder fallback.
+Java checks must reject gameplay, Quiet and finite commands before admission,
+derive the receipt from the exact captured action result rather than a later
+publication, and prove that no private card/action graph enters the receipt.
+Unknown or lost current-world replies remain uncertain failures; they cannot
+cause an automatic full-action fallback or replay of positive consent.
 
 `--smoke-polled-mana-output` uses the same source/package arguments as
 `--smoke-polled-fanout`. It opens an actual TCP two-human/two-distinct-AI table;

@@ -63,6 +63,18 @@ process pipe. `automatedEnable` selects external policy controllers before table
 creation. `automatedState` returns independent private seat observations and
 complete timing-legal action domains with structured costs/effects;
 `automatedAction` takes the same scoped semantic reply plus `seatId`.
+The source candidate's additional `automated-priority-metadata-v1` capability
+negotiates the private host-only `automatedPriorityControl` method. It accepts
+only observation acknowledgement, `NoResponse` consent and withdrawal, using
+the same owned seat and current-input admission as the existing action route.
+Its schema-version-1 receipt contains only game/seat, revision/board/signature,
+turn/status/player-active facts, nullable decision/priority owners and IDs, and
+the existing continuation/observation frames. It derives those facts from the
+same immutable result returned by the admitted action, never a later resnapshot.
+There is no card graph, action domain, timer or wire-supplied provider epoch.
+The native host validates this closed metadata independently; every policy or
+gameplay action still requires a fresh owned rich observation. Engines without
+the extra capability retain the full `automatedAction` response and decoder.
 Action semantics may include `phaseRestricted`: true reports declared phase/turn,
 sorcery-speed or combat-step restrictions; false reports their absence on the
 live route. This descriptive fact does not predict future legality, resource
