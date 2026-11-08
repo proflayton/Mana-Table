@@ -1135,6 +1135,13 @@ gated by the actual game's presentation readiness. One optional metadata task
 does not set user-action Busy/Polling, consume inputs, reset clocks or create
 history/undo intent; stale results still obey the replica epoch and audience.
 The provider's decoded cache cannot mint this accepted-frame credit.
+Observation consumption follows the audience connection, independently of actor
+eligibility. An eliminated player who continues watching still acknowledges
+presented history so its delivery journal can release that prefix. Registered
+bot readers do the same after any outstanding consent is withdrawn and a fresh
+observation is accepted. Loss never permits another grant, policy answer or
+rules command. Closed/retired worlds, replay readers, unconsumed presentation
+and unpublished prefixes retain their existing refusal boundaries.
 
 `ClientSessionAuthority.ObserveOnly` is an explicit read-only composition for
 recorded projection replay. All immutable-frame validators remain active, while

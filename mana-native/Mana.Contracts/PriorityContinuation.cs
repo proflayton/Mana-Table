@@ -37,6 +37,9 @@ public sealed record PriorityContinuationState([property: JsonRequired] long Seq
 public sealed record GrantPriorityContinuation(string GameId, string DecisionId, long Sequence, string GrantId,
     PriorityContinuationMode Mode, ImmutableArray<string> PhaseStops, string QuietYieldToken = "") : DecisionCommand(GameId, DecisionId);
 public sealed record RevokePriorityContinuation(string GameId, long ThroughSequence) : GameCommand(GameId);
+// Consumes an actually presented audience-delivery prefix, not a rules input.
+// An eliminated player may keep observing until their connection leaves; this
+// acknowledgement does not restore actor, policy or automatic-pass eligibility.
 public sealed record AcknowledgePriorityObservation(string GameId, long BoardRevision, long PublicActivitySequence) : GameCommand(GameId);
 public sealed record PriorityObservationState([property: JsonRequired] long BoardRevision,
     [property: JsonRequired] long PublicActivitySequence, [property: JsonRequired] long AcknowledgedBoardRevision,

@@ -2064,6 +2064,10 @@ Neither registration nor observation acknowledgement answers a rules input.
 `acknowledgePriorityObservation` returns credit only for an exact completed
 publication delivered to that audience. Private activity and execution delivery
 journals retain unacknowledged causal evidence, with explicit overflow holds.
+Delivery consumption follows the observing connection even after its player is
+eliminated. A current presented prefix can still be acknowledged while the table
+continues; this grants no policy, priority or other gameplay permission. Closed
+or replaced connections and unpublished prefixes retain their existing checks.
 See the [continuation contract](../docs/Development/Mana-Table-Priority-Continuation.md)
 for the closed fields, actual-input lease, publication elision, observer credit,
 connection retirement and legacy-client compatibility. Required choices stay

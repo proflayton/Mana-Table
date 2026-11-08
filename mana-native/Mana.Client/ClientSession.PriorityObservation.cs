@@ -23,7 +23,7 @@ public sealed partial class ClientSession
         if (Authority != ClientSessionAuthority.Interactive || !priorityObservationReady || priorityObservationInFlight || Busy || Polling || Closed || NeedsRecovery
             || pendingManualCommand != null || finiteRevocations.Count > 0 || priorityRevocations.Count > 0
             || acceptedObservationVersion < priorityObservationRetryAfterVersion || time.GetUtcNow() < priorityObservationRetryAt
-            || !connection.SupportsPriorityContinuation || State is not { PriorityObservation: { } observation, Viewer: { Eliminated: false } } current
+            || !connection.SupportsPriorityContinuation || State is not { PriorityObservation: { } observation, Viewer: { } } current
             || current.Status is not ("playing" or "resolving") || observation.Overflowed) return;
         bool waiting = current.PriorityContinuation?.ReasonCode is "awaiting-observation" or "awaiting-observation-registration";
         if (observation.Registered && observation.PublicActivitySequence <= observation.AcknowledgedPublicActivitySequence

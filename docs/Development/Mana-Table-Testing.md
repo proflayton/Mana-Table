@@ -715,6 +715,13 @@ Their serializer reuses a UTF8 record buffer instead of allocating a UTF16
 string for every large replay. A failed serialization commits no partial row;
 the existing decoded records and order remain byte-compatible. Local capture
 allocation measurements do not establish a full-game throughput result.
+Observer-lifetime regressions keep a viewer connected after actual elimination,
+publish history beyond the ordinary tail, and acknowledge only its consumed
+prefix. The delivery window must compact while surviving players continue.
+Client and bot controls retain presentation pauses, closed/retired epochs and
+replay refusal, and prove that loss never enables policy work or a new grant.
+`AutomatedPriorityContinuationTest` exercises the same read-only bot ACK boundary
+through actual rules loss, independently of lost-actor grant refusal.
 The independent required `mixed-game-qualification` CI job additionally runs all
 four `natural` rotations against the exact immutable package and source-bound
 harness, then the actual110-trigger rules/presentation workload described below

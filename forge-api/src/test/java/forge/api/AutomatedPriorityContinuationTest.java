@@ -311,6 +311,75 @@ public class AutomatedPriorityContinuationTest {
         }
     }
 
+    @DataProvider public Object[][] departedReaders() { return new Object[][] {{0}, {2}}; }
+
+    @Test(dataProvider = "departedReaders", timeOut = 90000)
+    public void anEliminatedConnectedReaderCanConsumeDeliveryWithoutRegainingActionAuthority(int reader) throws Exception {
+        try (var fixture = new Fixture("departed-delivery-reader-" + reader, false)) {
+            var main = fixture.main(); fixture.acknowledge(reader);
+            var original = fixture.state(reader).getAsJsonObject("priorityObservation");
+            if (reader == 2) fixture.bot().action(grant(main, 1, List.of("MAIN1")));
+            fixture.eliminate(reader);
+            fixture.publicChanges(3, 160); fixture.publicExecutions(3, 320);
+            var retained = fixture.state(reader);
+            int activity = retained.getAsJsonArray("activity").size();
+            int transitions = retained.getAsJsonObject("executions").getAsJsonArray("transitions").size();
+            assertTrue(activity > 120, "The connected departed reader retains its unread activity beyond the rolling tail");
+            assertTrue(transitions > 512, "The same reader retains unread execution transitions beyond the rules tail");
+            assertFalse(retained.getAsJsonObject("priorityObservation").get("overflowed").getAsBoolean());
+
+            fixture.acknowledge(reader, original);
+            fixture.table.game.getAction().withState(fixture.table::publish);
+            var unread = fixture.state(reader);
+            assertEquals(unread.getAsJsonObject("priorityObservation").get("acknowledgedPublicActivitySequence"),
+                    original.get("publicActivitySequence"), "A valid old cohort cannot acknowledge the later unread suffix");
+            assertEquals(unread.getAsJsonArray("activity").size(), activity);
+            assertEquals(unread.getAsJsonObject("executions").getAsJsonArray("transitions").size(), transitions);
+
+            var impossible = unread.getAsJsonObject("priorityObservation").deepCopy();
+            impossible.addProperty("boardRevision", Long.MAX_VALUE);
+            var invalid = expectThrows(IllegalArgumentException.class, () -> fixture.acknowledge(reader, impossible));
+            assertFalse(invalid instanceof AutomatedPriorityControlRetired, "Loss cannot turn an unprovable prefix into known retirement");
+            var wrongGame = new JsonObject(); wrongGame.addProperty("sessionId", "retired-table");
+            wrongGame.addProperty("action", "acknowledgePriorityObservation");
+            wrongGame.add("boardRevision", original.get("boardRevision"));
+            wrongGame.add("publicActivitySequence", original.get("publicActivitySequence"));
+            assertThrows(IllegalArgumentException.class, () -> fixture.endpoint(reader).action(wrongGame));
+
+            fixture.acknowledge(reader, unread.getAsJsonObject("priorityObservation"));
+            fixture.table.game.getAction().withState(fixture.table::publish);
+            var compacted = fixture.state(reader);
+            assertTrue(compacted.getAsJsonArray("activity").size() <= 120);
+            assertTrue(compacted.getAsJsonObject("executions").getAsJsonArray("transitions").size() <= 512);
+            assertEquals(compacted.getAsJsonObject("priorityObservation").get("acknowledgedPublicActivitySequence"),
+                    unread.getAsJsonObject("priorityObservation").get("publicActivitySequence"));
+            assertTrue(viewer(compacted).get("eliminated").getAsBoolean());
+            assertEquals(text(compacted, "status"), "playing");
+            assertTrue(compacted.get("prompt").isJsonNull(), "Consumption cannot give a departed reader another decision");
+            for (var player : compacted.getAsJsonArray("players")) {
+                var seat = player.getAsJsonObject();
+                if (!seat.get("id").equals(compacted.get("viewerId")))
+                    assertTrue(zone(seat, "Hand").getAsJsonArray("cards").isEmpty(), "Delivery never reveals another reader's hand");
+            }
+            assertThrows(IllegalArgumentException.class, () -> fixture.endpoint(reader).action(request(main, Map.of("action", "passPriority"))));
+            assertThrows(IllegalArgumentException.class, () -> fixture.endpoint(reader).action(grant(main, 2, List.of())));
+            var consent = compacted.getAsJsonObject("priorityContinuation");
+            assertFalse(List.of("Active", "Held").contains(text(consent, "status")));
+            assertEquals(consent.get("automaticPasses").getAsInt(), 0);
+            var survived = fixture.until(candidate -> candidate.seat() != reader && text(candidate.prompt(), "inputType").equals("InputPassPriority"));
+            assertEquals(text(survived.state(), "status"), "playing", "The surviving controllers keep their actual rules decisions");
+            Files.writeString(fixture.evidence.resolve("departed-reader-delivery.json"), JSON.toJson(Map.of(
+                    "reader", reader, "retainedActivity", activity, "retainedTransitions", transitions,
+                    "compactedActivity", compacted.getAsJsonArray("activity").size(),
+                    "compactedTransitions", compacted.getAsJsonObject("executions").getAsJsonArray("transitions").size(),
+                    "observation", compacted.getAsJsonObject("priorityObservation"), "consent", consent)));
+            if (reader == 2) {
+                fixture.table.close();
+                assertThrows(AutomatedPriorityControlRetired.class, () -> fixture.acknowledge(reader));
+            }
+        }
+    }
+
     private static JsonObject grant(Input input, int sequence, List<String> stops) {
         return request(input, Map.of("action", "grantPriorityContinuation", "sequence", sequence, "grantId", "bot-auto-" + sequence,
                 "mode", "NoResponse", "phaseStops", stops, "quietYieldToken", ""));
@@ -354,9 +423,23 @@ public class AutomatedPriorityContinuationTest {
             var command = new JsonObject(); command.addProperty("sessionId", table.id); command.addProperty("action", "revokePriorityContinuation");
             command.addProperty("throughSequence", sequence); bot().action(command);
         }
+        void eliminate(int seat) throws Exception {
+            var command = new JsonObject(); command.addProperty("sessionId", table.id);
+            endpoint(seat).concede(command);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (System.nanoTime() < deadline) {
+                var state = state(seat);
+                if (viewer(state).get("eliminated").getAsBoolean() && state.get("prompt").isJsonNull()) return;
+                Thread.sleep(2);
+            }
+            throw new AssertionError("The actual concession did not publish its reader's loss");
+        }
         void publicChanges(int count) {
+            publicChanges(2, count);
+        }
+        void publicChanges(int seat, int count) {
             table.game.getAction().withState(() -> {
-                var forest = table.game.getPlayer(2).getCardsIn(ZoneType.Battlefield).stream()
+                var forest = table.game.getPlayer(seat).getCardsIn(ZoneType.Battlefield).stream()
                         .filter(card -> card.getName().equals("Forest")).findFirst().orElseThrow();
                 for (int index = 0; index < count; index++) {
                     boolean tapped = index % 2 == 0; forest.setTapped(tapped); table.game.fireEvent(new GameEventCardTapped(forest, tapped));
@@ -365,8 +448,11 @@ public class AutomatedPriorityContinuationTest {
             });
         }
         void publicExecutions(int count) {
+            publicExecutions(2, count);
+        }
+        void publicExecutions(int seat, int count) {
             table.game.getAction().withState(() -> {
-                var player = table.game.getPlayer(2);
+                var player = table.game.getPlayer(seat);
                 var source = player.getCardsIn(ZoneType.Battlefield).stream().filter(card -> card.getName().equals("Forest")).findFirst().orElseThrow();
                 var rules = table.game.getExecutions();
                 for (int index = 0; index < count; index++) {

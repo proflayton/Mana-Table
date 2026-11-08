@@ -133,12 +133,18 @@ The optional `priorityObservation` frame contains `boardRevision`,
 returns credit only for an actual frame from a completed table publication,
 committed for all audiences before observer callbacks. An ACK
 consumes no input, creates no undo barrier, and is not a gameplay outcome.
+The observing connection can outlive its player's eligibility to act. An
+eliminated viewer who remains at the table still consumes presented delivery
+prefixes; registered bot readers acknowledge them after outstanding consent is
+withdrawn and a fresh observation is accepted. This cannot restore a grant,
+policy answer or rules command. Replay and closed/replaced audiences remain
+unable to dispatch acknowledgements.
 
-Live synchronization retains its existing 8 MiB encoded-frame ceiling. The
+Live synchronization retains its existing 8,388,608 UTF-16-character frame ceiling. The
 4096-entry delivery journals and 64-event credit window bound unattended progress;
 they do not guarantee unlimited boards or every possible interaction. Receivers
 validate the complete retained union without numeric truncation. Exceeding a
-journal's entry bound explicitly holds Auto; the transport's byte ceiling is a
+journal's entry bound explicitly holds Auto; the transport's frame ceiling is a
 separate limit, especially for unusually large boards or atomic event bursts.
 
 `ClientSession` derives ACKs from frames it accepted, not the provider's decoded

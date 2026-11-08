@@ -21,6 +21,9 @@ internal static class AiAutomatedPriorityRegression
         await UnknownWithdrawalCleanup(check);
         await ReceiptChains(check);
         await ChangedReceiptsAndPacing(check);
+        await LostObserverDelivery(check);
+        await ObserverDeliveryGuards(check);
+        await ObserverDeliveryRetirementAndReceipts(check);
     }
 
     private static void DescriptorAndClosedControls(Action<bool, string> check)
@@ -297,6 +300,116 @@ internal static class AiAutomatedPriorityRegression
             "The next cycle genuinely reobserves an advanced grant instead of treating metadata as an owned policy frame");
     }
 
+    private static async Task LostObserverDelivery(Action<bool, string> check)
+    {
+        var port = new Port(); var policy = new Policy(); var pace = new Pace { Open = true };
+        await using var host = new AiTableHost(port, _ => policy, 1, pacing: pace);
+        await Arm(host);
+        int reads = port.Reads;
+        LoseActor(port); pace.Open = false;
+        await host.StepAsync(); await host.StepAsync();
+        check(port.Controls is [AutomatedPriorityControl.Acknowledge, AutomatedPriorityControl.NoResponse,
+                AutomatedPriorityControl.Withdraw] && policy.Calls == 0 && port.Commands.Count == 0,
+            "An eliminated actor first withdraws its active grant and keeps the registered observer's ACK behind the reading pause");
+        pace.Open = true; await host.StepAsync();
+        check(port.Reads == reads + 3 && port.Controls is [AutomatedPriorityControl.Acknowledge,
+                AutomatedPriorityControl.NoResponse, AutomatedPriorityControl.Withdraw,
+                AutomatedPriorityControl.Acknowledge { BoardRevision: 2, PublicActivitySequence: 1 }]
+            && host.PriorityContinuations.Single() is { AcceptedAcknowledgements: 2, AcceptedGrants: 1,
+                AcceptedWithdrawals: 1, Retired: false } && policy.Calls == 0 && Accepted(host) == 0 && port.Commands.Count == 0,
+            "A fresh paced observation after confirmed withdrawal acknowledges ongoing table delivery without granting or evaluating another action");
+        await host.StepAsync();
+        port.State = port.State with { Revision = port.State.Revision + 1, BoardRevision = 3,
+            PriorityObservation = port.State.PriorityObservation! with { BoardRevision = 3, PublicActivitySequence = 16 } };
+        await host.StepAsync();
+        check(port.Controls.Count == 4,
+            "An unchanged observer signature and fewer than sixteen unread events retain the existing acknowledgement window");
+        port.State = port.State with { Revision = port.State.Revision + 1, BoardRevision = 4,
+            PriorityObservation = port.State.PriorityObservation! with { BoardRevision = 4, PublicActivitySequence = 17 } };
+        await host.StepAsync();
+        check(port.Controls.Last() is AutomatedPriorityControl.Acknowledge { BoardRevision: 4, PublicActivitySequence: 17 }
+            && port.Controls.Count == 5 && policy.Calls == 0 && port.Commands.Count == 0 && host.LastFault == null,
+            "A registered eliminated observer replenishes its delivery credit at the same sixteen-event boundary without a gameplay path");
+    }
+
+    private static async Task ObserverDeliveryGuards(Action<bool, string> check)
+    {
+        foreach (var mode in new[] { AiPriorityAutomation.FullControl, AiPriorityAutomation.NoResponse }) {
+            foreach (string status in new[] { "playing", "resolving" }) {
+                var port = new Port(); LoseActor(port); port.State = port.State with { Status = status };
+                var policy = new Policy(mode);
+                await using var host = new AiTableHost(port, _ => policy, 1);
+                await host.StepAsync(); await host.StepAsync();
+                check(port.Controls is [AutomatedPriorityControl.Acknowledge]
+                    && host.PriorityContinuations.Single() is { AcceptedAcknowledgements: 1, AcceptedGrants: 0 }
+                    && policy.Calls == 0 && port.Commands.Count == 0 && host.LastFault == null,
+                    "An already registered inactive observer reads an ongoing table independently of policy consent: " + mode + "/" + status);
+                port.State = port.State with { Status = "finished", Revision = port.State.Revision + 1,
+                    StackInterruptionVersion = 2, PriorityObservation = port.State.PriorityObservation! with {
+                        BoardRevision = 3, PublicActivitySequence = 32 } };
+                await host.StepAsync();
+                check(port.Controls.Count == 1 && policy.Calls == 0 && port.Commands.Count == 0,
+                    "A terminal table cannot acquire another observer ACK or action: " + mode + "/" + status);
+            }
+            foreach (string guard in new[] { "unregistered", "paused", "overflow", "signature", "finished", "starting", "closed", "missing-viewer" }) {
+                var port = new Port(); LoseActor(port); var policy = new Policy(mode);
+                var pace = new Pace { Open = guard != "paused" };
+                port.State = guard switch {
+                    "unregistered" => port.State with { PriorityObservation = port.State.PriorityObservation! with { Registered = false } },
+                    "overflow" => port.State with { PriorityObservation = port.State.PriorityObservation! with { Overflowed = true } },
+                    "signature" => port.State with { StackInterruptionVersion = null },
+                    "finished" or "starting" or "closed" => port.State with { Status = guard },
+                    "missing-viewer" => port.State with { Players = [] },
+                    _ => port.State
+                };
+                await using var host = new AiTableHost(port, _ => policy, 1, pacing: pace);
+                await host.StepAsync();
+                check(port.Controls.Count == 0 && policy.Calls == 0 && port.Commands.Count == 0 && host.LastFault == null,
+                    "Inactive delivery cannot register automation or cross missing reading/lifetime evidence: " + mode + "/" + guard);
+            }
+        }
+    }
+
+    private static async Task ObserverDeliveryRetirementAndReceipts(Action<bool, string> check)
+    {
+        var retired = new Port(); LoseActor(retired); var retiredPolicy = new Policy();
+        await using (var host = new AiTableHost(retired, _ => retiredPolicy, 1)) {
+            await host.StepAsync(); retired.SuppressObservation = true; await host.StepAsync();
+            retired.SuppressObservation = false;
+            retired.State = retired.State with { Revision = retired.State.Revision + 1, StackInterruptionVersion = 2,
+                PriorityObservation = retired.State.PriorityObservation! with { BoardRevision = 3, PublicActivitySequence = 32 } };
+            await host.StepAsync();
+            check(retired.Controls is [AutomatedPriorityControl.Acknowledge]
+                && host.PriorityContinuations.Single() is { Retired: true, AcceptedAcknowledgements: 1, AcceptedGrants: 0 }
+                && retiredPolicy.Calls == 0 && retired.Commands.Count == 0 && host.LastFault == null,
+                "A late frame from an already retired same-epoch world cannot reopen observer credit or policy authority");
+        }
+        foreach (string receipt in new[] { "retired", "late-epoch", "foreign-game", "malformed" }) {
+            var port = new Port(); LoseActor(port); var policy = new Policy();
+            if (receipt == "retired") port.RetireControls = true;
+            else if (receipt == "late-epoch") port.BeforeControl = _ => { port.Epoch++; return Task.CompletedTask; };
+            else port.AfterControl = _ => port.State = receipt == "foreign-game"
+                ? port.State with { Id = "another-table" }
+                : port.State with { PriorityObservation = port.State.PriorityObservation! with { AcknowledgedBoardRevision = -1 } };
+            await using var host = new AiTableHost(port, _ => policy, 1);
+            await host.StepAsync();
+            check(port.Controls is [AutomatedPriorityControl.Acknowledge]
+                && host.PriorityContinuations.Single().AcceptedAcknowledgements == 0
+                && policy.Calls == 0 && port.Commands.Count == 0 && Accepted(host) == 0
+                && (receipt is "retired" or "late-epoch" ? host.LastFault == null
+                    : host.LastFault?.ReasonCode == "priority-control-unknown"),
+                "An inactive observer cannot adopt a retired, late or malformed ACK receipt: " + receipt);
+        }
+    }
+
+    private static void LoseActor(Port port) => port.State = port.State with {
+        Revision = port.State.Revision + 1, BoardRevision = port.State.BoardRevision + 1,
+        Players = [port.State.Players[0] with { Eliminated = true }], Decision = null,
+        StackInterruptionVersion = port.State.StackInterruptionVersion + 1,
+        PriorityObservation = port.State.PriorityObservation! with { Registered = true,
+            BoardRevision = port.State.BoardRevision + 1, PublicActivitySequence = port.State.PriorityObservation!.PublicActivitySequence + 1 }
+    };
+
     private static async Task Arm(AiTableHost host) { await host.StepAsync(); await host.StepAsync(); await host.StepAsync(); }
     private static int Accepted(AiTableHost host) => host.Histories.Sum(history => history.Decisions.Count(record => record.Outcome == AiDecisionOutcome.Accepted));
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -336,7 +449,7 @@ internal static class AiAutomatedPriorityRegression
                 PriorityContinuation = new(0, "", null, PriorityContinuationStatus.Idle, "", 0, []),
                 PriorityObservation = new(1, 0, 0, 0, false, false)
             };
-        internal bool Supported = true, RetireControls, LoseGrantReceipt, LoseWithdrawReceipt;
+        internal bool Supported = true, RetireControls, LoseGrantReceipt, LoseWithdrawReceipt, SuppressObservation;
         internal long Epoch = 1, Fence;
         internal int PositiveAccepted, Reads;
         internal List<GameCommand> Commands = [];
@@ -352,6 +465,7 @@ internal static class AiAutomatedPriorityRegression
         public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default)
         {
             Reads++;
+            if (SuppressObservation) return Task.FromResult(ImmutableArray<AutomatedSeatObservation>.Empty);
             return Task.FromResult(ImmutableArray.Create(new AutomatedSeatObservation(0, State,
                 State.Decision?.Payload is PriorityPayload ? new(1, ActionDomainCoverage.Complete, [], []) : DecisionActionDomain.None, new())));
         }
