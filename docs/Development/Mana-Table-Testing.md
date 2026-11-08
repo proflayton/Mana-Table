@@ -979,6 +979,15 @@ and future encounter/boss definitions remain targets rather than passed checks.
 
 ### Causal mechanics and development timing
 
+`AiCampaignQualificationChecks` also protects the accepted-action evidence pass
+while its per-frame execution lookups replace repeated linear history scans.
+Keep the original occurrence order, first-occurrence lookup behavior, missing-ID
+and transition-boundary results, sibling budget-root associations, independent
+roots and later terminal outcomes. All action/event comparisons and the separate
+causal ancestry verifier still run. Fixed-input performance diagnostics establish
+lookup work and output parity; they do not establish an end-to-end game-speed
+claim or permit a wider natural-game deadline.
+
 `AiCausalMechanicEvidenceChecks` runs through the existing `configured-simulation`
 headless group and full native suite. It exercises automatic source payment,
 explicit choices, cancellation after a committed subcost, fresh occurrence
