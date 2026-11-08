@@ -21,7 +21,7 @@ public sealed partial class ClientSession
     private readonly object observationGate = new();
     private ObservationIngress? observationIngress;
     private int queuedExternalObservations;
-    private bool recoveryRequired;
+    private ClientRecovery recovery = ClientRecovery.Empty;
     private CancellationTokenSource? advancing;
     private IFiniteDecisionPolicy? finiteIntent;
     private Task commandTask = Task.CompletedTask;
@@ -59,17 +59,24 @@ public sealed partial class ClientSession
     public bool Polling { get; private set; }
     public bool Closed { get; private set; }
     public DateTimeOffset? LastSynchronizedAt { get; private set; }
-    public string LastConnectionError { get; private set; } = "";
+    public ClientOperationFailure? LastFailure => recovery.LastFailure;
+    public ClientOperationFailure? RecoveryOrigin => recovery.Origin;
+    public ClientOperationFailure? LastCleanupFailure { get; private set; }
+    public string LastConnectionError => recovery.State != ClientRecoveryState.Ready
+        ? LastFailure?.Message ?? "" : LastCleanupFailure?.Message ?? "";
     private static readonly TimeSpan SynchronizationHealthLimit = TimeSpan.FromSeconds(5);
-    public bool NeedsRecovery => recoveryRequired || State != null && Polling && LastSynchronizedAt is { } synchronized
+    private bool SynchronizationOverdue => State != null && Polling && LastSynchronizedAt is { } synchronized
         && time.GetUtcNow() - synchronized > SynchronizationHealthLimit;
+    public ClientRecoveryState RecoveryState => recovery.State != ClientRecoveryState.Ready ? recovery.State
+        : SynchronizationOverdue ? ClientRecoveryState.ReconciliationRequired : ClientRecoveryState.Ready;
+    public bool NeedsRecovery => RecoveryState != ClientRecoveryState.Ready;
     /// <summary>The existing stalled-poll health deadline, without starting a
     /// poll or changing recovery authority. Null means no health timer is due.</summary>
     public TimeSpan? TimeUntilSynchronizationHealthCheck
     {
         get {
             if (Closed) return null;
-            if (recoveryRequired) return TimeSpan.Zero;
+            if (recovery.State != ClientRecoveryState.Ready) return TimeSpan.Zero;
             if (State == null || !Polling || LastSynchronizedAt is not { } synchronized) return null;
             // NeedsRecovery uses a strict greater-than comparison. Wake on the
             // first eligible timer millisecond rather than rounding a tick
@@ -79,9 +86,9 @@ public sealed partial class ClientSession
                 ? TimeSpan.FromMilliseconds(Math.Ceiling(remaining.TotalMilliseconds)) : TimeSpan.Zero;
         }
     }
-    public bool UncertainCommand { get; private set; }
-    public bool LastFailureWasCommand { get; private set; }
-    public event Action<Exception>? Failed;
+    public bool UncertainCommand => RecoveryState == ClientRecoveryState.CommandUncertain;
+    public bool LastFailureWasCommand => LastFailure?.IsCommand == true;
+    public event Action<ClientOperationFailure>? Failed;
     public event Action? Completed;
     public event Action<GameSnapshot?, GameSnapshot?>? Changed;
     public event Action? Recovered;
@@ -154,7 +161,7 @@ public sealed partial class ClientSession
                 if (revoked || owner.Closed || !ReferenceEquals(owner.observationIngress, this)
                     || state.Id != gameId || state.ViewerId != viewerId
                     || owner.queuedExternalObservations >= MaximumPendingObservations) return false;
-                var entry = new PendingObservation(state, owner.replica.Epoch);
+                var entry = new PendingObservation(state, ClientFailureContext.Capture(owner.replica.Epoch, owner.State ?? state));
                 pending.Add(entry); owner.queuedExternalObservations++;
                 owner.Post(() => Deliver(entry));
                 return true;
@@ -168,7 +175,8 @@ public sealed partial class ClientSession
                 state = Active ? entry.State : null;
                 entry.State = null;
             }
-            if (state != null) owner.Accept(state, entry.Epoch, this, observationFailurePhase: CommandFailurePhase.Observation);
+            if (state != null) owner.Accept(state, entry.Context.Epoch!.Value, this,
+                observationFailurePhase: ClientFailurePhase.Observation, failureContext: entry.Context);
         }
         public void Dispose()
         {
@@ -185,10 +193,10 @@ public sealed partial class ClientSession
         }
         internal bool Matches(GameSnapshot? state) => state?.Id == gameId && state.ViewerId == viewerId;
         internal bool Active => !revoked && ReferenceEquals(owner.observationIngress, this);
-        private sealed class PendingObservation(GameSnapshot state, long epoch)
+        private sealed class PendingObservation(GameSnapshot state, ClientFailureContext context)
         {
             internal GameSnapshot? State = state;
-            internal long Epoch { get; } = epoch;
+            internal ClientFailureContext Context { get; } = context;
         }
     }
 
@@ -210,9 +218,9 @@ public sealed partial class ClientSession
     }
     public bool AcceptLobby(Lobby state) => !Closed && Lobby != null && state.TableId == Lobby.TableId
         && lobbyReplica.Accept(state, lobbyReplica.Epoch);
-    public void Reset() { RevokeObservationIngress(); StopFiniteIntent(); CancelAdvance(); SourceActions.Clear(); pendingSettings.Clear(); pendingManualCommand = null; LastFailureWasCommand = false; BeginCommand(); Accept(null); }
+    public void Reset() { RevokeObservationIngress(); StopFiniteIntent(); CancelAdvance(); SourceActions.Clear(); pendingSettings.Clear(); pendingManualCommand = null; recovery = recovery with { LastFailure = null }; LastCleanupFailure = null; BeginCommand(); Accept(null); }
     private bool Accept(GameSnapshot? state, long epoch, ObservationIngress? ingress = null, bool commandObservation = false,
-        CommandFailurePhase? observationFailurePhase = null)
+        ClientFailurePhase? observationFailurePhase = null, ClientFailureContext? failureContext = null)
     {
         bool diagnosticAccepted = false, diagnosticAudience = false, diagnosticReported = false;
         GameSnapshot? diagnosticPrevious = State;
@@ -229,7 +237,8 @@ public sealed partial class ClientSession
                 && error is ArgumentException or InvalidOperationException or IOException) {
                 // This catch surrounds only pre-commit contract validators.
                 // Presentation callbacks and direct Accept keep their behavior.
-                throw new CommandExchangeException(observationFailurePhase.Value, error);
+                throw new CommandExchangeException(observationFailurePhase.Value,
+                    failureContext ?? throw new InvalidOperationException("An operation admission requires its captured failure context."), error);
             }
             bool audienceChanged = previous != null && (state == null || state.Id != previous.Id || state.ViewerId != previous.ViewerId);
             // An explicit audience handoff retires work admitted for the old
@@ -278,9 +287,12 @@ public sealed partial class ClientSession
             ExecutionChanges = executions.Observe(state, baseline: recovered || RestorationChanged);
             ObserveOptionalPayments(previous, state, recovered || RestorationChanged);
             LastSynchronizedAt = time.GetUtcNow();
-            recoveryRequired = UncertainCommand = false; LastConnectionError = "";
-        } } catch (FiniteYieldOwnershipException error) { ReportFailure(error, true); return false; }
-        catch (CommandExchangeException error) { ReportFailure(error, error.Phase != CommandFailurePhase.Observation); return false; }
+            recovery = recovery.Reconciled(); LastCleanupFailure = null;
+        } } catch (FiniteYieldOwnershipException error) {
+            ReportFailure(error, ClientFailurePhase.ReadbackUnknown,
+                failureContext ?? ClientFailureContext.Capture(epoch, diagnosticPrevious)); return false;
+        }
+        catch (CommandExchangeException error) { ReportFailure(error, error.Phase, error.Context); return false; }
         // Revocation and state commit share one boundary. Notification runs
         // outside it, so callbacks cannot block a background source on the gate.
         History.Observe(state);
@@ -314,9 +326,10 @@ public sealed partial class ClientSession
     // thread knows whether a newer accepted cursor has superseded that prefix.
     // This validation ACK grants no publication. The existing observed/final
     // checkpoints still decide when presentation receives a frame.
-    private async Task<ObservationAdmission> AdmitAdvanceObservationAsync(GameSnapshot state, CommandFailurePhase phase, long epoch,
+    private async Task<ObservationAdmission> AdmitAdvanceObservationAsync(GameSnapshot state, ClientFailurePhase phase, ClientFailureContext context,
         CancellationToken cancellation)
     {
+        long epoch = context.Epoch ?? throw new InvalidOperationException("Session admission requires an owned operation epoch.");
         var completion = new TaskCompletionSource<ObservationAdmission>(TaskCreationOptions.RunContinuationsAsynchronously);
         int claimed = 0;
         // Hold returns the already-sent result for final publication. Reset and
@@ -332,7 +345,7 @@ public sealed partial class ClientSession
             } }
             catch (FiniteYieldOwnershipException error) { completion.TrySetException(error); return; }
             catch (Exception error) when (error is ArgumentException or InvalidOperationException or IOException) {
-                completion.TrySetException(new CommandExchangeException(phase, error)); return;
+                completion.TrySetException(new CommandExchangeException(phase, context, error)); return;
             }
             completion.TrySetResult(ObservationAdmission.Validated);
         });
@@ -354,14 +367,14 @@ public sealed partial class ClientSession
         ClearAllOptionalPaymentPolicies();
         var pending = finiteRevocations.Values.ToArray();
         var pendingPriority = priorityRevocations.Values.ToArray();
-        Run(async epoch => {
+        Run(async context => {
             foreach (var item in pendingPriority) {
-                var next = await ObservePriorityRevocationAsync(item);
+                var next = await ObservePriorityRevocationAsync(item, context);
                 if (!PriorityRevoked(next, item)) throw new IOException("Priority withdrawal must be observed before changing the match connection.");
                 Post(() => RecordPriorityRevocation(next, item));
             }
             foreach (var item in pending) {
-                var next = await ObserveFiniteRevocationAsync(item);
+                var next = await ObserveFiniteRevocationAsync(item, context);
                 if (RemainsActive(next, item.Command))
                     throw new IOException("The finite-yield revocation must be observed before changing the match connection.");
                 // The following operation may replace the match. Retain only
@@ -371,17 +384,18 @@ public sealed partial class ClientSession
                     finiteRevocations.Remove((item.Command.GameId, item.Command.GrantId));
                 });
             }
-            if (pending.Length > 0 || pendingPriority.Length > 0) Post(() => RecoverRetiredConsentCleanup(epoch));
+            if (pending.Length > 0 || pendingPriority.Length > 0) Post(() => RecoverRetiredConsentCleanup(context.Epoch!.Value));
             await operation();
         });
     }
-    private void Run(Func<long, Task> operation)
+    private void Run(Func<ClientFailureContext, Task> operation)
     {
         if (Busy || Closed || Authority != ClientSessionAuthority.Interactive) return;
         long epoch = BeginCommand(); Busy = true;
+        var context = ClientFailureContext.Capture(epoch, State);
         commandTask = Task.Run(async () => {
-            try { await operation(epoch); }
-            catch (Exception error) { Post(() => { if (epoch == replica.Epoch) ReportFailure(error, true); }); }
+            try { await operation(context); }
+            catch (Exception error) { Post(() => { if (epoch == replica.Epoch) ReportFailure(error, ClientFailurePhase.DispatchUnknown, context); }); }
             finally { Post(() => { Busy = false; activeSetting = null; Completed?.Invoke(); }); }
         });
     }
@@ -389,6 +403,7 @@ public sealed partial class ClientSession
     {
         if (ObservationDelivery == ObservationDeliveryMode.External || Busy || Polling || Closed) return;
         Polling = true; long epoch = replica.Epoch;
+        var context = ClientFailureContext.Capture(epoch, State);
         var lobbyOwner = lobbyReplica;
         ObservationAudience? audience = State is { } current ? new(current) : null;
         // Called only by posted owner callbacks. A bootstrap read can bind an
@@ -410,11 +425,11 @@ public sealed partial class ClientSession
                     catch (InvalidOperationException error) { admissionFailure = new IOException("The table did not publish its admitted encounter's rules frame.", error); }
                 Post(() => {
                     if (!OwnsObservation() || withLobby && (lobby == null || !AcceptLobby(lobby))) return;
-                    if (admissionFailure != null) { ReportFailure(admissionFailure, false); return; }
-                    if (Accept(state, epoch, observationFailurePhase: CommandFailurePhase.Observation)) lobbyChanged(lobby);
+                    if (admissionFailure != null) { ReportFailure(admissionFailure, ClientFailurePhase.Observation, context); return; }
+                    if (Accept(state, epoch, observationFailurePhase: ClientFailurePhase.Observation, failureContext: context)) lobbyChanged(lobby);
                 });
             } catch (Exception error) { Post(() => {
-                if (OwnsObservation()) ReportFailure(error, false);
+                if (OwnsObservation()) ReportFailure(error, ClientFailurePhase.Observation, context);
             }); }
             finally { Post(() => Polling = false); }
         });
@@ -442,13 +457,13 @@ public sealed partial class ClientSession
         if (finiteRevocations.Count > 0) { diagnostics.Decline(State, command, ClientDiagnosticFailure.FiniteRevocationPending); return false; }
         if (command is RestorePriorityAbility restore) activeSetting = restore;
         var initial = State!;
-        Run(async epoch => {
-            var exchange = new CommandExchange(connection, diagnostics);
-            var attempt = diagnostics.Begin(initial, command, ClientDiagnosticOrigin.Direct, epoch);
+        Run(async context => {
+            var exchange = new CommandExchange(connection, context, diagnostics);
+            var attempt = diagnostics.Begin(initial, command, ClientDiagnosticOrigin.Direct, context.Epoch!.Value);
             await exchange.ExecuteAsync(command, attempt);
             var state = await exchange.ObserveAsync(initial, attempt);
             var phase = exchange.ObservationFailurePhase;
-            Post(() => Accept(state, epoch, commandObservation: true, observationFailurePhase: phase));
+            Post(() => Accept(state, context.Epoch!.Value, commandObservation: true, observationFailurePhase: phase, failureContext: context));
         });
         return true;
     }
@@ -498,14 +513,14 @@ public sealed partial class ClientSession
         if (finiteRevocations.Count > 0) return false;
         finiteIntent = nextFiniteIntent;
         var cancellation = advancing = new CancellationTokenSource();
-        Run(async epoch => {
+        Run(async context => {
             try {
-                advance.SetOperationEpoch(epoch);
+                advance.SetOperationContext(context);
                 GameSnapshot? lastPosted = initial;
                 void Observed(GameSnapshot state) {
                     lastPosted = state;
                     var phase = advance.ObservationFailurePhase;
-                    Post(() => Accept(state, epoch, commandObservation: true, observationFailurePhase: phase));
+                    Post(() => Accept(state, context.Epoch!.Value, commandObservation: true, observationFailurePhase: phase, failureContext: context));
                 }
                 var state = await operation(initial, cancellation.Token, streamObservations ? Observed : null);
                 // Generated sealed-record equality compares the complete stored
@@ -513,7 +528,7 @@ public sealed partial class ClientSession
                 if (!advance.SuppressFinalObservation && !Equals(lastPosted, state))
                 {
                     var phase = advance.ObservationFailurePhase;
-                    Post(() => Accept(state, epoch, commandObservation: true, observationFailurePhase: phase));
+                    Post(() => Accept(state, context.Epoch!.Value, commandObservation: true, observationFailurePhase: phase, failureContext: context));
                 }
             } finally {
                 Post(() => { if (advancing == cancellation) advancing = null; cancellation.Dispose(); });
@@ -521,28 +536,20 @@ public sealed partial class ClientSession
         });
         return true;
     }
-    private void ReportFailure(Exception error, bool command)
+    private void ReportFailure(Exception error, ClientFailurePhase phase, ClientFailureContext context)
     {
-        var phase = (error as CommandExchangeException)?.Phase;
-        if (error is CommandExchangeException exchange) error = exchange.InnerException!;
-        // Only the Execute phase can establish a definite rejection. A read
-        // after an accepted dispatch, or a partially committed batch, cannot.
-        bool rejected = phase == CommandFailurePhase.DispatchRejected
-            || phase == null && command && error is EngineCommandRejectedException;
-        if (phase != null) command = phase != CommandFailurePhase.Observation;
+        var failure = OperationFailure(error, phase, context);
         StopFiniteIntent();
         ClearAllOptionalPaymentPolicies();
         pendingManualCommand = null;
-        LastFailureWasCommand = command;
-        if (State != null || finiteRevocations.Count > 0 || priorityRevocations.Count > 0) {
-            CancelAdvance();
-            if (!rejected) {
-                recoveryRequired = true; UncertainCommand |= command;
-                LastConnectionError = error.Message;
-            }
-        }
-        Failed?.Invoke(error);
+        bool reconcile = State != null || finiteRevocations.Count > 0 || priorityRevocations.Count > 0;
+        if (reconcile) CancelAdvance();
+        recovery = recovery.Fail(failure, reconcile);
+        Failed?.Invoke(failure);
     }
+    private static ClientOperationFailure OperationFailure(Exception error, ClientFailurePhase phase, ClientFailureContext context)
+        => error is CommandExchangeException exchange
+            ? new(exchange.Phase, exchange.Context, exchange.InnerException!) : new(phase, context, error);
     private static SourceActionContext? CurrentSourceContext(GameSnapshot? state, string key)
     {
         if (state is not { Decision: { } decision } || key.Length == 0) return null;
@@ -559,8 +566,9 @@ public sealed partial class ClientSession
         StopFiniteIntent(); CancelAdvance(); SourceActions.Close(); History.Close(); pendingSettings.Clear();
         pendingManualCommand = null;
         lock (observationGate) { Closed = true; RevokeObservationIngress(); BeginCommand(); }
+        var context = ClientFailureContext.Capture(replica.Epoch, State);
         WakeQueuedWorkWaiters();
-        commandTask = RevokeAtCloseAsync(commandTask, finiteRevocations.Values.ToArray());
-        commandTask = RevokePriorityAtCloseAsync(commandTask, priorityRevocations.Values.ToArray());
+        commandTask = RevokeAtCloseAsync(commandTask, finiteRevocations.Values.ToArray(), context);
+        commandTask = RevokePriorityAtCloseAsync(commandTask, priorityRevocations.Values.ToArray(), context);
     }
 }

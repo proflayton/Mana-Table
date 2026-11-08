@@ -152,7 +152,7 @@ internal static partial class OwnedDecisionObservationProtocolProbe
         await engine.InitializeAsync();
         // No diagnostic listener: command-phase safety cannot depend on optional evidence.
         var client = new ClientSession(engine);
-        var failures = new List<Exception>(); client.Failed += failures.Add;
+        var failures = new List<ClientOperationFailure>(); client.Failed += failures.Add;
         try {
             client.Poll(false, _ => { });
             await WaitFor(directory, () => { client.Pump(); return !client.Polling && client.State != null; }, "initial readback owner");
@@ -160,7 +160,8 @@ internal static partial class OwnedDecisionObservationProtocolProbe
             var command = new PassPriority(first.Id, first.Decision!.Id);
             check(client.Submit(command), "The actual child admits a normal command before its separate readback is rejected");
             await WaitFor(directory, () => { client.Pump(); return !client.Busy; }, "acknowledged command with rejected readback");
-            check(failures is [EngineCommandRejectedException] && client.UncertainCommand && client.NeedsRecovery
+            check(failures is [{ Phase: ClientFailurePhase.ReadbackUnknown, Cause: EngineCommandRejectedException }]
+                    && client.UncertainCommand && client.NeedsRecovery
                     && client.LastFailureWasCommand && ReferenceEquals(client.State, first)
                     && Count(directory, "matchAction") == 1 && Count(directory, "matchState") == 2,
                 "A successful command ACK followed by rejected ordinary readback stays uncertain and preserves the anchor without diagnostics");

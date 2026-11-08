@@ -214,7 +214,7 @@ internal static class ExternalObservationRegression
                     : initial with { ViewerId = 1, DecisionOwnerId = 1, Revision = 2 };
                 var connection = new Connection(foreign);
                 var session = new ClientSession(connection); session.Accept(initial);
-                Exception? failure = null; session.Failed += error => failure = error;
+                Exception? failure = null; session.Failed += error => failure = error.Cause;
                 if (operation == "poll") session.Poll(false, _ => throw new InvalidOperationException("A foreign poll must not publish."));
                 else check(operation == "automatic" ? session.Advance(_ => true, (_, _) => false)
                     : session.Submit(new PassPriority(initial.Id, initial.Decision.Id)),

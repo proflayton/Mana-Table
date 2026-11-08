@@ -1311,6 +1311,26 @@ Only pre-commit contract failures enter this phase-aware recovery path; public
 direct acceptance and post-commit presentation callback exceptions keep their
 existing explicit failure behavior.
 
+Session failure notifications preserve that phase as `ClientOperationFailure`,
+alongside the diagnostic cause and the epoch, audience and decision context
+captured when the operation starts. Consumers must not reconstruct dispatch
+knowledge from the cause's exception type. `ClientSession` owns the recovery
+state; its compatibility flags are projections of that state. The first
+`RecoveryOrigin` remains attached to an active reconciliation episode even if
+later reads fail, while `LastFailure` retains the latest reported fact. A fresh
+accepted observation clears active recovery without replaying a command or
+erasing the last diagnostic fact. Reset and completed retired-world cleanup
+retain their explicit clearing behavior; pending negative consent still follows
+its existing acknowledgement and ownership guards.
+
+The ordinary client, renderer and mixed-game driver consume this same contract.
+A definite rejection still retires its exact scripted proposal and requires a
+fresh current decision before another command. A command/readback failure cannot
+escape as the raw supersession cause and enter the campaign's benign discovery
+catch. The driver holds no independent permanent exception latch. Failure logs
+retain the phase and captured context; a supersession catch count alone does
+not establish a count of provider RPCs or publication changes.
+
 `IOwnedDecisionObservations` is the corresponding narrow on-demand read port for
 an ordinary connection. The provider chooses its bound audience; the caller
 cannot name a player. Java shares the immutable fenced publication builder with

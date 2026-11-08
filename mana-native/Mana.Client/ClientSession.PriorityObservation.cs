@@ -31,11 +31,12 @@ public sealed partial class ClientSession
         if (observation.Registered && observation.PublicActivitySequence - observation.AcknowledgedPublicActivitySequence < 16 && !waiting) return;
         var command = new AcknowledgePriorityObservation(current.Id, observation.BoardRevision, observation.PublicActivitySequence);
         long epoch = replica.Epoch, accepted = acceptedObservationVersion;
+        var context = ClientFailureContext.Capture(epoch, current);
         priorityObservationInFlight = true;
         _ = Task.Run(async () => {
             GameSnapshot? next = null; Exception? failure = null;
             try {
-                var exchange = new CommandExchange(connection);
+                var exchange = new CommandExchange(connection, context);
                 await exchange.ExecuteAsync(command);
                 next = await exchange.ObserveAsync(current);
             } catch (Exception error) { failure = error; }
@@ -50,7 +51,7 @@ public sealed partial class ClientSession
                     priorityObservationRetryAt = time.GetUtcNow() + TimeSpan.FromSeconds(1);
                     return;
                 }
-                Accept(next, epoch, observationFailurePhase: CommandFailurePhase.Observation);
+                Accept(next, epoch, observationFailurePhase: ClientFailurePhase.Observation, failureContext: context);
             });
         });
     }

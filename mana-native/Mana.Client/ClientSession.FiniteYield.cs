@@ -63,12 +63,12 @@ public sealed partial class ClientSession
     private void RecoverRetiredConsentCleanup(long epoch)
     {
         if (epoch != replica.Epoch || State != null || finiteRevocations.Count != 0 || priorityRevocations.Count != 0
-            || !recoveryRequired || !UncertainCommand || !LastFailureWasCommand) return;
+            || recovery.State != ClientRecoveryState.CommandUncertain) return;
         // Explicit work observed every outstanding negative acknowledgement.
         // Retired gameplay stays retired; no snapshot or affirmative input is
         // recovered, and a live game's uncertainty cannot use this path.
-        recoveryRequired = UncertainCommand = LastFailureWasCommand = false;
-        LastConnectionError = "";
+        recovery = recovery.Reconciled() with { LastFailure = null };
+        LastCleanupFailure = null;
         Recovered?.Invoke();
     }
     private void ReconcileFiniteYield(GameSnapshot? state, bool recovered)
@@ -90,13 +90,13 @@ public sealed partial class ClientSession
     {
         if (Busy || Polling || Closed || NeedsRecovery || finiteRevocations.Count == 0) return;
         var pending = finiteRevocations.Values.First();
-        Run(async epoch => {
-            var next = await ObserveFiniteRevocationAsync(pending);
+        Run(async context => {
+            var next = await ObserveFiniteRevocationAsync(pending, context);
             bool remains = RemainsActive(next, pending.Command);
             if (remains && time.GetUtcNow() - pending.Started >= TimeSpan.FromSeconds(5))
                 throw new IOException("The finite-yield revocation has not completed.");
             Post(() => {
-                if (epoch != replica.Epoch) return;
+                if (context.Epoch != replica.Epoch) return;
                 if (!remains) {
                     RecordFiniteRevocation(next, pending.Command);
                     if (finiteIntent is FiniteResolutionIntent finite) finite.AcknowledgeServerRevocation(next, pending.Command);
@@ -105,18 +105,18 @@ public sealed partial class ClientSession
                 // Reset/close must never restore a historical game just to
                 // acknowledge withdrawing its consent.
                 if (State is { } current && current.Id == next.Id && current.ViewerId == next.ViewerId)
-                    Accept(next, epoch);
+                    Accept(next, context.Epoch!.Value, failureContext: context);
             });
         });
     }
 
-    private async Task<GameSnapshot> ObserveFiniteRevocationAsync(PendingFiniteRevoke pending)
+    private async Task<GameSnapshot> ObserveFiniteRevocationAsync(PendingFiniteRevoke pending, ClientFailureContext context)
     {
-        var exchange = new CommandExchange(connection, commandSubmitted: pending.Sent);
+        var exchange = new CommandExchange(connection, context, commandSubmitted: pending.Sent);
         if (!pending.Sent) {
             pending.Sent = true; pending.Started = time.GetUtcNow();
             try { await exchange.ExecuteAsync(pending.Command); }
-            catch (CommandExchangeException error) when (error.Phase == CommandFailurePhase.DispatchRejected) {
+            catch (CommandExchangeException error) when (error.Phase == ClientFailurePhase.DispatchRejected) {
                 // A prior grant may already be terminal/replaced. Rejection
                 // itself proves nothing; reconcile the actual advertisement.
             }
@@ -142,7 +142,7 @@ public sealed partial class ClientSession
         => state.Id == command.GameId && state.FiniteStackYield is { Status: FiniteStackYieldStatus.Active } grant
             && grant.GrantId == command.GrantId;
 
-    private async Task RevokeAtCloseAsync(Task prior, IReadOnlyList<PendingFiniteRevoke> pending)
+    private async Task RevokeAtCloseAsync(Task prior, IReadOnlyList<PendingFiniteRevoke> pending, ClientFailureContext context)
     {
         // The old command has already been sent: finish its Execute/Observe
         // before withdrawing consent on the same connection. No second lane.
@@ -152,15 +152,15 @@ public sealed partial class ClientSession
                 if (item.Sent) {
                     // An earlier send may have committed without its ACK.
                     // Reobserve first; retry only its exact still-active grant.
-                    var observed = await ObserveFiniteRevocationAsync(item);
+                    var observed = await ObserveFiniteRevocationAsync(item, context);
                     if (!RemainsActive(observed, item.Command)) continue;
                     item.Sent = false;
                 }
-                var next = await ObserveFiniteRevocationAsync(item);
+                var next = await ObserveFiniteRevocationAsync(item, context);
                 if (RemainsActive(next, item.Command))
                     throw new IOException("The finite-yield revocation was not acknowledged before closing.");
             }
-            catch (Exception error) { LastConnectionError = error.Message; }
+            catch (Exception error) { LastCleanupFailure ??= OperationFailure(error, ClientFailurePhase.DispatchUnknown, context); }
         }
         // Best effort shutdown is not acknowledgement. The provider also owns
         // clearing the seat's grant when its transport generation disconnects.

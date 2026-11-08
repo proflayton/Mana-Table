@@ -539,7 +539,6 @@ internal static class PolledFanoutEngineJourney
         internal int Publications, PollCallbacks;
         internal volatile bool RetiredPaymentRejected;
         private int paymentProbePaused;
-        private readonly ConcurrentQueue<Exception> failures = new();
         private GameSnapshot? prior;
         private long nextPoll;
         private (string Game, long Revision, string Decision)? handed;
@@ -552,7 +551,6 @@ internal static class PolledFanoutEngineJourney
                     payment?.OptionalPaymentSupport?.Availability == OptionalManaPaymentAvailability.Unpayable));
             } };
             Client = new(Port, engine, sourceActions: new SourcePort(engine, SourceErrors, SourceTrace));
-            Client.Failed += failures.Enqueue;
             Client.Changed += (_, state) => {
                 if (state == null) { if (prior != null) throw new InvalidDataException("The ordinary fanout viewer lost its match."); return; }
                 if (prior != null && (state.Id != prior.Id || state.ViewerId != prior.ViewerId
@@ -567,7 +565,7 @@ internal static class PolledFanoutEngineJourney
         }
         internal void RequireHealthy()
         {
-            if (failures.TryPeek(out var error)) ExceptionDispatchInfo.Capture(error).Throw();
+            if ((Client.RecoveryOrigin ?? Client.LastFailure) is { } failure) throw new ClientOperationFailureException(failure);
             if (Client.UncertainCommand || Client.NeedsRecovery) throw new InvalidDataException("The fanout client entered uncertainty or recovery.");
         }
         internal void Poll()

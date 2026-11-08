@@ -643,6 +643,19 @@ The owner acknowledgement validates continuation without publishing every
 passing frame; the existing `AdvanceRegression` keeps its one-presentation-
 checkpoint contract. Hold publishes its already-sent result once; Reset and unpumped Close
 release the retired wait and retain the exact serialized negative grant cleanup.
+`RecoveryRegression` also injects the same exception during discovery, dispatch
+and accepted-command readback. It verifies the typed notification, captured
+operation context, first recovery cause, later failure facts and reconciliation
+without command replay. Held reads exercise reset and audience retirement. The
+early notification probe can run against the previous client assembly and must
+fail at the lost-phase behavioral assertion, before tests using the new types.
+`PolledFullGameContractChecks` exercises the real two-owner campaign boundary:
+an accepted command followed by a failed readback must surface a typed session
+failure instead of repeatedly entering the benign discovery catch. A genuine
+retired discovery remains noncommitting, and definite rejection still requires
+a freshly observed decision. These controlled checks use no rules RNG or full
+game reruns; full-game release qualification remains separate.
+
 `DecisionAdvance` defaults to `TimeProvider.System` and the same350 ms /
 32-command slice. The immediate four-window fixture supplies a controlled
 monotonic clock; explicit349/350 ms checks verify exact prefix return and fresh

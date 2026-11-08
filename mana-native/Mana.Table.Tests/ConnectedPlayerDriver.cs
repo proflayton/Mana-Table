@@ -19,6 +19,14 @@ internal sealed record ConnectedPlayerProgressEvidence(long TimestampFrequency, 
     public string Scope => "Bounded scripted-owner authority wait; acceptance and a newer authority stamp do not prove a rules consequence or natural completion.";
 }
 
+// A session failure is not a discovery result. Keep the complete operation
+// context even when its diagnostic cause is a superseded-observation signal.
+internal sealed class ClientOperationFailureException(ClientOperationFailure failure)
+    : IOException(failure.ToString(), failure.Cause)
+{
+    internal ClientOperationFailure Failure { get; } = failure;
+}
+
 // Test driver for an ordinary connected player. It never receives the host's
 // automated-seat port. The same policy is used to exercise decisions, not to
 // claim that a scripted player supplies human UX acceptance.
@@ -46,7 +54,6 @@ internal sealed class ConnectedPlayerDriver : IDisposable
     private readonly AiCausalHistoryReader history = new();
     private AiSeatSession? policy;
     private AiDecisionStamp? rejected;
-    private Exception? failure;
     private AutomatedSeatObservation? proposal;
     private GameSnapshot? queried;
     private AiDecisionStamp? retired;
@@ -128,7 +135,6 @@ internal sealed class ConnectedPlayerDriver : IDisposable
         client = mode == MixedGameDriveMode.PolledBackground
             ? new(connection, setup, clock: operationTime, sourceActions: sources)
             : new(connection, clock: operationTime, sourceActions: sources, observationDelivery: ObservationDeliveryMode.External);
-        client.Failed += error => failure = error;
         if (mode == MixedGameDriveMode.PolledBackground) client.Changed += (previous, current) => {
             if (passing == ConnectedPlayerPassingMode.ServerAuto) {
                 attention.Observe(current);
@@ -266,9 +272,11 @@ internal sealed class ConnectedPlayerDriver : IDisposable
 
     private void RequireHealthy()
     {
-        if (failure != null) throw failure;
+        if (client.RecoveryOrigin is { } active) throw new ClientOperationFailureException(active);
         if (client.NeedsRecovery || client.UncertainCommand)
             throw new InvalidDataException("A polled campaign player entered recovery or command uncertainty.");
+        if (client.LastFailure is { Phase: not ClientFailurePhase.DispatchRejected } failure)
+            throw new ClientOperationFailureException(failure);
     }
 
     private void ObserveAcceptedAuthority(AiDecisionFrame frame)
@@ -398,6 +406,7 @@ internal sealed class ConnectedPlayerDriver : IDisposable
         if (policy.TakeCommand() is not { } ticket) return;
         bool recorded = false;
         bool submitted = false;
+        var previousFailure = client.LastFailure;
         try {
             if (ticket.Command is UseOfferedAction offered) {
                 var card = CardViews.FindActionSource(state, offered.Card)?.Card
@@ -416,7 +425,7 @@ internal sealed class ConnectedPlayerDriver : IDisposable
                 if (client.SourceActions.View.Status != SourceActionStatus.Ready)
                     throw new EngineCommandRejectedException("The source query did not retain current authority.");
             }
-            failure = null; connection.Expect(ticket.Command);
+            connection.Expect(ticket.Command);
             if (passing == ConnectedPlayerPassingMode.ServerAuto) StopQuiet();
             if (!client.Submit(ticket.Command))
                 throw new EngineCommandRejectedException("The connected player's client declined the command.");
@@ -450,9 +459,21 @@ internal sealed class ConnectedPlayerDriver : IDisposable
                 await history.DrainOwnedAsync(ownedHistory, new(observation.State, observation.Domain, observation.Semantics),
                     evidence.QualificationEvidence, force: true);
             }
-            if (failure != null) throw failure;
+            if (client.LastFailure is { } failure && !ReferenceEquals(failure, previousFailure))
+                throw new ClientOperationFailureException(failure);
             if (!connection.Accepted) throw new IOException("The player's command has no known provider receipt.");
+        } catch (ClientOperationFailureException error) when (!recorded && error.Failure.Phase == ClientFailurePhase.DispatchRejected) {
+            Reject(error);
         } catch (EngineCommandRejectedException error) when (!recorded) {
+            Reject(error);
+        } catch {
+            if (!recorded) policy.Report(ticket, mode == MixedGameDriveMode.PolledBackground && !submitted
+                ? AiExecutionReceipt.Rejected : AiExecutionReceipt.Unknown);
+            throw;
+        }
+
+        void Reject(Exception error)
+        {
             if (mode == MixedGameDriveMode.PolledBackground && !submitted) {
                 policy.Report(ticket, AiExecutionReceipt.Rejected);
                 throw new InvalidDataException("The ordinary client declined a current proposed command before provider dispatch.", error);
@@ -460,13 +481,10 @@ internal sealed class ConnectedPlayerDriver : IDisposable
             evidence.Receipt(observation, ticket.Command, false, error.GetType().Name);
             policy.Report(ticket, AiExecutionReceipt.Rejected); rejected = ticket.Stamp;
             if (mode == MixedGameDriveMode.PolledBackground && !client.NeedsRecovery && !client.UncertainCommand) {
-                failure = null; // A definite dispatch rejection still requires a newly admitted observation.
+                // The session keeps its typed rejection fact. Only a fresh
+                // ordinary owner can replace this rejected proposal.
                 proposal = null;
             }
-        } catch {
-            if (!recorded) policy.Report(ticket, mode == MixedGameDriveMode.PolledBackground && !submitted
-                ? AiExecutionReceipt.Rejected : AiExecutionReceipt.Unknown);
-            throw;
         }
     }
 

@@ -160,10 +160,15 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
         var until = DateTime.UtcNow.AddSeconds(45);
         IMatchConnection[] seats = [view.Services.Match, .. guests];
         while (DateTime.UtcNow < until) {
-            openingViews = await Task.WhenAll(seats.Select(seat => seat.ObserveAsync()));
+            var observed = await ObserveOpeningViewsAsync(seats);
+            openingViews = observed.Views;
             if (openingViews.FirstOrDefault(state => state?.Status == "error") is { } failed)
                 throw new InvalidOperationException(failed.Error);
             firstMainObserved |= openingViews.Any(state => state?.PhaseKey == "MAIN1");
+            // A retired discovery read has no current input. Still finish the
+            // other audience reads, but grant no commands from a partial round.
+            // The original 45-second deadline and observation cadence apply.
+            if (!observed.Complete) { await Task.Delay(30); continue; }
             if (firstMainObserved) {
                 // A phase can publish before all private views and its input.
                 // Stop sending passes as soon as any seat reaches main; retain
@@ -198,6 +203,17 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
                 state.PriorityPlayerId, state.DecisionOwnerId, state.ActionClass,
                 decision = state.Decision == null ? null : new { state.Decision.Id, Payload = state.Decision.Payload.GetType().Name, CanConfirm = DecisionCommands.Confirm(state) != null }
             }) }));
+    }
+    internal static async Task<(GameSnapshot?[] Views, bool Complete)> ObserveOpeningViewsAsync(IMatchConnection[] seats)
+    {
+        var observed = await Task.WhenAll(seats.Select(Observe));
+        return (observed.Select(item => item.State).ToArray(), observed.All(item => !item.Retired));
+
+        static async Task<(GameSnapshot? State, bool Retired)> Observe(IMatchConnection seat)
+        {
+            try { return (await seat.ObserveAsync(), false); }
+            catch (EngineObservationSupersededException) { return (null, true); }
+        }
     }
     private static bool UsableFirstMain(GameSnapshot[] states)
     {

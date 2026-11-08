@@ -2,25 +2,25 @@ using Mana.Contracts;
 
 namespace Mana.Client;
 
-internal enum CommandFailurePhase { DispatchRejected, DispatchUnknown, Observation, ReadbackUnknown }
 internal enum ObservationAdmission { Validated, Cancelled, Retired }
 
 // Carries the actual failed phase to the session owner. The original exception
 // remains the reported cause; its type alone cannot describe a whole exchange.
-internal sealed class CommandExchangeException(CommandFailurePhase phase, Exception cause)
+internal sealed class CommandExchangeException(ClientFailurePhase phase, ClientFailureContext context, Exception cause)
     : IOException("The current command exchange failed.", cause)
 {
-    internal CommandFailurePhase Phase { get; } = phase;
+    internal ClientFailurePhase Phase { get; } = phase;
+    internal ClientFailureContext Context { get; } = context;
 }
 
 // One serial operation may contain several commands and locally validated
 // observations. Until it returns/publishes, an earlier successful dispatch must
 // not disappear merely because a later dispatch was definitely rejected.
-internal sealed class CommandExchange(IMatchConnection connection, ClientCommandDiagnostics? diagnostics = null,
+internal sealed class CommandExchange(IMatchConnection connection, ClientFailureContext context, ClientCommandDiagnostics? diagnostics = null,
     bool commandSubmitted = false)
 {
     private bool submitted = commandSubmitted;
-    internal CommandFailurePhase ObservationFailurePhase => submitted ? CommandFailurePhase.ReadbackUnknown : CommandFailurePhase.Observation;
+    internal ClientFailurePhase ObservationFailurePhase => submitted ? ClientFailurePhase.ReadbackUnknown : ClientFailurePhase.Observation;
 
     internal async Task ExecuteAsync(GameCommand command, ClientDiagnosticAttempt? attempt = null)
     {
@@ -30,7 +30,7 @@ internal sealed class CommandExchange(IMatchConnection connection, ClientCommand
             submitted = true;
         } catch (Exception error) {
             throw new CommandExchangeException(!submitted && error is EngineCommandRejectedException
-                ? CommandFailurePhase.DispatchRejected : CommandFailurePhase.DispatchUnknown, error);
+                ? ClientFailurePhase.DispatchRejected : ClientFailurePhase.DispatchUnknown, context, error);
         }
     }
 
@@ -50,7 +50,7 @@ internal sealed class CommandExchange(IMatchConnection connection, ClientCommand
             validate?.Invoke(next);
             return next;
         } catch (Exception error) {
-            throw new CommandExchangeException(ObservationFailurePhase, error);
+            throw new CommandExchangeException(ObservationFailurePhase, context, error);
         }
     }
 }
