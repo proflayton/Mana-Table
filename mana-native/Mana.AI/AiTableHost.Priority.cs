@@ -51,6 +51,7 @@ public sealed partial class AiTableHost
                 .Take(Math.Max(0, priorityOwners.Count - 64)).ToArray()) priorityOwners.Remove(stale);
         }
         try {
+            if (owner.Retired) return PriorityWork.Reserved;
             owner.Sequence = Math.Max(owner.Sequence, frame.Sequence);
             if (owner.GrantAccepted && frame.GrantId == owner.GrantId) {
                 if (frame.AutomaticPasses < owner.ObservedGrantPasses)
@@ -67,7 +68,18 @@ public sealed partial class AiTableHost
             if (active && (!optedIn || !playable || !paced || credit.Overflowed || owner.Legacy
                 || !signed || !owner.GrantAccepted || frame.GrantId != owner.GrantId))
                 return await BeginPriorityWithdrawalAsync(owner, frame.Sequence, controls, cancellation).ConfigureAwait(false);
-            if (!playable) return PriorityWork.Policy;
+            if (!playable) {
+                // Losing the ability to act does not end a registered table
+                // observer's delivery lifetime. Retire active consent first;
+                // only another owned read may acknowledge the ongoing table.
+                if ((state.Status is "playing" or "resolving") && state.Viewer is { Eliminated: true }
+                    && credit.Registered && !credit.Overflowed && signed && paced
+                    && NeedsPriorityAcknowledgement(owner, state, credit)) {
+                    var result = await AcknowledgePriorityAsync(owner, state, credit, controls, cancellation).ConfigureAwait(false);
+                    return result is AutomatedPriorityControlResult.Accepted ? PriorityWork.Refreshed : PriorityWork.Reserved;
+                }
+                return PriorityWork.Policy;
+            }
             if (!paced) return PriorityWork.Reserved;
             if (optedIn && credit.Overflowed) throw new PriorityEvidenceOverflowException();
             if (!optedIn || owner.Legacy) return PriorityWork.Policy;
@@ -92,15 +104,9 @@ public sealed partial class AiTableHost
             }
             bool priority = state.Status == "playing" && state.Turn > 0
                 && state.Decision?.Payload is PriorityPayload { Pass.Enabled: true };
-            if ((active || priority) && (!credit.Registered
-                || owner.AcknowledgedStackVersion != state.StackInterruptionVersion
-                || credit.PublicActivitySequence - credit.AcknowledgedPublicActivitySequence >= 16)) {
-                var acknowledgement = new AutomatedPriorityControl.Acknowledge(state.Id, credit.BoardRevision, credit.PublicActivitySequence);
-                var result = await SendPriorityControlAsync(owner, controls, acknowledgement, cancellation).ConfigureAwait(false);
+            if ((active || priority) && NeedsPriorityAcknowledgement(owner, state, credit)) {
+                var result = await AcknowledgePriorityAsync(owner, state, credit, controls, cancellation).ConfigureAwait(false);
                 if (result is AutomatedPriorityControlResult.Accepted accepted) {
-                    owner.Acknowledgements++; owner.AcknowledgedBoard = credit.BoardRevision;
-                    owner.AcknowledgedActivity = credit.PublicActivitySequence;
-                    owner.AcknowledgedStackVersion = state.StackInterruptionVersion;
                     // The receipt already confirms the ACK. Only an unchanged
                     // exact priority input can chain a grant, never a policy
                     // evaluation or a command against this earlier rich frame.
@@ -117,6 +123,23 @@ public sealed partial class AiTableHost
             if (!priority || owner.AttemptRevision == state.Revision) return PriorityWork.Policy;
             return await BeginPriorityGrantAsync(owner, state, controls, cancellation).ConfigureAwait(false);
         } finally { PublishPriorityEvidence(); }
+    }
+
+    private static bool NeedsPriorityAcknowledgement(PriorityOwner owner, GameSnapshot state, PriorityObservationState credit)
+        => !credit.Registered || owner.AcknowledgedStackVersion != state.StackInterruptionVersion
+            || credit.PublicActivitySequence - credit.AcknowledgedPublicActivitySequence >= 16;
+
+    private async Task<AutomatedPriorityControlResult> AcknowledgePriorityAsync(PriorityOwner owner, GameSnapshot state,
+        PriorityObservationState credit, IAutomatedPriorityContinuation controls, CancellationToken cancellation)
+    {
+        var result = await SendPriorityControlAsync(owner, controls,
+            new AutomatedPriorityControl.Acknowledge(state.Id, credit.BoardRevision, credit.PublicActivitySequence), cancellation).ConfigureAwait(false);
+        if (result is AutomatedPriorityControlResult.Accepted) {
+            owner.Acknowledgements++; owner.AcknowledgedBoard = credit.BoardRevision;
+            owner.AcknowledgedActivity = credit.PublicActivitySequence;
+            owner.AcknowledgedStackVersion = state.StackInterruptionVersion;
+        }
+        return result;
     }
 
     // At most ACK -> grant -> negative withdrawal in one observed cycle. Every

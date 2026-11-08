@@ -210,7 +210,7 @@ internal static class MixedGameCampaign
                 }
                 evidence.DrainPending();
                 if (mode == MixedGameDriveMode.PolledBackground) await provider.DrainHistoryAsync();
-                publicCohorts ??= new(last.Select(item => item.SeatId));
+                publicCohorts ??= new(last.Select(item => item.SeatId), preparation: evidence.PublicProjectionPreparation);
                 foreach (var item in last) {
                     var frame = item.State;
                     var observation = publicCohorts.Observe(item.SeatId, frame);
@@ -236,7 +236,8 @@ internal static class MixedGameCampaign
                     verified = last.All(item => item.State.Status == "finished"
                         && item.State.Outcome != null
                         && item.State.BoardRevision == state.BoardRevision
-                        && ForgePublicProjectionFacts.Capture(item.State) == ForgePublicProjectionFacts.Capture(state));
+                        && (evidence.PublicProjectionPreparation?.Facts(item.State) ?? ForgePublicProjectionFacts.Capture(item.State))
+                            == (evidence.PublicProjectionPreparation?.Facts(state) ?? ForgePublicProjectionFacts.Capture(state)));
                     if (verified) foreach (var item in last) MatchOutcomeFacts.Validate(item.State);
                     if (verified && mode == MixedGameDriveMode.PolledBackground
                         && (provider.Executing != 0 || provider.PriorityControlsExecuting != 0)) verified = false;
@@ -298,6 +299,7 @@ internal static class MixedGameCampaign
                 await SaveAsync(Path.Combine(paths.Profile, "private-owner-teardown.json"), new {
                     cumulativeProviderAcceptances = provider.AcceptedBySeat, provider.Executing, provider.PriorityControlsExecuting,
                     automatedPriorityContinuations = finalPriorityContinuations,
+                    publicProjectionPreparation = evidence.PublicProjectionPreparation?.Evidence,
                     orderedEvidence = evidence.HandoffStatus,
                     host = new { host.ClientAdmissions, host.ProviderAcceptances },
                     guest = new { guest.ClientAdmissions, guest.ProviderAcceptances }

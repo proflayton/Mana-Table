@@ -198,13 +198,16 @@ internal static class AiWholeSeatEngineCheck
         }, new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    internal static bool ComparePublicProjection(GameSnapshot spectator, GameSnapshot seat, string profile)
+    internal static bool ComparePublicProjection(GameSnapshot spectator, GameSnapshot seat, string profile,
+        PublicProjectionPreparation? preparation = null)
     {
         if (string.IsNullOrEmpty(spectator.Id) || spectator.Id != seat.Id || spectator.BoardRevision != seat.BoardRevision)
             throw new ArgumentException("Compare only observations from the same actual game and public board publication.");
-        string expected = ForgePublicProjectionFacts.Capture(spectator), actual = ForgePublicProjectionFacts.Capture(seat);
+        string expected = preparation?.Facts(spectator) ?? ForgePublicProjectionFacts.Capture(spectator),
+            actual = preparation?.Facts(seat) ?? ForgePublicProjectionFacts.Capture(seat);
         bool executionCorrelations = ForgePublicProjectionFacts.ExecutionCorrelationsAgree(
-            ForgePublicProjectionFacts.CaptureExecutionCorrelations(spectator), ForgePublicProjectionFacts.CaptureExecutionCorrelations(seat));
+            preparation?.ExecutionCorrelations(spectator) ?? ForgePublicProjectionFacts.CaptureExecutionCorrelations(spectator),
+            preparation?.ExecutionCorrelations(seat) ?? ForgePublicProjectionFacts.CaptureExecutionCorrelations(seat));
         if (expected != actual || !executionCorrelations) {
             string path = Path.Combine(profile, "whole-seat-ai-projection-mismatch.json");
             if (!File.Exists(path)) File.WriteAllText(path, JsonSerializer.Serialize(new {

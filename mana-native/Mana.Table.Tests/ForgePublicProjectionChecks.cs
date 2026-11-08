@@ -18,16 +18,18 @@ internal static class ForgePublicProjectionChecks
     internal sealed record FailureEvidence(bool Captured, bool EarlierFailureRetained, string? CaptureError,
         ImmutableArray<FailureScope> Scopes);
 
-    internal static int ValidateBatch(ImmutableArray<AutomatedSeatObservation> observations, string profile)
+    internal static int ValidateBatch(ImmutableArray<AutomatedSeatObservation> observations, string profile,
+        PublicProjectionPreparation? preparation = null)
     {
-        try { return ValidateBatchCore(observations, profile); }
+        try { return ValidateBatchCore(observations, profile, preparation); }
         catch (InvalidDataException error) {
             PreserveRejectedBatch(observations, profile, error);
             throw;
         }
     }
 
-    private static int ValidateBatchCore(ImmutableArray<AutomatedSeatObservation> observations, string profile)
+    private static int ValidateBatchCore(ImmutableArray<AutomatedSeatObservation> observations, string profile,
+        PublicProjectionPreparation? preparation)
     {
         foreach (var item in observations)
             foreach (var player in item.State.Players)
@@ -40,13 +42,13 @@ internal static class ForgePublicProjectionChecks
         int comparisons = 0;
         foreach (var group in observations.GroupBy(item => (item.State.Id, item.State.BoardRevision))) {
             var first = group.First().State;
-            var correlations = ForgePublicProjectionFacts.CaptureExecutionCorrelations(first);
+            var correlations = preparation?.ExecutionCorrelations(first) ?? ForgePublicProjectionFacts.CaptureExecutionCorrelations(first);
             if (!correlations.Valid) throw new InvalidDataException("Forge published invalid local stack execution references.");
             foreach (var item in group.Skip(1)) {
-                if (!AiWholeSeatEngineCheck.ComparePublicProjection(first, item.State, profile))
+                if (!AiWholeSeatEngineCheck.ComparePublicProjection(first, item.State, profile, preparation))
                     throw new InvalidDataException("Forge published inconsistent same-revision public occurrences across its automated audiences.");
                 correlations = ForgePublicProjectionFacts.MergeExecutionCorrelations(correlations,
-                    ForgePublicProjectionFacts.CaptureExecutionCorrelations(item.State))
+                    preparation?.ExecutionCorrelations(item.State) ?? ForgePublicProjectionFacts.CaptureExecutionCorrelations(item.State))
                     ?? throw new InvalidDataException("Forge audiences disclosed contradictory references for the same stack occurrence.");
                 comparisons++;
             }
@@ -183,6 +185,52 @@ internal static class ForgePublicProjectionChecks
             "An identity-free retired face cannot regain target-selection authority through its display flags");
         FailureCapture(profile, check, Enumerable.Range(0, 4).Select(seat =>
             MissingIdentity(Audience(seat, playerCount: 4), "playing", false)).ToImmutableArray(), [first, other]);
+        PreparedComparisons(profile, check, Enumerable.Range(0, 4).Select(seat => Audience(seat, playerCount: 4)).ToImmutableArray());
+    }
+
+    private static void PreparedComparisons(string profile, Action<bool, string> check, ImmutableArray<AutomatedSeatObservation> frames)
+    {
+        string directory = Directory.CreateDirectory(Path.Combine(profile, "prepared-public-projection")).FullName;
+        var preparation = new PublicProjectionPreparation(frames.Select(item => item.SeatId));
+        var cohorts = new MixedGamePublicCohorts(frames.Select(item => item.SeatId), preparation: preparation);
+        int comparisons = ValidateBatch(frames.Take(2).ToImmutableArray(), directory, preparation);
+        foreach (var item in frames.Take(2)) cohorts.Observe(item.SeatId, item.State);
+        File.WriteAllText(Path.Combine(directory, "two-frame-preparation-counts.json"), JsonSerializer.Serialize(preparation.Evidence));
+        check(comparisons == 1 && cohorts.Comparisons == 1 && cohorts.Evidence.ComparedFrames == 2
+                && preparation is { FactsPrepared: 2, CorrelationsPrepared: 2, RetainedFrames: 2 },
+            "Two same-board bot frames derive public facts and correlations once each across batch comparison and the ordinary cohort consumer");
+        foreach (var item in frames.Skip(2)) cohorts.Observe(item.SeatId, item.State);
+        bool terminalEqual = frames.All(item => preparation.Facts(item.State) == preparation.Facts(frames[0].State));
+        check(terminalEqual && cohorts.Comparisons == 3 && cohorts.FourAudienceCohorts == 1
+                && preparation is { FactsPrepared: 4, CorrelationsPrepared: 4, KnownAudienceSlots: 4, RetainedFrames: 4 },
+            "All four audience and terminal equality comparisons remain intact while prepared exact-frame values avoid repeated normalization");
+        var refreshed = frames[1].State with { Players = frames[1].State.Players.Select(player => player.Id != 1 ? player
+            : player with { Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with {
+                Cards = [new Card { Name = "PRIVATE-PREPARED-REFRESH-CANARY", VisualId = "own-private-refresh" }]
+            }).ToImmutableArray() }).ToImmutableArray() };
+        var refresh = cohorts.Observe(1, refreshed);
+        check(refresh.Compared && !refresh.Facts!.Contains("PRIVATE-PREPARED-REFRESH-CANARY", StringComparison.Ordinal)
+                && preparation is { FactsPrepared: 5, CorrelationsPrepared: 5 } && cohorts.Comparisons == 3,
+            "A private-hand-only refresh with identical revision headers rederives its public evidence without leaking its face or adding comparison credit");
+
+        var badState = refreshed with { Players = refreshed.Players.Select(player => player.Id == 0 ? player with { Life = 39 } : player).ToImmutableArray() };
+        var badBatch = ImmutableArray.Create(frames[0], frames[1] with { State = badState });
+        InvalidDataException? failure = null;
+        try { ValidateBatch(badBatch, directory, preparation); } catch (InvalidDataException error) { failure = error; }
+        string retainedPath = Path.Combine(directory, RejectedBatchFile);
+        byte[] firstFailure = File.ReadAllBytes(retainedPath);
+        using (var retained = JsonDocument.Parse(firstFailure))
+            check(failure != null && FindFailureEvidence(failure) is { Captured: true, EarlierFailureRetained: false }
+                    && JsonNode.DeepEquals(JsonNode.Parse(retained.RootElement.GetProperty("batch").GetRawText()), JsonSerializer.SerializeToNode(badBatch))
+                    && retained.RootElement.GetRawText().Contains("PRIVATE-PREPARED-REFRESH-CANARY", StringComparison.Ordinal),
+                "A previously prepared valid frame cannot hide a fresh same-header public contradiction or replace its exact private first-failure batch");
+        var laterBad = badBatch.SetItem(1, badBatch[1] with { State = badState with {
+            Players = badState.Players.Select(player => player.Id == 0 ? player with { Life = 38 } : player).ToImmutableArray() } });
+        InvalidDataException? laterFailure = null;
+        try { ValidateBatch(laterBad, directory, preparation); } catch (InvalidDataException error) { laterFailure = error; }
+        check(laterFailure != null && FindFailureEvidence(laterFailure) is { EarlierFailureRetained: true }
+                && File.ReadAllBytes(retainedPath).SequenceEqual(firstFailure),
+            "Replacing a preparation slot for another contradictory fresh object preserves the original raw rejected batch");
     }
 
     private static void FailureCapture(string profile, Action<bool, string> check,

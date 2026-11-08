@@ -30,6 +30,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
     private readonly List<object> timing = [];
     private readonly System.Diagnostics.Stopwatch diagnosticClock = System.Diagnostics.Stopwatch.StartNew();
     private int diagnosticFrames, diagnosticStartedSteps, diagnosticCompletedSteps;
+    private bool capturePixelCheckStarted;
     public string? ExpectedClick => null;
     public bool ClickAccepted { get; set; }
     public MouseState ReadMouse() => mouse;
@@ -948,8 +949,11 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
     {
         var started = diagnosticClock.Elapsed.TotalSeconds;
         var watch = System.Diagnostics.Stopwatch.StartNew();
-        using (var output = File.Create(Path.Combine(view.Profile, name + ".png")))
-            view.Surface.SaveAsPng(output, view.Surface.Width, view.Surface.Height);
+        if (!capturePixelCheckStarted) {
+            capturePixelCheckStarted = true;
+            CapturePngChecks.RunGpu(view.GraphicsDevice, view.Profile, Check);
+        }
+        view.CaptureSurface(Path.Combine(view.Profile, name + ".png"));
         timing.Add(new { kind = "capture", name, view.Now, wallStarted = started,
             wallSeconds = watch.Elapsed.TotalSeconds, diagnosticFrames,
             diagnosticStartedSteps, diagnosticCompletedSteps, checks = checks.Count });

@@ -308,6 +308,124 @@ public class SyncTransportTest {
             release.countDown(); assertEquals(update.get(), read.get());
         } finally { release.countDown(); workers.shutdownNow(); }
     }
+    @Test(timeOut = 15000) public void fragmentedUnicodeAndCoalescedRequestsRetainFollowingFramesAndReplayIdentity() throws Exception {
+        var applied = new AtomicInteger();
+        try (var server = new SyncTransport.Server((seat, method, args) -> {
+            applied.incrementAndGet(); return Map.of("value", args.get("value").getAsString());
+        }, () -> 1)) {
+            int port = server.listen();
+            for (int chunk : new int[] { 1, 2, 7, 8192 }) {
+                String value = "\uD83E\uDD81\u00E9\u6C34".repeat(chunk == 8192 ? 2200 : 1);
+                String first = "{\"sequence\":1,\"method\":\"echo\",\"arguments\":{\"value\":\"" + value + "\"}}";
+                String second = "{\"sequence\":2,\"method\":\"echo\",\"arguments\":{\"value\":\"next\"}}";
+                byte[] batch = ("{\"version\":4}\n" + first + "\n" + first + "\n" + second + "\r\n")
+                        .getBytes(StandardCharsets.UTF_8);
+                try (var wire = new Wire(port)) {
+                    var output = wire.socket.getOutputStream();
+                    for (int offset = 0; offset < batch.length; offset += chunk)
+                        output.write(batch, offset, Math.min(chunk, batch.length - offset));
+                    output.flush();
+                    assertEquals(readReceipt(wire).get("version").getAsInt(), 4);
+                    var receipt = readReceipt(wire);
+                    assertEquals(receipt.getAsJsonObject("result").get("value").getAsString(), value);
+                    assertEquals(readReceipt(wire), receipt, "A coalesced exact retry retains its original receipt");
+                    var next = readReceipt(wire);
+                    assertEquals(next.get("sequence").getAsInt(), 2);
+                    assertEquals(next.getAsJsonObject("result").get("value").getAsString(), "next");
+                }
+            }
+            assertEquals(applied.get(), 8, "Framing and replay never repeat or drop an accepted handler");
+        }
+    }
+    @Test(timeOut = 10000) public void remoteReaderRetainsCoalescedHandshakeAndFollowingReceipts() throws Exception {
+        try (var listener = new java.net.ServerSocket(0)) {
+            var done = CompletableFuture.runAsync(() -> {
+                try (var socket = listener.accept();
+                     var input = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+                     var output = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))) {
+                    socket.setSoTimeout(3000);
+                    assertEquals(JsonParser.parseString(input.readLine()).getAsJsonObject().get("version").getAsInt(), 4);
+                    output.write("{\"version\":4,\"resume\":\"test\",\"seat\":1,\"capabilities\":[]}\n"
+                            + "{\"sequence\":1,\"result\":{\"value\":\"\uD83E\uDD81\u00E9\u6C34\"}}\n"
+                            + "{\"sequence\":2,\"result\":{\"value\":\"next\"}}\r\n");
+                    output.flush();
+                    for (int sequence = 1; sequence <= 2; sequence++)
+                        assertEquals(JsonParser.parseString(input.readLine()).getAsJsonObject().get("sequence").getAsInt(), sequence);
+                } catch (IOException failure) { throw new CompletionException(failure); }
+            });
+            try (var remote = new SyncTransport.Remote("127.0.0.1:" + listener.getLocalPort())) {
+                assertEquals(remote.request("read", new JsonObject()), Map.of("value", "\uD83E\uDD81\u00E9\u6C34"));
+                assertEquals(remote.request("read", new JsonObject()), Map.of("value", "next"));
+            }
+            done.get(3, TimeUnit.SECONDS);
+        }
+    }
+    @Test(timeOut = 30000) public void inputFrameLimitCountsUtf16CharactersAndRejectsOneExtraBeforeApplying() throws Exception {
+        final int maximum = 8 * 1024 * 1024;
+        var applied = new AtomicInteger();
+        try (var server = new SyncTransport.Server((seat, method, args) -> {
+            applied.incrementAndGet(); return args.get("value").getAsString().length();
+        }, () -> 1)) {
+            int port = server.listen();
+            String prefix = "{\"sequence\":1,\"method\":\"read\",\"arguments\":{\"value\":\"";
+            String suffix = "\"}}";
+            int length = maximum - prefix.length() - suffix.length();
+            String command = prefix + "\u00E9".repeat(length) + suffix;
+            assertEquals(command.length(), maximum);
+            assertTrue(command.getBytes(StandardCharsets.UTF_8).length > maximum, "The bound remains characters rather than UTF8 bytes");
+            try (var wire = new Wire(port)) {
+                wire.socket.setSoTimeout(10000);
+                wire.exchange("{\"version\":4}");
+                wire.output.write(command); wire.output.write('\n'); wire.output.flush();
+                assertEquals(readReceipt(wire).get("result").getAsInt(), length);
+                assertEquals(wire.exchange("{\"sequence\":2,\"method\":\"read\",\"arguments\":{\"value\":\"x\"}}")
+                        .get("result").getAsInt(), 1, "The exact-limit newline leaves the next frame intact");
+            }
+            for (String suffixAfterLimit : List.of(" \n", "\r\n")) {
+                try (var wire = new Wire(port)) {
+                    wire.socket.setSoTimeout(10000);
+                    wire.exchange("{\"version\":4}");
+                    assertThrows(IOException.class, () -> {
+                        wire.output.write(command); wire.output.write(suffixAfterLimit); wire.output.flush();
+                        readReceipt(wire);
+                    });
+                }
+            }
+            assertEquals(applied.get(), 2, "An oversized request cannot acquire an accepted sequence or invoke its handler");
+        }
+    }
+    @Test(timeOut = 10000) public void incompleteAndMalformedFramesCannotReachTheHandler() throws Exception {
+        var applied = new AtomicInteger();
+        try (var server = new SyncTransport.Server((seat, method, args) -> applied.incrementAndGet(), () -> 1)) {
+            int port = server.listen();
+            for (String frame : List.of("{\"sequence\":1", "{broken\n", "\n")) {
+                try (var wire = new Wire(port)) {
+                    wire.exchange("{\"version\":4}");
+                    wire.output.write(frame); wire.output.flush(); wire.socket.shutdownOutput();
+                    assertNull(wire.input.readLine(), "EOF and invalid JSON end this connection before admission");
+                }
+            }
+            assertEquals(applied.get(), 0);
+        }
+    }
+    @Test(timeOut = 5000) public void anEndedPrivateFrameReaderKeepsReturningEofInsteadOfSpinning() throws Exception {
+        var type = Class.forName("forge.api.sync.SyncTransport$FrameReader");
+        var constructor = type.getDeclaredConstructor(Reader.class); constructor.setAccessible(true);
+        var next = type.getDeclaredMethod("next"); next.setAccessible(true);
+        try (var owner = (Closeable)constructor.newInstance(new StringReader("{}\n"))) {
+            assertEquals(next.invoke(owner), "{}");
+            for (int attempt = 0; attempt < 2; attempt++) {
+                var failure = expectThrows(java.lang.reflect.InvocationTargetException.class, () -> next.invoke(owner));
+                assertTrue(failure.getCause() instanceof EOFException);
+                assertEquals(failure.getCause().getMessage(), "Connection closed");
+            }
+        }
+    }
+    private static JsonObject readReceipt(Wire wire) throws IOException {
+        String line = wire.input.readLine();
+        if (line == null) throw new EOFException();
+        return JsonParser.parseString(line).getAsJsonObject();
+    }
     private static final class Wire implements AutoCloseable {
         final Socket socket; final BufferedReader input; final BufferedWriter output;
         Wire(int port) throws IOException { socket = new Socket("127.0.0.1", port); socket.setSoTimeout(3000); input = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8)); output = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8)); }

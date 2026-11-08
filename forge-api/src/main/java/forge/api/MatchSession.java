@@ -1267,7 +1267,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (action.equals("acknowledgePriorityObservation")) {
                 requireSession(request);
                 long board = finiteYieldVersion(request, "boardRevision"), sequence = finiteYieldVersion(request, "publicActivitySequence");
-                if (human.isExternallyAutomated() && (closed || human.getPlayer().hasLost() || game.isGameOver()))
+                // Loss retires action authority, not this connection's ongoing
+                // audience. A surviving table still needs its accepted delivery
+                // prefixes acknowledged without granting another rules input.
+                if (human.isExternallyAutomated() && (closed || game.isGameOver()))
                     throw new AutomatedPriorityControlRetired();
                 if (priorityObserverOverflowed()) throw new IllegalArgumentException("Priority observation overflowed; reload the table before enabling Auto");
                 boolean registering = !priorityObservation.registered();

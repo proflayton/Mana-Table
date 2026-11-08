@@ -107,6 +107,10 @@ replay. Its owner exposes only detached local values or framed writes, preservin
 caller mutation isolation without cloning the retained tree. Sequence, connection
 generation and revocation checks still precede replay. The existing network
 ceiling remains 8,388,608 UTF-16 characters, checked at the same read/write boundary.
+Its connection-owned buffered reader retains characters after a newline for the
+next frame. Fragmented UTF-8, coalesced frames, trailing carriage returns,
+partial EOF and oversized frames keep their existing framing semantics; bulk
+reads do not replace the bound with an unbounded `readLine`.
 
 ### Tentative public plans: source candidate
 
@@ -571,6 +575,16 @@ seat cycle. Each control rechecks pacing. These receipts cannot enter gameplay
 scopes or policy observations; gameplay always needs a fresh owned rich read.
 The adapter keeps a separate metadata cursor anchored to that rich observation;
 late replies cannot replace a newer cursor or revive an advanced input.
+The optional `automated-priority-metadata-v1` capability makes that separation
+explicit on the private process wire. `automatedPriorityControl` accepts only
+the three closed continuation controls and returns a versioned metadata receipt
+from that action's exact committed audience publication. It carries no cards,
+action domain, timer or provider epoch. Native code supplies its captured process
+epoch and validates the closed receipt before reconciling consent. An unchanged
+priority certificate needs an active player, positive turn and exact current
+decision and priority owners. Older engines keep the existing rich
+`automatedAction` response and full snapshot decoder. Neither receipt path can
+install a policy observation or gameplay scope.
 `IAutomatedSimulation` supports explicit all-bot tables with a separate public,
 non-acting spectator. Live tables retain their human requirement. Forecasting,
 deeper deck planning and human evaluation of the policy remain future work.
@@ -1135,6 +1149,13 @@ gated by the actual game's presentation readiness. One optional metadata task
 does not set user-action Busy/Polling, consume inputs, reset clocks or create
 history/undo intent; stale results still obey the replica epoch and audience.
 The provider's decoded cache cannot mint this accepted-frame credit.
+Observation consumption follows the audience connection, independently of actor
+eligibility. An eliminated player who continues watching still acknowledges
+presented history so its delivery journal can release that prefix. Registered
+bot readers do the same after any outstanding consent is withdrawn and a fresh
+observation is accepted. Loss never permits another grant, policy answer or
+rules command. Closed/retired worlds, replay readers, unconsumed presentation
+and unpublished prefixes retain their existing refusal boundaries.
 
 `ClientSessionAuthority.ObserveOnly` is an explicit read-only composition for
 recorded projection replay. All immutable-frame validators remain active, while
@@ -1937,6 +1958,11 @@ MonoGame, GPU textures, sound, input sampling, letterboxing and captures.
 `TableApplication` composes the shared client session, screen navigation and input
 policy. Feature lifecycles have explicit owners; render partials consume their
 views rather than independently accepting asynchronous results.
+Capture reads stay on the graphics owner thread. `CapturePng` receives the
+complete owned CPU pixel buffer and writes bounded, lossless RGBA8 PNG data;
+it cannot access a texture, graphics device or game state. The window and probe
+share this encoding boundary without a temporary GPU upload, another readback,
+an asynchronous capture queue or a change to input/frame timing.
 
 Floating-mana hover captions derive from the currently accepted payment payload.
 A negative explanation requires an explicit own payer and usable-color set;
@@ -3194,6 +3220,10 @@ The worker policy's completion is not a presentation publication. An external
 pump can accept an earlier FIFO prefix after the worker has already stopped.
 GAME keeps the finite presentation reserved until the command lane's queued
 receipts and completion are accepted; explicit Take control remains immediate.
+Automatic retirement checks this boundary after evaluating continuation as well
+as when the policy was already ended. A policy can end during that evaluation;
+its result is then Continue, Await accepted publication, or Retire. Local
+negative fences still withdraw immediately rather than waiting on presentation.
 `FiniteResolutionProgressProjection` separately captures the queue and optional
 subset, then consumes only owner-accepted snapshots. It retains confirmed
 terminal outcomes across history eviction and rejects stale, foreign or changed

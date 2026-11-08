@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -51,8 +52,9 @@ public class AutomatedPriorityContinuationTest {
         var ready = Files.readString(evidence.resolve("protocol.jsonl")).lines().map(line -> JsonParser.parseString(line).getAsJsonObject())
                 .filter(value -> text(value, "event").equals("ready")).findFirst().orElseThrow();
         var capabilities = ready.getAsJsonArray("capabilities").asList().stream().map(value -> value.getAsString()).toList();
-        assertTrue(capabilities.containsAll(List.of("automated-seats", "priority-continuation-v1", "automated-priority-continuation-v1")),
+        assertTrue(capabilities.containsAll(List.of("automated-seats", "priority-continuation-v1", "automated-priority-continuation-v1", "automated-priority-metadata-v1")),
                 "Human Auto support alone cannot negotiate the bot's completed-scan and self-observer contract");
+        assertEquals(Set.copyOf(capabilities).size(), capabilities.size());
     }
 
     @Test(timeOut = 90000)
@@ -311,6 +313,202 @@ public class AutomatedPriorityContinuationTest {
         }
     }
 
+    @DataProvider public Object[][] departedReaders() { return new Object[][] {{0}, {2}}; }
+
+    @Test(dataProvider = "departedReaders", timeOut = 90000)
+    public void anEliminatedConnectedReaderCanConsumeDeliveryWithoutRegainingActionAuthority(int reader) throws Exception {
+        try (var fixture = new Fixture("departed-delivery-reader-" + reader, false)) {
+            var main = fixture.main(); fixture.acknowledge(reader);
+            var original = fixture.state(reader).getAsJsonObject("priorityObservation");
+            if (reader == 2) fixture.bot().action(grant(main, 1, List.of("MAIN1")));
+            fixture.eliminate(reader);
+            fixture.publicChanges(3, 160); fixture.publicExecutions(3, 320);
+            var retained = fixture.state(reader);
+            int activity = retained.getAsJsonArray("activity").size();
+            int transitions = retained.getAsJsonObject("executions").getAsJsonArray("transitions").size();
+            assertTrue(activity > 120, "The connected departed reader retains its unread activity beyond the rolling tail");
+            assertTrue(transitions > 512, "The same reader retains unread execution transitions beyond the rules tail");
+            assertFalse(retained.getAsJsonObject("priorityObservation").get("overflowed").getAsBoolean());
+
+            fixture.acknowledge(reader, original);
+            fixture.table.game.getAction().withState(fixture.table::publish);
+            var unread = fixture.state(reader);
+            assertEquals(unread.getAsJsonObject("priorityObservation").get("acknowledgedPublicActivitySequence"),
+                    original.get("publicActivitySequence"), "A valid old cohort cannot acknowledge the later unread suffix");
+            assertEquals(unread.getAsJsonArray("activity").size(), activity);
+            assertEquals(unread.getAsJsonObject("executions").getAsJsonArray("transitions").size(), transitions);
+
+            var impossible = unread.getAsJsonObject("priorityObservation").deepCopy();
+            impossible.addProperty("boardRevision", Long.MAX_VALUE);
+            var invalid = expectThrows(IllegalArgumentException.class, () -> fixture.acknowledge(reader, impossible));
+            assertFalse(invalid instanceof AutomatedPriorityControlRetired, "Loss cannot turn an unprovable prefix into known retirement");
+            var wrongGame = new JsonObject(); wrongGame.addProperty("sessionId", "retired-table");
+            wrongGame.addProperty("action", "acknowledgePriorityObservation");
+            wrongGame.add("boardRevision", original.get("boardRevision"));
+            wrongGame.add("publicActivitySequence", original.get("publicActivitySequence"));
+            assertThrows(IllegalArgumentException.class, () -> fixture.endpoint(reader).action(wrongGame));
+
+            fixture.acknowledge(reader, unread.getAsJsonObject("priorityObservation"));
+            fixture.table.game.getAction().withState(fixture.table::publish);
+            var compacted = fixture.state(reader);
+            assertTrue(compacted.getAsJsonArray("activity").size() <= 120);
+            assertTrue(compacted.getAsJsonObject("executions").getAsJsonArray("transitions").size() <= 512);
+            assertEquals(compacted.getAsJsonObject("priorityObservation").get("acknowledgedPublicActivitySequence"),
+                    unread.getAsJsonObject("priorityObservation").get("publicActivitySequence"));
+            assertTrue(viewer(compacted).get("eliminated").getAsBoolean());
+            assertEquals(text(compacted, "status"), "playing");
+            assertTrue(compacted.get("prompt").isJsonNull(), "Consumption cannot give a departed reader another decision");
+            for (var player : compacted.getAsJsonArray("players")) {
+                var seat = player.getAsJsonObject();
+                if (!seat.get("id").equals(compacted.get("viewerId")))
+                    assertTrue(zone(seat, "Hand").getAsJsonArray("cards").isEmpty(), "Delivery never reveals another reader's hand");
+            }
+            assertThrows(IllegalArgumentException.class, () -> fixture.endpoint(reader).action(request(main, Map.of("action", "passPriority"))));
+            assertThrows(IllegalArgumentException.class, () -> fixture.endpoint(reader).action(grant(main, 2, List.of())));
+            var consent = compacted.getAsJsonObject("priorityContinuation");
+            assertFalse(List.of("Active", "Held").contains(text(consent, "status")));
+            assertEquals(consent.get("automaticPasses").getAsInt(), 0);
+            var survived = fixture.until(candidate -> candidate.seat() != reader && text(candidate.prompt(), "inputType").equals("InputPassPriority"));
+            assertEquals(text(survived.state(), "status"), "playing", "The surviving controllers keep their actual rules decisions");
+            Files.writeString(fixture.evidence.resolve("departed-reader-delivery.json"), JSON.toJson(Map.of(
+                    "reader", reader, "retainedActivity", activity, "retainedTransitions", transitions,
+                    "compactedActivity", compacted.getAsJsonArray("activity").size(),
+                    "compactedTransitions", compacted.getAsJsonObject("executions").getAsJsonArray("transitions").size(),
+                    "observation", compacted.getAsJsonObject("priorityObservation"), "consent", consent)));
+            if (reader == 2) {
+                fixture.table.close();
+                assertThrows(AutomatedPriorityControlRetired.class, () -> fixture.acknowledge(reader));
+            }
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void compactControlsRetainTheExactReturnedCohortWithoutPublishingPrivateGraphs() throws Exception {
+        try (var fixture = new Fixture("bot-compact-controls", false); var engine = fixture.controlEngine()) {
+            var main = fixture.main(); fixture.acknowledge(0); fixture.acknowledge(1);
+            var ack = acknowledgement(fixture, 2);
+            var result = engine.dispatch("automatedPriorityControl", ack);
+            assertTrue(result instanceof AutomatedPriorityMetadata);
+            var receipt = JSON.toJsonTree(result).getAsJsonObject();
+            assertEquals(receipt.keySet(), Set.of("schemaVersion", "gameId", "seatId", "revision", "boardRevision",
+                    "stackInterruptionVersion", "turn", "status", "playerActive", "decisionOwnerId", "priorityPlayerId",
+                    "decisionId", "priorityDecisionId", "continuation", "observation"));
+            assertEquals(receipt.get("schemaVersion").getAsInt(), 1);
+            assertEquals(text(receipt, "gameId"), fixture.table.id);
+            assertEquals(receipt.get("seatId").getAsInt(), 2);
+            assertTrue(receipt.get("playerActive").getAsBoolean());
+            assertEquals(text(receipt, "priorityDecisionId"), text(main.prompt(), "id"));
+            assertEquals(receipt.get("decisionOwnerId").getAsInt(), 2);
+            assertEquals(receipt.get("priorityPlayerId").getAsInt(), 2);
+            assertTrue(receipt.getAsJsonObject("observation").get("registered").getAsBoolean());
+            var returned = fixture.bot().state();
+            assertEquals(receipt, JSON.toJsonTree(AutomatedPriorityMetadata.from(returned)),
+                    "The metadata describes the exact action-returned committed publication");
+            for (String changed : List.of("decisionOwnerId", "priorityPlayerId", "turn", "status", "players", "prompt")) {
+                var altered = new HashMap<>(returned);
+                altered.put(changed, switch (changed) {
+                    case "turn" -> 0;
+                    case "status" -> "finished";
+                    case "players" -> List.of();
+                    case "prompt" -> Map.of("id", "required-choice", "kind", "choice", "task", "choice", "okEnabled", true);
+                    default -> null;
+                });
+                assertNull(AutomatedPriorityMetadata.from(altered).priorityDecisionId(),
+                        "Incomplete ownership, liveness or typed priority facts cannot certify a continuation input");
+            }
+            var wrongOwner = new HashMap<>(returned); wrongOwner.put("decisionOwnerId", 3);
+            assertNull(AutomatedPriorityMetadata.from(wrongOwner).priorityDecisionId());
+            var duplicateViewer = new HashMap<>(returned);
+            duplicateViewer.put("players", List.of(Map.of("id", 2, "eliminated", false), Map.of("id", 2, "eliminated", false)));
+            var duplicateMetadata = AutomatedPriorityMetadata.from(duplicateViewer);
+            assertFalse(duplicateMetadata.playerActive(), "An ambiguous audience cannot certify an active viewer");
+            assertNull(duplicateMetadata.priorityDecisionId());
+            var disabled = new HashMap<>((Map<String, Object>)returned.get("prompt")); disabled.put("okEnabled", false);
+            var unavailable = new HashMap<>(returned); unavailable.put("prompt", disabled);
+            assertNull(AutomatedPriorityMetadata.from(unavailable).priorityDecisionId());
+            fixture.publicChanges(1); fixture.table.publish();
+            assertTrue(((Number)fixture.bot().state().get("boardRevision")).longValue() > receipt.get("boardRevision").getAsLong());
+            assertEquals(JSON.toJsonTree(result), receipt, "A later publication cannot rewrite an earlier compact receipt");
+            fixture.acknowledge(0); fixture.acknowledge(1); fixture.acknowledge(2);
+            main = fixture.input(2);
+            var grant = grant(main, 1, List.of("MAIN1")); grant.addProperty("seatId", 2);
+            var consent = JSON.toJsonTree(engine.dispatch("automatedPriorityControl", grant)).getAsJsonObject();
+            assertEquals(text(consent.getAsJsonObject("continuation"), "mode"), "NoResponse");
+            assertEquals(consent.getAsJsonObject("continuation").get("sequence").getAsInt(), 1);
+            var legacy = engine.dispatch("automatedAction", grant);
+            assertTrue(legacy instanceof Map<?, ?> && ((Map<?, ?>)legacy).containsKey("players"), "The legacy endpoint still returns its full snapshot");
+            assertEquals(JSON.toJsonTree(((Map<?, ?>)legacy).get("priorityContinuation")), consent.get("continuation"));
+            var withdraw = JSON.toJsonTree(Map.of("sessionId", fixture.table.id, "seatId", 2,
+                    "action", "revokePriorityContinuation", "throughSequence", 1)).getAsJsonObject();
+            var revoked = JSON.toJsonTree(engine.dispatch("automatedPriorityControl", withdraw)).getAsJsonObject();
+            assertEquals(text(revoked.getAsJsonObject("continuation"), "status"), "Revoked");
+            Files.writeString(fixture.evidence.resolve("compact-control-receipts.json"), JSON.toJson(List.of(receipt, consent, revoked)));
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void compactControlRoutingRejectsGameplayForeignSeatsAndUnsupportedPoliciesBeforeAdmission() throws Exception {
+        try (var fixture = new Fixture("bot-compact-rejections", false); var engine = fixture.controlEngine()) {
+            var main = fixture.main();
+            fixture.acknowledge(3);
+            var beforeObservation = fixture.state(2).getAsJsonObject("priorityObservation").deepCopy();
+            for (String action : List.of("passPriority", "card", "grantFiniteStackYield", "revokeFiniteStackYield")) {
+                var rejected = JSON.toJsonTree(Map.of("sessionId", fixture.table.id, "seatId", 2, "action", action)).getAsJsonObject();
+                assertThrows(IllegalArgumentException.class, () -> engine.dispatch("automatedPriorityControl", rejected));
+            }
+            var quiet = grant(main, 1, List.of()); quiet.addProperty("seatId", 2); quiet.addProperty("mode", "Quiet");
+            assertThrows(IllegalArgumentException.class, () -> engine.dispatch("automatedPriorityControl", quiet));
+            var malformed = grant(main, 1, List.of()); malformed.addProperty("seatId", 2); malformed.remove("phaseStops");
+            var invalid = expectThrows(IllegalArgumentException.class, () -> engine.dispatch("automatedPriorityControl", malformed));
+            assertFalse(invalid instanceof AutomatedPriorityControlRetired);
+            for (int seat : new int[] {0, 3, 999}) {
+                var foreign = grant(main, 1, List.of()); foreign.addProperty("seatId", seat);
+                var failure = expectThrows(AutomatedPriorityControlRetired.class, () -> engine.dispatch("automatedPriorityControl", foreign));
+                var envelope = JSON.toJsonTree(Map.of("id", 10, "method", "automatedPriorityControl", "params", foreign)).getAsJsonObject();
+                assertEquals(text(DesktopEngine.errorReply(envelope, failure), "errorCode"), AutomatedPriorityControlRetired.CODE);
+            }
+            var wrongGame = acknowledgement(fixture, 2); wrongGame.addProperty("sessionId", "foreign-game");
+            assertThrows(AutomatedPriorityControlRetired.class, () -> engine.dispatch("automatedPriorityControl", wrongGame));
+            var seatRoute = acknowledgement(fixture, 2); seatRoute.addProperty("connectionId", "unowned-local-seat");
+            assertThrows(IllegalArgumentException.class, () -> engine.dispatch("automatedPriorityControl", seatRoute));
+            var malformedAck = acknowledgement(fixture, 2); malformedAck.addProperty("boardRevision", Long.MAX_VALUE);
+            var unproved = expectThrows(IllegalArgumentException.class, () -> engine.dispatch("automatedPriorityControl", malformedAck));
+            var ackEnvelope = JSON.toJsonTree(Map.of("id", 11, "method", "automatedPriorityControl", "params", malformedAck)).getAsJsonObject();
+            assertFalse(DesktopEngine.errorReply(ackEnvelope, unproved).has("errorCode"));
+            assertEquals(text(fixture.state(2).getAsJsonObject("prompt"), "id"), text(main.prompt(), "id"));
+            assertEquals(fixture.state(2).getAsJsonObject("priorityContinuation").get("sequence").getAsInt(), 0);
+            assertEquals(fixture.state(3).getAsJsonObject("priorityContinuation").get("sequence").getAsInt(), 0);
+            assertEquals(fixture.state(2).getAsJsonObject("priorityObservation"), beforeObservation,
+                    "Rejected commands cannot register or advance this audience's delivery prefix");
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void compactPostAdmissionPublicationFailuresRemainUncertainAndRequireANegativeFence() throws Exception {
+        try (var fixture = new Fixture("bot-compact-uncertain", false); var engine = fixture.controlEngine()) {
+            var main = fixture.main(); fixture.acknowledge(2);
+            var armed = new AtomicBoolean();
+            fixture.bot().observePlaytest(frame -> { if (armed.get()) throw new IllegalStateException("compact-after-admission"); });
+            var command = grant(main, 1, List.of()); command.addProperty("seatId", 2);
+            armed.set(true);
+            try {
+                var failure = expectThrows(IllegalStateException.class, () -> engine.dispatch("automatedPriorityControl", command));
+                assertEquals(failure.getMessage(), "compact-after-admission");
+                assertEquals(fixture.state(2).getAsJsonObject("priorityContinuation").get("sequence").getAsInt(), 1);
+                var envelope = JSON.toJsonTree(Map.of("id", 12, "method", "automatedPriorityControl", "params", command)).getAsJsonObject();
+                assertFalse(DesktopEngine.errorReply(envelope, failure).has("errorCode"));
+                envelope.getAsJsonObject("params").addProperty("action", "passPriority");
+                assertFalse(DesktopEngine.errorReply(envelope, new AutomatedPriorityControlRetired()).has("errorCode"));
+            } finally { armed.set(false); fixture.revoke(1); }
+        }
+    }
+
+    private static JsonObject acknowledgement(Fixture fixture, int seat) {
+        var frame = fixture.state(seat).getAsJsonObject("priorityObservation");
+        return JSON.toJsonTree(Map.of("sessionId", fixture.table.id, "seatId", seat, "action", "acknowledgePriorityObservation",
+                "boardRevision", frame.get("boardRevision"), "publicActivitySequence", frame.get("publicActivitySequence"))).getAsJsonObject();
+    }
+
     private static JsonObject grant(Input input, int sequence, List<String> stops) {
         return request(input, Map.of("action", "grantPriorityContinuation", "sequence", sequence, "grantId", "bot-auto-" + sequence,
                 "mode", "NoResponse", "phaseStops", stops, "quietYieldToken", ""));
@@ -335,6 +533,12 @@ public class AutomatedPriorityContinuationTest {
             table = new MatchTable("Commander", players, RESOURCES, evidence); table.start();
         }
         MatchSession endpoint(int seat) { return seat < 2 ? table.seat(seat) : table.automatedSeat(seat); }
+        DesktopEngine controlEngine() throws Exception {
+            var engine = new DesktopEngine(new CardCatalog(List.of()), evidence.resolve("desktop-decks"));
+            engine.dispatch("automatedEnable", new JsonObject());
+            var owner = DesktopEngine.class.getDeclaredField("simulation"); owner.setAccessible(true); owner.set(engine, table);
+            return engine;
+        }
         MatchSession bot() { return endpoint(2); }
         JsonObject state(int seat) { return JSON.toJsonTree(endpoint(seat).state()).getAsJsonObject(); }
         Input input(int seat) { var state = state(seat); return new Input(seat, state, state.getAsJsonObject("prompt")); }
@@ -354,9 +558,23 @@ public class AutomatedPriorityContinuationTest {
             var command = new JsonObject(); command.addProperty("sessionId", table.id); command.addProperty("action", "revokePriorityContinuation");
             command.addProperty("throughSequence", sequence); bot().action(command);
         }
+        void eliminate(int seat) throws Exception {
+            var command = new JsonObject(); command.addProperty("sessionId", table.id);
+            endpoint(seat).concede(command);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (System.nanoTime() < deadline) {
+                var state = state(seat);
+                if (viewer(state).get("eliminated").getAsBoolean() && state.get("prompt").isJsonNull()) return;
+                Thread.sleep(2);
+            }
+            throw new AssertionError("The actual concession did not publish its reader's loss");
+        }
         void publicChanges(int count) {
+            publicChanges(2, count);
+        }
+        void publicChanges(int seat, int count) {
             table.game.getAction().withState(() -> {
-                var forest = table.game.getPlayer(2).getCardsIn(ZoneType.Battlefield).stream()
+                var forest = table.game.getPlayer(seat).getCardsIn(ZoneType.Battlefield).stream()
                         .filter(card -> card.getName().equals("Forest")).findFirst().orElseThrow();
                 for (int index = 0; index < count; index++) {
                     boolean tapped = index % 2 == 0; forest.setTapped(tapped); table.game.fireEvent(new GameEventCardTapped(forest, tapped));
@@ -365,8 +583,11 @@ public class AutomatedPriorityContinuationTest {
             });
         }
         void publicExecutions(int count) {
+            publicExecutions(2, count);
+        }
+        void publicExecutions(int seat, int count) {
             table.game.getAction().withState(() -> {
-                var player = table.game.getPlayer(2);
+                var player = table.game.getPlayer(seat);
                 var source = player.getCardsIn(ZoneType.Battlefield).stream().filter(card -> card.getName().equals("Forest")).findFirst().orElseThrow();
                 var rules = table.game.getExecutions();
                 for (int index = 0; index < count; index++) {

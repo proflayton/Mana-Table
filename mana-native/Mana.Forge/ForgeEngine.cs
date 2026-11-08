@@ -43,6 +43,7 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         public bool TableChoicesAvailable { get; set; }
         public bool PriorityContinuationAvailable { get; set; }
         public bool AutomatedPriorityContinuationAvailable { get; set; }
+        public bool AutomatedPriorityMetadataAvailable { get; set; }
         public ForgeCommandScope Commands { get; } = new();
         public volatile Exception? Failure;
         public volatile bool FramingFailed;
@@ -99,6 +100,7 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
                             owner.TableChoicesAvailable = capabilities.Contains("table-choices-v1");
                             owner.PriorityContinuationAvailable = capabilities.Contains("priority-continuation-v1");
                             owner.AutomatedPriorityContinuationAvailable = capabilities.Contains("automated-priority-continuation-v1");
+                            owner.AutomatedPriorityMetadataAvailable = capabilities.Contains("automated-priority-metadata-v1");
                             owner.Ready.TrySetResult();
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
@@ -206,7 +208,7 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     internal static Exception RequestFailure(string method, JsonElement message)
     {
-        if (method == "automatedAction" && Text(message, "errorCode") == "automated-priority-control-retired")
+        if (method is "automatedAction" or "automatedPriorityControl" && Text(message, "errorCode") == "automated-priority-control-retired")
             return new ForgeAutomatedPriorityRetiredException();
         if (method == "tablePresence" && Text(message, "errorCode") == "table-presence-superseded")
             return new EngineObservationSupersededException();

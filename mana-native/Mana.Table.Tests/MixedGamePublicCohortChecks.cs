@@ -42,23 +42,46 @@ internal static class MixedGamePublicCohortChecks
                 && Reject(() => tracker.Observe(0, Frame(0) with { Revision = 30, BoardRevision = 30, Error = "Retained rules error" })),
             "Reference caching cannot bypass regressed, foreign or failed current audience validation");
 
-        var bounded = new MixedGamePublicCohorts([0, 1, 2, 3], capacity: 1);
+        var boundedPreparation = new PublicProjectionPreparation([0, 1, 2, 3]);
+        var bounded = new MixedGamePublicCohorts([0, 1, 2, 3], capacity: 1, preparation: boundedPreparation);
         bounded.Observe(0, frames[0]); bounded.Observe(1, frames[1]);
         bounded.Observe(0, Frame(0, 11, 11)); bounded.Observe(0, Frame(0, 12, 12));
         check(bounded.Evidence is { MaximumRetainedCohorts: 1, RetainedCohorts: 1 }
                 && Reject(() => bounded.Observe(1, PublicLife(Frame(1, 11, 10), 38)))
-                && bounded.Observe(1, OwnHand(Frame(1, 11, 10), "Own private refresh")).Compared,
+                && bounded.Observe(1, OwnHand(Frame(1, 11, 10), "Own private refresh")).Compared
+                && boundedPreparation is { KnownAudienceSlots: 4, RetainedFrames: 2 },
             "The bounded global cache retains each owner's current same-board baseline, including after that cohort was evicted");
 
-        var correlated = new MixedGamePublicCohorts([0, 1, 2, 3], capacity: 1);
-        correlated.Observe(1, StackReference(Frame(1), "execution-a"));
-        correlated.Observe(1, StackReference(Frame(1, 11, 10), null));
+        var correlationPreparation = new PublicProjectionPreparation([0, 1, 2, 3]);
+        var correlated = new MixedGamePublicCohorts([0, 1, 2, 3], capacity: 1, preparation: correlationPreparation);
+        correlated.Observe(1, StackReference(Frame(1), null));
+        correlated.Observe(1, StackReference(Frame(1, 11, 10), "execution-a"));
+        correlated.Observe(1, StackReference(Frame(1, 12, 10), null));
         correlated.Observe(0, Frame(0, 11, 11));
-        check(Reject(() => correlated.Observe(1, StackReference(Frame(1, 12, 10), "execution-b"))),
+        check(Reject(() => correlated.Observe(1, StackReference(Frame(1, 13, 10), "execution-b"))),
             "An absent optional execution reference cannot erase an admitted same-board correlation before global cache eviction");
         var unadmitted = StackReference(Frame(2), "unknown") with { Executions = null };
-        check(Reject(() => new MixedGamePublicCohorts([0, 1, 2, 3]).Observe(2, unadmitted)),
+        var invalidPreparation = new PublicProjectionPreparation([0, 1, 2, 3]);
+        check(!invalidPreparation.ExecutionCorrelations(unadmitted).Valid && !invalidPreparation.ExecutionCorrelations(unadmitted).Valid
+                && invalidPreparation is { CorrelationsPrepared: 2, CorrelationsReused: 0 },
+            "An invalid local execution frame is validated again rather than becoming a reusable prepared correlation");
+        check(Reject(() => new MixedGamePublicCohorts([0, 1, 2, 3], preparation: invalidPreparation).Observe(2, unadmitted)),
             "An unadmitted stack execution still fails evidence integrity before its immutable reference can be cached");
+        var independent = new PublicProjectionPreparation([0]);
+        string publicFacts = independent.Facts(frames[0]);
+        check(independent is { FactsPrepared: 1, CorrelationsPrepared: 0 }
+            && independent.Facts(frames[0]) == publicFacts && independent is { FactsPrepared: 1, FactsReused: 1 },
+            "Preparing public facts does not eagerly validate execution correlations or recompute the same exact frame");
+        independent.ExecutionCorrelations(frames[0]);
+        check(independent is { FactsPrepared: 1, CorrelationsPrepared: 1 },
+            "The independently lazy correlation getter performs its own first derivation only when requested");
+        independent.Facts(frames[0] with { });
+        independent.Facts(frames[1]);
+        check(independent is { KnownAudienceSlots: 1, RetainedFrames: 1, FactsPrepared: 3, CorrelationsPrepared: 1 },
+            "Record-equal fresh objects and unknown audiences rederive without growing the known audience slots");
+        independent.Clear();
+        check(independent.RetainedFrames == 0 && independent.Facts(frames[0]) == publicFacts && independent.FactsPrepared == 4,
+            "Retiring preparation releases every retained frame and derived value before an identical frame can be used again");
     }
 
     private static bool Reject(Action action)

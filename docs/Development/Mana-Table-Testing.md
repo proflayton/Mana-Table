@@ -1,5 +1,29 @@
 # Testing Mana Table
 
+## GPU capture encoding
+
+`--smoke-headless-presentation --presentation-group capture-png` checks the
+bounded RGBA8 PNG writer without a graphics device and also runs in the full
+headless suite. It independently checks dimensions, pixel count, PNG chunks and
+CRCs, zlib rows, lossless Sub-filter reconstruction, and output failures.
+Invalid input must fail before writing a header; an I/O failure cannot report a
+completed capture.
+
+The rendered card-reading/state journey additionally compares tiny old/new
+captures through MonoGame's public decoder, retaining every RGBA channel,
+transparent RGB, dimensions and row orientation. Normal capture paths read
+pixels once on the graphics owner thread and synchronously encode that owned
+buffer. Window captures do not upload CPU pixels into a temporary texture just
+to read them back again. The encoder adds only one row and bounded 64 KiB IDAT
+storage; no background queue, dependency or native image API is introduced.
+All existing screenshots, input boundaries, readiness checks and deadlines stay
+in the rendered journey. Local capture microbenchmarks are diagnostic evidence,
+not CI timing guarantees or human UX acceptance.
+The fixed encoder is deliberately limited to this capture format. A measured
+existing Windows `Bitmap.Save(Png)` alternative preserved pixels but produced
+much larger files and less improvement on the same authored image; both
+alternatives' results remain separate from the rendered CI journey.
+
 ## Shared public choice previews
 
 `TableChoiceRegression` runs in the ordinary graphics-free client executable.
@@ -119,7 +143,9 @@ wire records. A late serialization failure must write no partial protocol bytes
 before the existing complete error reply.
 `SyncTransportTest` checks retained receipt ownership through nested handler and
 caller mutation, exact request replay, coded failures, reconnect/revocation and
-the existing frame ceiling. Optimization must preserve every capture and failure
+the existing frame ceiling. Framing cases include fragmented Unicode,
+coalesced successor frames, both TCP reader directions, exact UTF-16-character
+limits, a one-character excess, malformed JSON and partial EOF. Optimization must preserve every capture and failure
 boundary; elapsed-time microbenchmarks do not replace these checks.
 An active or prospective finite-yield grant also holds audience replacement at
 the old owner until its negative acknowledgement completes; an explicit retry
@@ -715,6 +741,13 @@ Their serializer reuses a UTF8 record buffer instead of allocating a UTF16
 string for every large replay. A failed serialization commits no partial row;
 the existing decoded records and order remain byte-compatible. Local capture
 allocation measurements do not establish a full-game throughput result.
+Observer-lifetime regressions keep a viewer connected after actual elimination,
+publish history beyond the ordinary tail, and acknowledge only its consumed
+prefix. The delivery window must compact while surviving players continue.
+Client and bot controls retain presentation pauses, closed/retired epochs and
+replay refusal, and prove that loss never enables policy work or a new grant.
+`AutomatedPriorityContinuationTest` exercises the same read-only bot ACK boundary
+through actual rules loss, independently of lost-actor grant refusal.
 The independent required `mixed-game-qualification` CI job additionally runs all
 four `natural` rotations against the exact immutable package and source-bound
 harness, then the actual110-trigger rules/presentation workload described below
@@ -745,6 +778,32 @@ ACK/grant/held-withdrawal chain and a fresh rich observation before policy work.
 They advance the board, action signature and input independently, change pacing
 between controls, and deliver actual child-process ACK replies out of order.
 Metadata receipts cannot install policy scopes or revive a replaced input.
+The optional compact-control wire route must exercise those same owner, cursor,
+epoch, withdrawal and fresh-rich-read checks. Require schema-version-1 closed
+keys, integer/range/enum validation, malformed and duplicate-field rejection,
+negotiated selection and the unchanged older-engine rich-decoder fallback.
+Java checks must reject gameplay, Quiet and finite commands before admission,
+derive the receipt from the exact captured action result rather than a later
+publication, and prove that no private card/action graph enters the receipt.
+Unknown or lost current-world replies remain uncertain failures; they cannot
+cause an automatic full-action fallback or replay of positive consent.
+
+The campaign's `PublicProjectionPreparation` owns bounded derived evidence for
+the actual bound audiences. Batch validation, pair comparisons, cohort tracking
+and terminal equality share it. A cache hit requires the exact same immutable
+`GameSnapshot` object; a fresh object is normalized again even when its game,
+board and revision numbers match. Each known audience retains at most one
+current frame reference. Unknown audiences use the uncached path so preparation
+does not invent ownership or change the caller's refusal order.
+Public facts and local execution correlations are prepared independently on
+first use, preserving each existing check's order. Every group/pair comparison,
+per-owner baseline, cumulative correlation merge and rollback check still runs.
+The prepared values carry no private graph or action authority. Their reuse
+cannot replace the exact raw rejected batch, original exception or first-failure
+capture. Operation-count checks verify reuse and bounded retention, alongside
+fresh same-revision contradictions, private-only refreshes, conflicting
+correlation unions and failure-capture regressions. Counts describe avoided
+normalization work, not additional compared frames or completed games.
 
 `--smoke-polled-mana-output` uses the same source/package arguments as
 `--smoke-polled-fanout`. It opens an actual TCP two-human/two-distinct-AI table;
@@ -1812,6 +1871,11 @@ enter the current pump prefix. It checks accepted-only counts, retained Take
 control, blocked normal commits and the subsequent provider-stop reason, and
 writes its frame/progress/grant timeline before the assertion for first-failure
 diagnosis. Explicit-stop coverage also retains a later committed receipt.
+A controlled continuation predicate ends during evaluation and requires the
+automatic presentation decision to await queued accepted publications while
+the command lane is busy. The old ordering retires too early. This boundary
+control adds no sleeps or test hook; the actual 55-outcome/109-publication
+journey still requires its visible final count within the existing 20 seconds.
 Their authored snapshots establish presentation behavior; Java establishes the
 real rules transitions. Neither supplies human UX approval or all-card coverage.
 
