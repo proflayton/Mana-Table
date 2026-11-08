@@ -638,7 +638,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             return payload.Complete.Enabled ? Answer(request, new CompleteAttackers(state.Id, state.Decision!.Id), "combat-complete-repaired-plan") : Missing("combat-repair-completion");
         var assigned = combat.Attackers.Select(attack => attack.CardId).ToHashSet();
         var defense = new Dictionary<string, bool>(StringComparer.Ordinal);
-        var options = new List<(DecisionCommand Command, double Score, double Tie)>();
+        var options = new List<(DecisionCommand Command, double Score, double Tie, bool StagedFinish)>();
         // Comparisons are optional optimization. Preserve enough shared work
         // for the remaining staged declarations and the engine's joint repair
         // witness instead of faulting an otherwise answerable large combat.
@@ -647,6 +647,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         if (AiSwarmCombat.TryFinish(request, payload, retained) is { } finishing)
             return Answer(request, finishing, finishing is CompleteAttackers ? "combat-complete-swarm-finish" : "combat-stage-swarm-finish");
         var work = request.Work.CreateSlice(256, retained);
+        var staged = new CasualStagedAttackAssessment(state, request.Plan, work);
         var defensiveRequest = request with { Work = work };
         bool Retain(Card card)
         {
@@ -695,19 +696,22 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 // safe merely because its dangerous blocker was beyond the cap.
                 if (limited) break;
                 bool lethal = defender.Kind == "player" && enemy.Life <= damage && damage > 0;
+                bool stagedFinish = !lethal && defender.Kind == "player" && staged.CrossesLife(enemy, attacker);
+                lethal |= stagedFinish;
                 if (lethal) score += 10;
                 bool wins = lethal && AiPlayerRelations.FinalOpponent(state, defender.PlayerId);
                 if (!wins && Retain(attacker)) score = Math.Min(score, -100);
                 score += Math.Clamp(CasualTableAssessment.OpponentScore(request, defender.PlayerId) * .025, 0, .3);
                 double tie = CasualTableAssessment.Tie(request.Seed, attacker.VisualId + ":" + defender.Kind + ":" + defender.Id);
-                options.Add((command, score, tie));
+                options.Add((command, score, tie, stagedFinish));
             }
             if (limited) break;
         }
         var best = options.OrderByDescending(item => item.Score).ThenBy(item => item.Tie).FirstOrDefault();
         if (best.Command != null && (best.Score > 0 || !payload.Complete.Enabled)) {
             var heldAtChoice = defense.Where(pair => pair.Value).Select(pair => pair.Key).Take(64).ToImmutableArray();
-            return AiTurnPlanner.Remember(request, Answer(request, best.Command, "combat-public-attack-opportunity"),
+            return AiTurnPlanner.Remember(request, Answer(request, best.Command,
+                    best.StagedFinish ? "combat-staged-damage-finish" : "combat-public-attack-opportunity"),
                 heldAtChoice.IsEmpty ? request.Plan?.Purpose ?? AiPlanPurpose.Develop : AiPlanPurpose.Defend,
                 request.Plan?.Reservations.FirstOrDefault(), heldAtChoice);
         }

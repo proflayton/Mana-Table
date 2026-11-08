@@ -570,6 +570,16 @@ and insufficient shared work retain the existing fallback. This is a narrow
 public combat estimate, not a complete multiplayer strategy or prediction of
 hidden responses.
 
+Staged-combat scoring checks include four plus one nominal unblocked flying
+damage already aimed at a six-life opponent, with a one-power candidate and a
+competing defender. They distinguish a new threshold crossing from already
+lethal damage and exclude blocked, unknown, non-life and other-defender
+contributions. Current offer scope, retained resources and bounded work remain
+independent controls. Archived decision replays preserve the original seed,
+history, plan and remaining budgets and evaluate one recorded input without
+executing a command or launching a rules game. An improved replay proposal does
+not count as a natural game outcome or prove a counterfactual combat result.
+
 The source cancellation candidate extends that same client lane with held
 observation, execution and fault-report operations, plus shutdown during
 background and directly driven observations, and an observation provider that

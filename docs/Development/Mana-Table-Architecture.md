@@ -571,6 +571,18 @@ scoped bot knowledge and complete timing-legal source domains; remote players
 and the renderer cannot access it. Normal authoritative input controllers execute
 all bot choices, including manual producer and floating-pool payment. Forge's
 strategic controller is never a fallback for that negotiated mode.
+
+Attack scoring reads the current declaration as a group. A bounded, call-local
+assessment derives nominal unblocked life damage already assigned to each player
+before valuing another attacker. Its cached facts belong only to that immutable
+owned frame; they retain no action keys or authority across observations.
+Missing, blocked or unsupported contributions cannot create finishing credit.
+The additional group-finishing value applies only to a newly crossed life
+threshold; an already lethal group grants no extra group credit. This remains a
+current public estimate, not a
+prediction of hidden responses; current offered commands and existing resource,
+defense and mechanical-work guards still control the actual proposal.
+
 The optional host-only `IAutomatedPriorityContinuation` port represents only
 observation acknowledgement, `NoResponse` consent and withdrawal. It cannot
 carry gameplay, Quiet or finite-yield commands. The policy descriptor explicitly
