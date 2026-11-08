@@ -20,8 +20,8 @@ public sealed partial class AiTableHost
         internal long? AcknowledgedStackVersion;
         internal string GrantId = "";
         internal int Acknowledgements, Grants, Withdrawals, ObservedGrantPasses;
-        internal long CertifiedPasses, AwaitingSince;
-        internal bool GrantAccepted, AwaitingGrant, AwaitingAcknowledgement, AwaitingWithdrawal, WithdrawalAccepted;
+        internal long CertifiedPasses;
+        internal bool GrantAccepted, WithdrawalAccepted;
         internal bool Retired, Legacy;
         internal long WithdrawThrough, AttemptRevision = -1;
         internal string ManualDecision = "";
@@ -56,21 +56,8 @@ public sealed partial class AiTableHost
                 if (frame.AutomaticPasses < owner.ObservedGrantPasses)
                     throw new InvalidDataException("An automated priority certificate rolled back its accepted pass count.");
                 owner.CertifiedPasses += frame.AutomaticPasses - owner.ObservedGrantPasses;
-                owner.ObservedGrantPasses = frame.AutomaticPasses; owner.AwaitingGrant = false;
+                owner.ObservedGrantPasses = frame.AutomaticPasses;
             }
-            if (owner.AwaitingWithdrawal) {
-                if (frame.Sequence >= owner.WithdrawThrough && frame.Status is not
-                    (PriorityContinuationStatus.Active or PriorityContinuationStatus.Held)) {
-                    owner.AwaitingWithdrawal = false; owner.GrantAccepted = false; owner.AwaitingGrant = false;
-                } else { CheckPriorityProgress(owner); return PriorityWork.Reserved; }
-            }
-            if (owner.AwaitingAcknowledgement) {
-                if (credit.Registered && credit.AcknowledgedBoardRevision >= owner.AcknowledgedBoard
-                    && credit.AcknowledgedPublicActivitySequence >= owner.AcknowledgedActivity)
-                    owner.AwaitingAcknowledgement = false;
-                else { CheckPriorityProgress(owner); return PriorityWork.Reserved; }
-            }
-            if (owner.AwaitingGrant) { CheckPriorityProgress(owner); return PriorityWork.Reserved; }
 
             bool active = frame.Status is PriorityContinuationStatus.Active or PriorityContinuationStatus.Held;
             bool optedIn = session.PriorityAutomation == AiPriorityAutomation.NoResponse;
@@ -110,40 +97,55 @@ public sealed partial class AiTableHost
                 || credit.PublicActivitySequence - credit.AcknowledgedPublicActivitySequence >= 16)) {
                 var acknowledgement = new AutomatedPriorityControl.Acknowledge(state.Id, credit.BoardRevision, credit.PublicActivitySequence);
                 var result = await SendPriorityControlAsync(owner, controls, acknowledgement, cancellation).ConfigureAwait(false);
-                if (result == AutomatedPriorityControlResult.Accepted) {
+                if (result is AutomatedPriorityControlResult.Accepted accepted) {
                     owner.Acknowledgements++; owner.AcknowledgedBoard = credit.BoardRevision;
                     owner.AcknowledgedActivity = credit.PublicActivitySequence;
                     owner.AcknowledgedStackVersion = state.StackInterruptionVersion;
-                    owner.AwaitingAcknowledgement = true;
-                    owner.AwaitingSince = operationTime.GetTimestamp();
+                    // The receipt already confirms the ACK. Only an unchanged
+                    // exact priority input can chain a grant, never a policy
+                    // evaluation or a command against this earlier rich frame.
+                    if (!active && priority && accepted.Receipt.SamePriorityInput(state)
+                        && accepted.Receipt.Continuation.Status is not (PriorityContinuationStatus.Active or PriorityContinuationStatus.Held)
+                        && (pacing == null || pacing.Ready(state.Id, observation.SeatId)))
+                        return await BeginPriorityGrantAsync(owner, state, controls, cancellation).ConfigureAwait(false);
                 }
-                return result == AutomatedPriorityControlResult.Accepted ? PriorityWork.Refreshed : PriorityWork.Reserved;
+                return result is AutomatedPriorityControlResult.Accepted ? PriorityWork.Refreshed : PriorityWork.Reserved;
             }
             if (active && frame.ReasonCode is "awaiting-observation" or "observation-overflow")
                 return PriorityWork.Reserved;
             if (active) return PriorityWork.Reserved;
             if (!priority || owner.AttemptRevision == state.Revision) return PriorityWork.Policy;
-            if (owner.Sequence == long.MaxValue) throw new InvalidDataException("Automated priority sequence exhausted.");
-            owner.AttemptRevision = state.Revision;
-            owner.Sequence++; owner.GrantSequence = owner.Sequence; owner.GrantId = Guid.NewGuid().ToString("N");
-            owner.ObservedGrantPasses = 0;
-            var grant = new AutomatedPriorityControl.NoResponse(state.Id, state.Decision!.Id,
-                owner.Sequence, owner.GrantId, []);
-            // Retain the negative fence before dispatch: cancellation cannot
-            // prove that an affirmative command failed to reach the engine.
-            var accepted = await SendPriorityControlAsync(owner, controls, grant, cancellation).ConfigureAwait(false);
-            if (accepted == AutomatedPriorityControlResult.Accepted) {
-                owner.Grants++; owner.GrantAccepted = true; owner.AwaitingGrant = true;
-                owner.AwaitingSince = operationTime.GetTimestamp();
-            }
-            return accepted == AutomatedPriorityControlResult.Accepted ? PriorityWork.Refreshed : PriorityWork.Reserved;
+            return await BeginPriorityGrantAsync(owner, state, controls, cancellation).ConfigureAwait(false);
         } finally { PublishPriorityEvidence(); }
     }
 
-    private void CheckPriorityProgress(PriorityOwner owner)
+    // At most ACK -> grant -> negative withdrawal in one observed cycle. Every
+    // control path returns Reserved/Refreshed, so gameplay always starts after
+    // another genuine owned rich observation, including after withdrawal.
+    private async Task<PriorityWork> BeginPriorityGrantAsync(PriorityOwner owner, GameSnapshot state,
+        IAutomatedPriorityContinuation controls, CancellationToken cancellation)
     {
-        if (operationTime.GetElapsedTime(owner.AwaitingSince) >= ObservationTimeout)
-            throw new TimeoutException("The automated priority control did not acquire a fresh observed acknowledgement.");
+        if (pacing != null && !pacing.Ready(state.Id, owner.Seat)) return PriorityWork.Reserved;
+        if (owner.Sequence == long.MaxValue) throw new InvalidDataException("Automated priority sequence exhausted.");
+        owner.AttemptRevision = state.Revision;
+        owner.Sequence++; owner.GrantSequence = owner.Sequence; owner.GrantId = Guid.NewGuid().ToString("N");
+        owner.ObservedGrantPasses = 0;
+        var grant = new AutomatedPriorityControl.NoResponse(state.Id, state.Decision!.Id,
+            owner.Sequence, owner.GrantId, []);
+        // Retain the negative fence before dispatch: cancellation cannot prove
+        // that an affirmative command failed to reach the engine.
+        var result = await SendPriorityControlAsync(owner, controls, grant, cancellation).ConfigureAwait(false);
+        if (result is not AutomatedPriorityControlResult.Accepted accepted) return PriorityWork.Reserved;
+        owner.Grants++; owner.GrantAccepted = true; owner.WithdrawalAccepted = false;
+        CaptureReceiptPasses(owner, accepted.Receipt);
+        var receipt = accepted.Receipt;
+        bool response = receipt.Continuation.Status == PriorityContinuationStatus.Held
+            && (receipt.PriorityDecisionId == null || receipt.Continuation.ReasonCode is "response-available" or "response-unknown" or "phase-stop");
+        if (response || pacing != null && !pacing.Ready(state.Id, owner.Seat)) {
+            if (response) owner.ManualDecision = receipt.DecisionId ?? "";
+            return await BeginPriorityWithdrawalAsync(owner, receipt.Continuation.Sequence, controls, cancellation).ConfigureAwait(false);
+        }
+        return PriorityWork.Refreshed;
     }
 
     private async Task<AutomatedPriorityControlResult> SendPriorityControlAsync(PriorityOwner owner,
@@ -151,8 +153,37 @@ public sealed partial class AiTableHost
     {
         var result = await AwaitProvider("priority-control", token => controls.ExecuteAutomatedPriorityControlAsync(owner.Epoch,
             owner.Seat, control, token), cancellation).ConfigureAwait(false);
-        if (!Enum.IsDefined(result)) throw new InvalidDataException("Unknown automated priority receipt.");
-        return controls.AutomatedPriorityEpoch == owner.Epoch ? result : AutomatedPriorityControlResult.Retired;
+        if (controls.AutomatedPriorityEpoch != owner.Epoch) return new AutomatedPriorityControlResult.Retired();
+        if (result is AutomatedPriorityControlResult.Retired) return result;
+        if (result is not AutomatedPriorityControlResult.Accepted { Receipt: { } receipt })
+            throw new InvalidDataException("Unknown automated priority receipt.");
+        receipt.Validate();
+        if (receipt.Epoch != owner.Epoch || receipt.GameId != owner.Game || receipt.SeatId != owner.Seat)
+            throw new InvalidDataException("An automated priority receipt belongs to another owner.");
+        bool confirmed = control switch {
+            AutomatedPriorityControl.Acknowledge ack => receipt.Observation.Registered
+                && receipt.Observation.AcknowledgedBoardRevision >= ack.BoardRevision
+                && receipt.Observation.AcknowledgedPublicActivitySequence >= ack.PublicActivitySequence,
+            AutomatedPriorityControl.NoResponse grant => receipt.Continuation.Sequence == grant.Sequence
+                && receipt.Continuation.GrantId == grant.GrantId && receipt.Continuation.Mode == PriorityContinuationMode.NoResponse,
+            AutomatedPriorityControl.Withdraw withdraw => receipt.Continuation.Sequence >= withdraw.ThroughSequence
+                && (receipt.Continuation.Sequence > withdraw.ThroughSequence
+                    || receipt.Continuation.Status is not (PriorityContinuationStatus.Active or PriorityContinuationStatus.Held)),
+            _ => false
+        };
+        if (!confirmed) throw new InvalidDataException("The automated priority receipt did not confirm its requested metadata.");
+        owner.Sequence = Math.Max(owner.Sequence, receipt.Continuation.Sequence);
+        return result;
+    }
+
+    private static void CaptureReceiptPasses(PriorityOwner owner, AutomatedPriorityReceipt receipt)
+    {
+        var frame = receipt.Continuation;
+        if (!owner.GrantAccepted || frame.GrantId != owner.GrantId) return;
+        if (frame.AutomaticPasses < owner.ObservedGrantPasses)
+            throw new InvalidDataException("An automated priority certificate rolled back its accepted pass count.");
+        owner.CertifiedPasses += frame.AutomaticPasses - owner.ObservedGrantPasses;
+        owner.ObservedGrantPasses = frame.AutomaticPasses;
     }
 
     private async Task<PriorityWork> BeginPriorityWithdrawalAsync(PriorityOwner owner, long through,
@@ -162,10 +193,12 @@ public sealed partial class AiTableHost
         if (owner.WithdrawThrough <= 0) return PriorityWork.Policy;
         var result = await SendPriorityControlAsync(owner, controls,
             new AutomatedPriorityControl.Withdraw(owner.Game, owner.WithdrawThrough), cancellation).ConfigureAwait(false);
-        owner.AwaitingWithdrawal = true; owner.WithdrawalAccepted = result == AutomatedPriorityControlResult.Accepted;
-        owner.AwaitingSince = operationTime.GetTimestamp();
-        if (owner.WithdrawalAccepted) owner.Withdrawals++;
-        return result == AutomatedPriorityControlResult.Accepted ? PriorityWork.Refreshed : PriorityWork.Reserved;
+        owner.WithdrawalAccepted = result is AutomatedPriorityControlResult.Accepted;
+        if (result is AutomatedPriorityControlResult.Accepted accepted) {
+            CaptureReceiptPasses(owner, accepted.Receipt);
+            owner.Withdrawals++; owner.GrantAccepted = false;
+        }
+        return owner.WithdrawalAccepted ? PriorityWork.Refreshed : PriorityWork.Reserved;
     }
 
     private async Task RetirePriorityOwnersAsync(HashSet<(string Id, int SeatId)> active, CancellationToken cancellation)
@@ -188,8 +221,10 @@ public sealed partial class AiTableHost
         if (owner.WithdrawalAccepted && owner.WithdrawThrough >= owner.GrantSequence) return;
         var result = await SendPriorityControlAsync(owner, controls,
             new AutomatedPriorityControl.Withdraw(owner.Game, Math.Max(owner.Sequence, owner.GrantSequence)), cancellation).ConfigureAwait(false);
-        if (result == AutomatedPriorityControlResult.Accepted) {
+        if (result is AutomatedPriorityControlResult.Accepted accepted) {
+            CaptureReceiptPasses(owner, accepted.Receipt);
             owner.Withdrawals++; owner.WithdrawalAccepted = true;
+            owner.GrantAccepted = false;
             owner.WithdrawThrough = Math.Max(owner.Sequence, owner.GrantSequence);
         }
     }

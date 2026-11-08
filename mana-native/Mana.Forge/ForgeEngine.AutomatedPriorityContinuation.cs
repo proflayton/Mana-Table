@@ -7,6 +7,7 @@ public sealed partial class ForgeEngine : IAutomatedPriorityContinuation
     private EngineProcess? automatedPriorityProcess;
     private long automatedPriorityWorld = -1, automatedPriorityEpoch;
     private readonly Dictionary<(string Game, int Seat), long> automatedPriorityFences = [];
+    private readonly Dictionary<(string Game, int Seat), (GameSnapshot Anchor, AutomatedPriorityReceipt Receipt)> automatedPriorityReceipts = [];
     public bool SupportsAutomatedPriorityContinuation => current is {
         AutomationAvailable: true, PriorityContinuationAvailable: true, AutomatedPriorityContinuationAvailable: true, Failure: null } owner
         && !disposed && owner.Ready.Task.IsCompletedSuccessfully && !owner.Process.HasExited;
@@ -18,6 +19,7 @@ public sealed partial class ForgeEngine : IAutomatedPriorityContinuation
                 if (!ReferenceEquals(current, automatedPriorityProcess) || automatedPriorityWorld != worldGeneration) {
                     automatedPriorityProcess = current; automatedPriorityWorld = worldGeneration;
                     automatedPriorityFences.Clear();
+                    automatedPriorityReceipts.Clear();
                     automatedPriorityEpoch = checked(automatedPriorityEpoch + 1);
                 }
                 return automatedPriorityEpoch;
@@ -32,10 +34,11 @@ public sealed partial class ForgeEngine : IAutomatedPriorityContinuation
         ArgumentNullException.ThrowIfNull(control); control.Validate();
         if (epoch <= 0 || seatId < 0) throw new ArgumentException("A priority control needs an actual host epoch and owned seat.");
         EngineProcess owner;
+        GameSnapshot? anchor = null;
         Dictionary<string, object?> args;
         lock (worldScopeGate) {
             if (!SupportsAutomatedPriorityContinuation || epoch != AutomatedPriorityEpoch || current is not { } process)
-                return AutomatedPriorityControlResult.Retired;
+                return new AutomatedPriorityControlResult.Retired();
             owner = process;
             if (control is AutomatedPriorityControl.Withdraw withdraw
                 && automatedPriorityFences.TryGetValue((control.GameId, seatId), out long fence)
@@ -46,9 +49,26 @@ public sealed partial class ForgeEngine : IAutomatedPriorityContinuation
                     ["throughSequence"] = withdraw.ThroughSequence };
             } else {
                 if (!automatedScopes.TryGetValue((control.GameId, seatId), out var scope))
-                    return AutomatedPriorityControlResult.Retired;
-                try { args = scope.Scope.Encode(AutomatedPriorityCommand(control)); }
-                catch (EngineCommandRejectedException) { return AutomatedPriorityControlResult.Retired; }
+                    return new AutomatedPriorityControlResult.Retired();
+                anchor = scope.Scope.ObservedState;
+                if (control is AutomatedPriorityControl.NoResponse chained && anchor != null
+                    && automatedPriorityReceipts.TryGetValue((control.GameId, seatId), out var cursor)
+                    && ReferenceEquals(cursor.Anchor, anchor)) {
+                    if (cursor.Receipt.Epoch != epoch || !cursor.Receipt.SamePriorityInput(anchor)
+                        || chained.DecisionId != cursor.Receipt.PriorityDecisionId || chained.Sequence <= cursor.Receipt.Continuation.Sequence
+                        || cursor.Receipt.Continuation.Status is PriorityContinuationStatus.Active or PriorityContinuationStatus.Held
+                        || anchor.FiniteStackYield is { Status: FiniteStackYieldStatus.Active })
+                        return new AutomatedPriorityControlResult.Retired();
+                    // This metadata-only cursor can authorize another closed
+                    // control. It never replaces gameplay scopes or domains.
+                    args = new() { ["sessionId"] = control.GameId, ["promptId"] = chained.DecisionId,
+                        ["expectedTask"] = "priority", ["action"] = "grantPriorityContinuation",
+                        ["sequence"] = chained.Sequence, ["grantId"] = chained.GrantId,
+                        ["mode"] = "NoResponse", ["phaseStops"] = chained.PhaseStops, ["quietYieldToken"] = "" };
+                } else {
+                    try { args = scope.Scope.Encode(AutomatedPriorityCommand(control)); }
+                    catch (EngineCommandRejectedException) { return new AutomatedPriorityControlResult.Retired(); }
+                }
             }
             if (control is AutomatedPriorityControl.NoResponse grant)
                 automatedPriorityFences[(control.GameId, seatId)] = Math.Max(
@@ -63,24 +83,24 @@ public sealed partial class ForgeEngine : IAutomatedPriorityContinuation
                 }
             });
         }
-        catch (ForgeAutomatedPriorityRetiredException) { return AutomatedPriorityControlResult.Retired; }
-        catch (EngineObservationSupersededException) { return AutomatedPriorityControlResult.Retired; }
+        catch (ForgeAutomatedPriorityRetiredException) { return new AutomatedPriorityControlResult.Retired(); }
+        catch (EngineObservationSupersededException) { return new AutomatedPriorityControlResult.Retired(); }
         catch (EngineCommandRejectedException error) {
             lock (worldScopeGate)
-                if (current != owner || epoch != AutomatedPriorityEpoch) return AutomatedPriorityControlResult.Retired;
+                if (current != owner || epoch != AutomatedPriorityEpoch) return new AutomatedPriorityControlResult.Retired();
             // A generic RPC error can follow grant admission or publication.
             // It is not proof that consent was never installed.
             throw new IOException("The automated priority receipt is uncertain.", error);
         }
         lock (worldScopeGate) {
             if (current != owner || owner.Failure != null || epoch != AutomatedPriorityEpoch)
-                return AutomatedPriorityControlResult.Retired;
+                return new AutomatedPriorityControlResult.Retired();
         }
         var receipt = ForgeSnapshotDecoder.Decode(raw, certifiedUndo: owner.CertifiedUndoAvailable);
         if (receipt?.Id == control.GameId && receipt.ViewerId == seatId
             && control is AutomatedPriorityControl.NoResponse requested
             && receipt.PriorityContinuation is { } later && later.Sequence > requested.Sequence)
-            return AutomatedPriorityControlResult.Retired;
+            return new AutomatedPriorityControlResult.Retired();
         bool valid = receipt?.Id == control.GameId && receipt.ViewerId == seatId && control switch {
             AutomatedPriorityControl.Acknowledge value => receipt.PriorityObservation is { Registered: true } credit
                 && credit.AcknowledgedBoardRevision >= value.BoardRevision
@@ -94,9 +114,35 @@ public sealed partial class ForgeEngine : IAutomatedPriorityContinuation
             _ => false
         };
         if (!valid) throw new IOException("The automated priority receipt did not confirm its owned metadata transition.");
-        lock (worldScopeGate)
-            if (current != owner || epoch != AutomatedPriorityEpoch) return AutomatedPriorityControlResult.Retired;
-        return AutomatedPriorityControlResult.Accepted;
+        var metadata = PriorityReceipt(epoch, receipt!);
+        lock (worldScopeGate) {
+            if (current != owner || epoch != AutomatedPriorityEpoch) return new AutomatedPriorityControlResult.Retired();
+            var key = (control.GameId, seatId);
+            if (anchor != null && automatedScopes.TryGetValue(key, out var scope)
+                && ReferenceEquals(scope.Scope.ObservedState, anchor)
+                && (!automatedPriorityReceipts.TryGetValue(key, out var prior) || !ReferenceEquals(prior.Anchor, anchor)
+                    || metadata.Revision >= prior.Receipt.Revision))
+                automatedPriorityReceipts[key] = (anchor, metadata);
+        }
+        return new AutomatedPriorityControlResult.Accepted(metadata);
+    }
+
+    private static AutomatedPriorityReceipt PriorityReceipt(long epoch, GameSnapshot state)
+    {
+        var metadata = new AutomatedPriorityReceipt(epoch, state.Id, state.ViewerId, state.Revision, state.BoardRevision,
+            state.StackInterruptionVersion ?? -1, state.Status switch {
+                "starting" => AutomatedPriorityMatchStatus.Starting, "playing" => AutomatedPriorityMatchStatus.Playing,
+                "resolving" => AutomatedPriorityMatchStatus.Resolving, "finished" => AutomatedPriorityMatchStatus.Finished,
+                "error" => AutomatedPriorityMatchStatus.Error, _ => throw new IOException("Unknown automated priority match status.")
+            }, state.Viewer is { Eliminated: false }, state.DecisionOwnerId, state.PriorityPlayerId, state.Decision?.Id,
+            state.Status == "playing" && (state.DecisionOwnerId == null || state.DecisionOwnerId == state.ViewerId)
+                && (state.PriorityPlayerId == null || state.PriorityPlayerId == state.ViewerId)
+                && state.Decision is { Payload: PriorityPayload { Pass.Enabled: true } } decision ? decision.Id : null,
+            state.PriorityContinuation ?? throw new IOException("Missing automated priority consent receipt."),
+            state.PriorityObservation ?? throw new IOException("Missing automated priority observation receipt."));
+        try { metadata.Validate(); }
+        catch (ArgumentException error) { throw new IOException("Invalid automated priority metadata receipt.", error); }
+        return metadata;
     }
 
     internal static GameCommand AutomatedPriorityCommand(AutomatedPriorityControl control) => control switch {

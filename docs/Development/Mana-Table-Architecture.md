@@ -552,6 +552,16 @@ requires fresh authority; an unknown affirmative receipt cannot authorize anothe
 play. Reading and pacing gates still control progression. A provider without the
 dedicated `automated-priority-continuation-v1` capability retains its ordinary
 policy path; human continuation support alone does not imply bot support.
+Policy proposals cannot grant either standing or finite consent. Existing trusted
+finite-client adapters still use the scoped automated transport; policy intent
+checks do not remove that transport capability from a different owner.
+Accepted controls return closed consent receipts, retaining their actual provider
+epoch, seat, input and publication metadata. An unchanged ACK can chain a grant,
+and a held grant can chain a withdrawal, with at most three controls per observed
+seat cycle. Each control rechecks pacing. These receipts cannot enter gameplay
+scopes or policy observations; gameplay always needs a fresh owned rich read.
+The adapter keeps a separate metadata cursor anchored to that rich observation;
+late replies cannot replace a newer cursor or revive an advanced input.
 `IAutomatedSimulation` supports explicit all-bot tables with a separate public,
 non-acting spectator. Live tables retain their human requirement. Forecasting,
 deeper deck planning and human evaluation of the policy remain future work.

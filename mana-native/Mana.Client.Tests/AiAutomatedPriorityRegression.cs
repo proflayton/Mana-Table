@@ -19,6 +19,8 @@ internal static class AiAutomatedPriorityRegression
         await UnknownGrant(check);
         await CancelledGrantFence(check);
         await UnknownWithdrawalCleanup(check);
+        await ReceiptChains(check);
+        await ChangedReceiptsAndPacing(check);
     }
 
     private static void DescriptorAndClosedControls(Action<bool, string> check)
@@ -149,9 +151,10 @@ internal static class AiAutomatedPriorityRegression
                 AutomatedPriorityControl.Withdraw] && policy.Calls == 0 && port.Commands.Count == 0,
             "A changed public-action signature with unused old credit receives no ACK, grant or policy input during the actual 2.4 s announcement pause");
         clock.Advance(TimeSpan.FromMilliseconds(1)); await host.StepAsync();
-        check(port.Controls.Last() is AutomatedPriorityControl.Acknowledge { BoardRevision: 2, PublicActivitySequence: 1 }
-            && port.Controls.Count(control => control is AutomatedPriorityControl.NoResponse) == 1,
-            "After reading, even one new activity forces ACK of the changed action signature before another grant");
+        check(port.Controls is [AutomatedPriorityControl.Acknowledge, AutomatedPriorityControl.NoResponse,
+                AutomatedPriorityControl.Withdraw, AutomatedPriorityControl.Acknowledge { BoardRevision: 2, PublicActivitySequence: 1 },
+                AutomatedPriorityControl.NoResponse],
+            "After reading, even one new activity forces its exact ACK before the receipt can chain another grant");
         await host.StepAsync(); await host.StepAsync();
         int acknowledged = port.Controls.Count(control => control is AutomatedPriorityControl.Acknowledge);
         for (int index = 0; index < 3; index++) {
@@ -210,7 +213,6 @@ internal static class AiAutomatedPriorityRegression
     {
         var port = new Port(); var policy = new Policy(); var entered = NewSignal(); var release = NewSignal();
         var host = new AiTableHost(port, _ => policy, 1);
-        await host.StepAsync();
         port.BeforeControl = async control => { if (control is AutomatedPriorityControl.NoResponse) { entered.TrySetResult(); await release.Task; } };
         using var cancellation = new CancellationTokenSource();
         var pending = host.StepAsync(cancellation.Token);
@@ -237,6 +239,62 @@ internal static class AiAutomatedPriorityRegression
             && port.Controls.Count(control => control is AutomatedPriorityControl.Withdraw) == 1
             && port.Commands.Count == 0 && policy.Calls == 0,
             "An uncertain disposal withdrawal still closes every local policy owner while preserving unknown server consent instead of falsely certifying retirement");
+    }
+
+    private static async Task ReceiptChains(Action<bool, string> check)
+    {
+        var port = new Port(); port.Priority(PriorityResponseAvailability.Available);
+        var policy = new Policy();
+        await using var host = new AiTableHost(port, _ => policy, 1);
+        await host.StepAsync();
+        check(port.Reads == 1 && port.Controls is [AutomatedPriorityControl.Acknowledge,
+                AutomatedPriorityControl.NoResponse, AutomatedPriorityControl.Withdraw]
+            && policy.Calls == 0 && port.Commands.Count == 0
+            && host.PriorityContinuations.Single() is { AcceptedAcknowledgements: 1, AcceptedGrants: 1, AcceptedWithdrawals: 1 },
+            "One owned read reconciles ACK, held NoResponse and negative withdrawal from typed receipts, eliminating two control-only full reads without a policy action");
+        await host.StepAsync();
+        check(port.Reads == 2 && policy.Calls == 1 && port.Commands is [PassPriority]
+            && port.CommandReadCounts is [2],
+            "Even a fully confirmed metadata chain requires another owned rich observation before the current policy can act");
+    }
+
+    private static async Task ChangedReceiptsAndPacing(Action<bool, string> check)
+    {
+        foreach (string changed in new[] { "board", "signature", "decision", "decision-owner", "priority-owner", "advancement", "pacing" }) {
+            var port = new Port(); var policy = new Policy(); var pace = new Pace { Open = true };
+            port.AfterControl = control => {
+                if (control is not AutomatedPriorityControl.Acknowledge) return;
+                if (changed == "pacing") pace.Open = false;
+                else if (changed == "board") port.State = port.State with { BoardRevision = 2,
+                    PriorityObservation = port.State.PriorityObservation! with { BoardRevision = 2 } };
+                else if (changed == "signature") port.State = port.State with { StackInterruptionVersion = 1 };
+                else if (changed == "decision-owner") port.State = port.State with { DecisionOwnerId = 99 };
+                else if (changed == "priority-owner") port.State = port.State with { PriorityPlayerId = 99 };
+                else if (changed == "decision") port.Priority(PriorityResponseAvailability.Absent);
+                else port.State = port.State with { Status = "resolving", Decision = null };
+            };
+            await using var host = new AiTableHost(port, _ => policy, 1, pacing: pace);
+            await host.StepAsync();
+            check(port.Reads == 1 && port.Controls is [AutomatedPriorityControl.Acknowledge]
+                && port.Commands.Count == 0 && policy.Calls == 0 && host.LastFault == null,
+                "A changed metadata receipt or actual pacing gate ends chaining without supplying gameplay authority: " + changed);
+        }
+        var advanced = new Port(); var advancedPolicy = new Policy();
+        advanced.AfterControl = control => {
+            if (control is AutomatedPriorityControl.NoResponse) advanced.State = advanced.State with {
+                Status = "resolving", Decision = null, BoardRevision = 2,
+                PriorityObservation = advanced.State.PriorityObservation! with { BoardRevision = 2 },
+                PriorityContinuation = advanced.State.PriorityContinuation! with { AutomaticPasses = 1 } };
+        };
+        await using var advancedHost = new AiTableHost(advanced, _ => advancedPolicy, 1);
+        await advancedHost.StepAsync();
+        check(advanced.Reads == 1 && advanced.Controls is [AutomatedPriorityControl.Acknowledge, AutomatedPriorityControl.NoResponse]
+            && advancedPolicy.Calls == 0 && advanced.Commands.Count == 0
+            && advancedHost.PriorityContinuations.Single().CertifiedAutomaticPasses == 1,
+            "An already advanced grant receipt records its actual certificate and stops before another control or policy action");
+        await advancedHost.StepAsync();
+        check(advanced.Reads == 2 && advancedPolicy.Calls == 0 && advancedHost.LastFault == null,
+            "The next cycle genuinely reobserves an advanced grant instead of treating metadata as an owned policy frame");
     }
 
     private static async Task Arm(AiTableHost host) { await host.StepAsync(); await host.StepAsync(); await host.StepAsync(); }
@@ -280,22 +338,27 @@ internal static class AiAutomatedPriorityRegression
             };
         internal bool Supported = true, RetireControls, LoseGrantReceipt, LoseWithdrawReceipt;
         internal long Epoch = 1, Fence;
-        internal int PositiveAccepted;
+        internal int PositiveAccepted, Reads;
         internal List<GameCommand> Commands = [];
+        internal List<int> CommandReadCounts = [];
         internal List<AutomatedPriorityControl> Controls = [];
         internal List<string> Reports = [];
         internal Func<AutomatedPriorityControl, Task>? BeforeControl;
+        internal Action<AutomatedPriorityControl>? AfterControl;
         internal TaskCompletionSource PositiveFinished = NewSignal();
         public bool SupportsAutomatedPriorityContinuation => Supported;
         public long AutomatedPriorityEpoch => Epoch;
         public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) => Task.CompletedTask;
         public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default)
-            => Task.FromResult(ImmutableArray.Create(new AutomatedSeatObservation(0, State,
+        {
+            Reads++;
+            return Task.FromResult(ImmutableArray.Create(new AutomatedSeatObservation(0, State,
                 State.Decision?.Payload is PriorityPayload ? new(1, ActionDomainCoverage.Complete, [], []) : DecisionActionDomain.None, new())));
+        }
         public Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default)
         {
             if (seatId != 0 || !GameCommandPermissions.Allows(State, command)) throw new InvalidDataException("Unowned test command.");
-            Commands.Add(command);
+            Commands.Add(command); CommandReadCounts.Add(Reads);
             State = State with { Revision = State.Revision + 1, Decision = null, Status = "resolving" };
             return Task.CompletedTask;
         }
@@ -305,7 +368,7 @@ internal static class AiAutomatedPriorityRegression
             control.Validate(); Controls.Add(control);
             if (BeforeControl != null) await BeforeControl(control);
             if (epoch != Epoch || seatId != 0 || control.GameId != State.Id || RetireControls)
-                return AutomatedPriorityControlResult.Retired;
+                return new AutomatedPriorityControlResult.Retired();
             switch (control) {
                 case AutomatedPriorityControl.Acknowledge ack:
                     State = State with { Revision = State.Revision + 1, PriorityObservation = State.PriorityObservation! with {
@@ -313,7 +376,7 @@ internal static class AiAutomatedPriorityRegression
                         AcknowledgedPublicActivitySequence = ack.PublicActivitySequence } }; break;
                 case AutomatedPriorityControl.NoResponse grant:
                     try {
-                        if (grant.Sequence <= Fence) return AutomatedPriorityControlResult.Retired;
+                        if (grant.Sequence <= Fence) return new AutomatedPriorityControlResult.Retired();
                         PositiveAccepted++;
                         var availability = (State.Decision?.Payload as PriorityPayload)?.ResponseAvailability;
                         State = State with { Revision = State.Revision + 1, PriorityContinuation = new(grant.Sequence,
@@ -331,7 +394,16 @@ internal static class AiAutomatedPriorityRegression
                     if (LoseWithdrawReceipt) throw new IOException("Controlled lost negative receipt.");
                     break;
             }
-            return AutomatedPriorityControlResult.Accepted;
+            AfterControl?.Invoke(control);
+            return new AutomatedPriorityControlResult.Accepted(new(Epoch, State.Id, 0, State.Revision, State.BoardRevision,
+                State.StackInterruptionVersion!.Value, State.Status switch {
+                    "playing" => AutomatedPriorityMatchStatus.Playing, "resolving" => AutomatedPriorityMatchStatus.Resolving,
+                    "finished" => AutomatedPriorityMatchStatus.Finished, _ => AutomatedPriorityMatchStatus.Starting },
+                State.Viewer is { Eliminated: false }, State.DecisionOwnerId, State.PriorityPlayerId, State.Decision?.Id,
+                State.Status == "playing" && (State.DecisionOwnerId == null || State.DecisionOwnerId == State.ViewerId)
+                    && (State.PriorityPlayerId == null || State.PriorityPlayerId == State.ViewerId)
+                    && State.Decision?.Payload is PriorityPayload ? State.Decision.Id : null,
+                State.PriorityContinuation!, State.PriorityObservation!));
         }
         public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode, CancellationToken cancellation = default)
         { Reports.Add(reasonCode); return Task.CompletedTask; }
@@ -340,8 +412,9 @@ internal static class AiAutomatedPriorityRegression
             State = State with { Revision = State.Revision + 1, Status = "playing",
                 Decision = new("priority-" + (State.Revision + 1), new(), new PriorityPayload(new("Pass", true),
                     CanAutoPass: availability == PriorityResponseAvailability.Absent) { ResponseAvailability = availability }),
-                PriorityContinuation = State.PriorityContinuation! with { Status = State.PriorityContinuation!.Status == PriorityContinuationStatus.Revoked
-                    ? PriorityContinuationStatus.Revoked : PriorityContinuationStatus.Held,
+                PriorityContinuation = State.PriorityContinuation! with { Status = State.PriorityContinuation!.GrantId.Length == 0
+                    ? PriorityContinuationStatus.Idle : State.PriorityContinuation.Status == PriorityContinuationStatus.Revoked
+                        ? PriorityContinuationStatus.Revoked : PriorityContinuationStatus.Held,
                     ReasonCode = availability == PriorityResponseAvailability.Available ? "response-available" : "response-unknown" } };
         }
         internal void RequiredChoice() => State = State with { Revision = State.Revision + 1, Status = "playing",

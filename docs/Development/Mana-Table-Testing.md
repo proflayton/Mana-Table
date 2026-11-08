@@ -727,6 +727,16 @@ Missing rare required-mechanic witnesses remain explicitly Inconclusive; absent
 causal integrity/role evidence, any mechanical failure, or any incomplete natural
 rotation fails this gate. This never substitutes `natural` for the stricter
 `release` causal-mechanic profile or supplies human UX approval.
+The separate real 50-trigger cadence journey retains its 30-second/2,048-step
+budget and 100 ordinary bot passes. Its two trusted finite clients may submit
+finite consent through the scoped automated transport while policy proposals
+remain forbidden from granting consent. A rejected client command is captured
+and raised from the owner loop immediately, preserving the original cause.
+The automated-priority regressions require one rich observation for an unchanged
+ACK/grant/held-withdrawal chain and a fresh rich observation before policy work.
+They advance the board, action signature and input independently, change pacing
+between controls, and deliver actual child-process ACK replies out of order.
+Metadata receipts cannot install policy scopes or revive a replaced input.
 
 `--smoke-polled-mana-output` uses the same source/package arguments as
 `--smoke-polled-fanout`. It opens an actual TCP two-human/two-distinct-AI table;

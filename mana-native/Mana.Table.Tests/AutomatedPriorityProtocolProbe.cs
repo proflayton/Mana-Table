@@ -21,7 +21,7 @@ internal static class AutomatedPriorityProtocolProbe
         Console.Out.Flush();
         var state = JsonNode.Parse("""
             {"id":"automated-priority-wire","status":"playing","viewerId":29,"turn":1,"phaseKey":"MAIN1","activePlayerId":29,
-             "revision":1,"boardRevision":1,"decisionOwnerId":29,"priorityPlayerId":29,
+             "revision":1,"boardRevision":1,"decisionOwnerId":29,"priorityPlayerId":29,"stackInterruptionVersion":0,
              "players":[{"id":29,"name":"Bot","life":40,"mana":{},"zones":[]}],"stack":[],
              "priorityContinuation":{"sequence":0,"grantId":"","mode":null,"status":"Idle","reasonCode":"","automaticPasses":0,"phaseStops":[]},
              "priorityObservation":{"boardRevision":1,"publicActivitySequence":0,"acknowledgedBoardRevision":0,
@@ -29,8 +29,10 @@ internal static class AutomatedPriorityProtocolProbe
              "prompt":{"id":"priority","kind":"input","task":"priority","okEnabled":true,"canAutoPass":true,
                 "responseAvailability":"Absent"}}
             """)!;
+        if (mode == "wrong-decision-owner") state["decisionOwnerId"] = 99;
+        if (mode == "wrong-priority-owner") state["priorityPlayerId"] = 99;
         void Reply(long id, object? value) { Console.WriteLine(JsonSerializer.Serialize(new { id, result = value })); Console.Out.Flush(); }
-        int enables = 0; bool empty = false; long? held = null; JsonNode? heldState = null;
+        int enables = 0, acknowledgements = 0; bool empty = false; long? held = null; JsonNode? heldState = null;
         while (Console.ReadLine() is { } line) {
             using var parsed = JsonDocument.Parse(line);
             var request = parsed.RootElement; long id = request.GetProperty("id").GetInt64();
@@ -63,6 +65,18 @@ internal static class AutomatedPriorityProtocolProbe
             if (action == "acknowledgePriorityObservation") {
                 state["priorityObservation"]!["registered"] = true;
                 state["priorityObservation"]!["acknowledgedBoardRevision"] = 1;
+                if (mode == "late-ack") {
+                    if (++acknowledgements == 1) {
+                        held = id; heldState = state.DeepClone();
+                        File.WriteAllText(Path.Combine(directory, "held-ack.txt"), "ready"); continue;
+                    }
+                    state["boardRevision"] = 2;
+                    state["priorityObservation"]!["boardRevision"] = 2;
+                    state["prompt"]!["id"] = "replacement-priority";
+                    Reply(id, state);
+                    if (held is { } old) { Reply(old, heldState); held = null; }
+                    continue;
+                }
             } else if (action == "grantPriorityContinuation") {
                 if (mode == "retired") {
                     Console.WriteLine(JsonSerializer.Serialize(new { id, error = "authored pre-admission retirement",
@@ -96,7 +110,7 @@ internal static class AutomatedPriorityProtocolProbe
 
     internal static async Task RunAsync(string profile, Action<bool, string> check)
     {
-        foreach (string mode in new[] { "human-only", "bot", "late-world", "retired", "superseded-receipt", "post-admission-error", "malformed-receipt" }) {
+        foreach (string mode in new[] { "human-only", "bot", "wrong-decision-owner", "wrong-priority-owner", "late-world", "retired", "superseded-receipt", "post-admission-error", "malformed-receipt" }) {
             string directory = Path.Combine(profile, "automated-priority-protocol-" + mode); Directory.CreateDirectory(directory);
             await using var engine = new ForgeEngine(new(Path.Combine(AppContext.BaseDirectory, "Mana.Table.Tests.exe"), Marker, mode, directory));
             check(!engine.SupportsAutomatedPriorityContinuation, "Bot continuation has no authority before ready negotiation: " + mode);
@@ -104,16 +118,23 @@ internal static class AutomatedPriorityProtocolProbe
             check(engine.SupportsPriorityContinuation && engine.SupportsAutomatedPriorityContinuation == (mode != "human-only"),
                 "Human continuation support cannot imply the distinct bot completed-scan/credit contract: " + mode);
             await engine.EnableAutomatedSeatsAsync();
+            if (mode is "wrong-decision-owner" or "wrong-priority-owner") {
+                bool refused = false;
+                try { await engine.ObserveAutomatedSeatsAsync(); } catch (IOException) { refused = true; }
+                check(refused && Count(directory, "automatedAction") == 0,
+                    "The actual provider rejects a foreign priority owner before either an ACK or chained grant can acquire authority: " + mode);
+                continue;
+            }
             var row = (await engine.ObserveAutomatedSeatsAsync()).Single(); long epoch = engine.AutomatedPriorityEpoch;
             var ack = new AutomatedPriorityControl.Acknowledge(row.State.Id, 1, 0);
             if (mode == "human-only") {
-                check(await engine.ExecuteAutomatedPriorityControlAsync(epoch, 29, ack) == AutomatedPriorityControlResult.Retired
+                check(await engine.ExecuteAutomatedPriorityControlAsync(epoch, 29, ack) is AutomatedPriorityControlResult.Retired
                     && Count(directory, "automatedAction") == 0, "Missing bot capability rejects metadata before any RPC despite human support");
                 continue;
             }
-            check(await engine.ExecuteAutomatedPriorityControlAsync(epoch, 29, ack) == AutomatedPriorityControlResult.Accepted,
+            check(await engine.ExecuteAutomatedPriorityControlAsync(epoch, 29, ack) is AutomatedPriorityControlResult.Accepted {
+                    Receipt.Epoch: var acceptedEpoch, Receipt.SeatId: 29 } && acceptedEpoch == epoch,
                 "The actual provider maps a closed owned ACK through the host-only route");
-            row = (await engine.ObserveAutomatedSeatsAsync()).Single();
             var grant = new AutomatedPriorityControl.NoResponse(row.State.Id, row.State.Decision!.Id, 1, "owned-grant", []);
             bool rejected = false;
             try { await engine.ExecuteAutomatedAsync(29, new GrantPriorityContinuation(row.State.Id, row.State.Decision.Id,
@@ -122,10 +143,10 @@ internal static class AutomatedPriorityProtocolProbe
                 "A policy gameplay port cannot acquire consent authority or add an input receipt");
             var positive = engine.ExecuteAutomatedPriorityControlAsync(epoch, 29, grant);
             if (mode == "superseded-receipt") {
-                check(await positive == AutomatedPriorityControlResult.Retired,
+                check(await positive is AutomatedPriorityControlResult.Retired,
                     "A later negative sequence cannot certify acceptance of the original affirmative grant or keep awaiting its retired ID");
             } else if (mode == "retired") {
-                check(await positive == AutomatedPriorityControlResult.Retired,
+                check(await positive is AutomatedPriorityControlResult.Retired,
                     "Only the exact backend pre-admission retirement code gives a known no-effect metadata result");
             } else if (mode is "post-admission-error" or "malformed-receipt") {
                 Exception? failure = null;
@@ -133,26 +154,56 @@ internal static class AutomatedPriorityProtocolProbe
                 check(failure is IOException && failure is not ForgeAutomatedPriorityRetiredException,
                     "A generic or malformed post-admission receipt remains uncertain rather than granting policy fallback: " + mode);
                 check(await engine.ExecuteAutomatedPriorityControlAsync(epoch, 29,
-                    new AutomatedPriorityControl.Withdraw(row.State.Id, 1)) == AutomatedPriorityControlResult.Accepted,
+                    new AutomatedPriorityControl.Withdraw(row.State.Id, 1)) is AutomatedPriorityControlResult.Accepted,
                     "Uncertain affirmative consent retains its separate negative fence: " + mode);
             } else if (mode == "late-world") {
                 var elapsed = Stopwatch.StartNew();
                 while (!File.Exists(Path.Combine(directory, "held-grant.txt")) && elapsed.Elapsed < TimeSpan.FromSeconds(5)) await Task.Delay(5);
                 if (!File.Exists(Path.Combine(directory, "held-grant.txt"))) throw new TimeoutException("The authored grant did not reach the child.");
                 await engine.StartSoloAsync("authored-deck", ["opponent"]);
-                check(await positive == AutomatedPriorityControlResult.Retired && engine.AutomatedPriorityEpoch != epoch,
+                check(await positive is AutomatedPriorityControlResult.Retired && engine.AutomatedPriorityEpoch != epoch,
                     "An admitted old-world grant reply cannot become current authority after an actual provider world replacement");
                 int before = Count(directory, "automatedAction");
-                check(await engine.ExecuteAutomatedPriorityControlAsync(epoch, 29, grant) == AutomatedPriorityControlResult.Retired
+                check(await engine.ExecuteAutomatedPriorityControlAsync(epoch, 29, grant) is AutomatedPriorityControlResult.Retired
                     && Count(directory, "automatedAction") == before, "A retired world epoch cannot send another affirmative control to its replacement");
             } else {
-                check(await positive == AutomatedPriorityControlResult.Accepted, "The actual provider accepts only its current NoResponse grant");
+                check(await positive is AutomatedPriorityControlResult.Accepted && Count(directory, "automatedState") == 1,
+                    "An exact ACK receipt chains its current NoResponse grant with one owned read and no control-only observation round trip");
                 await engine.EnableAutomatedSeatsAsync();
                 check((await engine.ObserveAutomatedSeatsAsync()).IsEmpty, "The authored discovery scope really retires before negative consent");
                 check(await engine.ExecuteAutomatedPriorityControlAsync(epoch, 29, new AutomatedPriorityControl.Withdraw(row.State.Id, 1))
-                    == AutomatedPriorityControlResult.Accepted, "A previously dispatched grant retains its negative fence after current discovery scopes disappear");
+                    is AutomatedPriorityControlResult.Accepted, "A previously dispatched grant retains its negative fence after current discovery scopes disappear");
             }
         }
+        await OutOfOrderMetadata(profile, check);
+    }
+
+    private static async Task OutOfOrderMetadata(string profile, Action<bool, string> check)
+    {
+        string directory = Path.Combine(profile, "automated-priority-protocol-late-ack"); Directory.CreateDirectory(directory);
+        await using var engine = new ForgeEngine(new(Path.Combine(AppContext.BaseDirectory, "Mana.Table.Tests.exe"), Marker, "late-ack", directory));
+        await engine.InitializeAsync(); await engine.EnableAutomatedSeatsAsync();
+        var observed = (await engine.ObserveAutomatedSeatsAsync()).Single(); long epoch = engine.AutomatedPriorityEpoch;
+        var ack = new AutomatedPriorityControl.Acknowledge(observed.State.Id, 1, 0);
+        var first = engine.ExecuteAutomatedPriorityControlAsync(epoch, 29, ack);
+        var elapsed = Stopwatch.StartNew();
+        while (!File.Exists(Path.Combine(directory, "held-ack.txt")) && elapsed.Elapsed < TimeSpan.FromSeconds(5)) await Task.Delay(5);
+        if (!File.Exists(Path.Combine(directory, "held-ack.txt"))) throw new TimeoutException("The authored ACK did not reach the child.");
+        var newer = await engine.ExecuteAutomatedPriorityControlAsync(epoch, 29, ack);
+        var older = await first;
+        check(newer is AutomatedPriorityControlResult.Accepted { Receipt.BoardRevision: 2 }
+            && older is AutomatedPriorityControlResult.Accepted { Receipt.BoardRevision: 1 },
+            "Actual out-of-order metadata replies retain their own authoritative values instead of borrowing the later receipt");
+        int before = Count(directory, "automatedAction");
+        check(await engine.ExecuteAutomatedPriorityControlAsync(epoch, 29,
+                new AutomatedPriorityControl.NoResponse(observed.State.Id, observed.State.Decision!.Id, 1, "old-priority", []))
+                is AutomatedPriorityControlResult.Retired && Count(directory, "automatedAction") == before,
+            "A delayed older ACK cannot roll back the control cursor and revive an input already replaced by newer metadata");
+        bool rejected = false;
+        try { await engine.ExecuteAutomatedAsync(29, new PassPriority(observed.State.Id, "replacement-priority")); }
+        catch (EngineCommandRejectedException) { rejected = true; }
+        check(rejected && Count(directory, "automatedAction") == before && Count(directory, "automatedState") == 1,
+            "A receipt's newer decision never enters policy gameplay scopes or invents another owned rich observation");
     }
 
     private static int Count(string directory, string method) => File.ReadAllLines(Path.Combine(directory, "requests.jsonl"))

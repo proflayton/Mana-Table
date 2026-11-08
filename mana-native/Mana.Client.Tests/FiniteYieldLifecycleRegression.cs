@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Mana.AI;
 using Mana.Client;
 using Mana.Contracts;
 
@@ -254,6 +255,9 @@ internal static class FiniteYieldLifecycleRegression
                 && !GameCommandPermissions.Allows(state, grant with { StackActionVersion = 2 })
                 && !GameCommandPermissions.Allows(state, grant with { ResolutionChoiceVersion = 2 }),
             "A finite grant requires advertised support, current own priority, exact entire current execution queue and both current fences");
+        var policyFrame = new AiDecisionFrame(state, domain: new(1, ActionDomainCoverage.Complete, [], []));
+        check(GameCommandPermissions.Allows(state, grant) && !policyFrame.Allows(grant),
+            "Explicit finite client consent stays a valid scoped transport command while an AI policy cannot manufacture that consent");
         state = state with { FiniteStackYield = new(grant.GrantId, FiniteStackYieldStatus.Active, grant.ExecutionIds, grant.ExecutionIds, 1, 1) };
         var revoke = new RevokeFiniteStackYield(state.Id, grant.GrantId); revoke.Validate();
         check(GameCommandPermissions.Allows(state with { Decision = null, DecisionOwnerId = 1 }, revoke)

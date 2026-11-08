@@ -545,7 +545,7 @@ internal sealed class AiCampaignProvider(IAutomatedSeatProvider inner, AiCampaig
         AutomatedPriorityControl control, CancellationToken cancellation = default)
     {
         RequireHandoff();
-        if (inner is not IAutomatedPriorityContinuation port) return AutomatedPriorityControlResult.Retired;
+        if (inner is not IAutomatedPriorityContinuation port) return new AutomatedPriorityControlResult.Retired();
         Interlocked.Increment(ref controlsExecuting);
         try { return await port.ExecuteAutomatedPriorityControlAsync(epoch, seatId, control, cancellation); }
         finally { Interlocked.Decrement(ref controlsExecuting); }
