@@ -2,6 +2,7 @@ package forge.api;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -21,6 +22,7 @@ import java.util.UUID;
 /** Desktop commands use private child-process pipes; multiplayer uses versioned JSON synchronization. */
 public final class DesktopEngine implements AutoCloseable {
     static final int PROTOCOL_VERSION = 3;
+    static final String AUTOMATED_PRIORITY_CONTINUATION = "automated-priority-continuation-v1";
     private static final Gson JSON = new GsonBuilder().serializeNulls().create();
     private final CardCatalog catalog;
     private final Path directory;
@@ -79,7 +81,7 @@ public final class DesktopEngine implements AutoCloseable {
         var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]), simulationTables, pregameSetup);
         engine.resources = Path.of(args[0]);
         engine.documents.loadAnalysisFormats(engine.resources);
-        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", PROTOCOL_VERSION, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo", "automated-seats", "certified-one-step-undo", "match-history", "history-announcements", "match-setup", "durable-encounter-admission", "simulation-match-setup", "automated-match-history", "owned-decision-observation", "private-action-faces", "table-presence", "table-choices-v1"))));
+        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", PROTOCOL_VERSION, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo", "automated-seats", "certified-one-step-undo", "match-history", "history-announcements", "match-setup", "durable-encounter-admission", "simulation-match-setup", "automated-match-history", "owned-decision-observation", "private-action-faces", "table-presence", "table-choices-v1", "priority-continuation-v1", AUTOMATED_PRIORITY_CONTINUATION))));
         try (engine; var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = input.readLine()) != null) {
@@ -88,10 +90,7 @@ public final class DesktopEngine implements AutoCloseable {
                     if (line.length() > 2_000_000) { throw new IllegalArgumentException("Request too large"); }
                     request = JsonParser.parseString(line).getAsJsonObject();
                     Object result = engine.dispatch(request.get("method").getAsString(), request.getAsJsonObject("params"));
-                    var reply = new JsonObject();
-                    reply.add("id", request.get("id"));
-                    reply.add("result", JSON.toJsonTree(result));
-                    protocol.println(JSON.toJson(reply));
+                    writeSuccessReply(protocol, request.get("id"), result);
                 } catch (Exception error) {
                     // Validation errors are returned to the caller; unexpected
                     // request failures also need a stack trace in engine.log.
@@ -109,6 +108,16 @@ public final class DesktopEngine implements AutoCloseable {
                 }
             }
         }
+    }
+
+    static void writeSuccessReply(PrintStream protocol, JsonElement requestId, Object result) {
+        var reply = new LinkedHashMap<String, Object>();
+        reply.put("id", requestId);
+        reply.put("result", result);
+        // Finish encoding before publishing any bytes. A serialization failure
+        // still reaches the existing error reply without a partial JSON frame.
+        String encoded = JSON.toJson(reply);
+        protocol.println(encoded);
     }
 
     private static boolean sourceReadRequest(JsonObject request) {
@@ -137,7 +146,20 @@ public final class DesktopEngine implements AutoCloseable {
         if (error instanceof forge.api.sync.SyncTransport.CodedFailure coded && coded.code().equals(MatchPresence.SUPERSEDED)
                 && request != null && request.has("method") && request.get("method").isJsonPrimitive()
                 && request.get("method").getAsString().equals("tablePresence")) reply.addProperty("errorCode", MatchPresence.SUPERSEDED);
+        if (error instanceof AutomatedPriorityControlRetired && request != null && request.has("method")
+                && request.get("method").isJsonPrimitive() && request.get("method").getAsString().equals("automatedAction")
+                && request.has("params") && request.get("params").isJsonObject()
+                && automatedPriorityControl(request.getAsJsonObject("params")))
+            reply.addProperty("errorCode", AutomatedPriorityControlRetired.CODE);
         return reply;
+    }
+
+    private static boolean automatedPriorityControl(JsonObject command) {
+        return switch (string(command, "action", "")) {
+            case "acknowledgePriorityObservation", "revokePriorityContinuation" -> true;
+            case "grantPriorityContinuation" -> string(command, "mode", "").equals("NoResponse");
+            default -> false;
+        };
     }
 
     @Override
@@ -262,7 +284,7 @@ public final class DesktopEngine implements AutoCloseable {
                 simulation.close(); simulation = null;
                 yield Map.of("stopped", true);
             }
-            case "automatedAction" -> ownedAutomatedSeat(p).action(p);
+            case "automatedAction" -> ownedAutomatedSeat(p, automatedPriorityControl(p)).action(p);
             case "automatedFault" -> {
                 var owner = ownedAutomatedSeat(p);
                 String reason = string(p, "reasonCode", "unavailable");
@@ -467,15 +489,22 @@ public final class DesktopEngine implements AutoCloseable {
         return new MatchSession.OpponentDeck(deck, deck.getName());
     }
     private MatchSession ownedAutomatedSeat(JsonObject p) {
+        return ownedAutomatedSeat(p, false);
+    }
+    private MatchSession ownedAutomatedSeat(JsonObject p, boolean priorityControl) {
         int playerId = number(p, "seatId", -1);
         String gameId = string(p, "sessionId", "");
-        return ownedAutomatedSeat(gameId, playerId);
+        return ownedAutomatedSeat(gameId, playerId, priorityControl);
     }
     private MatchSession ownedAutomatedSeat(String gameId, int playerId) {
+        return ownedAutomatedSeat(gameId, playerId, false);
+    }
+    private MatchSession ownedAutomatedSeat(String gameId, int playerId, boolean priorityControl) {
         return ownedAutomatedSeats().stream().filter(session -> {
             var state = session.state();
             return gameId.equals(state.get("id")) && Integer.valueOf(playerId).equals(state.get("viewerId"));
-        }).findFirst().orElseThrow(() -> new IllegalArgumentException("No owned automated seat in that game"));
+        }).findFirst().orElseThrow(() -> priorityControl ? new AutomatedPriorityControlRetired()
+                : new IllegalArgumentException("No owned automated seat in that game"));
     }
     private void validateMatchStart(DeckDocumentSession.PreparedDeck prepared) {
         if (match != null && !match.finished()) throw new IllegalStateException("Finish or concede the current match first");

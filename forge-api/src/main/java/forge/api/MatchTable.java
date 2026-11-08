@@ -4,6 +4,9 @@ import forge.deck.Deck;
 import forge.ai.LobbyPlayerAi;
 import forge.game.*;
 import forge.game.player.RegisteredPlayer;
+import forge.game.event.GameEvent;
+import forge.game.event.GameEventPlayerPriority;
+import com.google.common.eventbus.Subscribe;
 import forge.gui.interfaces.IGuiGame;
 import forge.player.LobbyPlayerHuman;
 import forge.player.PlayerControllerHuman;
@@ -38,6 +41,16 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     private volatile boolean encounterRetirementAllowed;
     private final ThreadLocal<MatchSession> dialogOwner = new ThreadLocal<>();
     private long boardRevision;
+    private final java.util.concurrent.atomic.AtomicLong publicStateGeneration = new java.util.concurrent.atomic.AtomicLong();
+    private long publishedStateGeneration = -1;
+    private record PriorityBoundary(int turn, Object phase, Object activePlayer, long stackVersion,
+                                    long actionVersion, List<Object> stack) { }
+    private PriorityBoundary publishedPriorityBoundary;
+    private final Object publicationEvents = new Object() {
+        @Subscribe public void changed(GameEvent event) {
+            if (!(event instanceof GameEventPlayerPriority)) publicStateGeneration.incrementAndGet();
+        }
+    };
     private Map<String, Object> spectatorState;
     private String spectatorError;
     private boolean closed;
@@ -106,6 +119,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         game.getReversibleManaAction().enable();
         game.subscribeToEvents(identities);
         game.subscribeToEvents(stackInterruption);
+        game.subscribeToEvents(publicationEvents);
         for (int i = 0; i < game.getPlayers().size(); i++) {
             var player = game.getPlayers().get(i);
             // Cosmetics are per registered deck; rules and live characteristics
@@ -172,6 +186,9 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     List<MatchSession> automatedSeats() { return List.copyOf(automated.values()); }
     boolean retired() { synchronized (gate) { return closed && !faulted; } }
     boolean libraryInspectionActive() { return seats.values().stream().anyMatch(MatchSession::libraryInspectionActive); }
+
+    /** Authoritative composition roles, not each audience's viewer-local human marker. */
+    List<Integer> humanPlayerIds() { return humanSeats.stream().map(seats::get).map(MatchSession::playerId).toList(); }
 
     MatchSession automatedSeat(int playerId) {
         var session = automated.get(playerId);
@@ -255,6 +272,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
             try {
                 game.unsubscribeFromEvents(identities);
                 game.unsubscribeFromEvents(stackInterruption);
+                game.unsubscribeFromEvents(publicationEvents);
                 for (var seat : seats.values()) seat.detach();
             } catch (Throwable failure) {
                 if (unexpected == null) {
@@ -279,8 +297,21 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
 
     // Only called at controller input boundaries, while the game is waiting.
     void publish() {
+        publish(false);
+    }
+
+    /** The validated input/dialog owner may need a choice before an outer
+     * effect unfreezes. Such a cut flushes committed views, retaining its depth. */
+    void publishCurrentDecision() {
+        publish(true);
+    }
+
+    private void publish(boolean currentDecision) {
         game.getAction().withState(() -> { synchronized (gate) {
             if (faulted) return;
+            if (currentDecision || game.isGameOver() && game.getOutcome() != null)
+                game.getTracker().flushForCommittedObservation();
+            else if (game.getTracker().isFrozen()) return;
             observeStackChoices();
             long revision = ++boardRevision;
             boolean publicationClosed = closed;
@@ -294,10 +325,16 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
             }
             refreshDecisionState();
             if (!currentPublication(revision)) return;
+            publishedStateGeneration = publicStateGeneration.get();
+            publishedPriorityBoundary = priorityBoundary();
             if (automatedOnly) {
                 var spectator = SpectatorObservation.project(this, revision, spectatorError);
                 if (currentPublication(revision)) spectatorState = spectator;
             }
+            if (!currentPublication(revision)) return;
+            // Certify the whole audience cohort before any observer can publish
+            // reentrantly or acknowledge a frame. Partial builders grant no credit.
+            for (var seat : seats.values()) seat.commitPublication(revision);
             // Observers can inspect every audience or publish reentrantly. No
             // normal completion may expose a partially projected table, and a
             // newer publication owns all remaining callbacks and queued passes.
@@ -312,6 +349,33 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     /** Called inside the rules-state/table boundary. A reentrant publication
      * supersedes the whole earlier cohort, including its public observer. */
     boolean currentPublication(long revision) { return boardRevision == revision; }
+
+    /** Rules generation excludes only the routine player-priority notification.
+     * Every other engine event conservatively requires a real publication. */
+    boolean canElidePriorityPublication() {
+        return !closed && !faulted && !game.isGameOver() && publishedStateGeneration == publicStateGeneration.get()
+                && Objects.equals(publishedPriorityBoundary, priorityBoundary())
+                && humanSeats.stream().map(seats::get).filter(MatchSession::activeHuman).allMatch(MatchSession::priorityObserverRegistered);
+    }
+    private PriorityBoundary priorityBoundary() {
+        var members = new ArrayList<Object>();
+        for (var member : game.getStack()) members.add(member);
+        var phase = game.getPhaseHandler();
+        return new PriorityBoundary(phase.getTurn(), phase.getPhase(), phase.getPlayerTurn(),
+                stackInterruption.version(), stackInterruption.actionVersion(), List.copyOf(members));
+    }
+    boolean priorityObserversReady() {
+        return humanSeats.stream().map(seats::get).filter(MatchSession::activeHuman)
+                .filter(MatchSession::priorityObserverRegistered).allMatch(MatchSession::priorityObserverHasCredit);
+    }
+    String priorityObservationReason() {
+        return humanSeats.stream().map(seats::get).filter(MatchSession::activeHuman)
+                .anyMatch(MatchSession::priorityObserverOverflowed) ? "observation-overflow" : "awaiting-observation";
+    }
+
+    /** Credit replenishment can release any waiting seat, but always re-enters
+     * its original mutually exclusive dispatcher under this table boundary. */
+    void continuePriority() { for (var seat : seats.values()) seat.continuePriority(); }
 
     /** Public decision ownership only; a seat's options and prompt remain private. */
     void refreshDecisionState() {

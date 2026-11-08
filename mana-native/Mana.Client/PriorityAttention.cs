@@ -1,12 +1,11 @@
-using Mana.Client;
 using Mana.Contracts;
 
-namespace Mana.Table.Presentation;
+namespace Mana.Client;
 
 // Local consent to skip quiet windows, never authority to answer a decision.
 // Observe before input: acknowledging one displayed response cannot acknowledge
 // a cast or trigger which arrives while that response is in flight.
-internal sealed class PriorityAttention
+public sealed class PriorityAttention
 {
     private string? game, token, required, observedDecision;
     private int viewer, turn;
@@ -15,9 +14,14 @@ internal sealed class PriorityAttention
     private long? interruption;
     private long revision;
     private AcknowledgedResponse? acknowledged;
-    internal bool NeedsResponse { get; private set; }
+    public bool NeedsResponse { get; private set; }
 
-    internal void Observe(GameSnapshot? state)
+    public bool CanStartAutomaticQuiet(GameSnapshot? state) => !NeedsResponse
+        && state is { } current && current.ActivePlayerId != current.ViewerId
+        && current.Decision?.Payload is PriorityPayload priority
+        && QuietPriorityPolicy.CanPass(current, priority.QuietYieldToken);
+
+    public void Observe(GameSnapshot? state)
     {
         if (state == null || game != state.Id || viewer != state.ViewerId) {
             game = state?.Id; viewer = state?.ViewerId ?? 0;
@@ -54,7 +58,7 @@ internal sealed class PriorityAttention
 
     // Called only after the session accepts the exact current command. A plain
     // mode change cannot manufacture evidence that a stack response was passed.
-    internal void Submitted(GameSnapshot state, DecisionCommand command)
+    public void Submitted(GameSnapshot state, DecisionCommand command)
     {
         if (game != state.Id || viewer != state.ViewerId || revision != state.Revision
             || observedDecision != state.Decision?.Id || !GameCommandPermissions.Allows(state, command)) return;
@@ -62,8 +66,8 @@ internal sealed class PriorityAttention
         if (command is PassPriority) acknowledged = AcknowledgedResponse.Capture(state);
     }
 
-    internal void Resume() { acknowledged = null; NeedsResponse = false; }
-    internal void Interrupt() { acknowledged = null; NeedsResponse = true; }
+    public void Resume() { acknowledged = null; NeedsResponse = false; }
+    public void Interrupt() { acknowledged = null; NeedsResponse = true; }
     private static long LatestActivity(GameSnapshot? state) => state?.Activity.Select(entry => entry.Id).DefaultIfEmpty().Max() ?? 0;
 
     private enum ResponseProgress { Waiting, Resolved, Interrupted }

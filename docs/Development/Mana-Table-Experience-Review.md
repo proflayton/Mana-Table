@@ -6,6 +6,47 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Server-owned passing and readable large queues: 6 November 2026
+
+**Implemented source candidate; release qualification and exact-candidate human
+review pending.** The player wants to choose how play continues once, see new
+casts/triggers, and interrupt that intent from the same portrait controls.
+Repeated empty priority windows should not require repeated clicks or full
+table refreshes.
+
+The supplied Arena portrait/phase screenshots establish the spatial arrangement.
+Wizards' [Smart Priority explanation](https://magic.wizards.com/en/news/mtg-arena/announcements-october-27-2025#a-quick-guide-to-smart-priority-for-powered-cube)
+documents selective response opportunities, phase stops and full control, with
+exceptions that players still need to manage. MTGO's [September 2025 update](https://www.mtgo.com/news/through-the-omenpaths)
+documents one gesture yielding to the current stack and a fresh gesture for new
+arrivals. These are interaction precedents, not evidence for either game's
+server implementation or four-player reading cadence. No new gameplay video
+was viewed for this slice.
+
+Our source is the current portrait Auto control or the actual captured queue.
+The gesture remains **Auto pass**, **Wait for action**, **Resolve these**, or
+**Take control**, using the existing stable response position. Ordinary Auto
+registers only verified response-free passing; explicit quiet waiting keeps
+its original unchanged-window permission. A response, uncertainty, own-turn stop
+or required choice visibly holds ordinary Auto. Take control withdraws even
+while another player acts; its pending acknowledgement never promises to undo
+an already committed pass.
+
+The engine still performs every real priority handoff. Captured queue progress
+can share its established reading beat, while a new unrelated action must become
+readable before presentation returns more progression credit. This credit and
+the server's bounded lead are Mana Table adaptations, not Arena behavior claims.
+Reading, manual mana, backgrounding and recovery withdraw active continuation;
+optional payment decisions retain their separate consent. Solo play suppresses
+cosmetic presence polling when the authority confirms there is no other active
+human, without changing game rules or AI policy.
+
+Review both window sizes with real artwork: start Auto while holding an instant,
+see a new response, take control during an in-flight receipt, read an unrelated
+spell during a captured draw burst, switch to/from Resolve these, and reconnect.
+Automated dispatch/resource/privacy and stale-authority checks supply mechanical
+evidence; they do not establish that the new pace is understandable to people.
+
 ## Seeing another player read the table: source candidate
 
 **Source candidate; exact-candidate human review pending.** The intent is to

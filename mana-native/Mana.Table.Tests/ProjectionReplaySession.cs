@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Mana.Client;
 using Mana.Contracts;
 using Mana.Scenarios;
 using Mana.Table.Presentation;
@@ -19,6 +20,7 @@ internal sealed class ProjectionReplaySession : IDisposable
     private Point pointer = new(20, 60);
     internal sealed record Acceptance(GameSnapshot State, TimeSpan At, ProjectionPresentationSettings Settings);
     internal IReadOnlyList<Acceptance> Accepted => accepted;
+    internal event Action<PresentationFrame>? Presented;
     internal long ElapsedTicks => app.ElapsedTicks;
     internal ProjectionPlayback Playback { get; }
     internal TableApplication.Probe View => app.View;
@@ -37,7 +39,8 @@ internal sealed class ProjectionReplaySession : IDisposable
         // These isolated metadata ports cannot load real decks or contact an
         // engine. Live source-action discovery is deliberately not composed.
         var metadata = new ExperienceLabEngine(new ExperienceLabSession());
-        app = new(new(metadata, metadata, Playback, metadata.InitializeAsync), profile, Playback.Current, size);
+        app = new(new(metadata, metadata, Playback, metadata.InitializeAsync), profile, Playback.Current, size,
+            authority: ClientSessionAuthority.ObserveOnly);
         View.SetTableStudy(settings?.TableStudy ?? true);
         app.Accepted += OnAccepted;
         if (recording.Timeline != null) { QueueDue(0); TickAt(0); }
@@ -52,9 +55,11 @@ internal sealed class ProjectionReplaySession : IDisposable
             : TickAt(app.ElapsedTicks + FrameTicks);
     private PresentationFrame TickAt(long ticks, Point? viewport = null)
     {
-        return Frame = app.UpdateAt(TimeSpan.FromTicks(ticks),
+        Frame = app.UpdateAt(TimeSpan.FromTicks(ticks),
             new(pointer.X, pointer.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released),
             new(), viewport ?? Size);
+        Presented?.Invoke(Frame);
+        return Frame;
     }
     internal bool Advance()
     {

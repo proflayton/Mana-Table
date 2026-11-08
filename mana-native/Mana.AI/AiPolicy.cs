@@ -23,17 +23,22 @@ public static class AiTasks
 }
 
 /// <summary>A whole-seat policy must declare every task. Unsupported situations return Unavailable explicitly.</summary>
+public enum AiPriorityAutomation { FullControl, NoResponse }
+
 public sealed record AiPolicyDescriptor
 {
     public string Id { get; }
     public ImmutableHashSet<AiTask> Tasks { get; }
-    public AiPolicyDescriptor(string id, ImmutableHashSet<AiTask> tasks)
+    public AiPriorityAutomation PriorityAutomation { get; }
+    public AiPolicyDescriptor(string id, ImmutableHashSet<AiTask> tasks,
+        AiPriorityAutomation priorityAutomation = AiPriorityAutomation.FullControl)
     {
         if (string.IsNullOrWhiteSpace(id)) throw new ArgumentException("A policy needs a versioned identity.", nameof(id));
         ArgumentNullException.ThrowIfNull(tasks);
         if (!tasks.SetEquals(AiTasks.All))
             throw new ArgumentException("A seat policy must cover every decision task, including required choices.", nameof(tasks));
-        Id = id; Tasks = tasks;
+        if (!Enum.IsDefined(priorityAutomation)) throw new ArgumentOutOfRangeException(nameof(priorityAutomation));
+        Id = id; Tasks = tasks; PriorityAutomation = priorityAutomation;
     }
 }
 

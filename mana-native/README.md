@@ -132,6 +132,24 @@ required choices remain explicit. F enables full control; a bare Ctrl toggles Ho
 on release. Pressing Ctrl pauses Auto while a chord is pending; Ctrl+Z does not
 change Hold or optional-payment preferences.
 
+The server-owned Auto source candidate retains these portrait controls. A
+supported host accepts the policy once and performs each verified empty response
+window on its rules owner. An available response, unknown legal-action scan,
+saved own-turn stop or required choice holds ordinary Auto. Explicit quiet
+waiting retains its original unchanged-window token; a new public action ends
+that permission. **Take control** withdraws pending or accepted server consent
+without waiting for your priority. An already committed pass is reconciled, not
+undone. Reading and manual mana withdraw continuation as well.
+
+**Resolve these** still covers only the captured queue, with its own separate
+optional-cost consent. Switching from ordinary Auto first observes withdrawal;
+the client never runs two passers. Large known queues can advance without a
+full network round trip per priority handoff, while accepted-frame reading
+credit bounds how far play can lead human observers. New unrelated actions keep
+their reading opportunity. Older hosts retain the existing client path. See the
+[implemented contract](../docs/Development/Mana-Table-Priority-Continuation.md)
+for compatibility and the pending release/human-review gates.
+
 Source-only certified Undo adapts [MTGO's Ctrl+Z](https://www.mtgo.com/getting-started/getting-started-tips-tricks)
 and [Arena's contextual arrow](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-january-2021-01-21) to
 one supported manual mana-source tap at priority, outside payment. **Undo tap

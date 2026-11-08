@@ -23,6 +23,7 @@ public sealed class TablePresenceSession(ITablePresence? provider, Action<Action
         if (state?.Id != value?.Id || state?.ViewerId != value?.ViewerId
             || state?.BoardRevision != value?.BoardRevision || state?.PublicInspection != value?.PublicInspection
             || state?.PublicChoice != value?.PublicChoice || state?.Status != value?.Status
+            || (state != null && HumanParticipationFacts.HasOtherActiveHuman(state)) != (value != null && HumanParticipationFacts.HasOtherActiveHuman(value))
             || state?.DecisionOwnerId != value?.DecisionOwnerId || state?.ActionClass != value?.ActionClass) {
             generation++; cues = []; choices = []; acceptedRevision = -1;
         }
@@ -38,7 +39,8 @@ public sealed class TablePresenceSession(ITablePresence? provider, Action<Action
         latestTime = now;
         if (active != foreground) { active = foreground; generation++; cues = []; choices = []; }
         if (!active || !Supported || inFlight || !transportAvailable || now < nextExchange
-            || state is not { Status: "playing", Viewer: { Eliminated: false } } current) return;
+            || state is not { Status: "playing", Viewer: { Eliminated: false } } current
+            || !HumanParticipationFacts.HasOtherActiveHuman(current)) return;
         var context = current.PublicInspection;
         bool ownsContext = context != null && context.PlayerId == current.ViewerId && PublicInspectionFacts.IsCurrent(current);
         if (!ownsContext || !PublicSubject(current, desired)) desired = null;
@@ -59,7 +61,8 @@ public sealed class TablePresenceSession(ITablePresence? provider, Action<Action
             post(() => {
                 inFlight = false;
                 if (closed || capturedGeneration != generation || !active || state?.ViewerId != viewer
-                    || state.Id != request.GameId || state.BoardRevision != request.BoardRevision) return;
+                    || state.Id != request.GameId || state.BoardRevision != request.BoardRevision
+                    || !HumanParticipationFacts.HasOtherActiveHuman(state)) return;
                 if (failed) { cues = []; choices = []; nextExchange = Math.Max(nextExchange, latestTime + 1); return; }
                 if (result is TablePresenceResult.Unsupported) { unavailable = true; cues = []; choices = []; return; }
                 if (result is TablePresenceResult.Superseded) { cues = []; choices = []; acceptedRevision = -1; generation++; return; }

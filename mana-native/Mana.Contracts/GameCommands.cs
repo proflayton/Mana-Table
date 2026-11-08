@@ -16,6 +16,11 @@ public abstract record GameCommand
             GrantFiniteStackYield value => FiniteStackYieldFacts.Id(value.GrantId) && FiniteStackYieldFacts.Members(value.ExecutionIds)
                 && value.StackActionVersion >= 0 && value.ResolutionChoiceVersion >= 0,
             RevokeFiniteStackYield value => FiniteStackYieldFacts.Id(value.GrantId),
+            GrantPriorityContinuation value => value.Sequence > 0 && PriorityContinuationFacts.Identifier(value.GrantId)
+                && Enum.IsDefined(value.Mode) && PriorityContinuationFacts.Stops(value.PhaseStops)
+                && (value.Mode == PriorityContinuationMode.Quiet ? PriorityContinuationFacts.Identifier(value.QuietYieldToken) : value.QuietYieldToken == ""),
+            RevokePriorityContinuation value => value.ThroughSequence > 0,
+            AcknowledgePriorityObservation value => value.BoardRevision >= 0 && value.PublicActivitySequence >= 0,
             UndoAction value => UndoFacts.Identifier(value.OfferId) && UndoFacts.Identifier(value.ActionId) && value.BarrierVersion >= 0,
             SelectCard value => Present(value.Card), PlayCard value => Present(value.Card),
             ActivateCard value => Present(value.Card), UseManaSource value => Present(value.Card),
@@ -105,6 +110,11 @@ public static class GameCommandPermissions
         if (state.Id != command.GameId) return false;
         if (command is RevokeFiniteStackYield revoke)
             return state.FiniteStackYield is { } yield && yield.GrantId == revoke.GrantId && yield.Status != FiniteStackYieldStatus.Idle;
+        if (command is RevokePriorityContinuation)
+            return state.PriorityContinuation != null;
+        if (command is AcknowledgePriorityObservation acknowledgement)
+            return state.PriorityObservation is { } observation && acknowledgement.BoardRevision <= observation.BoardRevision
+                && acknowledgement.PublicActivitySequence <= observation.PublicActivitySequence;
         if (state.Status is "finished" or "error") return false;
         if (command is RestorePriorityAbility restore)
             return state.IgnoredPriorityAbilities.Any(ability => ability.Id == restore.AbilityId);
@@ -120,6 +130,7 @@ public static class GameCommandPermissions
         bool Located(string key, params string[] zones) => CardViews.Located(state).Any(item => item.Card.Key == key && zones.Contains(item.Zone));
         return command switch {
             GrantFiniteStackYield grant => payload is PriorityPayload { Pass.Enabled: true } && FiniteStackYieldFacts.CanGrant(state, grant),
+            GrantPriorityContinuation grant => PriorityContinuationFacts.CanGrant(state, grant),
             PassPriority value => payload is PriorityPayload { Pass.Enabled: true }
                 && (value.StackInterruptionVersion == null || state.Status == "playing" && state.Stack.Length > 0
                     && value.StackInterruptionVersion == state.StackInterruptionVersion),

@@ -33,9 +33,11 @@ internal sealed class StackArrivalPresentation
     // captured executions. The public execution/activity streams remain intact.
     internal void BeginFinite(IEnumerable<(string Execution, string Group)> captured, double now)
     {
+        var members = captured.Where(item => item.Execution.Length > 0 && item.Group.Length > 0)
+            .DistinctBy(item => item.Execution).ToDictionary(item => item.Execution, item => item.Group, StringComparer.Ordinal);
+        if (members.Count == finiteGroups.Count && members.All(item => finiteGroups.GetValueOrDefault(item.Key) == item.Value)) return;
         EndFinite();
-        foreach (var (execution, group) in captured)
-            if (execution.Length > 0 && group.Length > 0) finiteGroups.TryAdd(execution, group);
+        foreach (var (execution, group) in members) finiteGroups.Add(execution, group);
         foreach (var group in finiteGroups.Values) finiteCounts[group] = finiteCounts.GetValueOrDefault(group) + 1;
         Tick(now);
         var queued = (current == null ? pending.ToArray() : new[] { current }.Concat(pending)).ToArray();

@@ -208,6 +208,7 @@ test('native consumers check out only their source dependencies while producers 
   const jobs = nativeJobs();
   const cases = [
     ['native-verification', jobs.get('native-verification'), ['mana-native/ci']],
+    ['mixed-game-qualification', jobs.get('mixed-game-qualification'), ['mana-native/ci', 'scripts/mana-table']],
     ['native-ui', jobs.get('native-ui'), ['mana-native/ci']],
     ['installer-lifecycle', jobs.get('installer-lifecycle'), ['mana-native/ci', 'mana-native/installer']],
     ['managed-updates', jobs.get('managed-updates'), ['mana-native/ci', 'mana-native/installer']],
@@ -262,6 +263,7 @@ test('native consumers receive only their required pinned tool archives', () => 
   assert.equal(new Set(directories).size, 3, 'Tool types must not upload the same combined directory.');
   const consumers = [
     ['native-verification', jobs.get('native-verification'), [], ['package']],
+    ['mixed-game-qualification', jobs.get('mixed-game-qualification'), [], ['package']],
     ['native-ui', jobs.get('native-ui'), ['graphics'], ['package', 'tools']],
     ['installer-lifecycle', jobs.get('installer-lifecycle'), ['graphics', 'installer'], ['package', 'tools']],
     ['update-installer', jobs.get('update-installer'), ['installer'], ['tools']],
@@ -376,6 +378,36 @@ test('a closed two-suite matrix preserves every controlled and real-engine check
     'Both suites must retain distinct evidence even when their sibling fails.');
   for (const evidence of ['json', 'log', 'whole-seat-ai-public.jsonl']) assert.ok(verification.includes(evidence));
 });
+test('completed mixed games and real110-trigger projection qualification are mandatory independent exact-source consumers', () => {
+  const job = nativeJobs().get('mixed-game-qualification');
+  assert.deepEqual(dependencies(job), ['package']);
+  assert.match(job, /^    timeout-minutes: 20$/m);
+  assert.doesNotMatch(job, /continue-on-error:|dotnet (?:build|publish)|package\.ps1 -Release|name: mana-native-tools-/);
+  const steps = jobSteps(job);
+  const restore = steps.findIndex(step => /restore-package\.ps1 -Directory dist\/ci-inputs -RequireHarness -RequireEngineLauncher/.test(step));
+  const natural = steps.findIndex(step => /--qualify-mixed-game --mixed-game-mode polled-background --campaign-profile natural/.test(step));
+  const workload = steps.findIndex(step => /--smoke-polled-fanout/.test(step));
+  const payment = steps.findIndex(step => /--smoke-polled-mana-output/.test(step));
+  const admit = steps.findIndex(step => /node scripts\/mana-table\/mixed-game-qualification.cjs /.test(step));
+  assert.ok(restore >= 0 && restore < natural && natural < workload && workload < payment && payment < admit);
+  assert.match(steps[natural], /--engine-jar \(Join-Path \$env:MANA_NATIVE_PACKAGE 'engine\/forge-engine.jar'\)/);
+  assert.match(steps[natural], /--profile dist\/mixed-game-qualification-checks\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /);
+  assert.match(steps[workload], /--engine-jar \$env:MANA_NATIVE_FIXTURE_LAUNCHER --production-engine-jar \(Join-Path \$env:MANA_NATIVE_PACKAGE 'engine\/forge-engine.jar'\)/);
+  assert.match(steps[workload], /--source-revision \$env:GITHUB_SHA --source-manifest dist\/ci-inputs\/ci-engine-manifest.json/);
+  assert.match(steps[workload], /--profile dist\/mixed-game-fanout-checks\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /);
+  assert.match(steps[payment], /--engine-jar \$env:MANA_NATIVE_FIXTURE_LAUNCHER --production-engine-jar \(Join-Path \$env:MANA_NATIVE_PACKAGE 'engine\/forge-engine.jar'\)/);
+  assert.match(steps[payment], /--source-revision \$env:GITHUB_SHA --source-manifest dist\/ci-inputs\/ci-engine-manifest.json/);
+  assert.match(steps[payment], /--profile dist\/mixed-game-mana-output-checks\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /);
+  assert.match(steps[admit], /--mana-output dist\/mixed-game-mana-output-checks\/polled-mana-output/);
+  assert.match(steps[admit], /--source-revision \$env:GITHUB_SHA --output dist\/mixed-game-qualification-checks\/qualification.json\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /);
+  assert.match(job, /name: mana-native-ui-inputs-\$\{\{ github.sha \}\}\n          path: dist\/ci-inputs\n          digest-mismatch: error/);
+  assert.match(job, /name: package-windows-x64.zip\n          path: dist\/ci-inputs\n          skip-decompress: true\n          digest-mismatch: error/);
+  assert.match(job, /if: always\(\)\n        uses: actions\/upload-artifact@/);
+  assert.match(job, /private hands\/observations remain CI evidence/);
+  for (const extension of ['json', 'log', 'jsonl.gz']) assert.ok(job.includes(`dist/mixed-game-mana-output-checks/**/*.${extension}`));
+  assert.match(job, /name: mana-native-mixed-game-evidence-[\s\S]*compression-level: 1/,
+    'Compress only the new highly repetitive private qualification JSON evidence.');
+});
 test('native verification dispatch fixtures remain wired into the required native checks', () => {
   const checks = jobSteps(nativeJobs().get('checks')).filter(step => /run: \.\/mana-native\/ci\/test-native-ci.ps1/.test(step));
   assert.equal(checks.length, 1, 'The required checks job must execute the real native CI fixture entry point.');
@@ -405,7 +437,7 @@ test('full SDK fixture verification starts from tools while product migration re
 test('the actual Windows aggregate requires every check and exactly the authorized installer lane', () => {
   const gate = nativeJobs().get('windows'), required = dependencies(gate);
   assert.match(gate, /^    if: \$\{\{ always\(\) && !\(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport\) \}\}$/m);
-  assert.deepEqual([...required].sort(), ['checks', 'tools', 'package', 'native-verification', 'native-ui', 'installer', 'installer-release',
+  assert.deepEqual([...required].sort(), ['checks', 'tools', 'package', 'native-verification', 'mixed-game-qualification', 'native-ui', 'installer', 'installer-release',
     'installer-lifecycle', 'update-installer', 'managed-updates', 'sdk-updates'].sort(), 'Every native release gate remains required.');
   const embedded = gate.match(/          node <<'NODE'\n([\s\S]*?)^          NODE$/m);
   assert.ok(embedded, 'Exercise the shipping aggregate rather than a second gate implementation.');
@@ -473,6 +505,7 @@ test('publication follows a successful aggregate despite its intentionally skipp
   for (const dependency of dependencies(publish)) visit(dependency);
   assert.ok(ancestors.has('installer') && ancestors.has('installer-release'), 'Exercise the actual mutually exclusive installer graph.');
   assert.ok(ancestors.has('native-verification'), 'Both independent native verification suites must remain publication prerequisites.');
+  assert.ok(ancestors.has('mixed-game-qualification'), 'Completed mixed games and real trigger/UI qualification must block publication independently.');
   const master = { repository: REPO, ref: 'refs/heads/master', event_name: 'push' };
   function selected(github = master, aggregate = 'success', inputs = {}) {
     const results = Object.fromEntries([...ancestors].map(name => [name, name === 'installer' ? 'skipped' : name === 'windows' ? aggregate : 'success']));

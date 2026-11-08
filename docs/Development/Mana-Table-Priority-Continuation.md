@@ -1,8 +1,10 @@
-# Server-owned priority continuation: proposed next slice
+# Server-owned priority continuation
 
-**Design proposal, not implemented or released.** The aim is to let two people
-and two bots play without repeatedly confirming already agreed passes. Every
-actual priority window and required choice remains owned by the rules engine.
+**Implemented source candidate; release qualification and exact-candidate human
+review remain pending.** Two people and two bots can register their passing
+intent once. Every actual priority window and required choice remains owned by
+the rules engine. This document describes the new source path, not a claim about
+the currently installed release.
 
 ## Game references and intended experience
 
@@ -36,16 +38,20 @@ rules state owner before dispatch. The client grants and observes this consent;
 it does not have to send a human pass for every captured trigger. Its 350 ms /
 32-command worker slice is not a server delay per trigger.
 
-Ordinary human Auto and quiet continuation still live in the client and send
-per-prompt commands. Java supplies verified `canAutoPass` permission and the
-`QuietYieldBaseline` token; ignored activated abilities are already seat-owned
-server preferences. These are different facts from the player's standing intent.
+Supported hosts also own ordinary Auto and explicit quiet continuation. Native
+code requires both negotiated `priority-continuation-v1` support and the actual
+host's `priorityContinuation` frame. A new local adapter connected to an older
+TCP host therefore keeps the legacy client path. The session reserves one
+dispatcher while a grant or withdrawal is pending; it cannot run a second local
+Auto worker alongside the server. Ignored activated abilities remain separate,
+seat-owned preferences.
 
 The current source adds a controller-owned scan generation and an input/resource
 lease for automatic passes. An intervening rules event invalidates absence
 evidence, including when the same input is republished. Queued dispatch rechecks
 the lease and holds the unanswered input if it has expired. This safety boundary
-is implemented; registering standing Auto intent remains the proposed next step.
+is retained by standing Auto; registering intent does not rescan mana or bypass
+that input's completed controller scan.
 
 `TimedAiHostPacing` is a separate presentation owner. The fast full-game campaign
 does not test its timing. The real 110-trigger fixture now uses the shipping
@@ -56,18 +62,28 @@ alone cannot establish which of these owners caused a delay.
 
 ## One consent owner, existing rules dispatch
 
-Extend the existing per-seat server consent boundary rather than introducing a
-second priority engine. An immutable continuation instruction needs the match,
-connection generation, consent identity and replacement epoch, explicit policy,
-and saved phase stops. Quiet continuation also needs its original engine token;
-finite continuation keeps its existing exact member witness and separate optional
-decline permission. Registration requires current owned authority. Historical
-snapshots, a visual ID, or another seat's available actions cannot register it.
+The existing per-seat server boundary accepts the closed native
+`GrantPriorityContinuation(GameId, DecisionId, Sequence, GrantId, Mode,
+PhaseStops, QuietYieldToken)` command. Sequence is monotone within the existing
+connection generation; each replacement has a fresh identity. Registration
+requires the current owned priority input and a registered observation baseline.
+`PhaseStops` contains the existing six own-turn phase keys, not opponent stops.
+Quiet retains its original engine token. Finite continuation keeps its exact
+member witness and separate optional-decline permission.
 
-Publish only that audience's accepted mode, reason and progress. The server may
-know other seats' private legal options; this must not expose them to a player.
-An old host without the negotiated capability keeps the existing client path.
-There must never be two active dispatch owners during migration.
+`NoResponse` passes only with certified `Absent` availability. `Available` and
+`Unknown` hold its accepted intent without consuming the input; ordinary manual
+answers and required choices can continue while that intent remains registered.
+The prompt's closed `responseAvailability` distinguishes those three results;
+legacy `canAutoPass` is true exactly for `Absent`. Explicit `Quiet` retains its
+existing unchanged-window behavior, including windows with a response available.
+A changed public window revokes Quiet rather than silently replacing its token.
+
+`priorityContinuation` publishes only that audience's sequence high-water,
+accepted grant identity/mode/stops, `Idle`, `Active`, `Held` or `Revoked` status,
+reason and automatic-pass count. Held standing consent and active finite consent
+are mutually exclusive. Switching between them first observes withdrawal.
+Another seat's private response availability never enters this frame.
 
 After a coherent publication, queue at most one actual priority operation. At
 execution, recheck the same input, consent epoch, stop conditions and verified
@@ -80,10 +96,9 @@ when they own a window. Current planning can borrow and refund the
 live mana pool, and a manual-tap correction window deliberately leaves
 availability unverified. Unknown availability means hold.
 
-Keep verified absence, an available response and unknown availability distinct.
-The current false `canAutoPass` value alone does not explain which of the latter
-two applies. A replacement rules provider must supply that evidence or report
-unknown; card highlighting cannot fill the gap.
+The closed availability value is produced by the completed controller scan.
+A replacement rules provider must supply equivalent evidence or report unknown;
+card highlighting cannot fill the gap. Legacy providers may omit the field.
 
 No-response Auto, quiet consent and a finite queue retain their distinct scopes.
 The applicable policy must hold or retire for a phase stop, outside action,
@@ -92,11 +107,76 @@ connection retirement. It cannot silently replace a quiet token or recapture a
 new trigger group. Optional payment answers require their own certified offer;
 passing policy alone cannot answer them.
 
-**Take control is a negative command callable without a current priority prompt.**
-Its acknowledgement fences later dispatch from that consent. It cannot undo a
-pass already committed before the acknowledgement. Replacement is idempotent;
-late callbacks and an old connection cannot revive or cancel a replacement
-instruction. Reconnection begins held until a fresh instruction is admitted.
+**Take control withdraws without requiring a current priority prompt.**
+`RevokePriorityContinuation(GameId, ThroughSequence)` fences a pending install
+as well as an accepted grant. A late withdrawal through N cannot cancel a
+replacement N+1; replay of a withdrawn positive instruction cannot reactivate
+it. The backend recognizes an exact repeated grant before consulting its retired
+original prompt, but the client never blindly retries a positive command after
+an uncertain receipt. It reobserves and preserves negative cleanup authority.
+Reset, close, audience handoff and match-changing operations retain that cleanup
+without restoring the old presentation. A pass committed before the withdrawal
+acknowledgement remains committed. Reconnection starts without active consent.
+
+## Reading credit and bounded publication
+
+Every active human peer registers an accepted-frame observation baseline before
+the table may elide intermediate priority-only publications. This includes a
+full-control player who never enables Auto. The server still executes each real
+rules pass and observes its current input lease; it merely avoids rebuilding and
+transporting a whole frame for each unchanged priority handoff.
+
+The optional `priorityObservation` frame contains `boardRevision`,
+`publicActivitySequence`, acknowledged values for those two cursors,
+`registered` and `overflowed`. The closed prompt-free
+`AcknowledgePriorityObservation(GameId, BoardRevision, PublicActivitySequence)`
+returns credit only for an actual frame from a completed table publication,
+committed for all audiences before observer callbacks. An ACK
+consumes no input, creates no undo barrier, and is not a gameplay outcome.
+
+Live synchronization retains its existing 8 MiB encoded-frame ceiling. The
+4096-entry delivery journals and 64-event credit window bound unattended progress;
+they do not guarantee unlimited boards or every possible interaction. Receivers
+validate the complete retained union without numeric truncation. Exceeding a
+journal's entry bound explicitly holds Auto; the transport's byte ceiling is a
+separate limit, especially for unusually large boards or atomic event bursts.
+
+`ClientSession` derives ACKs from frames it accepted, not the provider's decoded
+cache or a rejected poll. It registers the initial baseline, then coalesces after
+16 public events or an `awaiting-observation` hold. The game explicitly closes
+`SetPriorityObservationReady` before its first frame and before every observation
+pump, then opens it only after current input, foreground and announcement/reading
+gates permit. Graphics-free drivers default to
+ready. One metadata task runs without setting user-action `Busy` or `Polling`;
+gameplay and negative consent take scheduling precedence, and an epoch/audience
+change retires its stale publication. Failed metadata waits for a fresh accepted
+observation and bounded backoff. There is no ACK on every unchanged poll.
+
+The server permits at most 64 meaningful public events ahead of a registered
+human observer. Its audience-safe delivery journal retains at most 4,096 events,
+releasing only acknowledged prefixes. A missing peer baseline disables priority
+publication elision, preserving compatibility with older guests. Exhausted
+registered-observer credit or overflow explicitly holds automatic progression;
+overflow does not claim complete history. Required choices and unrelated new
+actions remain visible.
+Known captured progress can share a presentation beat, while a new spell or
+unrelated announcement still needs its ordinary reading opportunity.
+
+## Native roles and optional presence
+
+Interactive `ClientSession` owns one ordinary command lane and its negative
+consent capabilities. `ClientSessionAuthority.ObserveOnly` validates and retains
+the complete immutable snapshots for projection replay, including recorded grants,
+without acquiring their authority. It cannot run commands, source-action reads,
+Auto, finite continuation, observer ACKs or orphan revocations. Replay never
+rewrites a real frame to make it look unauthoritative.
+
+Optional `humanPlayerIds` contains actual registered player IDs from the table's
+human seat roster; legacy player `human` flags are viewer-relative and cannot
+supply it. Presence skips cosmetic exchanges when that known roster contains no
+other non-eliminated human. A roster change retires pending cosmetic results,
+including solo-to-multiplayer-to-solo transitions. Missing roster metadata keeps
+the old optional polling behavior. These cosmetic facts do not authorize a pass.
 
 Bots keep their separate policy owner and private observation. Externally
 automated controllers skip the human availability scan, so human `canAutoPass`
@@ -104,7 +184,7 @@ cannot authorize bot shortcuts. A bot may propose a real response; optimize its
 observation, evaluation and announcement timing without replacing it with an
 always-pass controller.
 
-## Required gates before enabling the new path
+## Required qualification before release
 
 Use the existing quiet, finite, connection and native lifecycle tests. Verify
 actual dispatch counts and acknowledged authority, not an equivalent-looking UI.

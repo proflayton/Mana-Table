@@ -76,14 +76,27 @@ public sealed class AiSeatSession : IDisposable
         if (policy.Descriptor == null || !policy.Descriptor.Tasks.SetEquals(AiTasks.All))
             throw new ArgumentException("A whole-seat policy must declare every decision family.", nameof(policy));
         this.gameId = gameId; this.seatId = seatId; this.policy = policy; policyId = policy.Descriptor.Id;
+        PriorityAutomation = policy.Descriptor.PriorityAutomation;
         baseSeed = seed; this.limits = limits; this.time = time ?? TimeProvider.System;
         history = new(limits.HistoryCapacity);
     }
 
     public AiSeatView View { get { lock (gate) return view; } }
+    public AiPriorityAutomation PriorityAutomation { get; }
     public AiSeatHistory History { get { lock (gate) return history.Snapshot; } }
     public AiTurnPlan? Plan { get { lock (gate) return plan; } }
     public long PlanVersion { get { lock (gate) return planVersion; } }
+
+    // Continuation observations contribute actual filtered event memory without
+    // fabricating policy episodes, commands or accepted-input records.
+    public void ObserveAutomaticProgress(GameSnapshot state)
+    {
+        if (!ObserveRestoration(state)) return;
+        lock (gate) {
+            if (closed) return;
+            history.ObserveTurn(state.Turn); history.Observe(state.Activity);
+        }
+    }
 
     public bool Observe(AiDecisionFrame? next)
     {

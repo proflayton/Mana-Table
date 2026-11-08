@@ -40,6 +40,7 @@ public static class FiniteStackYieldFacts
 
     public static bool CanGrant(GameSnapshot state, GrantFiniteStackYield grant)
         => Members(grant.ExecutionIds) && state.FiniteStackYield is { Status: not FiniteStackYieldStatus.Active }
+            && state.PriorityContinuation is not { Status: PriorityContinuationStatus.Active or PriorityContinuationStatus.Held }
             && state.Status == "playing" && state.StackActionVersion == grant.StackActionVersion
             && state.ResolutionChoiceVersion == grant.ResolutionChoiceVersion && state.Stack.Length == grant.ExecutionIds.Length
             && state.Stack.Select(item => item.ExecutionId).Distinct(StringComparer.Ordinal).Count() == state.Stack.Length

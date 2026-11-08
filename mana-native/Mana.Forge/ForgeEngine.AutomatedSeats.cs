@@ -166,6 +166,11 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
     public async Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default)
     {
         cancellation.ThrowIfCancellationRequested();
+        // Standing automation has its own closed host control port. Existing
+        // trusted finite-client transports still use scoped finite commands;
+        // AiDecisionFrame separately excludes both consent grants from policies.
+        if (command is GrantPriorityContinuation or RevokePriorityContinuation or AcknowledgePriorityObservation)
+            throw new EngineCommandRejectedException("Automatic priority consent belongs to the host control port, not a policy answer.");
         Dictionary<string, object?> args;
         lock (worldScopeGate) {
             if (command is UndoAction && current?.CertifiedUndoAvailable != true)

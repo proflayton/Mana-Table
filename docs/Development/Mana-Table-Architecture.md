@@ -29,6 +29,14 @@ command reply remains uncertainty until a fresh observation reconciles it.
 The boundary audit maps these contracts to ordinary CI journeys and separates
 stale-authority refusal from resource refunds and live-game recovery.
 
+Published views also need a committed rules cut. Forge's zone collections can
+change while frozen card properties still describe the preceding state. A
+validated waiting input, required dialog or completed rules outcome may flush
+those committed properties through `Tracker.flushForCommittedObservation`,
+preserving every enclosing freeze. Incidental refreshes retain the previous
+coherent cohort while frozen. Speculative queries cannot request that cut, and
+historical portraits never acquire new current occurrence identities.
+
 Java CI isolates API tests in two process-owned workspaces while keeping methods
 and upstream modules serial. Its opt-in Maven profile and shared accounting
 checker bind current compiled inputs, process owners, reports and invocation
@@ -47,6 +55,13 @@ that actor may publish. A subject is a closed battlefield-card or stack-item
 reference, never a private hand position, action key or remote pointer coordinate.
 The authority and recipient each check current disclosure and occurrence.
 
+`ClientSession.WaitForQueuedWorkAsync` is a passive owner notification. Posted
+completions, admitted external ingress and closure wake its waiters; waking
+neither pumps callbacks nor adopts observations or authorizes a command. Each
+waiter can cancel independently. Headless campaign owners combine this signal
+with their ordered evidence inbox, next ordinary poll and existing health/match
+deadlines instead of adding a timer delay after every useful completion.
+
 `Mana.Client/TablePresenceSession` owns one actual provider operation at a time,
 with at most four dispatches per second and no queued pointer history. The
 native owner yields dispatch to commands, automatic continuation and polling.
@@ -59,6 +74,11 @@ returns a closed current/unsupported/superseded result: transport retirement
 cannot impersonate absent capability when public context values are unchanged.
 Unsupported providers quietly disable the optional feature for that binding;
 joining a new game or audience resets this optional capability decision.
+The optional authoritative `HumanPlayerIds` roster uses actual registered player
+IDs, not seat ordinals or the viewer-relative legacy player `human` flag. With a
+known roster containing no other active human, the native presence owner sends
+no cosmetic exchanges. Entering/leaving that condition retires old results; an
+absent legacy roster preserves previous polling behavior.
 Superseded work clears activity and its retired revision cursor, permitting a
 fresh exchange. Failures clear activity and
 back off without entering match recovery or an error overlay.
@@ -78,6 +98,15 @@ reason; it does not dump the rejected observation or add a journal/API. An
 absent legacy context remains a valid snapshot, without authorizing inspection.
 The shared ordered transport can still impose head-of-line latency; `Task.Run`
 and an independent fake port are not evidence of transport latency isolation.
+Desktop success replies encode their ordered ID/result envelope directly into a
+complete string before writing it. This avoids an intermediate full JSON tree
+without changing the wire shape or exposing partially encoded replies. Encoding
+failure still returns the existing complete error envelope.
+Synchronization retains one privately owned captured receipt tree for exact
+replay. Its owner exposes only detached local values or framed writes, preserving
+caller mutation isolation without cloning the retained tree. Sequence, connection
+generation and revocation checks still precede replay. The existing network
+ceiling remains 8,388,608 UTF-16 characters, checked at the same read/write boundary.
 
 ### Tentative public plans: source candidate
 
@@ -522,6 +551,26 @@ scoped bot knowledge and complete timing-legal source domains; remote players
 and the renderer cannot access it. Normal authoritative input controllers execute
 all bot choices, including manual producer and floating-pool payment. Forge's
 strategic controller is never a fallback for that negotiated mode.
+The optional host-only `IAutomatedPriorityContinuation` port represents only
+observation acknowledgement, `NoResponse` consent and withdrawal. It cannot
+carry gameplay, Quiet or finite-yield commands. The policy descriptor explicitly
+opts into `NoResponse`; custom policies default to full control. `AiTableHost`
+owns sequence fences and observed certificates per game, seat and provider epoch,
+separately from policy decisions and gameplay receipts. A known retired control
+requires fresh authority; an unknown affirmative receipt cannot authorize another
+play. Reading and pacing gates still control progression. A provider without the
+dedicated `automated-priority-continuation-v1` capability retains its ordinary
+policy path; human continuation support alone does not imply bot support.
+Policy proposals cannot grant either standing or finite consent. Existing trusted
+finite-client adapters still use the scoped automated transport; policy intent
+checks do not remove that transport capability from a different owner.
+Accepted controls return closed consent receipts, retaining their actual provider
+epoch, seat, input and publication metadata. An unchanged ACK can chain a grant,
+and a held grant can chain a withdrawal, with at most three controls per observed
+seat cycle. Each control rechecks pacing. These receipts cannot enter gameplay
+scopes or policy observations; gameplay always needs a fresh owned rich read.
+The adapter keeps a separate metadata cursor anchored to that rich observation;
+late replies cannot replace a newer cursor or revive an advanced input.
 `IAutomatedSimulation` supports explicit all-bot tables with a separate public,
 non-acting spectator. Live tables retain their human requirement. Forecasting,
 deeper deck planning and human evaluation of the policy remain future work.
@@ -1060,11 +1109,38 @@ on the next step; it never retains an answer across the beat. Headless campaigns
 use the fast default without this presentation cadence. A local client's Auto
 pause alone cannot govern AI progression or actions inside one rules execution.
 
-The [priority continuation proposal](Mana-Table-Priority-Continuation.md)
-describes the next incremental server consent boundary. It distinguishes the
-already server-owned finite grant from still client-owned ordinary Auto/quiet
-intent, and defines revocation, privacy and paced mixed-table gates. That
-standing-policy extension is not implemented or released.
+The [priority continuation contract](Mana-Table-Priority-Continuation.md)
+describes the implemented source candidate for server-owned ordinary Auto,
+explicit Quiet and finite consent. `IMatchConnection.SupportsPriorityContinuation`
+defaults false. Forge enables the new path only with negotiated
+`priority-continuation-v1` and the actual host's private frame; older remote
+hosts retain the client runner. Current controller scans expose closed
+`Absent`/`Available`/`Unknown` response evidence. One existing server dispatcher
+owns the real priority operations, with input/resource/scan leases rechecked
+at execution and mutually exclusive finite/standing consent.
+
+Native grants and prompt-free sequence-fenced withdrawals use the existing
+closed `GameCommand` lane. `ClientSession` coalesces desired intent, retains
+negative authority across reset/close/handoff, and never falls back to a local
+Auto worker while server ownership is pending or uncertain. Ordinary required
+answers may retain NoResponse consent; Take control, reading, manual mana and
+recovery withdraw it. Quiet never refreshes its original token automatically.
+
+Accepted-frame `PriorityObservationState` and prompt-free
+`AcknowledgePriorityObservation` provide bounded publication credit. Every active
+human registers; then at most 64 meaningful public events may lead an observer.
+Audience-safe activity retention is bounded at 4,096 and overflow holds Auto.
+The native owner registers once and coalesces after 16 events or a server hold,
+gated by the actual game's presentation readiness. One optional metadata task
+does not set user-action Busy/Polling, consume inputs, reset clocks or create
+history/undo intent; stale results still obey the replica epoch and audience.
+The provider's decoded cache cannot mint this accepted-frame credit.
+
+`ClientSessionAuthority.ObserveOnly` is an explicit read-only composition for
+recorded projection replay. All immutable-frame validators remain active, while
+manual/automatic commands, source-action reads, server ACKs and orphan-grant
+cleanup are disabled. Recorded grant fields remain intact. This source slice's
+release and exact-candidate human review are separate pending gates.
 
 `AiResolutionProgress` adds read-only public occurrence evidence to that cadence
 port. `TimedAiHostPacing` can retain the initial 2.4-second announcement beat for
@@ -1109,6 +1185,10 @@ may contain private hands. Stable reason codes alone cross the public fault
 port. Storage failure cannot prevent fail-closed automation shutdown. The
 historical `provider-failed` report without its original exception cannot by
 itself establish a rules, strategy or wire-decoding cause.
+Campaign public-invariant validation separately retains its exact first rejected
+decoded batch before throwing. It does not relabel the last valid batch as the
+failure, invent other audiences or replace the original exception with a storage
+error. Later evidence-inbox operations preserve that original validation stack.
 
 A real mixed-deck investigation reproduced a different boundary outcome:
 `automatedState` can lose its owned input during source discovery. The adapter
@@ -2446,6 +2526,18 @@ Local action failures remain acknowledged until dismissed or a new action starts
 a successful background poll does not erase them. Host/guest departure confirms
 its consequence; an eliminated seat can watch or leave.
 
+`ClientSession.WaitForQueuedWorkAsync` is a passive owner notification for posted
+callbacks and external observation ingress. It never pumps, accepts snapshots,
+polls or dispatches commands. Closure wakes pending waiters, and canceling one
+waiter leaves the shared queue signal intact. The mixed-game campaign waits on
+both clients and its evidence FIFO until work arrives or an existing poll,
+stalled-poll health check or match deadline is due. It retains the ordinary
+50/120 ms poll cadence and strict five-second recovery threshold; event-driven
+waiting does not create a second command or state owner.
+The scripted owner follows the native loop's precedence: prepare work for the
+accepted current decision before starting another due observation. A delayed
+poll completion cannot starve that decision by immediately starting a new poll.
+
 The Forge connection's observed command context also rejects a lower revision
 within the same game. RPC read continuations may finish out of order; an older
 response must not retire the displayed current scope or restore an answered
@@ -2996,8 +3088,13 @@ Explicit Auto pass can use that token on either player's turn. Tokens never
 broaden ordinary `CanAutoPass`, and each path retains its own submitted-prompt
 history. The session still owns submission and reconciliation.
 
-Presentation-owned `PriorityAttention` observes public interruption history,
+Renderer-independent `Mana.Client.PriorityAttention` observes public interruption history,
 the stack-interruption fence and replacement quiet tokens before physical input.
+The game and ordinary connected-player qualification each own an instance of
+the same attention state machine and use its automatic-Quiet start predicate.
+The driver retains the original window token through `QuietPriorityPolicy`,
+records NoResponse and Quiet provider grants/pass certificates separately, and
+does not count consent metadata as an accepted scripted gameplay input.
 New work blocks silent quiet rearming until the player explicitly acts or passes;
 acknowledging one displayed response does not acknowledge a new action arriving
 in flight. A new turn establishes a new quiet opportunity. Normal engine-authorized

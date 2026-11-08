@@ -319,6 +319,8 @@ final class RulesScenario implements AutoCloseable {
             assertEquals(context.get("playerId"), state.get("priorityPlayerId"));
             assertEquals(context.get("playerId"), state.get("decisionOwnerId"));
             assertFalse(text(context, "id").isBlank());
+            if (state.has("priorityObservation")) assertEquals(state.getAsJsonObject("priorityObservation").get("boardRevision"),
+                    state.get("boardRevision"), "Delivery credit certifies this exact actual audience publication");
         }
         assertTrue(current.get("boardRevision").getAsLong() > prior.get("boardRevision").getAsLong());
         assertNotEquals(text(current.getAsJsonObject("publicInspection"), "id"), text(prior.getAsJsonObject("publicInspection"), "id"),
@@ -328,6 +330,7 @@ final class RulesScenario implements AutoCloseable {
             state.remove("revision"); state.remove("boardRevision");
             state.getAsJsonObject("publicInspection").remove("id");
             state.getAsJsonObject("publicInspection").remove("boardRevision");
+            if (state.has("priorityObservation")) state.getAsJsonObject("priorityObservation").remove("boardRevision");
         }
         assertEquals(now, before, "Publishing without a game action preserves every other context, board, mana, prompt and card-key fact");
     }

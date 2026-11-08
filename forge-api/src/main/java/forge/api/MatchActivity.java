@@ -65,6 +65,8 @@ public final class MatchActivity {
     private boolean ownsIdentities;
     private final Deque<Entry> entries = new ArrayDeque<>();
     private final Map<Long, Entry> finiteEntries = new LinkedHashMap<>();
+    private final Map<Long, Entry> deliveryEntries = new LinkedHashMap<>();
+    private boolean deliveryStarted, deliveryOverflow;
     private String finiteGrantId = "";
     private Set<String> finiteRoots = Set.of();
     private boolean finiteOverflow;
@@ -101,6 +103,26 @@ public final class MatchActivity {
         revision++;
     }
     synchronized boolean finiteOverflow() { return finiteOverflow; }
+    synchronized void beginDelivery() { deliveryStarted = true; }
+    /** Initial bot registration may acknowledge an older actual cohort. Retain
+     * its unread suffix only when the existing audience history is complete. */
+    synchronized void beginDelivery(long through) {
+        deliveryStarted = true;
+        long next = through + 1;
+        for (var entry : snapshot()) if (entry.id() > through) {
+            if (entry.id() != next) deliveryOverflow = true;
+            retainDelivery(entry); next = entry.id() + 1;
+        }
+        if (next != sequence + 1) deliveryOverflow = true;
+    }
+    synchronized boolean deliveryOverflow() { return deliveryOverflow; }
+    synchronized void acknowledgeDelivery(long through) { deliveryEntries.keySet().removeIf(id -> id <= through); }
+    synchronized void retireDelivery() { deliveryStarted = false; deliveryOverflow = false; deliveryEntries.clear(); }
+    private void retainDelivery(Entry entry) {
+        if (!deliveryStarted) return;
+        if (deliveryEntries.size() >= MAXIMUM_FINITE_ENTRIES) deliveryOverflow = true;
+        else deliveryEntries.put(entry.id(), entry);
+    }
     private void retainFinite(Entry entry) {
         if (entry.executionId() == null || !finiteDescendant.test(entry.executionId(), finiteRoots) || finiteEntries.containsKey(entry.id())) return;
         if (finiteEntries.size() >= MAXIMUM_FINITE_ENTRIES) finiteOverflow = true;
@@ -120,8 +142,9 @@ public final class MatchActivity {
     }
 
     public synchronized List<Entry> snapshot() {
-        if (finiteEntries.isEmpty()) return List.copyOf(entries);
+        if (finiteEntries.isEmpty() && deliveryEntries.isEmpty()) return List.copyOf(entries);
         var merged = new TreeMap<Long, Entry>(finiteEntries);
+        merged.putAll(deliveryEntries);
         for (var entry : entries) merged.put(entry.id(), entry);
         return List.copyOf(merged.values());
     }
@@ -393,6 +416,7 @@ public final class MatchActivity {
                 && (cause == null || publicHistoryReference(cause.cardId()));
         history.accept(added, publicFact);
         retainFinite(added);
+        retainDelivery(added);
         if (cause != null && change != null && change.kind().equals("counters")) {
             latestCounterCause = cause.id();
             entriesAfterLatestCounterCause = 0;

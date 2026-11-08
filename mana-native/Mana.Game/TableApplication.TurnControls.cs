@@ -199,6 +199,7 @@ internal sealed partial class TableApplication
             _ when match?.Status == "resolving" => "Auto · Watching play",
             _ => "Auto · Waiting for action"
         };
+        if (PriorityContinuationCaption.Length > 0) heading = PriorityContinuationCaption;
         canvas.Text(heading, area.X + 28, area.Y - 2, Blue, .62f, area.Width - 28, 1, true);
         PaintTurnAdvance(new(area.X + 8, area.Y + 10), Blue);
         var action = new Rectangle(area.Right - PriorityWaitWidth, area.Bottom - 40, PriorityWaitWidth, 40);
@@ -287,7 +288,7 @@ internal sealed partial class TableApplication
         if (namedAuto) {
             var mode = AutomaticModeBounds;
             canvas.Rounded(mode, new(13, 24, 30), 6);
-            string label = decisionDock!.AutomaticPassing.ControlLabel;
+            string label = session.PriorityContinuationWithdrawing ? "Stopping…" : decisionDock!.AutomaticPassing.ControlLabel;
             canvas.CenterText(label, new(mode.X + 6, mode.Y, mode.Width - 48, mode.Height), color, .65f, true);
         }
         canvas.Circle(center + new Vector2(0, 2), 17, Color.Black * .8f);

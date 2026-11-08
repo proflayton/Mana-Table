@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using Mana.AI;
 using Mana.Client;
@@ -12,6 +13,7 @@ namespace Mana.Table;
 // drivers and two AI drivers. This is not a networked two-human lobby fixture.
 internal static class AiRepeatedCadenceEngineJourney
 {
+    private sealed record ClientFailure(int Seat, ExceptionDispatchInfo Original);
     internal static async Task RunStandaloneAsync(ForgePaths paths, string productionJar)
     {
         Directory.CreateDirectory(paths.Profile);
@@ -40,10 +42,14 @@ internal static class AiRepeatedCadenceEngineJourney
         var setup = Stopwatch.StartNew(); var workload = new Stopwatch();
         var provider = new BotSeats(engine, workload);
         var humans = Enumerable.Range(0, 2).Select(seat => new ClientSession(new SeatConnection(provider, seat))).ToArray();
+        ClientFailure? clientFailure = null;
+        void RequireHealthyClients() => Volatile.Read(ref clientFailure)?.Original.Throw();
         var intents = new FiniteResolutionIntent?[2];
         var terminals = new[] { new HashSet<string>(), new HashSet<string>() };
         for (int seat = 0; seat < 2; seat++) {
             int capturedSeat = seat;
+            humans[seat].Failed += error => Interlocked.CompareExchange(ref clientFailure,
+                new ClientFailure(capturedSeat, ExceptionDispatchInfo.Capture(error)), null);
             humans[seat].Changed += (_, _) => {
                 foreach (var item in humans[capturedSeat].ExecutionChanges.Transitions.Where(item => item.Step == ExecutionStep.Complete))
                     terminals[capturedSeat].Add(item.ExecutionId);
@@ -83,6 +89,7 @@ internal static class AiRepeatedCadenceEngineJourney
                 }
                 if (!acted) await Task.Delay(2);
             }
+            setup.Stop();
             int hand = last!.Players[0].Zone("Hand").Count;
             int setupDiscoveries = provider.PrivateObservations;
             workload.Start();
@@ -96,6 +103,8 @@ internal static class AiRepeatedCadenceEngineJourney
             while (true) {
                 if (workload.Elapsed > TimeSpan.FromSeconds(30) || steps++ >= 2048)
                     throw new TimeoutException("The real50-trigger cadence exceeded its fixed30s/2048-step workload budget.");
+                foreach (var human in humans) human.Pump();
+                RequireHealthyClients();
                 await host.StepAsync();
                 var seats = provider.Published; last = seats.Single(item => item.SeatId == 0).State;
                 RequirePlaying(last);
@@ -104,10 +113,12 @@ internal static class AiRepeatedCadenceEngineJourney
                 foreach (int seat in Enumerable.Range(0, 2)) {
                     var state = seats.Single(item => item.SeatId == seat).State;
                     humans[seat].Pump(); humans[seat].Accept(state);
+                    RequireHealthyClients();
                     if (intents[seat] == null && state.Decision?.Payload is PriorityPayload)
                         intents[seat] = FiniteResolutionIntent.TryArm(state, state.Stack.Select(item => item.Id));
                     if (!humans[seat].Busy && intents[seat]?.IsActive == true)
                         humans[seat].AdvanceFinite(intents[seat]!, (_, _) => false);
+                    RequireHealthyClients();
                 }
                 if (host.LastFault != null) throw new InvalidDataException("Actual timed bot host faulted: " + JsonSerializer.Serialize(host.LastFault));
                 if (last.Stack.IsEmpty && captured.All(id => ExecutionFrames.Find(last, id)?.Outcome == ExecutionOutcome.Resolved)
@@ -143,6 +154,9 @@ internal static class AiRepeatedCadenceEngineJourney
                 privacy = "Authorized seat-zero hands and scopes; private test profile only.", error = failure?.ToString(),
                 setupMilliseconds = setup.Elapsed.TotalMilliseconds, workloadMilliseconds = workload.Elapsed.TotalMilliseconds,
                 captured, draws, last, frames, replies, provider.Commands, provider.FirstCommandSeconds, policy.Evaluations, provider.Attempts,
+                firstClientFailure = clientFailure == null ? null : new {
+                    clientFailure.Seat, error = clientFailure.Original.SourceException.ToString()
+                },
                 provider.CommandTimes, pacingWaits = pacing?.UnexpectedWaits,
                 clients = humans.Select((session, seat) => new { seat, session.Busy, session.NeedsRecovery,
                     session.LastConnectionError, session.UncertainCommand, progress = intents[seat]?.Progress is { } progress

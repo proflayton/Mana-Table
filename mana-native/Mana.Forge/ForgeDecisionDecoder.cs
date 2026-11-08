@@ -47,8 +47,11 @@ internal static class ForgeDecisionDecoder
                 || Present(prompt, "usablePoolManaColors") || Present(prompt, "payerId"))) throw Invalid();
             if (Present(prompt, "unpaidMana") && Present(prompt, "unpaidManaParts")) throw Invalid();
             string alternative = Text(prompt, "priorityAlternative"), quiet = Text(prompt, "quietYieldToken");
+            PriorityResponseAvailability? response = Present(prompt, "responseAvailability")
+                ? Field(prompt, "responseAvailability").Deserialize<PriorityResponseAvailability>() : null;
             if (alternative is not ("" or "none" or "undo" or "passTurn")
-                || task != "priority" && (alternative is "undo" or "passTurn" || quiet.Length != 0 || Flag(prompt, "canAutoPass"))) throw Invalid();
+                || task != "priority" && (alternative is "undo" or "passTurn" || quiet.Length != 0 || Flag(prompt, "canAutoPass") || response != null)
+                || response is { } availability && Flag(prompt, "canAutoPass") != (availability == PriorityResponseAvailability.Absent)) throw Invalid();
             if (task != "priority" && Array(prompt, "priorityAbilities").Length != 0) throw Invalid();
             var context = SourceContext(prompt);
             if (task != "mana" && (Present(prompt, "optionalDecline") || Present(prompt, "optionalPaymentSupport"))) throw Invalid();
@@ -58,7 +61,7 @@ internal static class ForgeDecisionDecoder
                 "priority" => new PriorityPayload(Ok(), alternative switch {
                     "undo" => new(PriorityAlternative.UndoLastAction, Cancel()),
                     "passTurn" => new(PriorityAlternative.PassTurn, Cancel()), _ => null
-                }, Flag(prompt, "canAutoPass"), quiet, PriorityAbilities(prompt)),
+                }, Flag(prompt, "canAutoPass"), quiet, PriorityAbilities(prompt)) { ResponseAvailability = response },
                 "openingHand" => new OpeningHandPayload(Ok(), Cancel(), Opening(prompt)),
                 "mana" => new PaymentPayload(Ok(), Cancel()) {
                     UnpaidMana = PaymentSymbols(prompt, "unpaidMana"),

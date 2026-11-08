@@ -693,6 +693,13 @@ spending restrictions and replacements which are not modeled remain unknown.
 The chosen finite output travels with the exact current offered mana action as
 optional `ManaOutputChoice`; the adapter validates that whole bundle before
 mutation and the rules controller executes its matching production-part choices.
+That choice also requires a matching `QuickMana` capability on the current
+source-action offer. A funding description estimates resources; it cannot grant
+permission to choose an output. Owned policy offers and ordinary source queries
+share the same cheap capability builder, independently of optional cost previews.
+The client and AI use the same exact-output predicate. A consuming or otherwise
+unsupported shortcut retains its ordinary activation, costs and subsequent
+owned choices, without attaching an unauthorized output to the initial command.
 Planning red from a dual land and then letting an express shortcut choose blue
 would break this boundary. The flexible-output golden follows that exact case
 through the real remaining bill and resolved commander. Human source actions

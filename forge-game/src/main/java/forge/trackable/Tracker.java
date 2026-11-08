@@ -79,6 +79,23 @@ public class Tracker {
         freeze();
     }
 
+    /** Copy committed views at an actual waiting decision or completed rules
+     * outcome, without consuming any enclosing effect's freeze. The co-operative
+     * game-state owner calls this; an incidental refresh or speculative rules
+     * query must not flush changes which that query may deliberately discard. */
+    public void flushForCommittedObservation() {
+        if (!isFrozen()) {
+            return;
+        }
+        final int retainedDepth = freezeCounter;
+        freezeCounter = 1;
+        try {
+            unfreeze();
+        } finally {
+            freezeCounter = retainedDepth;
+        }
+    }
+
     public void addDelayedPropChange(final TrackableObject object, final TrackableProperty prop, final Object value) {
         delayedPropChanges.add(new DelayedPropChange(object, prop, value));
     }

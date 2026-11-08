@@ -19,7 +19,7 @@ final class SeatConnection implements MatchEndpoint, AutoCloseable {
             case "tempoPresented" -> session.tempoPresented(p);
             case "history" -> session.history(p);
             default -> throw new IllegalArgumentException("Unknown seat command");
-        }, () -> { throw new IllegalStateException("This seat is local"); }, ignored -> { }, Set.of("match-history", "history-announcements", "owned-decision-observation", "private-action-faces", "table-presence", "table-choices-v1"));
+        }, () -> { throw new IllegalStateException("This seat is local"); }, ignored -> { }, Set.of("match-history", "history-announcements", "owned-decision-observation", "private-action-faces", "table-presence", "table-choices-v1", "priority-continuation-v1"));
         return new SeatConnection(server.local(0), () -> { server.close(); session.closeTable(); });
     }
     @SuppressWarnings("unchecked") public Map<String, Object> state() { return (Map<String, Object>)connection.request("observe", new JsonObject()); }
@@ -37,7 +37,13 @@ final class SeatConnection implements MatchEndpoint, AutoCloseable {
         if (privateActionFaces && connection.capabilities().contains("private-action-faces")) request.addProperty("privateActionFaces", true);
         return request;
     }
-    @SuppressWarnings("unchecked") public Map<String, Object> action(JsonObject command) { return (Map<String, Object>)connection.request("reply", command); }
+    @SuppressWarnings("unchecked") public Map<String, Object> action(JsonObject command) {
+        var action = command.has("action") ? command.get("action").getAsString() : "";
+        if (Set.of("grantPriorityContinuation", "revokePriorityContinuation", "acknowledgePriorityObservation").contains(action)
+                && !connection.capabilities().contains("priority-continuation-v1"))
+            throw new SyncTransport.CodedFailure("unsupported-capability", "This table host does not expose server-owned priority continuation.");
+        return (Map<String, Object>)connection.request("reply", command);
+    }
     @SuppressWarnings("unchecked") public Map<String, Object> sourceActions(JsonObject command) { return (Map<String, Object>)connection.request("sourceActions", command); }
     @SuppressWarnings("unchecked") public Map<String, Object> presence(JsonObject update) {
         if (!connection.capabilities().contains("table-presence")) return null;

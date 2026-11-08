@@ -23,6 +23,9 @@ final class MatchExecutions {
     // admitting a source. Never take this monitor from inside Activity's lock.
     private volatile Map<String, Occurrence> readable = Map.of();
     private final Deque<Transition> transitions = new ArrayDeque<>();
+    private final Map<Long, Transition> deliveryTransitions = new LinkedHashMap<>();
+    private final Set<String> deliveryExecutions = new HashSet<>();
+    private boolean deliveryStarted, deliveryOverflow;
     private Set<String> pinnedStack = Set.of();
     private String finiteGrantId = "";
     private Set<String> finiteRoots = Set.of();
@@ -60,6 +63,7 @@ final class MatchExecutions {
                 occurrence.kind(), occurrence.actorPlayerId(), cardId, name, occurrence.step(), occurrence.outcome(),
                 occurrence.ruleKind(), occurrence.ruleResult()));
         transitions.addLast(new Transition(transition.sequence(), occurrence.id(), occurrence.step(), occurrence.outcome(), occurrence.ruleResult()));
+        retainDelivery(transitions.peekLast());
         recordHistory(admitted.get(occurrence.id()), transitions.peekLast(), publicZone && visible);
         retainFinite(occurrence.id());
         copyFrame();
@@ -72,6 +76,7 @@ final class MatchExecutions {
         for (var occurrence : rules.occurrences()) retained.add(occurrence.id());
         retained.addAll(pinnedStack);
         retained.addAll(finiteDescendants);
+        retained.addAll(deliveryExecutions);
         var pending = new ArrayDeque<>(retained);
         int ancestors = 0;
         while (!pending.isEmpty()) {
@@ -154,6 +159,33 @@ final class MatchExecutions {
         copyFrame();
     }
     synchronized boolean finiteOverflow() { return finiteOverflow; }
+    synchronized void beginDelivery() { deliveryStarted = true; }
+    /** Gaps within the retained rules range can be audience-private. A cursor
+     * before that range cannot certify which public transitions were lost. */
+    synchronized void beginDelivery(long through) {
+        deliveryStarted = true;
+        if (through < rules.firstSequence() - 1) deliveryOverflow = true;
+        for (var transition : transitions) if (transition.sequence() > through) retainDelivery(transition);
+        copyFrame();
+    }
+    private void retainDelivery(Transition transition) {
+        if (!deliveryStarted) return;
+        if (deliveryTransitions.size() >= MatchActivity.MAXIMUM_FINITE_ENTRIES) deliveryOverflow = true;
+        else {
+            deliveryTransitions.put(transition.sequence(), transition);
+            deliveryExecutions.add(transition.executionId());
+        }
+    }
+    synchronized boolean deliveryOverflow() { return deliveryOverflow; }
+    synchronized void acknowledgeDelivery(long through) {
+        deliveryTransitions.keySet().removeIf(sequence -> sequence <= through);
+        deliveryExecutions.clear();
+        for (var transition : deliveryTransitions.values()) deliveryExecutions.add(transition.executionId());
+        copyFrame();
+    }
+    synchronized void retireDelivery() {
+        deliveryStarted = false; deliveryOverflow = false; deliveryTransitions.clear(); deliveryExecutions.clear(); copyFrame();
+    }
 
     // Called from Activity while its monitor is held: immutable audience copy
     // only. Taking this projection's monitor here would invert admission order.
@@ -181,7 +213,10 @@ final class MatchExecutions {
                     occurrence.sourceCardId(), occurrence.sourceName(), occurrence.step(), occurrence.outcome(),
                     occurrence.ruleKind(), occurrence.ruleResult()));
         }
-        latest = new Frame(rules.firstSequence(), rules.lastSequence(), List.copyOf(occurrences), List.copyOf(transitions));
+        var delivered = new TreeMap<Long, Transition>(deliveryTransitions);
+        for (var transition : transitions) delivered.put(transition.sequence(), transition);
+        long first = delivered.isEmpty() ? rules.firstSequence() : Math.min(rules.firstSequence(), delivered.firstKey());
+        latest = new Frame(first, rules.lastSequence(), List.copyOf(occurrences), List.copyOf(delivered.values()));
     }
 
     /** An event-time value copy; safe for IPC polling without reading rules objects. */

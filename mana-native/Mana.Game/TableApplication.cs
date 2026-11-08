@@ -115,7 +115,8 @@ internal sealed partial class TableApplication : IDisposable
     public TableApplication(TableServices services, string profile, string? fixture = null, GameSnapshot? initialState = null,
         PresentationResources? resources = null, IAppUpdates? appUpdates = null, Action<PreparedUpdate>? installUpdate = null,
         bool allowAutomaticChecks = false, TimeProvider? clock = null, bool restartedAfterUpdate = false,
-        ObservationDeliveryMode observationDelivery = ObservationDeliveryMode.Polled)
+        ObservationDeliveryMode observationDelivery = ObservationDeliveryMode.Polled,
+        ClientSessionAuthority authority = ClientSessionAuthority.Interactive)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(services.Catalog);
@@ -126,7 +127,9 @@ internal sealed partial class TableApplication : IDisposable
         catalog = services.Catalog; tables = services.Tables; matchConnection = services.Match;
         this.clock = clock ?? TimeProvider.System;
         this.restartedAfterUpdate = restartedAfterUpdate;
-        session = new(matchConnection, tables, this.clock, services.SourceActions, observationDelivery, services.MatchHistoryProvider); updates = new(session);
+        session = new(matchConnection, tables, this.clock, services.SourceActions, observationDelivery, services.MatchHistoryProvider, authority);
+        session.SetPriorityObservationReady(false);
+        updates = new(session);
         tablePresence = new(services.Presence, updates.Enqueue);
         if (services.Diagnostics is { } diagnostics) session.DiagnosticRecorded += diagnostics;
         if (services.HistoryArchive is { } historyArchive) session.History.Accepted += historyArchive.Record;
@@ -252,6 +255,7 @@ internal sealed partial class TableApplication : IDisposable
         audioMixer?.Update();
         ObserveProjectionEnvironment();
         pumpingObservations = true;
+        session.SetPriorityObservationReady(false);
         try { session.Pump(); }
         finally { pumpingObservations = false; }
         ReconcileManaReading(match, match);
@@ -276,14 +280,17 @@ internal sealed partial class TableApplication : IDisposable
         ContinueQuickMana();
         // Give a ready pass precedence over starting another observation. Use this
         // update's pointer position so entering a card pauses Auto before Draw.
-        bool autoBlocked = AutomaticInteractionPause() != DecisionDockPauseReason.None;
+        bool autoBlocked = !inputActive || !InputReady || AutomaticInteractionPause() != DecisionDockPauseReason.None;
         ArmAutomaticQuietPriority(autoBlocked);
         bool paymentReserved = UpdateOptionalPayments(autoBlocked);
         bool combatReserved = paymentReserved || UpdateGroupBlocks(autoBlocked);
         bool stackReserved = combatReserved || UpdateStackResolution(autoBlocked);
         bool quietReserved = stackReserved || UpdateQuietPriority(autoBlocked);
-        if (!quietReserved && (!automatic || held || autoBlocked)) session.CancelAdvance();
-        if (!quietReserved && !ExperienceLabOpen && !session.NeedsRecovery && fixture == null && matchPresentation.Ready(now) && !busy && !polling
+        bool standingReserved = quietReserved || UpdateStandingPriority(autoBlocked);
+        session.SetPriorityObservationReady(!autoBlocked && !ExperienceLabOpen && fixture == null
+            && (ResolvingCapturedStack ? matchPresentation.ReadyForFinite(now) : matchPresentation.Ready(now)));
+        if (!standingReserved && (!automatic || held || autoBlocked)) session.CancelAdvance();
+        if (!standingReserved && !ExperienceLabOpen && !session.NeedsRecovery && fixture == null && matchPresentation.Ready(now) && !busy && !polling
             && match is { } currentState && TurnGuide.CanAutoPass(currentState, automatic, held, preferences.Stops, autoBlocked)) {
             // Snapshot the policy: the worker never reads mutable UI preferences.
             var stops = preferences.Stops.ToHashSet();

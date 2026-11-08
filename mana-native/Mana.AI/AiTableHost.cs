@@ -16,7 +16,7 @@ public interface IAiHostDiagnostics
 /// receive immutable individual-seat frames and submit through ordinary rules
 /// inputs. There is no legacy strategy or automatic concession fallback.
 /// </summary>
-public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPolicy> policy,
+public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPolicy> policy,
     long seed, AiSeatLimits? limits = null, IAiHostDiagnostics? diagnostics = null, IAiHostPacing? pacing = null,
     TimeProvider? operationClock = null) : IAsyncDisposable
 {
@@ -71,7 +71,7 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
         using var stopping = CancellationTokenSource.CreateLinkedTokenSource(cancellation, lifetime.Token);
         var token = stopping.Token;
         await step.WaitAsync(token).ConfigureAwait(false);
-        bool acceptedSubmission = false, backoffRequired = false;
+        bool acceptedSubmission = false, acceptedControl = false, backoffRequired = false;
         try {
             ImmutableArray<AutomatedSeatObservation> observed;
             try { observed = await AwaitProvider("observe", provider.ObserveAutomatedSeatsAsync, token).ConfigureAwait(false); }
@@ -83,6 +83,7 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
             }
             pacing?.Observe(observed.Select(item => AiTableProgress.From(item.State)).ToImmutableArray());
             var active = observed.Select(item => (item.State.Id, item.SeatId)).ToHashSet();
+            await RetirePriorityOwnersAsync(active, token).ConfigureAwait(false);
             faultedGames.RemoveWhere(game => !active.Any(key => key.Id == game));
             lock (seats) {
                 foreach (var key in seats.Keys.Where(key => !active.Contains(key)).ToArray()) {
@@ -116,6 +117,18 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                 if (!session.ObserveRestoration(state)) {
                     if (await CheckObservationProgress(key, token).ConfigureAwait(false)) backoffRequired = true;
                     continue;
+                }
+                PriorityWork priorityWork;
+                try { priorityWork = await MaintainPriorityAsync(item, session, token).ConfigureAwait(false); }
+                catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+                catch (Exception error) {
+                    await FaultAsync(state.Id, item.SeatId, error is PriorityEvidenceOverflowException
+                        ? "priority-observation-overflow" : "priority-control-unknown", token, error).ConfigureAwait(false);
+                    backoffRequired = true; continue;
+                }
+                acceptedControl |= priorityWork == PriorityWork.Refreshed;
+                if (priorityWork != PriorityWork.Policy) {
+                    session.ObserveAutomaticProgress(state); session.Observe(null); continue;
                 }
                 if (state.Status != "playing" || state.Decision == null || state.Viewer?.Eliminated != false) {
                     awaitingObservation.Remove(key);
@@ -169,7 +182,7 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                     backoffRequired = true;
                 }
             }
-            return acceptedSubmission && !backoffRequired ? AiHostStepOutcome.ReobserveAfterAcceptedSubmission
+            return (acceptedSubmission || acceptedControl) && !backoffRequired ? AiHostStepOutcome.ReobserveAfterAcceptedSubmission
                 : AiHostStepOutcome.WaitForCurrentWork;
         } finally { step.Release(); }
     }
@@ -189,6 +202,8 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
         LastFault = new(game, seat, reason);
         ReportDiagnostic(LastFault, error);
         faultedGames.Add(game);
+        try { await WithdrawPriorityGameAsync(game, cancellation).ConfigureAwait(false); }
+        catch (Exception withdrawal) { ReportDiagnostic(new(game, seat, "priority-withdrawal-unknown"), withdrawal); }
         await AwaitProvider("fault-report", stop => provider.ReportAutomationFaultAsync(game, seat, reason, stop), cancellation).ConfigureAwait(false);
     }
 
@@ -260,8 +275,14 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
             if (runner != null) await runner.ConfigureAwait(false);
             await step.WaitAsync().ConfigureAwait(false);
             try {
-                lock (seats) { foreach (var seat in seats.Values) seat.Dispose(); seats.Clear(); }
-                awaitingObservation.Clear();
+                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5), operationTime);
+                try { await WithdrawPriorityGameAsync(null, cleanup.Token).ConfigureAwait(false); }
+                finally {
+                    // A failed negative receipt leaves server consent uncertain,
+                    // but it cannot retain local policy work or reusable tickets.
+                    lock (seats) { foreach (var seat in seats.Values) seat.Dispose(); seats.Clear(); }
+                    awaitingObservation.Clear();
+                }
             }
             finally { step.Release(); }
         } finally { startup.Release(); lifetime.Dispose(); }

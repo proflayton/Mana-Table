@@ -58,6 +58,7 @@ internal static class ForgeSnapshotDecoder
                 StackInterruptionVersion = wire.StackInterruptionVersion,
                 StackActionVersion = wire.StackActionVersion, ResolutionChoiceVersion = wire.ResolutionChoiceVersion,
                 FiniteStackYield = wire.FiniteStackYield,
+                PriorityContinuation = wire.PriorityContinuation, PriorityObservation = wire.PriorityObservation, HumanPlayerIds = wire.HumanPlayerIds,
                 PriorityPlayerId = wire.PriorityPlayerId, DecisionOwnerId = wire.DecisionOwnerId,
                 ActionClass = wire.ActionClass, States = wire.States, Activity = wire.Activity,
                 Notices = wire.Notices, IgnoredPriorityAbilities = wire.IgnoredPriorityAbilities,
@@ -82,6 +83,8 @@ internal static class ForgeSnapshotDecoder
             CombatRepairFacts.Validate(snapshot);
             FiniteResolutionFacts.Validate(snapshot);
             FiniteStackYieldFacts.Validate(snapshot);
+            PriorityContinuationFacts.Validate(snapshot);
+            HumanParticipationFacts.Validate(snapshot);
             if (snapshot.Decision?.Payload is OptionsPayload { HandReduction: not null }
                 && !HandReductionFacts.IsCurrent(snapshot)) throw Invalid();
             var operations = new ActionOperationValidation(snapshot);
@@ -180,6 +183,9 @@ internal static class ForgeSnapshotDecoder
         public long? StackActionVersion { get; init; }
         public long? ResolutionChoiceVersion { get; init; }
         public FiniteStackYieldState? FiniteStackYield { get; init; }
+        public PriorityContinuationState? PriorityContinuation { get; init; }
+        public PriorityObservationState? PriorityObservation { get; init; }
+        public ImmutableArray<int>? HumanPlayerIds { get; init; }
         public int? PriorityPlayerId { get; init; }
         public int? DecisionOwnerId { get; init; }
         public string ActionClass { get; init; } = "";

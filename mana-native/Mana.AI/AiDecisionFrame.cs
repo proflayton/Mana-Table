@@ -121,13 +121,18 @@ public sealed class AiDecisionFrame
     public bool Allows(DecisionCommand? command)
     {
         if (command == null || !GameCommandPermissions.Allows(State, command)) return false;
+        if (command is GrantPriorityContinuation or GrantFiniteStackYield) return false;
         // A legacy click can open an unspecified ability chooser. A policy must
         // choose the offered route explicitly, including while paying mana.
         if (command is PlayCard or ActivateCard or UseManaSource) return false;
-        if (command is UseOfferedAction offered)
-            return SourceActions.Any(set => set.SourceCardKey == offered.Card && set.Actions.Any(action => action.Id == offered.ActionId))
-                && (offered.ManaOutput == null || Domain.Actions.Any(action => action.ActionId == offered.ActionId && action.ManaAbility
-                    && ManaFundingFacts.MatchesOutput(action.Production, offered.ManaOutput)));
+        if (command is UseOfferedAction offered) {
+            var action = SourceActions.Where(set => set.SourceCardKey == offered.Card)
+                .SelectMany(set => set.Actions).FirstOrDefault(action => action.Id == offered.ActionId);
+            return action != null && (offered.ManaOutput == null
+                || action.QuickMana?.Allows(offered.ManaOutput) == true
+                    && Domain.Actions.Any(facts => facts.ActionId == offered.ActionId && facts.ManaAbility
+                        && ManaFundingFacts.MatchesOutput(facts.Production, offered.ManaOutput)));
+        }
         if (command is SpendPoolMana pool) return Domain.PoolManaColors.Contains(pool.Color);
         if (command is PassPriority or AutoPassPriority or PassTurn or PassForNow)
             return ActionCoverage == AiActionCoverage.Complete;

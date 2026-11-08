@@ -156,7 +156,8 @@ internal static class AiIntentFollowupRegression
             string color = land.VisualId.StartsWith("a-green-", StringComparison.Ordinal) ? "G" : "U";
             string id = "mana-" + land.VisualId + "-" + revision;
             bool usable = priority || unpaid.Any(symbol => symbol == "{" + color + "}" || symbol == "{1}");
-            offers.Add((land, new(id, "activate", "Produce the current mana"),
+            offers.Add((land, new(id, "activate", "Produce the current mana") {
+                    QuickMana = new([new(ImmutableDictionary<string, int>.Empty.Add(color, 1))]) },
                 new(id, ActionEffectKind.Mana, [ActionEffectKind.Mana], [new(ActionCostKind.Tap, 1, true, "")], ActionAffordability.Payable) {
                     StableId = "mana-" + land.VisualId, ManaAbility = true, ManaAmount = 1, ManaColors = [color],
                     PaymentManaColors = priority ? null : usable ? [color] : [],

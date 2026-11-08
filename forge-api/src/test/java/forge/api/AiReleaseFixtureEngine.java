@@ -32,6 +32,34 @@ public final class AiReleaseFixtureEngine {
         }
     }
 
+    /** Ordinary connected owners exercise the actual consuming-mana payment
+     * route. This bootstrap exists only in the private fixture launcher JAR. */
+    public static final class PolledManaOutput {
+        private PolledManaOutput() { }
+        public static void main(String[] args) throws Exception {
+            DesktopEngine.run(args, (players, resources, profile) -> {
+                configure(players);
+                return new MatchTable("Commander", players, resources, profile, true);
+            }, AiReleaseFixtureEngine::configurePolledManaOutput);
+        }
+    }
+
+    static void configurePolledManaOutput(String format, List<RegisteredPlayer> players) {
+        if (!format.equals("Commander") || players.size() != 4
+                || !(players.get(0).getPlayer() instanceof forge.player.LobbyPlayerHuman) || !(players.get(1).getPlayer() instanceof forge.player.LobbyPlayerHuman)
+                || players.get(0).getPlayer() instanceof AutomatedLobbyPlayer || players.get(1).getPlayer() instanceof AutomatedLobbyPlayer
+                || !(players.get(2).getPlayer() instanceof AutomatedLobbyPlayer) || !(players.get(3).getPlayer() instanceof AutomatedLobbyPlayer)
+                || !players.get(0).getDeck().getName().equals("AI gate consuming-output-payment"))
+            throw new IllegalArgumentException("The private mana-output fixture requires its declared host deck, two ordinary humans and two automated seats");
+        var hostMain = players.get(0).getDeck().getMain();
+        hostMain.clear(); hostMain.add(StaticData.instance().getCommonCards().getCard("Foundry Inspector"), 99);
+        var powerPlay = StaticData.instance().getVariantCards().getCard("Power Play");
+        if (powerPlay == null) throw new IllegalArgumentException("Missing mana-output fixture card: Power Play");
+        players.get(0).getDeck().getOrCreate(DeckSection.Conspiracy).add(powerPlay);
+        players.get(0).assignConspiracies();
+        addExtras(players.get(0), List.of("Wastes", "Crystal Vein"));
+    }
+
     static void configurePolledFanout(String format, List<RegisteredPlayer> players) {
         if (!format.equals("Commander") || players.size() != 4
                 || !(players.get(0).getPlayer() instanceof forge.player.LobbyPlayerHuman) || !(players.get(1).getPlayer() instanceof forge.player.LobbyPlayerHuman)

@@ -386,7 +386,89 @@ jobs:
             dist/ci-inputs/ci-harness-manifest.json
             dist/ci-inputs/ci-source-receipt.json
           if-no-files-found: ignore
-          compression-level: 0
+          # Retained observation journals contain highly repetitive JSON.
+          compression-level: 1
+          retention-days: 14
+
+  # Completed natural games are a separate release gate, not an extension of
+  # the engine matrix's bounded prefixes or its existing job timeout.
+  mixed-game-qualification:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport) }}
+    name: Completed mixed-game qualification
+    needs: [package]
+    runs-on: windows-2025
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      MANA_RELEASE_VERSION: 0.2.${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            mana-native/ci
+            scripts/mana-table
+          sparse-checkout-cone-mode: true
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '9.0.x'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v8
+        with:
+          name: mana-native-ui-inputs-${{ github.sha }}
+          path: dist/ci-inputs
+          digest-mismatch: error
+      - name: Download the unchanged runtime ZIP
+        uses: actions/download-artifact@v8
+        with:
+          name: package-windows-x64.zip
+          path: dist/ci-inputs
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Verify the exact-source package, harness and fixture launcher
+        run: ./mana-native/ci/restore-package.ps1 -Directory dist/ci-inputs -RequireHarness -RequireEngineLauncher
+      - name: Complete all four ordinary-polled varied-deck rotations
+        run: |
+          dotnet ./dist/ci-inputs/harness/Mana.Table.Tests.dll --qualify-mixed-game --mixed-game-mode polled-background --campaign-profile natural --engine-jar (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar') --engine-resources (Join-Path $env:MANA_NATIVE_PACKAGE 'engine') --profile dist/mixed-game-qualification-checks
+          if ($LASTEXITCODE -ne 0) { throw 'Every requested natural mixed-game rotation must complete under its existing180s/160turn ceiling.' }
+      - name: Complete the actual110-trigger rules and production projection workload
+        run: |
+          dotnet ./dist/ci-inputs/harness/Mana.Table.Tests.dll --smoke-polled-fanout --engine-jar $env:MANA_NATIVE_FIXTURE_LAUNCHER --production-engine-jar (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar') --engine-resources (Join-Path $env:MANA_NATIVE_PACKAGE 'engine') --source-revision $env:GITHUB_SHA --source-manifest dist/ci-inputs/ci-engine-manifest.json --profile dist/mixed-game-fanout-checks
+          if ($LASTEXITCODE -ne 0) { throw 'The110-trigger ordinary-owner rules/UI workload failed.' }
+      - name: Complete the ordinary consuming-source mana payment witness
+        run: |
+          dotnet ./dist/ci-inputs/harness/Mana.Table.Tests.dll --smoke-polled-mana-output --engine-jar $env:MANA_NATIVE_FIXTURE_LAUNCHER --production-engine-jar (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar') --engine-resources (Join-Path $env:MANA_NATIVE_PACKAGE 'engine') --source-revision $env:GITHUB_SHA --source-manifest dist/ci-inputs/ci-engine-manifest.json --profile dist/mixed-game-mana-output-checks
+          if ($LASTEXITCODE -ne 0) { throw 'The bounded ordinary-owner consuming-source mana payment failed.' }
+      - name: Admit strict completed-game and source-bound workload evidence
+        run: |
+          node scripts/mana-table/mixed-game-qualification.cjs --inputs dist/ci-inputs --package $env:MANA_NATIVE_PACKAGE --campaign dist/mixed-game-qualification-checks/mixed-game-campaign --fanout dist/mixed-game-fanout-checks/polled-fanout --mana-output dist/mixed-game-mana-output-checks/polled-mana-output --source-revision $env:GITHUB_SHA --output dist/mixed-game-qualification-checks/qualification.json
+          if ($LASTEXITCODE -ne 0) { throw 'Completed mixed-game release evidence did not satisfy the closed qualification gate.' }
+      - name: Retain private mixed-game qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mana-native-mixed-game-evidence-${{ github.run_attempt }}
+          # Actual private hands/observations remain CI evidence, never downloads.
+          path: |
+            dist/mixed-game-qualification-checks/**/*.json
+            dist/mixed-game-qualification-checks/**/*.log
+            dist/mixed-game-qualification-checks/**/*.jsonl.gz
+            dist/mixed-game-fanout-checks/**/*.json
+            dist/mixed-game-fanout-checks/**/*.txt
+            dist/mixed-game-fanout-checks/**/*.log
+            dist/mixed-game-fanout-checks/**/*.jsonl.gz
+            dist/mixed-game-mana-output-checks/**/*.json
+            dist/mixed-game-mana-output-checks/**/*.log
+            dist/mixed-game-mana-output-checks/**/*.jsonl.gz
+            dist/ci-inputs/ci-engine-manifest.json
+            dist/ci-inputs/ci-harness-manifest.json
+            dist/ci-inputs/ci-source-receipt.json
+          if-no-files-found: ignore
+          compression-level: 1
           retention-days: 14
 
   native-ui:
@@ -787,7 +869,7 @@ jobs:
   windows:
     name: ${{ github.event_name == 'workflow_dispatch' && inputs.benchmark_transport && 'Release checks not run (transport benchmark)' || 'Verify and package Windows x64' }}
     if: ${{ always() && !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport) }}
-    needs: [checks, tools, package, native-verification, native-ui, installer, installer-release, installer-lifecycle, update-installer, managed-updates, sdk-updates]
+    needs: [checks, tools, package, native-verification, mixed-game-qualification, native-ui, installer, installer-release, installer-lifecycle, update-installer, managed-updates, sdk-updates]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -798,7 +880,7 @@ jobs:
         run: |
           node <<'NODE'
           const results = JSON.parse(process.env.JOB_RESULTS);
-          const expected = ['checks', 'tools', 'package', 'native-verification', 'native-ui', 'installer', 'installer-release',
+          const expected = ['checks', 'tools', 'package', 'native-verification', 'mixed-game-qualification', 'native-ui', 'installer', 'installer-release',
             'installer-lifecycle', 'update-installer', 'managed-updates', 'sdk-updates'];
           if (Object.keys(results).length !== expected.length || expected.some(name => !Object.hasOwn(results, name)))
             throw new Error('Native job results must account for exactly the declared verification jobs.');

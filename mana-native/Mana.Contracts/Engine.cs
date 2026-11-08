@@ -57,6 +57,9 @@ public interface ITableSeatSetup
 /// command lane on this connection.</summary>
 public interface IMatchConnection
 {
+    // Optional negotiated authority; a snapshot must also advertise the actual
+    // host's continuation frame before native code leaves the legacy path.
+    bool SupportsPriorityContinuation => false;
     Task<GameSnapshot?> ObserveAsync();
     Task ExecuteAsync(GameCommand command);
     /// <summary>Requests this seat's concession. Completion acknowledges admission;
@@ -354,6 +357,11 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
     public long? StackActionVersion { get; init; }
     public long? ResolutionChoiceVersion { get; init; }
     public FiniteStackYieldState? FiniteStackYield { get; init; }
+    public PriorityContinuationState? PriorityContinuation { get; init; }
+    public PriorityObservationState? PriorityObservation { get; init; }
+    // Actual human controller roles from the authority, not the legacy wire's
+    // viewer-relative player.human marker. Missing preserves older providers.
+    public ImmutableArray<int>? HumanPlayerIds { get; init; }
     public int? PriorityPlayerId { get; init; }
     // Public acting seat only. Another seat's private prompt/options are never copied here.
     public int? DecisionOwnerId { get; init; }

@@ -2056,6 +2056,20 @@ The existing `matchAction` endpoint accepts two additional typed operations:
   available while another seat owns input. Exact repeated consent and revocation
   receipts are idempotent; an old ID cannot restart revoked consent.
 
+Ordinary Auto uses the optional `priority-continuation-v1` capability and the
+actual audience's `priorityContinuation` frame. `grantPriorityContinuation`
+captures one sequence-fenced `NoResponse` or original-token `Quiet` policy;
+`revokePriorityContinuation` withdraws it without requiring a current prompt.
+Neither registration nor observation acknowledgement answers a rules input.
+`acknowledgePriorityObservation` returns credit only for an exact completed
+publication delivered to that audience. Private activity and execution delivery
+journals retain unacknowledged causal evidence, with explicit overflow holds.
+See the [continuation contract](../docs/Development/Mana-Table-Priority-Continuation.md)
+for the closed fields, actual-input lease, publication elision, observer credit,
+connection retirement and legacy-client compatibility. Required choices stay
+manual; ordinary responses retain `NoResponse`, while inspection, manual mana
+ownership and explicit Take control withdraw it.
+
 Each seat consents independently. Every automatic pass rechecks the live owned
 `InputPassPriority` on its input thread. The internal queue witness keeps relative
 order, controller, kind, source occurrence, target occurrences and their

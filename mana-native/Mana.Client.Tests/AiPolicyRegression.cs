@@ -15,6 +15,7 @@ internal static class AiPolicyRegression
         await FundingCommitmentBoundary(check);
         await PaidProducerPrerequisites(check);
         await ManaOutputContinuation(check);
+        await AiManaOutputAuthorityRegression.RunAsync(check);
         await ManaReductionContinuation(check);
         await PaymentProvenance(check);
         await AiCostPaymentRegression.RunAsync(check);
@@ -356,9 +357,11 @@ internal static class AiPolicyRegression
         var blue = Semantic("blue-unit", ActionEffectKind.Mana) with { ManaAbility = true, ManaAmount = 1,
             Costs = [new(ActionCostKind.Tap, 1, true, "")], ManaColors = ["U"], PaymentManaColors = ["U"], Production = Output(("U", 1)) };
         var offers = new List<(string Source, SourceAction Action, ActionSemantics Semantics)> {
-            ("own-land", new("flexible", "activate", "Blue before red in the printed route"), flexible) };
+            ("own-land", new("flexible", "activate", "Blue before red in the printed route") {
+                QuickMana = new(flexible.Production.Alternatives) }, flexible) };
         offers.AddRange(Enumerable.Range(0, 3).Select(index => ("island-" + index,
-            new SourceAction("blue-" + index, "activate", "Blue"), blue with { ActionId = "blue-" + index, StableId = "blue-" + index })));
+            new SourceAction("blue-" + index, "activate", "Blue") { QuickMana = new(blue.Production.Alternatives) },
+            blue with { ActionId = "blue-" + index, StableId = "blue-" + index })));
         var semantics = new DecisionSemantics { UnpaidMana = ["{U}", "{R}"] };
         var frame = Frame(state, Domain(state, offers.ToArray()), semantics);
         var first = await Evaluate(frame);
@@ -372,6 +375,22 @@ internal static class AiPolicyRegression
                 && !frame.Allows(red with { ActionId = "invented" }) && !frame.Allows(red with { Card = "foreign-key" })
                 && !frame.Allows(red with { DecisionId = "old-payment" }),
             "An output intent must equal one current offered alternative and cannot combine alternative colors or replace action, source and decision authority");
+        var descriptive = frame.Domain with { Sources = frame.Domain.Sources.Select(source => source with {
+            Actions = source.Actions.Select(action => action with { QuickMana = null }).ToImmutableArray()
+        }).ToImmutableArray() };
+        var noCapability = Frame(state, descriptive, semantics);
+        check(!noCapability.Allows(red) && noCapability.Allows(red with { ManaOutput = null })
+                && (await Evaluate(noCapability)).Command is UseOfferedAction { ActionId: "flexible", ManaOutput: null },
+            "Described flexible production cannot authorize an unadvertised output override; its ordinary activation remains legal");
+        var consuming = descriptive with { Actions = descriptive.Actions.Select(action => action.ActionId == "flexible"
+            ? action with { Costs = [.. action.Costs, new(ActionCostKind.Sacrifice, 1, true, "")] } : action).ToImmutableArray() };
+        check((await Evaluate(Frame(state, consuming, semantics))).Command is UseOfferedAction { ActionId: "flexible", ManaOutput: null },
+            "A needed consuming flexible producer uses ordinary activation and current follow-up choices without minting a quick-output capability");
+        var choice = state with { Decision = new("actual-color-callback", new(), new OptionsPayload(new([
+            new(4, "Blue", null) { Mana = "{U}" }, new(9, "Red", null) { Mana = "{R}" }
+        ], new(1, 1))) { ManaPaymentContext = new(0, [new("{R}", 1)], null) }) };
+        check((await Evaluate(Frame(choice))).Command is ChooseOptions selected && selected.Choices.SequenceEqual([9]),
+            "A non-quick producer's ordinary color callback uses its fresh remaining bill instead of a forged parent-payment output override");
         var unknown = frame.Domain with { Actions = frame.Domain.Actions.Select(action => action.ActionId == "flexible"
             ? action with { Production = ManaProduction.Unknown } : action).ToImmutableArray() };
         var unknownFrame = Frame(state, unknown, semantics);
@@ -381,7 +400,9 @@ internal static class AiPolicyRegression
             ? action with { ManaAbility = false } : action).ToImmutableArray() };
         check(!Frame(state, notMana, semantics).Allows(red), "A known output recipe cannot turn a non-mana action into a mana ability");
         var bundle = frame.Domain with { Actions = frame.Domain.Actions.Select(action => action.ActionId == "flexible"
-            ? action with { Production = Output(("W", 1), ("G", 1)) } : action).ToImmutableArray() };
+            ? action with { Production = Output(("W", 1), ("G", 1)) } : action).ToImmutableArray(),
+            Sources = frame.Domain.Sources.Select(source => source with { Actions = source.Actions.Select(action => action.Id == "flexible"
+                ? action with { QuickMana = new(Output(("W", 1), ("G", 1)).Alternatives) } : action).ToImmutableArray() }).ToImmutableArray() };
         var bundled = Frame(state, bundle, semantics);
         check(bundled.Allows(red with { ManaOutput = new(ImmutableDictionary<string, int>.Empty.Add("W", 1).Add("G", 1)) })
                 && !bundled.Allows(red with { ManaOutput = new(ImmutableDictionary<string, int>.Empty.Add("G", 1)) }),
