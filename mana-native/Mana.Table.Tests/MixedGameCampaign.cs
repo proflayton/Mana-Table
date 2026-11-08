@@ -91,6 +91,8 @@ internal static class MixedGameCampaign
             passing: mode == MixedGameDriveMode.PolledBackground ? ConnectedPlayerPassingMode.ServerAuto : ConnectedPlayerPassingMode.FullControl);
         var trace = new StreamWriter(new GZipStream(File.Create(Path.Combine(paths.Profile, "public-facts.jsonl.gz")), CompressionLevel.Fastest));
         var elapsed = Stopwatch.StartNew();
+        MixedGameProgress? progress = null;
+        ConnectedPlayerProgressEvidence? hostProgress = null, guestProgress = null;
         MixedGamePublicCohorts? publicCohorts = null;
         int completedCohortCount = 0;
         var developed = new HashSet<int>();
@@ -167,19 +169,31 @@ internal static class MixedGameCampaign
             // Setup/warm-up time has its own bounded operations. The game budget
             // starts at launch, matching the existing natural AI campaign.
             elapsed.Restart();
-            Task WaitForOwnerWork() => mode == MixedGameDriveMode.PolledBackground
-                ? CampaignOwnerWait.WaitAsync(CampaignOwnerWait.Bound(limits.MatchTime - elapsed.Elapsed,
+            progress = new(() => elapsed.ElapsedTicks, Stopwatch.Frequency);
+            async Task WaitForOwnerWork()
+            {
+                progress.Enter(MixedGameStage.OwnerWait, steps);
+                if (mode == MixedGameDriveMode.PolledBackground)
+                    await CampaignOwnerWait.WaitAsync(CampaignOwnerWait.Bound(limits.MatchTime - elapsed.Elapsed,
                     host.TimeUntilNextPoll, guest.TimeUntilNextPoll,
                     host.Client.TimeUntilSynchronizationHealthCheck, guest.Client.TimeUntilSynchronizationHealthCheck), evidence.WaitForQueuedWorkAsync,
-                    host.Client, guest.Client)
-                : Task.Delay(1);
+                    host.Client, guest.Client);
+                else await Task.Delay(1);
+                progress.Complete();
+            }
             while (true) {
-                if (elapsed.Elapsed >= limits.MatchTime) { stop = "time-budget"; break; }
+                if (elapsed.Elapsed >= limits.MatchTime) { progress.Stop(); stop = "time-budget"; break; }
+                progress.BeginAttempt();
                 stage = "owned-player-observations";
-                try { await host.ObserveAsync(); await guest.ObserveAsync(); }
-                catch (EngineObservationSupersededException) { await WaitForOwnerWork(); continue; }
+                if (!await ObservePlayersAsync(host, guest, progress, steps)) {
+                    await WaitForOwnerWork(); continue;
+                }
                 stage = mode == MixedGameDriveMode.PolledBackground ? "background-bot-processing" : "bot-step";
-                if (mode == MixedGameDriveMode.ManualStepped) await bots.StepAsync();
+                if (mode == MixedGameDriveMode.ManualStepped) {
+                    progress.Enter(MixedGameStage.ManualBotStep, steps);
+                    await bots.StepAsync();
+                }
+                progress.Enter(MixedGameStage.EvidenceDrain, steps);
                 evidence.DrainPending();
                 if (bots.LastFault != null) throw new InvalidDataException("Bot fault: " + JsonSerializer.Serialize(bots.LastFault));
                 var botObservations = mode == MixedGameDriveMode.PolledBackground ? provider.ProcessedObservations : provider.Last;
@@ -209,7 +223,11 @@ internal static class MixedGameCampaign
                     foreach (var item in last) evidence.Observe(item);
                 }
                 evidence.DrainPending();
-                if (mode == MixedGameDriveMode.PolledBackground) await provider.DrainHistoryAsync();
+                if (mode == MixedGameDriveMode.PolledBackground) {
+                    progress.Enter(MixedGameStage.AutomatedHistory, steps);
+                    await provider.DrainHistoryAsync();
+                }
+                progress.Enter(MixedGameStage.PublicComparison, steps);
                 publicCohorts ??= new(last.Select(item => item.SeatId), preparation: evidence.PublicProjectionPreparation);
                 foreach (var item in last) {
                     var frame = item.State;
@@ -218,9 +236,11 @@ internal static class MixedGameCampaign
                     identities.Add(item.SeatId);
                     foreach (var player in frame.Players)
                         if (player.Zone("Battlefield").Cards.Any(card => card.Type.Contains("Land", StringComparison.Ordinal))) developed.Add(player.Id);
-                    if (observation.FirstCohort)
+                    if (observation.FirstCohort) {
+                        progress.NewPublicBoard(frame.BoardRevision);
                         await trace.WriteLineAsync(JsonSerializer.Serialize(new { steps, elapsedMilliseconds = elapsed.Elapsed.TotalMilliseconds,
                             facts = JsonSerializer.Deserialize<JsonElement>(observation.Facts!) }));
+                    }
                 }
                 comparisons = publicCohorts.Comparisons; completedCohortCount = publicCohorts.FourAudienceCohorts;
                 state = host.Last!.State;
@@ -228,7 +248,7 @@ internal static class MixedGameCampaign
                 if (steps % 64 == 0) await SaveAsync(Path.Combine(paths.Profile, "checkpoint.json"), new {
                     audience = "public", steps, state.Turn, state.PhaseKey, state.BoardRevision,
                     elapsedMilliseconds = elapsed.Elapsed.TotalMilliseconds, comparisons,
-                    fourAudienceCohorts = completedCohortCount, developedSeats = developed.Order()
+                    fourAudienceCohorts = completedCohortCount, developedSeats = developed.Order(), progress = progress.Capture()
                 });
                 if (state.Status == "finished") {
                     if (state.Outcome == null) throw new InvalidDataException("A finished mixed game has no typed rules outcome.");
@@ -246,20 +266,29 @@ internal static class MixedGameCampaign
                         if (mode == MixedGameDriveMode.PolledBackground && new[] { host.AutoEvidence, guest.AutoEvidence }
                             .Any(item => item.AcceptedGrants == 0 || item.CertifiedAutomaticPasses == 0))
                             throw new InvalidDataException("A completed polled game must witness actual server-owned Auto progress for both ordinary players.");
-                        stop = "natural-outcome"; break;
+                        progress.Stop(); stop = "natural-outcome"; break;
                     }
                 }
-                if (state.Turn >= limits.Turns) { stop = "turn-budget"; break; }
-                if (elapsed.Elapsed >= limits.MatchTime) { stop = "time-budget"; break; }
+                if (state.Turn >= limits.Turns) { progress.Stop(); stop = "turn-budget"; break; }
+                if (elapsed.Elapsed >= limits.MatchTime) { progress.Stop(); stop = "time-budget"; break; }
                 stage = "connected-player-client-dispatch";
-                await host.StepAsync(); await guest.StepAsync();
+                progress.Enter(MixedGameStage.HostStep, steps);
+                await host.StepAsync();
+                progress.Enter(MixedGameStage.GuestStep, steps);
+                await guest.StepAsync();
                 await WaitForOwnerWork();
             }
         } catch (Exception error) {
+            progress?.Stop(failed: true);
             stop = "mechanical-failure"; failure = error.ToString();
             try { evidence.PreserveFailure(error, stage, steps, last); }
             catch (Exception captureError) { CleanupFailure("Original failure evidence", captureError); }
         } finally {
+            // Keep active-run time separate from evidence and owner teardown.
+            // This does not change either the existing match budget or result's
+            // end-to-end elapsed-time field.
+            progress?.Stop();
+            hostProgress = host.ProgressEvidence; guestProgress = guest.ProgressEvidence;
             await ProtectCleanup("Ordered evidence drain", () => { evidence.DrainPending(); return Task.CompletedTask; });
             await ProtectCleanup("Private observation capture", () => {
                 if (evidence.PreserveObservations(last) is { } error) throw new IOException("Private observation capture failed.", error);
@@ -270,10 +299,10 @@ internal static class MixedGameCampaign
                 await SaveAsync(Path.Combine(paths.Profile, "private-player-receipts.json"), new {
                     host = new { host.ClientAdmissions, host.ProviderAcceptances, host.History, host.PollCallbacks,
                         host.OrdinaryPublications, host.RetiredProposals, host.LastRetiredOwnedRead, source = host.Client.SourceActions.View,
-                        consent = host.ConsentEvidence },
+                        consent = host.ConsentEvidence, progress = hostProgress },
                     guest = new { guest.ClientAdmissions, guest.ProviderAcceptances, guest.History, guest.PollCallbacks,
                         guest.OrdinaryPublications, guest.RetiredProposals, guest.LastRetiredOwnedRead, source = guest.Client.SourceActions.View,
-                        consent = guest.ConsentEvidence },
+                        consent = guest.ConsentEvidence, progress = guestProgress },
                     automated = new { histories = stoppedHistories, fault = bots.LastFault,
                         historyScope = "Bounded diagnostic rings before owner cancellation; provider acceptance counters are cumulative and separate.",
                         cumulativeProviderAcceptances = provider.AcceptedBySeat, provider.Executing, provider.PriorityControlsExecuting },
@@ -312,8 +341,12 @@ internal static class MixedGameCampaign
             await ProtectCleanup("Close public facts trace", () => trace.DisposeAsync().AsTask());
             await ProtectCleanup("Close evidence trace", () => { evidence.Dispose(); return Task.CompletedTask; });
         }
+        double totalElapsedMilliseconds = elapsed.Elapsed.TotalMilliseconds;
+        var progressEvidence = progress?.Capture();
+        double? activeElapsedMilliseconds = progressEvidence?.ActiveStopElapsedTicks is { } activeTicks
+            ? (double)activeTicks / progressEvidence.TimestampFrequency * 1000 : null;
         var result = new MixedGameResult(match, stop, failure, verified, state?.Turn ?? 0, steps,
-            elapsed.Elapsed.TotalMilliseconds, developed.Order().ToImmutableArray(), comparisons, completedCohortCount,
+            totalElapsedMilliseconds, developed.Order().ToImmutableArray(), comparisons, completedCohortCount,
             host.ProviderAcceptances, guest.ProviderAcceptances, state?.Outcome, evidence.Summary(), bindings.ToImmutable()) {
                 DriveMode = mode.ToString(),
                 Participants = qualification?.Participants.Select(participant => new MixedGameParticipantEvidence(
@@ -325,12 +358,37 @@ internal static class MixedGameCampaign
                             && record.Outcome == AiDecisionOutcome.Accepted))).ToImmutableArray() ?? [],
                 CausalDecks = qualification?.Summary(stop, verified, failure) ?? [],
                 PublicComparison = publicCohorts?.Evidence,
+                Progress = progressEvidence,
+                HostProgress = hostProgress, GuestProgress = guestProgress,
+                ActiveElapsedMilliseconds = activeElapsedMilliseconds,
+                CleanupElapsedMilliseconds = activeElapsedMilliseconds is { } activeMilliseconds
+                    ? totalElapsedMilliseconds - activeMilliseconds : null,
                 HostAuto = host.AutoEvidence, GuestAuto = guest.AutoEvidence,
                 AutomatedPriorityContinuations = finalPriorityContinuations
             };
         result = result with { Qualification = MixedGameQualification.Assess(result, last) };
         await SaveAsync(Path.Combine(paths.Profile, "result.json"), result);
         return result;
+    }
+
+    // A retired read owns only its audience. Still pump the other ordinary
+    // client, including its queued publications and delivery acknowledgements.
+    // An incomplete round receives no comparison or new policy-dispatch credit.
+    internal static async Task<bool> ObservePlayersAsync(ConnectedPlayerDriver host, ConnectedPlayerDriver guest,
+        MixedGameProgress progress, int steps)
+    {
+        bool complete = true;
+        progress.Enter(MixedGameStage.HostObservation, steps);
+        try { await host.ObserveAsync(); progress.Complete(); }
+        catch (EngineObservationSupersededException) {
+            progress.SupersededObservation(); complete = false;
+        }
+        progress.Enter(MixedGameStage.GuestObservation, steps);
+        try { await guest.ObserveAsync(); progress.Complete(); }
+        catch (EngineObservationSupersededException) {
+            progress.SupersededObservation(); complete = false;
+        }
+        return complete;
     }
 
     private static string Hash(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
@@ -349,6 +407,11 @@ internal sealed record MixedGameResult(int Rotation, string StopReason, string? 
     public ImmutableArray<AiCampaignDeckQualification> CausalDecks { get; init; } = [];
     public MixedGameQualificationAssessment? Qualification { get; init; }
     public MixedPublicComparisonEvidence? PublicComparison { get; init; }
+    public MixedGameProgressEvidence? Progress { get; init; }
+    public ConnectedPlayerProgressEvidence? HostProgress { get; init; }
+    public ConnectedPlayerProgressEvidence? GuestProgress { get; init; }
+    public double? ActiveElapsedMilliseconds { get; init; }
+    public double? CleanupElapsedMilliseconds { get; init; }
     public ConnectedPlayerAutoEvidence? HostAuto { get; init; }
     public ConnectedPlayerAutoEvidence? GuestAuto { get; init; }
     public ImmutableArray<AiAutomatedPriorityEvidence> AutomatedPriorityContinuations { get; init; } = [];

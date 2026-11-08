@@ -13,6 +13,7 @@ internal static class PolledFullGameContractChecks
     {
         await PolledInputReceiptChecks.RunAsync(check);
         MixedGamePublicCohortChecks.Run(check);
+        MixedGameProgressChecks.Run(check);
         FanoutProjectionCaptureChecks.Run(check);
         FanoutProjectionArchiveChecks.Run(profile, check);
         await OrdinaryOwner(profile, check);
@@ -33,6 +34,309 @@ internal static class PolledFullGameContractChecks
         await PollScheduling(profile, check);
         await DuePollCannotStarveAuto(profile, check);
         await SlowPollCannotStarveDecision(profile, check);
+        await AcceptedInputProgress(profile, check);
+        await AcceptedInputRetirement(profile, check);
+        await IndependentObservationOwners(profile, check);
+    }
+
+    private static async Task AcceptedInputProgress(string profile, Action<bool, string> check)
+    {
+        foreach (bool opening in new[] { false, true }) {
+            var state = opening ? Opening() : Priority();
+            var clock = new ProgressClock();
+            using var run = new DriverCase(profile, "accepted-progress-" + (opening ? "opening" : "priority"), state, state,
+                passing: ConnectedPlayerPassingMode.FullControl, operationClock: clock);
+            await run.Prime(); await run.Driver.ObserveAsync(); await run.Driver.StepAsync();
+            var first = run.Driver.ProgressEvidence;
+            check(first is { AcceptedWaits: 1, RetiredWaits: 0, ExpiredWaits: 0,
+                    Status: ConnectedPlayerWaitStatus.AwaitingAuthority, AcceptedAtTicks: 0 }
+                    && run.Driver.ProviderAcceptances == 1 && run.Policy.Evaluations == 1 && run.Port.Commands.Count == 1
+                    && !run.Driver.Client.Busy && !run.Driver.Client.NeedsRecovery
+                    && run.Driver.History!.Decisions.Count(row => row.Outcome == AiDecisionOutcome.Accepted) == 1,
+                "A normal ordinary command receipt starts one authority wait at the actual provider return without inventing consumption");
+            await AdvanceSynchronized(run, clock, 44);
+            check(run.Driver.ProgressEvidence is { Status: ConnectedPlayerWaitStatus.AwaitingAuthority,
+                    AcceptedWaits: 1, ExpiredWaits: 0, WaitElapsedMilliseconds: 44000 }
+                    && run.Port.Commands.Count == 1 && run.Policy.Evaluations == 1 && run.Driver.ProviderAcceptances == 1
+                    && !run.Driver.Client.NeedsRecovery && !run.Driver.Client.UncertainCommand,
+                "Identical synchronized ordinary polls preserve the exact accepted authority wait through44seconds without replaying the policy or command");
+            clock.Advance(TimeSpan.FromSeconds(1)); run.Ticks = clock.Milliseconds;
+            var expired = await Timeout(() => run.Driver.ObserveAsync());
+            var repeated = await Timeout(() => run.Driver.StepAsync());
+            check(expired != null && ReferenceEquals(expired, repeated)
+                    && expired.Message.Contains("no new owned decision authority", StringComparison.Ordinal)
+                    && run.Driver.ProgressEvidence is { Status: ConnectedPlayerWaitStatus.Expired, ExpiredWaits: 1,
+                        AcceptedWaits: 1, RetiredWaits: 0, WaitElapsedMilliseconds: 45000 }
+                    && run.Driver.ProviderAcceptances == 1 && run.Port.Commands.Count == 1 && run.Policy.Evaluations == 1
+                    && run.Driver.History!.Decisions.Count(row => row.Outcome == AiDecisionOutcome.Accepted) == 1
+                    && run.Driver.History.Decisions.All(row => row.Outcome != AiDecisionOutcome.ExecutionUnknown)
+                    && run.Driver.Client.State is { Status: "playing", Outcome: null },
+                "The scripted owner's unchanged accepted authority faults exactly once at45seconds while preserving acceptance, scope and the absence of a game outcome");
+        }
+
+        // Revisions can change for observation/consent metadata alone. They
+        // retire this narrow authority wait, never certify rules progress.
+        var initial = Priority();
+        var freshClock = new ProgressClock();
+        using (var run = new DriverCase(profile, "accepted-fresh-authority", initial, initial,
+            passing: ConnectedPlayerPassingMode.FullControl, operationClock: freshClock)) {
+            await run.Prime(); await run.Driver.ObserveAsync(); await run.Driver.StepAsync();
+            await AdvanceSynchronized(run, freshClock, 44);
+            var refreshed = initial with { Revision = initial.Revision + 1 };
+            run.Port.State = run.Port.RichState = refreshed;
+            run.Driver.Client.Poll(true, _ => { }); await Drain(run.Driver.Client);
+            await run.Driver.ObserveAsync();
+            check(run.Driver.ProgressEvidence is { Status: ConnectedPlayerWaitStatus.Retired, RetiredWaits: 1,
+                    Retirement: ConnectedPlayerWaitRetirement.FreshOwnedAuthority, WaitElapsedMilliseconds: 44000 }
+                    && run.Driver.ProgressEvidence.LastOwnedStamp?.Revision == refreshed.Revision
+                    && refreshed.BoardRevision == initial.BoardRevision && refreshed.Decision == initial.Decision
+                    && run.Port.Commands.Count == 1 && run.Policy.Evaluations == 1,
+                "A validated newer owned revision retires only the authority wait even when board and decision are unchanged; metadata freshness is not rules consumption");
+            for (int second = 0; second < 46; second++) {
+                freshClock.Advance(TimeSpan.FromSeconds(1)); run.Ticks = freshClock.Milliseconds;
+                await run.Driver.ObserveAsync(); await Drain(run.Driver.Client);
+            }
+            check(await Timeout(() => run.Driver.ObserveAsync()) == null && run.Driver.ProgressEvidence.ExpiredWaits == 0,
+                "A retired accepted authority does not later fault using another input's elapsed time");
+        }
+
+        var mismatchClock = new ProgressClock();
+        using (var run = new DriverCase(profile, "accepted-unadmitted-rich", initial, initial,
+            passing: ConnectedPlayerPassingMode.FullControl, operationClock: mismatchClock)) {
+            await run.Prime(); await run.Driver.ObserveAsync(); await run.Driver.StepAsync();
+            var ordinary = initial with { Revision = initial.Revision + 1 };
+            run.Port.State = ordinary; run.Port.RichState = ordinary with { BoardRevision = ordinary.BoardRevision + 1 };
+            run.Driver.Client.Poll(true, _ => { }); await Drain(run.Driver.Client);
+            await AdvanceSynchronized(run, mismatchClock, 44);
+            await run.Driver.ObserveAsync();
+            check(run.Driver.ProgressEvidence.Status == ConnectedPlayerWaitStatus.AwaitingAuthority
+                    && run.Driver.ProgressEvidence.RetiredWaits == 0 && run.Driver.RetiredProposals == 1
+                    && run.Driver.LastRetiredOwnedRead?.Reason == "rich-payload-mismatch",
+                "A different rich revision rejected by ordinary ownership cannot clear an accepted input's authority wait");
+            mismatchClock.Advance(TimeSpan.FromSeconds(1)); run.Ticks = mismatchClock.Milliseconds;
+            check(await Timeout(() => run.Driver.ObserveAsync()) != null
+                    && run.Driver.ProgressEvidence is { ExpiredWaits: 1, RetiredWaits: 0 }
+                    && run.Driver.ProviderAcceptances == 1 && run.Port.Commands.Count == 1,
+                "An unadmitted rich payload or an identical-publication shortcut cannot give an accepted input fresh waiting credit");
+        }
+
+        var readbackClock = new ProgressClock();
+        using (var run = new DriverCase(profile, "accepted-before-readback", initial, initial,
+            passing: ConnectedPlayerPassingMode.FullControl, operationClock: readbackClock)) {
+            await run.Prime(); await run.Driver.ObserveAsync();
+            run.Port.HoldNextRead = true;
+            var pending = run.Driver.StepAsync();
+            await run.Port.NextReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            readbackClock.Advance(TimeSpan.FromSeconds(2)); run.Ticks = readbackClock.Milliseconds;
+            run.Port.ReleaseNextRead.TrySetResult(initial);
+            await pending.WaitAsync(TimeSpan.FromSeconds(5));
+            check(run.Driver.ProgressEvidence is { AcceptedAtTicks: 0, WaitElapsedMilliseconds: 2000,
+                    Status: ConnectedPlayerWaitStatus.AwaitingAuthority, AcceptedWaits: 1 }
+                    && run.Driver.ProviderAcceptances == 1 && run.Port.Commands.Count == 1,
+                "The authority deadline begins at exact provider acceptance rather than hiding time spent awaiting its ordinary readback");
+        }
+
+        var supersededClock = new ProgressClock();
+        using (var run = new DriverCase(profile, "accepted-superseded-discovery", initial, initial,
+            passing: ConnectedPlayerPassingMode.FullControl, operationClock: supersededClock)) {
+            await run.Prime(); await run.Driver.ObserveAsync(); await run.Driver.StepAsync();
+            await AdvanceSynchronized(run, supersededClock, 44);
+            var superseded = new EngineObservationSupersededException(); run.Port.OwnedError = superseded;
+            run.Port.State = run.Port.RichState = initial with { Revision = initial.Revision + 1 };
+            run.Driver.Client.Poll(true, _ => { }); await Drain(run.Driver.Client);
+            bool discoveryRetired = false;
+            try { await run.Driver.ObserveAsync(); }
+            catch (EngineObservationSupersededException error) { discoveryRetired = ReferenceEquals(error, superseded); }
+            check(discoveryRetired && run.Driver.ProgressEvidence is { Status: ConnectedPlayerWaitStatus.AwaitingAuthority,
+                    RetiredWaits: 0, ExpiredWaits: 0 } && run.Port.Commands.Count == 1,
+                "A superseded discovery remains an ordinary read result before45seconds and grants no new accepted-authority allowance");
+            supersededClock.Advance(TimeSpan.FromSeconds(1)); run.Ticks = supersededClock.Milliseconds;
+            run.Port.State = run.Port.RichState = initial with { Revision = initial.Revision + 2 };
+            run.Driver.Client.Poll(true, _ => { }); await Drain(run.Driver.Client);
+            check(await Timeout(() => run.Driver.ObserveAsync()) != null
+                    && run.Driver.ProgressEvidence is { ExpiredWaits: 1, RetiredWaits: 0 }
+                    && run.Policy.Evaluations == 1 && run.Port.Commands.Count == 1,
+                "Repeated superseded discovery before a counted campaign step cannot hide an accepted input's45second authority deadline");
+        }
+
+        var failureClock = new ProgressClock();
+        using (var run = new DriverCase(profile, "accepted-original-read-failure", initial, initial,
+            passing: ConnectedPlayerPassingMode.FullControl, operationClock: failureClock)) {
+            await run.Prime(); await run.Driver.ObserveAsync(); await run.Driver.StepAsync();
+            await AdvanceSynchronized(run, failureClock, 44);
+            failureClock.Advance(TimeSpan.FromSeconds(1)); run.Ticks = failureClock.Milliseconds;
+            run.Port.State = run.Port.RichState = initial with { Revision = initial.Revision + 1 };
+            run.Driver.Client.Poll(true, _ => { }); await Drain(run.Driver.Client);
+            var firstFailure = new IOException("Controlled original owned-read failure."); run.Port.OwnedError = firstFailure;
+            Exception? observed = null;
+            try { await run.Driver.ObserveAsync(); } catch (Exception error) { observed = error; }
+            check(ReferenceEquals(observed, firstFailure) && run.Driver.ProgressEvidence.ExpiredWaits == 0
+                    && run.Driver.ProviderAcceptances == 1 && run.Port.Commands.Count == 1,
+                "An original owned-read failure at the authority deadline remains the primary exception instead of being replaced by progress diagnostics");
+        }
+    }
+
+    private static async Task AcceptedInputRetirement(string profile, Action<bool, string> check)
+    {
+        foreach (string kind in new[] { "no-input", "other-owner", "finished", "eliminated", "closed" }) {
+            var state = Priority(); var clock = new ProgressClock();
+            using var run = new DriverCase(profile, "accepted-retired-" + kind, state, state,
+                passing: ConnectedPlayerPassingMode.FullControl, operationClock: clock);
+            await run.Prime(); await run.Driver.ObserveAsync(); await run.Driver.StepAsync();
+            if (kind == "closed") run.Driver.Dispose();
+            else {
+                var changed = state with { Revision = state.Revision + 1, BoardRevision = state.BoardRevision + 1 };
+                changed = kind switch {
+                    "no-input" => changed with { Decision = null },
+                    "other-owner" => changed with { Decision = null, DecisionOwnerId = 1, PriorityPlayerId = 1 },
+                    "finished" => changed with { Status = "finished", Decision = null,
+                        Outcome = new(state.Id, MatchOutcomeKind.Draw, [], [], "AllPlayersDrew") },
+                    _ => changed with { Players = changed.Players.Select(player => player.Id != changed.ViewerId
+                        ? player : player with { Eliminated = true }).ToImmutableArray(), Decision = null }
+                };
+                run.Port.State = run.Port.RichState = changed;
+                run.Driver.Client.Poll(true, _ => { }); await Drain(run.Driver.Client);
+                await run.Driver.ObserveAsync();
+            }
+            clock.Advance(TimeSpan.FromSeconds(46));
+            var progress = run.Driver.ProgressEvidence;
+            check(progress is { Status: ConnectedPlayerWaitStatus.Retired, RetiredWaits: 1, ExpiredWaits: 0 }
+                    && progress.Retirement == (kind == "closed" ? ConnectedPlayerWaitRetirement.Closed
+                        : kind == "finished" ? ConnectedPlayerWaitRetirement.Finished
+                        : kind == "eliminated" ? ConnectedPlayerWaitRetirement.Eliminated : ConnectedPlayerWaitRetirement.NoOwnedInput)
+                    && await Timeout(() => run.Driver.StepAsync()) == null
+                    && run.Port.Commands.Count == 1 && run.Driver.ProviderAcceptances == 1,
+                "Validated " + kind + " retirement stops only the old accepted-input wait without inventing a repeated command or delayed fault");
+        }
+    }
+
+    private static async Task<TimeoutException?> Timeout(Func<Task> action)
+    {
+        try { await action(); return null; }
+        catch (TimeoutException error) { return error; }
+    }
+
+    private static async Task IndependentObservationOwners(string profile, Action<bool, string> check)
+    {
+        var hostState = ObservationAudience(0, 0); var guestState = ObservationAudience(1, 0);
+        using (var host = new DriverCase(profile, "observation-old-grouped-host", hostState, hostState,
+            passing: ConnectedPlayerPassingMode.FullControl))
+        using (var guest = new DriverCase(profile, "observation-old-grouped-guest", guestState, guestState,
+            passing: ConnectedPlayerPassingMode.FullControl)) {
+            await host.Prime(); await guest.Prime();
+            host.Port.OwnedError = new EngineObservationSupersededException();
+            var current = guestState with { Revision = guestState.Revision + 1, BoardRevision = guestState.BoardRevision + 1 };
+            await QueuePublication(guest, current);
+            bool superseded = false;
+            // Historical grouped-await control: the first retired discovery
+            // prevents the second real client owner from pumping its queue.
+            try { await host.Driver.ObserveAsync(); await guest.Driver.ObserveAsync(); }
+            catch (EngineObservationSupersededException) { superseded = true; }
+            check(superseded && ReferenceEquals(guest.Driver.Client.State, guestState)
+                    && guest.Driver.Client.WaitForQueuedWorkAsync().IsCompleted && guest.Port.OwnedReads == 0
+                    && host.Port.Commands.Count == 0 && guest.Port.Commands.Count == 0,
+                "The old grouped observation control leaves a peer's already queued ordinary publication unpumped after superseded host discovery");
+        }
+
+        foreach (bool hostSuperseded in new[] { true, false }) {
+            int owner = hostSuperseded ? 0 : 1;
+            var firstHost = ObservationAudience(0, owner); var firstGuest = ObservationAudience(1, owner);
+            using var host = new DriverCase(profile, "independent-observation-host-" + hostSuperseded, firstHost, firstHost,
+                passing: ConnectedPlayerPassingMode.FullControl);
+            using var guest = new DriverCase(profile, "independent-observation-guest-" + hostSuperseded, firstGuest, firstGuest,
+                passing: ConnectedPlayerPassingMode.FullControl);
+            await host.Prime(); await guest.Prime();
+            var failing = hostSuperseded ? host : guest;
+            var peer = hostSuperseded ? guest : host;
+            failing.Port.OwnedError = new EngineObservationSupersededException();
+            long now = 0;
+            var progress = new MixedGameProgress(() => now, 1000);
+            for (int attempt = 1; attempt <= 3; attempt++) {
+                await Drain(host.Driver.Client); await Drain(guest.Driver.Client);
+                var currentHost = firstHost with { Revision = firstHost.Revision + attempt, BoardRevision = firstHost.BoardRevision + attempt };
+                var currentGuest = firstGuest with { Revision = firstGuest.Revision + attempt, BoardRevision = firstGuest.BoardRevision + attempt };
+                // Settle only the failing owner's new publication first, so its
+                // required rich read is guaranteed to throw. The other owner's
+                // actual ordinary poll result remains queued until the helper.
+                failing.Port.State = failing.Port.RichState = hostSuperseded ? currentHost : currentGuest;
+                failing.Driver.Client.Poll(true, _ => { }); await Drain(failing.Driver.Client);
+                await QueuePublication(peer, hostSuperseded ? currentGuest : currentHost);
+                now++; progress.BeginAttempt();
+                bool complete = await MixedGameCampaign.ObservePlayersAsync(host.Driver, guest.Driver, progress, 0);
+                var observed = progress.Capture();
+                check(!complete && ReferenceEquals(host.Driver.Client.State, currentHost)
+                        && ReferenceEquals(guest.Driver.Client.State, currentGuest)
+                        && observed.ObservationAttempts == attempt && observed.SupersededObservations == attempt
+                        && observed.Tail.TakeLast(2).Select(span => span.Stage).SequenceEqual(["HostObservation", "GuestObservation"])
+                        && observed.Tail.All(span => span.Steps == 0)
+                        && host.Policy.Evaluations == 0 && guest.Policy.Evaluations == 0
+                        && host.Driver.ProviderAcceptances == 0 && guest.Driver.ProviderAcceptances == 0
+                        && host.Port.Commands.Count == 0 && guest.Port.Commands.Count == 0,
+                    "Independent observation owners pump both audiences during repeated " + (hostSuperseded ? "host" : "guest")
+                        + " supersession without a counted game step, policy evaluation or ordinary command credit");
+            }
+        }
+
+        using (var host = new DriverCase(profile, "observation-fatal-host", hostState, hostState,
+            passing: ConnectedPlayerPassingMode.FullControl))
+        using (var guest = new DriverCase(profile, "observation-fatal-guest", guestState, guestState,
+            passing: ConnectedPlayerPassingMode.FullControl)) {
+            await host.Prime(); await guest.Prime();
+            var original = new IOException("Controlled first audience failure."); host.Port.OwnedError = original;
+            var current = guestState with { Revision = guestState.Revision + 1, BoardRevision = guestState.BoardRevision + 1 };
+            await QueuePublication(guest, current);
+            var progress = new MixedGameProgress(() => 0, 1000); progress.BeginAttempt();
+            Exception? failure = null;
+            try { await MixedGameCampaign.ObservePlayersAsync(host.Driver, guest.Driver, progress, 0); }
+            catch (Exception error) { failure = error; }
+            check(ReferenceEquals(failure, original) && guest.Port.OwnedReads == 0
+                    && ReferenceEquals(guest.Driver.Client.State, guestState)
+                    && progress.Capture().SupersededObservations == 0
+                    && progress.Capture().Current?.Stage == "HostObservation"
+                    && host.Port.Commands.Count == 0 && guest.Port.Commands.Count == 0,
+                "A genuine first-audience failure remains the exact primary exception and does not force another peer read or fabricate supersession credit");
+        }
+    }
+
+    private static GameSnapshot ObservationAudience(int viewer, int owner)
+    {
+        var state = Priority();
+        return state with {
+            ViewerId = viewer, ActivePlayerId = owner, DecisionOwnerId = owner, PriorityPlayerId = owner,
+            Decision = viewer == owner ? state.Decision : null,
+            Players = state.Players.Select(player => player with {
+                Priority = player.Id == owner,
+                Zones = player.Zones.Select(zone => zone with {
+                    Cards = zone.Name == "Hand" ? [] : zone.Cards.Select(card => card with { Selectable = false }).ToImmutableArray()
+                }).ToImmutableArray()
+            }).ToImmutableArray()
+        };
+    }
+
+    private static async Task QueuePublication(DriverCase run, GameSnapshot current)
+    {
+        run.Port.State = run.Port.RichState = current;
+        run.Driver.Client.Poll(true, _ => { });
+        await run.Driver.Client.WaitForQueuedWorkAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    private static async Task AdvanceSynchronized(DriverCase run, ProgressClock clock, int seconds)
+    {
+        for (int second = 0; second < seconds; second++) {
+            clock.Advance(TimeSpan.FromSeconds(1)); run.Ticks = clock.Milliseconds;
+            await run.Driver.ObserveAsync(); await Drain(run.Driver.Client);
+            await run.Driver.ObserveAsync(); await run.Driver.StepAsync();
+        }
+    }
+
+    private sealed class ProgressClock : TimeProvider
+    {
+        private long timestamp;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => timestamp;
+        public override DateTimeOffset GetUtcNow() => DateTimeOffset.UnixEpoch + TimeSpan.FromTicks(timestamp);
+        internal long Milliseconds => timestamp / TimeSpan.TicksPerMillisecond;
+        internal void Advance(TimeSpan elapsed) => timestamp += elapsed.Ticks;
     }
 
     private static async Task PollScheduling(string profile, Action<bool, string> check)
@@ -603,7 +907,8 @@ internal static class PolledFullGameContractChecks
         internal ConnectedPlayerDriver Driver { get; }
         internal long Ticks;
         internal DriverCase(string profile, string name, GameSnapshot ordinary, GameSnapshot rich, bool useSource = false,
-            ConnectedPlayerPassingMode passing = ConnectedPlayerPassingMode.ServerNoResponse, ImmutableArray<string> phaseStops = default)
+            ConnectedPlayerPassingMode passing = ConnectedPlayerPassingMode.ServerNoResponse, ImmutableArray<string> phaseStops = default,
+            TimeProvider? operationClock = null)
         {
             string directory = Path.Combine(profile, "polled-full-game-contracts", name);
             Directory.CreateDirectory(directory);
@@ -611,7 +916,7 @@ internal static class PolledFullGameContractChecks
             Port = new(ordinary, rich) { UseSource = useSource };
             Policy = new(useSource);
             Driver = new(Port, Port, Port, Port, Port, evidence, 261104,
-                MixedGameDriveMode.PolledBackground, Policy, () => Ticks, passing, phaseStops);
+                MixedGameDriveMode.PolledBackground, Policy, () => Ticks, passing, phaseStops, operationClock);
             Driver.BindLobby(Port.Lobby);
         }
         internal async Task Prime()
@@ -652,6 +957,7 @@ internal static class PolledFullGameContractChecks
         internal GameSnapshot? AfterExecute;
         internal Func<GameCommand, GameSnapshot?>? AfterCommand;
         internal Exception? ExecuteError;
+        internal Exception? OwnedError;
         internal int Reads, OwnedReads, SourceReads, HistoryReads;
         internal bool HoldOwned, HoldNextRead, HoldSource, UseSource;
         internal bool PriorityContinuationAvailable;
@@ -684,6 +990,7 @@ internal static class PolledFullGameContractChecks
         public Task<OwnedDecisionObservation?> ObserveDecisionAsync(CancellationToken cancellation = default)
         {
             Interlocked.Increment(ref OwnedReads); OwnedStarted.TrySetResult();
+            if (OwnedError is { } error) return Task.FromException<OwnedDecisionObservation?>(error);
             return HoldOwned ? ReleaseOwned.Task : Task.FromResult<OwnedDecisionObservation?>(new(RichState,
                 UseSource ? Domain(RichState) : RichState.Decision?.Payload is PriorityPayload or PaymentPayload
                     ? new(RichState.Revision, ActionDomainCoverage.Complete, [], []) {

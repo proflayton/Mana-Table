@@ -31,6 +31,20 @@ internal static class HeadlessEngineSmoke
         AiReleaseRuntime? verifiedRuntime = null;
         int preparedUpdates = 0;
         double updateMilliseconds = 0;
+        const int sourceDiagnosticCapacity = 64;
+        var sourceDiagnosticGate = new object();
+        var sourceDiagnostics = new Queue<object>();
+        object? sourceReaderPreparation = null;
+        void RecordSourceDiagnostic(ClientDiagnostic diagnostic)
+        {
+            if (diagnostic.Origin != ClientDiagnosticOrigin.SourceRead) return;
+            lock (sourceDiagnosticGate) {
+                if (sourceDiagnostics.Count == sourceDiagnosticCapacity) sourceDiagnostics.Dequeue();
+                sourceDiagnostics.Enqueue(new { elapsedSeconds = elapsed.Elapsed.TotalSeconds,
+                    stage = diagnostic.Stage.ToString(), reason = diagnostic.SourceRead?.Reason.ToString(), diagnostic });
+            }
+        }
+        object[] SourceDiagnosticTail() { lock (sourceDiagnosticGate) return sourceDiagnostics.ToArray(); }
         void Check(bool value, string description)
         {
             if (!value) throw new InvalidOperationException(description);
@@ -123,7 +137,7 @@ internal static class HeadlessEngineSmoke
             // This journey deliberately samples provider frames around each
             // gesture. Give that producer the existing external ingress instead
             // of racing it with the application's independent polling owner.
-            using var app = new TableApplication(TestTableServices.For(engine), paths.Profile, initialState: initial,
+            using var app = new TableApplication(TestTableServices.For(engine) with { Diagnostics = RecordSourceDiagnostic }, paths.Profile, initialState: initial,
                 observationDelivery: ObservationDeliveryMode.External);
             app.Automated = true; app.Initialize();
             var view = app.TestPort;
@@ -421,11 +435,23 @@ internal static class HeadlessEngineSmoke
                 // revision before exposing this scoped action. A cached poll or
                 // a direct source query is not a display-queue barrier.
                 while (!frame.Hits.Any(item => item.Id == "read-card-action")) {
+                    sourceReaderPreparation = new { stage = "await-reader", sourceZone, expectedKind,
+                        capturedRevision = beforeReader.Revision, displayedRevision = view.Match?.Revision,
+                        viewer = view.Match?.ViewerId, externalObservationDelivery = true };
                     Guard();
                     if (view.Match?.Id != beforeReader.Id || view.Match.Decision?.Id != prompt)
                         throw new InvalidOperationException("The decision changed before its source reader became ready.");
-                    await Task.Delay(1); frame = Tick("await-engine-source-actions");
+                    // This fixture owns External ingress, so ticking cannot
+                    // discover a newer ordinary publication after a source read
+                    // becomes stale. Keep that existing producer/pump active;
+                    // the source catalog itself never replaces displayed state.
+                    await Task.Delay(1); await Refresh("await-engine-source-actions");
+                    if (view.Match?.Id != beforeReader.Id || view.Match.Decision?.Id != prompt)
+                        throw new InvalidOperationException("The decision changed before its source reader became ready.");
                 }
+                sourceReaderPreparation = new { stage = "reader-ready", sourceZone, expectedKind,
+                    capturedRevision = beforeReader.Revision, displayedRevision = view.Match?.Revision,
+                    viewer = view.Match?.ViewerId, externalObservationDelivery = true };
                 var displayedBeforeQuery = view.Match!;
                 var currentBeforeQuery = displayedBeforeQuery.Viewer?.Zones.SelectMany(zone => zone.Cards)
                     .Where(item => item.VisualId == card.VisualId).ToArray() ?? [];
@@ -525,14 +551,23 @@ internal static class HeadlessEngineSmoke
         } catch (Exception exception) {
             error = exception.ToString(); throw;
         } finally {
-            File.WriteAllText(Path.Combine(paths.Profile, "headless-engine-last-observed.json"), JsonSerializer.Serialize(lastObserved, json));
-            File.WriteAllText(Path.Combine(paths.Profile, "headless-engine-trace.json"), JsonSerializer.Serialize(new { frames, actions }, json));
-            File.WriteAllText(Path.Combine(paths.Profile, "headless-engine-results.json"), JsonSerializer.Serialize(new {
-                passed = error == null, checks, error, elapsedSeconds = elapsed.Elapsed.TotalSeconds,
-                preparedUpdates, updateMilliseconds,
-                meanUpdateMilliseconds = preparedUpdates > 0 ? updateMilliseconds / preparedUpdates : 0,
-                scope = "Real Forge game and production application pointer/composition paths; no window or GPU, no simulated Magic rules."
-            }, json));
+            try {
+                var sourceDiagnosticTail = SourceDiagnosticTail();
+                File.WriteAllText(Path.Combine(paths.Profile, "headless-engine-last-observed.json"), JsonSerializer.Serialize(lastObserved, json));
+                File.WriteAllText(Path.Combine(paths.Profile, "headless-engine-trace.json"), JsonSerializer.Serialize(new {
+                    frames, actions, sourceDiagnosticCapacity, sourceDiagnostics = sourceDiagnosticTail, sourceReaderPreparation
+                }, json));
+                File.WriteAllText(Path.Combine(paths.Profile, "headless-engine-results.json"), JsonSerializer.Serialize(new {
+                    passed = error == null, checks, error, elapsedSeconds = elapsed.Elapsed.TotalSeconds,
+                    preparedUpdates, updateMilliseconds,
+                    meanUpdateMilliseconds = preparedUpdates > 0 ? updateMilliseconds / preparedUpdates : 0,
+                    sourceDiagnosticCapacity, sourceDiagnostics = sourceDiagnosticTail, sourceReaderPreparation,
+                    scope = "Real Forge game and production application pointer/composition paths; no window or GPU, no simulated Magic rules."
+                }, json));
+            } catch when (error != null) {
+                // Diagnostic capture cannot replace the original journey failure.
+                // A capture failure on an otherwise successful journey still fails.
+            }
         }
         void Guard()
         {

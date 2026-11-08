@@ -45,7 +45,7 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "configured-simulation") {
                     PolledReceiptProcessingChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     PolledFullGameContractChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
-                    SmokeSourceReadChecks.RunAsync(Check).GetAwaiter().GetResult();
+                    SmokeSourceReadChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     JourneyProgressClockChecks.Run(Check);
                     ConfiguredSimulationWireChecks.Run(Check);
                     AiCampaignQualificationChecks.Run(Check);
@@ -68,6 +68,7 @@ internal static partial class HeadlessPresentationSmoke
                     CheckTablePresence(profile, Check);
                     TablePresenceWireChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     PolledMixedLobbyEngineJourney.CheckPresencePreparation(Check);
+                    PolledPresenceSequenceChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                 }
                 else if (group == "table-choices") CheckTableChoices(profile, Check);
                 else if (group == "attachment-stack") AttachmentStackChecks.Run(profile, Check);
@@ -118,7 +119,7 @@ internal static partial class HeadlessPresentationSmoke
             ConfiguredSimulationWireChecks.Run(Check);
             PolledReceiptProcessingChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             PolledFullGameContractChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
-            SmokeSourceReadChecks.RunAsync(Check).GetAwaiter().GetResult();
+            SmokeSourceReadChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             JourneyProgressClockChecks.Run(Check);
             AiCampaignQualificationChecks.Run(Check);
             MixedGameQualificationChecks.Run(Check);
@@ -165,6 +166,7 @@ internal static partial class HeadlessPresentationSmoke
             CheckTableChoices(profile, Check);
             TablePresenceWireChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             PolledMixedLobbyEngineJourney.CheckPresencePreparation(Check);
+            PolledPresenceSequenceChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             CheckMatchFailure(profile, Check, trace, performance);
             ConcessionLifetimeChecks.Run(profile, Check);
             GameplayUndoPresentationChecks.Run(profile, Check);

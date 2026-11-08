@@ -121,6 +121,26 @@ required choice still uses the existing current-command permission path;
 disabled replies do not acquire an answer. Once the measurement baseline is
 established, all scripted replies are held and unexpected rules changes fail.
 
+The real inspection gesture sustains subject A until the peer's matching
+`Visible` sample, then sustains B. Both samples must qualify within the original
+1.75-second hold; the four-Hz, history, rules, clock and resumed-command checks
+remain intact. This tests two deliberate latest-value changes rather than
+requiring every wall-clock hover oscillation to survive gameplay polling.
+`PolledPresenceSequenceChecks`, registered in `table-presence` and the full
+headless suite, drives the actual presence owner, post queue and fixture selector
+through a fixed polling-gap schedule. Its old-sequence control can receive B at
+the endpoint while terminal visible samples still contain only A. Late callbacks
+are retained as diagnostics and earn no completion credit. Existing client
+regressions separately cover rapid sample coalescing, rate limits and expiry.
+
+Failure evidence records native Stopwatch ticks/frequency, held and sampled
+points, bounded desired-subject changes, provider-return ticks and a bounded
+128-row posted/applying/returned callback journal with dropped-row counts.
+Callback IDs are local diagnostics, not inferred request-sequence links, and a
+returned callback does not prove cue acceptance. The original native438 capture
+lacked these callback clocks: the controlled schedule demonstrates a reachable
+sampling failure, not the exact chronology of that capture.
+
 The focused native profile retains `public-card-inspection.json` drawing-frame
 exports under each window-size journey. These are authored projected states;
 headless composition loads no GPU artwork and supplies no human UX approval.
@@ -540,6 +560,16 @@ host receipts. Missing strategic capabilities are explicit; these checks do not
 demonstrate a production bot or enjoyable behavior. The assembly dependency check
 keeps AI independent of Forge, rendering and the updater.
 
+Aggregate combat regressions also stage fresh offered declarations against one
+defender in an explicitly identified three/four-player free-for-all. The bounded
+forecast counts each public block slot once and preserves retained resources.
+Eliminating a player must leave nominal life and commander-damage headroom against
+all other survivors' ordinary creatures, including bodies which can untap or
+phase in. Missing team/damage facts, unsupported mechanics, uncertain capacity
+and insufficient shared work retain the existing fallback. This is a narrow
+public combat estimate, not a complete multiplayer strategy or prediction of
+hidden responses.
+
 The source cancellation candidate extends that same client lane with held
 observation, execution and fault-report operations, plus shutdown during
 background and directly driven observations, and an observation provider that
@@ -757,6 +787,29 @@ either scenario's original limits. `scripts/mana-table/mixed-game-qualification.
 checks retained outcomes, four distinct physical roles/deck rotation, public
 cohorts, ordinary receipts, Auto progress, retired evidence owners and exact
 engine/harness/package provenance before the Windows aggregate can publish.
+Mixed-game results also retain a bounded scalar owner-stage ledger: observation
+attempts (including superseded reads before a counted step), separate host/guest
+reads and dispatches, automated history drains, owner waits, and the last captured
+new public-board cohort. Per-stage maxima survive eviction from its 32-span
+tail. Timestamps share the recorded monotonic frequency; these are elapsed owner
+intervals, not CPU measurements. `ActiveElapsedMilliseconds` stops before failure
+capture or cleanup, while `ElapsedMilliseconds` retains its existing end-to-end
+meaning and `CleanupElapsedMilliseconds` reports the difference. Repeated polls
+and evidence handoffs do not establish rules progress or game completion.
+`MixedGameProgressChecks` covers superseded-read churn, a long stage surviving
+tail eviction, immutable snapshots and cleanup-time separation with a fixed
+clock in the existing configured/full headless lane. This evidence does not
+change the four natural-outcome requirement or any match deadline.
+Each ordinary audience retains its own observation turn: a superseded host read
+still allows the guest's queued publication/poll/ACK work to run, and vice versa.
+That incomplete round receives no new policy-dispatch or comparison credit;
+other failures still abort immediately. Controlled real-driver ports check both
+directions and repeated retirement without launching another engine game.
+The scripted ordinary drivers also retain normal-return acceptance time and a
+bounded authority-wait witness. Identical successful polls cannot reset their
+45-second fresh-authority guard. A validated newer owned stamp or retired input
+ends that wait; metadata freshness does not establish a rules consequence. This
+guard belongs to automated test scripts and does not add a human decision timer.
 Version4 admission also requires actual acknowledged `NoResponse` grants and
 certified automatic passes for both configured bot IDs in every rotation. Their
 closed per-owner records carry the exact game and provider epoch, separate
@@ -2002,6 +2055,14 @@ completion and its actual resulting zone changes. `AiTargetContinuationRegressio
 checks that existing policy consumes these current facts and that fresh prompt
 UUIDs cannot renew a single actual input's work allowance. These protect a
 no-progress loop independently of wall-clock campaign timeouts.
+The same policy regression covers unknown optional card/player selections with
+legal completion, including 57 eligible cards and a 42-card staged subset.
+Renamed/reordered candidates, known counter labels and fixed policy seeds cannot
+turn absent effect knowledge into an extra recipient. Required additions and
+positive typed estimates remain actionable. These authored cases reproduce the
+decision shape retained in the native437 cutoff; they do not prove that this
+behavior caused its elapsed time or qualify counter redistribution as a fully
+modeled strategy.
 The crowded-field window journey also joins the fast release set, sharing the
 three-player lobby shard. It uses the production battlefield faces at the former
 threshold, mixed states, duplicate tokens, distinct names and the canonical
@@ -2674,8 +2735,24 @@ through the production update pump and audience/epoch/revision fences; a second
 background polling owner cannot race these deliberate samples. Separate client
 regressions cover ordinary polling, including superseded discovery and uncertain
 command readback. This journey does not substitute for default-polling timing or
-human playtesting. Its
-same opening now takes two Commander mulligans: the first returns directly to
+human playtesting. While preparing a card reader, the explicit producer continues
+ordinary observations through that same ingress so a changed revision can enter
+the normal source-query lifecycle. The later primed/repeated direct source reads
+still require unchanged scope and revision and fail unexpected rejection without
+retry. The opening watchdog remains 90 seconds. A bounded source-read diagnostic
+tail records typed reasons and numeric scope generations on failure; it does not
+infer a successful command or expose provider exception text.
+
+`SmokeSourceReadChecks` in the configured-simulation and full headless groups
+also drives production pointer/composition with authored external observations.
+A same-revision source reply becomes ready directly. A newer-revision reply,
+adapter rejection or typed supersession stays stopped during Tick-only updates;
+one ordinary fresh publication starts the normal current query. Reading and
+publication send no gameplay command. Fixed case artifacts belong to the
+caller's profile. These controls establish a reachable external-producer
+deadwait; the original CI fixture did not retain its exact source-read reason.
+
+The opening takes two Commander mulligans: the first returns directly to
 Keep with seven cards, and the second projects exactly one required bottom card.
 It verifies that reading a
 bottom-card candidate does not select it, its explicit reader action selects it,

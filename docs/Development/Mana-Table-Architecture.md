@@ -74,6 +74,13 @@ returns a closed current/unsupported/superseded result: transport retirement
 cannot impersonate absent capability when public context values are unchanged.
 Unsupported providers quietly disable the optional feature for that binding;
 joining a new game or audience resets this optional capability decision.
+This latest-value port does not promise delivery of every transient hover.
+Qualification therefore holds a subject until the peer's current `Visible`
+projection admits it, then sustains the next subject. Provider return, a queued
+completion, owner application and visible sampling are separate observations;
+none can stand in for another or grant a game command. The real prefix retains
+its original hold limit rather than extending a lease or adding a late pump to
+credit an unseen subject.
 The optional authoritative `HumanPlayerIds` roster uses actual registered player
 IDs, not seat ordinals or the viewer-relative legacy player `human` flag. With a
 known roster containing no other active human, the native presence owner sends
@@ -189,6 +196,15 @@ Generic rejection, unavailable transport and unexpected failures keep distinct
 closed diagnostic categories. Neither result retries the same context or proves
 that a gameplay command failed, succeeded or should be replayed. A later ordinary
 observation may admit a new source context through the existing reader lifecycle.
+
+External observation delivery assigns that publication work to its explicit
+producer. Updating presentation only drains what the producer has already
+posted; it cannot refresh a stale source context by itself. An external driver
+therefore keeps ordinary observation/ingress active while preparing reader
+readiness, then leaves the subsequent direct read-purity sequence quiescent.
+Source catalogs remain read results rather than replacement snapshots or retry
+permission. The real-engine smoke retains a bounded tail from the existing
+privacy-safe source-read diagnostics to distinguish these refusal paths.
 
 Shipping composition supplies a `ClientDiagnosticJournal` callback through
 `TableServices`; neither the renderer nor the rules provider owns file storage.
@@ -630,6 +646,13 @@ Every action/event pair, source/controller check, terminal outcome and witness
 limit remains in the evidence owner. The lookups end with that observation, so
 later frames supply their own execution facts and outcomes.
 
+The mixed-game test host owns a separate bounded progress ledger. It records
+closed owner stages, observation attempts and superseded reads, without retaining
+state graphs or command handles. Board-cohort capture, accepted input, fresh
+authority and transport activity remain distinct evidence. Its active-run clock
+stops before cleanup; aggregate stage maxima survive the bounded recent tail.
+This ledger cannot issue commands, choose retries or alter release qualification.
+
 The same verifier now consumes bounded owned-seat history for historic-cast
 untaps and explicit colorless payment. It requires a fresh accepted cast,
 disclosed execution ancestry, actual committed effects or spending, and an
@@ -845,6 +868,14 @@ An opaque stack occurrence ID distinguishes copies independently of their source
 card. `Mana.Contracts.ActionOperationValidation` validates both adapter and policy
 inputs; unknown effects remain unknown. The engine describes mechanics, the policy
 estimates consequences, and neither estimate grants a command.
+
+For an optional non-cost recipient selection, legal completion supplies a valid
+subset. Unknown effect direction cannot justify adding another card or player
+through a seeded tie or social preference; a positive typed target estimate can.
+Required additions keep their bounded legal fallback, and known productive
+optional additions remain available. A counter type alone does not describe a
+coupled transfer's donor budget, recipients or quantities. Unsupported transfer
+facts stay unknown rather than being projected as free counter creation.
 
 `AiSeatSession` also owns immutable versioned `AiTurnPlan` memory. Policies propose
 transitions alongside current answers; only accepted, still-valid submissions can

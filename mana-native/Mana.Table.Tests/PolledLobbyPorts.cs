@@ -98,14 +98,51 @@ internal static class PolledLobbyPorts
     {
         internal sealed record Exchange(long StartedTicks, double Milliseconds, long Sequence,
             long BoardRevision, string? ContextId, TableInspectionSubject? Subject, int ContractBytes, string Outcome,
-            string? ChoiceContextId, TableChoicePreview? Choice, TablePresenceFrame? Response);
+            string? ChoiceContextId, TableChoicePreview? Choice, TablePresenceFrame? Response)
+        {
+            public long ProviderReturnedTicks { get; init; }
+            public long RecordedTicks { get; init; }
+        }
+        internal enum CallbackStage { Posted, Applying, Returned }
+        internal readonly record struct CallbackPoint(long CallbackId, CallbackStage Stage, long MonotonicTicks);
+        private const int MaximumCallbackPoints = 128;
+        private readonly object callbackGate = new();
+        private readonly Queue<CallbackPoint> callbacks = new(MaximumCallbackPoints);
+        private long callbackId, callbackDropped;
         private int started, executing, maximumExecuting;
+        internal static long TimestampFrequency => Stopwatch.Frequency;
+        internal int CallbackCapacity => MaximumCallbackPoints;
+        internal long CallbackDropped { get { lock (callbackGate) return callbackDropped; } }
+        internal CallbackPoint[] CallbackTrace { get { lock (callbackGate) return callbacks.ToArray(); } }
         internal int Started => Volatile.Read(ref started);
         internal int Executing => Volatile.Read(ref executing);
         internal int MaximumExecuting => Volatile.Read(ref maximumExecuting);
         internal ConcurrentQueue<Exchange> Exchanges { get; } = new();
         public bool SupportsTablePresence => inner.SupportsTablePresence;
         public bool SupportsTableChoices => inner.SupportsTableChoices;
+        internal void Post(Action<Action> ownerPost, Action callback)
+        {
+            // This local identity is independent of the provider's request
+            // sequence. A callback returning does not prove a cue was accepted.
+            long id = Interlocked.Increment(ref callbackId);
+            RecordCallback(id, CallbackStage.Posted);
+            ownerPost(() => {
+                RecordCallback(id, CallbackStage.Applying);
+                bool failed = true;
+                try { callback(); failed = false; }
+                finally {
+                    try { RecordCallback(id, CallbackStage.Returned); }
+                    catch when (failed) { /* Diagnostic recording cannot replace the callback's original failure. */ }
+                }
+            });
+        }
+        private void RecordCallback(long id, CallbackStage stage)
+        {
+            lock (callbackGate) {
+                if (callbacks.Count == MaximumCallbackPoints) { callbacks.Dequeue(); callbackDropped++; }
+                callbacks.Enqueue(new(id, stage, Stopwatch.GetTimestamp()));
+            }
+        }
         public async Task<TablePresenceResult> ExchangePresenceAsync(TablePresenceUpdate update, CancellationToken cancellation = default)
         {
             long started = Stopwatch.GetTimestamp();
@@ -115,15 +152,19 @@ internal static class PolledLobbyPorts
             while (Interlocked.CompareExchange(ref maximumExecuting, active, prior) != prior);
             string outcome = "failed";
             TablePresenceFrame? response = null;
+            long returned = 0;
             try {
                 var result = await inner.ExchangePresenceAsync(update, cancellation);
+                returned = Stopwatch.GetTimestamp();
                 outcome = result.GetType().Name;
                 response = (result as TablePresenceResult.Current)?.Frame;
                 return result;
             } finally {
                 Exchanges.Enqueue(new(started, Stopwatch.GetElapsedTime(started).TotalMilliseconds, update.Sequence,
                     update.BoardRevision, update.ContextId, update.Subject, JsonSerializer.SerializeToUtf8Bytes(update).Length, outcome,
-                    update.ChoiceContextId, update.Choice, response));
+                    update.ChoiceContextId, update.Choice, response) {
+                        ProviderReturnedTicks = returned, RecordedTicks = Stopwatch.GetTimestamp()
+                    });
                 Interlocked.Decrement(ref executing);
             }
         }
