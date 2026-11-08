@@ -2,6 +2,7 @@ package forge.api;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -89,10 +90,7 @@ public final class DesktopEngine implements AutoCloseable {
                     if (line.length() > 2_000_000) { throw new IllegalArgumentException("Request too large"); }
                     request = JsonParser.parseString(line).getAsJsonObject();
                     Object result = engine.dispatch(request.get("method").getAsString(), request.getAsJsonObject("params"));
-                    var reply = new JsonObject();
-                    reply.add("id", request.get("id"));
-                    reply.add("result", JSON.toJsonTree(result));
-                    protocol.println(JSON.toJson(reply));
+                    writeSuccessReply(protocol, request.get("id"), result);
                 } catch (Exception error) {
                     // Validation errors are returned to the caller; unexpected
                     // request failures also need a stack trace in engine.log.
@@ -110,6 +108,16 @@ public final class DesktopEngine implements AutoCloseable {
                 }
             }
         }
+    }
+
+    static void writeSuccessReply(PrintStream protocol, JsonElement requestId, Object result) {
+        var reply = new LinkedHashMap<String, Object>();
+        reply.put("id", requestId);
+        reply.put("result", result);
+        // Finish encoding before publishing any bytes. A serialization failure
+        // still reaches the existing error reply without a partial JSON frame.
+        String encoded = JSON.toJson(reply);
+        protocol.println(encoded);
     }
 
     private static boolean sourceReadRequest(JsonObject request) {

@@ -32,6 +32,16 @@ public final class SyncTransport {
     }
     private SyncTransport() { }
 
+    /** Exclusively owns one detached receipt tree. Neither the handler nor a
+     * local caller can acquire this mutable Gson representation; readers only
+     * serialize it or receive a separately decoded value. */
+    private static final class Receipt {
+        private final JsonObject wire;
+        private Receipt(JsonObject wire) { this.wire = wire; }
+        Object detachedResult(long sequence) { return result(wire, sequence); }
+        void writeTo(BufferedWriter output) throws IOException { write(output, wire); }
+    }
+
     public static final class Server implements AutoCloseable {
         private final Handler handler;
         private final java.util.function.IntSupplier join;
@@ -79,7 +89,8 @@ public final class SyncTransport {
             long lastSequence;
             long connectionGeneration;
             volatile boolean revoked;
-            JsonObject lastRequest, lastReceipt;
+            JsonObject lastRequest;
+            Receipt lastReceipt;
             SeatChannel(int seat) { this.seat = seat; seatChannels.add(this); }
             synchronized long attach() {
                 connectionGeneration++; disconnectSeat.accept(seat); return connectionGeneration;
@@ -88,12 +99,12 @@ public final class SyncTransport {
                 if (connectionGeneration != generation) return;
                 connectionGeneration++; disconnectSeat.accept(seat);
             }
-            JsonObject apply(JsonObject request) { return apply(request, 0); }
-            synchronized JsonObject apply(JsonObject request, long generation) {
+            Receipt apply(JsonObject request) { return apply(request, 0); }
+            synchronized Receipt apply(JsonObject request, long generation) {
                 if (generation != connectionGeneration) throw new IllegalStateException("This connection has been replaced");
                 if (revoked || closed) throw new IllegalStateException("This seat is no longer active");
                 long sequence = request.get("sequence").getAsLong();
-                if (sequence == lastSequence && lastRequest != null && lastRequest.equals(request)) return lastReceipt.deepCopy();
+                if (sequence == lastSequence && lastRequest != null && lastRequest.equals(request)) return lastReceipt;
                 if (sequence != lastSequence + 1) throw new IllegalArgumentException("Synchronization sequence changed; reconnect and resnapshot");
                 var receipt = new JsonObject(); receipt.addProperty("sequence", sequence);
                 try { receipt.add("result", JSON.toJsonTree(handler.apply(seat, request.get("method").getAsString(), request.getAsJsonObject("arguments")))); }
@@ -101,8 +112,9 @@ public final class SyncTransport {
                     receipt.addProperty("error", Objects.requireNonNullElse(failure.getMessage(), failure.getClass().getSimpleName()));
                     if (failure instanceof CodedFailure coded) receipt.addProperty("errorCode", coded.code());
                 }
-                lastSequence = sequence; lastRequest = request.deepCopy(); lastReceipt = receipt.deepCopy();
-                return receipt;
+                var captured = new Receipt(receipt);
+                lastSequence = sequence; lastRequest = request.deepCopy(); lastReceipt = captured;
+                return captured;
             }
         }
         private void serve(Socket socket) {
@@ -125,7 +137,7 @@ public final class SyncTransport {
                 }
                 generation = channel.attach();
                 write(output, JSON.toJsonTree(Map.of("version", VERSION, "resume", token, "seat", channel.seat, "capabilities", capabilities)));
-                while (!closed) write(output, channel.apply(read(input), generation));
+                while (!closed) channel.apply(read(input), generation).writeTo(output);
             } catch (Exception failure) {
                 // A dropped connection retains its seat and receipt. Reconnection never replays a mutation.
             } finally { if (channel != null && generation != 0) channel.detach(generation); sockets.remove(socket); }
@@ -138,7 +150,7 @@ public final class SyncTransport {
             Local(SeatChannel channel) { this.channel = channel; generation = channel.attach(); }
             @Override public synchronized Object request(String method, JsonObject args) {
                 if (ended) throw new IllegalStateException("This connection has closed");
-                return result(channel.apply(envelope(++sequence, method, args), generation), sequence);
+                return channel.apply(envelope(++sequence, method, args), generation).detachedResult(sequence);
             }
             @Override public Set<String> capabilities() { return capabilities; }
             @Override public synchronized void close() { if (!ended) { ended = true; channel.detach(generation); } }

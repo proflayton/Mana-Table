@@ -113,6 +113,14 @@ in the graphics-free client executable holds old command receipts across an
 explicit audience replacement, and checks foreign transport receipts enter the
 existing recovery path without replacing the accepted audience. Stale rejected
 lobby cohorts must remain inert before any recovery error is admitted.
+`DesktopReplySerializationTest` compares success replies byte for byte with the
+previous encoder, including large integers, escaped content, nested values and
+wire records. A late serialization failure must write no partial protocol bytes
+before the existing complete error reply.
+`SyncTransportTest` checks retained receipt ownership through nested handler and
+caller mutation, exact request replay, coded failures, reconnect/revocation and
+the existing frame ceiling. Optimization must preserve every capture and failure
+boundary; elapsed-time microbenchmarks do not replace these checks.
 An active or prospective finite-yield grant also holds audience replacement at
 the old owner until its negative acknowledgement completes; an explicit retry
 then accepts the replacement without dropping consent cleanup.

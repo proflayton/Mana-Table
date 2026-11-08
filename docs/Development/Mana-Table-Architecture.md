@@ -98,6 +98,15 @@ reason; it does not dump the rejected observation or add a journal/API. An
 absent legacy context remains a valid snapshot, without authorizing inspection.
 The shared ordered transport can still impose head-of-line latency; `Task.Run`
 and an independent fake port are not evidence of transport latency isolation.
+Desktop success replies encode their ordered ID/result envelope directly into a
+complete string before writing it. This avoids an intermediate full JSON tree
+without changing the wire shape or exposing partially encoded replies. Encoding
+failure still returns the existing complete error envelope.
+Synchronization retains one privately owned captured receipt tree for exact
+replay. Its owner exposes only detached local values or framed writes, preserving
+caller mutation isolation without cloning the retained tree. Sequence, connection
+generation and revocation checks still precede replay. The existing network
+ceiling remains 8,388,608 UTF-16 characters, checked at the same read/write boundary.
 
 ### Tentative public plans: source candidate
 

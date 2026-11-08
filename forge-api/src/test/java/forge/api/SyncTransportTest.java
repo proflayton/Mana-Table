@@ -107,25 +107,153 @@ public class SyncTransportTest {
     @Test(timeOut = 10000) public void aLostReceiptCannotApplyTheSameCommandTwiceOrExposeAnotherSeat() throws Exception {
         var applied = new AtomicInteger();
         var board = new LinkedHashMap<String, Object>(); board.put("value", 0);
+        var nested = new LinkedHashMap<String, Object>(); nested.put("value", 1);
+        var values = new ArrayList<Object>(); values.add(nested); board.put("nested", values);
+        var raw = JsonParser.parseString("{\"values\":[{\"value\":1}],\"nullable\":null}").getAsJsonObject();
+        board.put("raw", raw);
         try (var server = new SyncTransport.Server((seat, method, args) -> { board.put("value", applied.incrementAndGet()); return board; }, () -> 1)) {
             int port = server.listen(); String resume;
             var command = JsonParser.parseString("{\"sequence\":1,\"method\":\"add\",\"arguments\":{}}").getAsJsonObject();
             try (var wire = new Wire(port)) {
                 var hello = wire.exchange("{\"version\":4,\"resume\":\"\"}"); resume = hello.get("resume").getAsString();
                 var first = wire.exchange(command.toString());
-                board.put("value", 999); // Cached receipts must not alias mutable engine data.
-                assertEquals(wire.exchange(command.toString()), first);
+                var expected = first.deepCopy();
+                board.put("value", 999); nested.put("value", 999); values.add("later");
+                raw.getAsJsonArray("values").get(0).getAsJsonObject().addProperty("value", 999);
+                raw.addProperty("nullable", "later");
+                first.getAsJsonObject("result").addProperty("caller-only", true);
+                assertEquals(wire.exchange(command.toString()), expected,
+                        "Nested handler containers, raw Gson trees and the caller's parsed receipt cannot mutate the retained receipt");
             }
             try (var wire = new Wire(port)) {
                 wire.exchange(SyncTransport.JSON.toJson(Map.of("version", 4, "resume", resume)));
                 var receipt = wire.exchange(command.toString());
                 assertEquals(receipt.getAsJsonObject("result").get("value").getAsInt(), 1);
+                assertEquals(receipt.getAsJsonObject("result").getAsJsonArray("nested").size(), 1);
+                assertEquals(receipt.getAsJsonObject("result").getAsJsonArray("nested").get(0).getAsJsonObject().get("value").getAsInt(), 1);
+                assertEquals(receipt.getAsJsonObject("result").getAsJsonObject("raw").getAsJsonArray("values")
+                        .get(0).getAsJsonObject().get("value").getAsInt(), 1);
+                assertTrue(receipt.getAsJsonObject("result").getAsJsonObject("raw").get("nullable").isJsonNull());
+                assertFalse(receipt.getAsJsonObject("result").has("caller-only"));
                 assertEquals(applied.get(), 1);
             }
             server.revoke(1);
             try (var wire = new Wire(port)) {
                 assertThrows(EOFException.class, () -> wire.exchange(SyncTransport.JSON.toJson(Map.of("version", 4, "resume", resume))));
             }
+        }
+    }
+
+    @Test(timeOut = 10000) @SuppressWarnings("unchecked") public void localResultsNeverExposeTheRetainedReceiptTreeOrHandlerContainers() {
+        var nested = new LinkedHashMap<String, Object>(); nested.put("value", 1);
+        var values = new ArrayList<Object>(); values.add(nested);
+        var raw = JsonParser.parseString("{\"values\":[1]}").getAsJsonObject();
+        var board = new LinkedHashMap<String, Object>(); board.put("nested", values); board.put("raw", raw);
+        try (var server = new SyncTransport.Server((seat, method, args) -> board, () -> 1); var local = server.local(0)) {
+            var first = (Map<String, Object>)local.request("read", null);
+            var firstValues = (List<Object>)first.get("nested");
+            ((Map<String, Object>)firstValues.get(0)).put("value", 999);
+            firstValues.add("caller-only"); first.put("injected", true);
+            ((List<Object>)((Map<String, Object>)first.get("raw")).get("values")).add("caller-only");
+            assertEquals(nested.get("value"), 1);
+            assertEquals(values.size(), 1);
+            assertEquals(raw.getAsJsonArray("values").size(), 1);
+            var next = (Map<String, Object>)local.request("read", null);
+            var nextValues = (List<Object>)next.get("nested");
+            assertNotSame(next, first); assertNotSame(nextValues, firstValues);
+            assertEquals(((Map<String, Object>)nextValues.get(0)).get("value"), 1L);
+            assertEquals(nextValues.size(), 1); assertFalse(next.containsKey("injected"));
+            assertEquals(((List<Object>)((Map<String, Object>)next.get("raw")).get("values")).size(), 1);
+        }
+    }
+
+    @Test(timeOut = 10000) public void retainedCodedFailuresReplayExactlyAndChangedRequestsRemainRejected() throws Exception {
+        var applied = new AtomicInteger();
+        try (var server = new SyncTransport.Server((seat, method, args) -> {
+            applied.incrementAndGet(); throw new SyncTransport.CodedFailure("observation-superseded", "Changed owned input");
+        }, () -> 1)) {
+            int port = server.listen(); String resume;
+            String command = "{\"sequence\":1,\"method\":\"read\",\"arguments\":{\"value\":1}}";
+            try (var wire = new Wire(port)) {
+                resume = wire.exchange("{\"version\":4}").get("resume").getAsString();
+                var first = wire.exchange(command);
+                assertEquals(first.get("errorCode").getAsString(), "observation-superseded");
+                assertEquals(first.get("error").getAsString(), "Changed owned input");
+                first.addProperty("errorCode", "caller-only");
+                assertEquals(wire.exchange(command).get("errorCode").getAsString(), "observation-superseded");
+                assertThrows(EOFException.class, () -> wire.exchange("{\"sequence\":1,\"method\":\"read\",\"arguments\":{\"value\":2}}"));
+                assertEquals(applied.get(), 1, "Changed arguments at the cached sequence cannot become another command");
+            }
+            try (var wire = new Wire(port)) {
+                wire.exchange(SyncTransport.JSON.toJson(Map.of("version", 4, "resume", resume)));
+                var replayed = wire.exchange(command);
+                assertEquals(replayed.get("errorCode").getAsString(), "observation-superseded");
+                assertEquals(replayed.get("error").getAsString(), "Changed owned input");
+                assertEquals(applied.get(), 1, "Reconnect replays the original failure, not its rules operation");
+            }
+        }
+    }
+
+    @Test(timeOut = 10000) public void anOlderConnectionCannotReplayOrDetachTheResumedGeneration() throws Exception {
+        var applied = new AtomicInteger();
+        try (var server = new SyncTransport.Server((seat, method, args) -> applied.incrementAndGet(), () -> 1)) {
+            int port = server.listen();
+            try (var old = new Wire(port); var current = new Wire(port)) {
+                String resume = old.exchange("{\"version\":4}").get("resume").getAsString();
+                String first = "{\"sequence\":1,\"method\":\"add\",\"arguments\":{}}";
+                assertEquals(old.exchange(first).get("result").getAsInt(), 1);
+                current.exchange(SyncTransport.JSON.toJson(Map.of("version", 4, "resume", resume)));
+                assertEquals(current.exchange(first).get("result").getAsInt(), 1);
+                assertThrows(EOFException.class, () -> old.exchange(first));
+                assertEquals(current.exchange("{\"sequence\":2,\"method\":\"add\",\"arguments\":{}}").get("result").getAsInt(), 2);
+                assertEquals(applied.get(), 2);
+                server.revoke(1);
+                assertThrows(EOFException.class, () -> current.exchange("{\"sequence\":2,\"method\":\"add\",\"arguments\":{}}"));
+            }
+        }
+    }
+
+    @Test(timeOut = 10000) public void aSerializationFailureIsOneCompleteCachedFailureRatherThanAPartialReceipt() throws Exception {
+        var applied = new AtomicInteger();
+        try (var server = new SyncTransport.Server((seat, method, args) -> {
+            int count = applied.incrementAndGet();
+            var values = new LinkedHashMap<String, Object>(); values.put("first", count);
+            values.put("last", count == 1 ? Double.NaN : 1.0); return values;
+        }, () -> 1); var wire = new Wire(server.listen())) {
+            wire.exchange("{\"version\":4}");
+            String command = "{\"sequence\":1,\"method\":\"read\",\"arguments\":{}}";
+            var first = wire.exchange(command);
+            assertTrue(first.has("error")); assertFalse(first.has("result"));
+            assertFalse(first.has("errorCode"));
+            assertEquals(wire.exchange(command), first);
+            assertEquals(applied.get(), 1, "Failed result serialization still consumes its original sequence exactly once");
+            var next = wire.exchange("{\"sequence\":2,\"method\":\"read\",\"arguments\":{}}");
+            assertEquals(next.getAsJsonObject("result").get("first").getAsInt(), 2);
+        }
+    }
+
+    @Test(timeOut = 15000) public void cachedOversizedNetworkReceiptsKeepTheExistingFrameLimitWithoutReapplying() throws Exception {
+        var applied = new AtomicInteger();
+        String oversized = "x".repeat(8 * 1024 * 1024);
+        try (var server = new SyncTransport.Server((seat, method, args) -> { applied.incrementAndGet(); return oversized; }, () -> 1)) {
+            int port = server.listen(); String resume;
+            String command = "{\"sequence\":1,\"method\":\"read\",\"arguments\":{}}";
+            try (var wire = new Wire(port)) {
+                resume = wire.exchange("{\"version\":4}").get("resume").getAsString();
+                assertThrows(EOFException.class, () -> wire.exchange(command));
+                assertEquals(applied.get(), 1);
+            }
+            try (var wire = new Wire(port)) {
+                wire.exchange(SyncTransport.JSON.toJson(Map.of("version", 4, "resume", resume)));
+                assertThrows(EOFException.class, () -> wire.exchange(command));
+                assertEquals(applied.get(), 1, "The encoded-frame failure occurs after receipt capture and cannot repeat its handler");
+            }
+        }
+        try (var server = new SyncTransport.Server((seat, method, args) -> oversized.substring(128), () -> 1);
+             var wire = new Wire(server.listen())) {
+            wire.exchange("{\"version\":4}");
+            assertEquals(wire.exchange("{\"sequence\":1,\"method\":\"read\",\"arguments\":{}}").get("result").getAsString().length(),
+                    8 * 1024 * 1024 - 128, "A fitting near-limit receipt remains supported");
         }
     }
     @Test(timeOut = 10000) public void mismatchedVersionsAndOutOfOrderCommandsNeverReachTheEngine() throws Exception {
