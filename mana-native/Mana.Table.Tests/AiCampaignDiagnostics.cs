@@ -42,6 +42,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     private readonly List<string> diagnosticErrors = [];
     private bool rawObservationsCaptured;
     private AiCampaignQualificationTracker? qualification;
+    internal PublicProjectionPreparation? PublicProjectionPreparation { get; private set; }
     private AiCampaignEvidenceInbox? inbox;
     internal AiCausalMechanicEvidence? QualificationEvidence => qualification?.CausalEvidence;
     internal CampaignEvidenceHandoffStatus? HandoffStatus => inbox?.Status;
@@ -116,6 +117,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     {
         if (qualification != null) throw new InvalidOperationException("Campaign qualification is already bound.");
         qualification = tracker;
+        PublicProjectionPreparation = new(tracker.Participants.Select(participant => participant.PlayerId));
     }
 
     internal void ValidatePublicBatch(ImmutableArray<AutomatedSeatObservation> observations)
@@ -124,7 +126,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
         else ValidatePublicBatchCore(observations);
     }
     private void ValidatePublicBatchCore(ImmutableArray<AutomatedSeatObservation> observations)
-        => ForgePublicProjectionChecks.ValidateBatch(observations, directory);
+        => ForgePublicProjectionChecks.ValidateBatch(observations, directory, PublicProjectionPreparation);
 
     private sealed class RecordingPolicy(IAiPolicy inner, AiCampaignDiagnostics evidence, AiCampaignEvidenceInbox? handoff) : IAiPolicy
     {
@@ -523,6 +525,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
         if (disposed) return;
         disposed = true;
         if (inbox?.RetireForDisposal() is { } failure) RecordHandoffFailure(failure);
+        PublicProjectionPreparation?.Clear();
         decisions.Dispose();
     }
 }

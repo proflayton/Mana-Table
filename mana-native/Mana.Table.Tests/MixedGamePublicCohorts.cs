@@ -19,6 +19,7 @@ internal sealed class MixedGamePublicCohorts
     }
     private readonly ImmutableHashSet<int> participants;
     private readonly int capacity;
+    private readonly PublicProjectionPreparation? preparation;
     private readonly Dictionary<int, Owner> owners = [];
     private readonly Dictionary<(string Game, long Board), Cohort> cohorts = [];
     private string? game;
@@ -29,12 +30,14 @@ internal sealed class MixedGamePublicCohorts
     internal MixedPublicComparisonEvidence Evidence => new(comparedFrames, immutableRepeatSkips,
         maximumRetained, cohorts.Count, owners.Count);
 
-    internal MixedGamePublicCohorts(IEnumerable<int> participants, int capacity = 64)
+    internal MixedGamePublicCohorts(IEnumerable<int> participants, int capacity = 64,
+        PublicProjectionPreparation? preparation = null)
     {
         this.participants = participants.ToImmutableHashSet();
         if (this.participants.Count != 4 || this.participants.Any(id => id < 0) || capacity < 1)
             throw new ArgumentException("A mixed-game comparison owns four distinct participants and a positive cohort capacity.");
         this.capacity = capacity;
+        this.preparation = preparation;
     }
 
     internal MixedPublicObservation Observe(int viewer, GameSnapshot frame)
@@ -50,8 +53,8 @@ internal sealed class MixedGamePublicCohorts
         if (priorOwner != null && (frame.Revision < priorOwner.State.Revision || frame.BoardRevision < priorOwner.State.BoardRevision))
             throw new InvalidDataException("A mixed-game audience rolled back an accepted publication.");
 
-        string facts = ForgePublicProjectionFacts.Capture(frame);
-        var correlations = ForgePublicProjectionFacts.CaptureExecutionCorrelations(frame);
+        string facts = preparation?.Facts(frame) ?? ForgePublicProjectionFacts.Capture(frame);
+        var correlations = preparation?.ExecutionCorrelations(frame) ?? ForgePublicProjectionFacts.CaptureExecutionCorrelations(frame);
         if (!correlations.Valid) throw new InvalidDataException("An audience published invalid execution references.");
         var ownerCorrelations = correlations;
         if (priorOwner != null && priorOwner.State.BoardRevision == frame.BoardRevision) {

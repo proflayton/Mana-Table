@@ -764,6 +764,23 @@ publication, and prove that no private card/action graph enters the receipt.
 Unknown or lost current-world replies remain uncertain failures; they cannot
 cause an automatic full-action fallback or replay of positive consent.
 
+The campaign's `PublicProjectionPreparation` owns bounded derived evidence for
+the actual bound audiences. Batch validation, pair comparisons, cohort tracking
+and terminal equality share it. A cache hit requires the exact same immutable
+`GameSnapshot` object; a fresh object is normalized again even when its game,
+board and revision numbers match. Each known audience retains at most one
+current frame reference. Unknown audiences use the uncached path so preparation
+does not invent ownership or change the caller's refusal order.
+Public facts and local execution correlations are prepared independently on
+first use, preserving each existing check's order. Every group/pair comparison,
+per-owner baseline, cumulative correlation merge and rollback check still runs.
+The prepared values carry no private graph or action authority. Their reuse
+cannot replace the exact raw rejected batch, original exception or first-failure
+capture. Operation-count checks verify reuse and bounded retention, alongside
+fresh same-revision contradictions, private-only refreshes, conflicting
+correlation unions and failure-capture regressions. Counts describe avoided
+normalization work, not additional compared frames or completed games.
+
 `--smoke-polled-mana-output` uses the same source/package arguments as
 `--smoke-polled-fanout`. It opens an actual TCP two-human/two-distinct-AI table;
 a private pregame bootstrap supplies Foundry Inspector, Wastes, Crystal Vein
