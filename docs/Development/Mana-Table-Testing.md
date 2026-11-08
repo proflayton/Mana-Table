@@ -1,5 +1,29 @@
 # Testing Mana Table
 
+## GPU capture encoding
+
+`--smoke-headless-presentation --presentation-group capture-png` checks the
+bounded RGBA8 PNG writer without a graphics device and also runs in the full
+headless suite. It independently checks dimensions, pixel count, PNG chunks and
+CRCs, zlib rows, lossless Sub-filter reconstruction, and output failures.
+Invalid input must fail before writing a header; an I/O failure cannot report a
+completed capture.
+
+The rendered card-reading/state journey additionally compares tiny old/new
+captures through MonoGame's public decoder, retaining every RGBA channel,
+transparent RGB, dimensions and row orientation. Normal capture paths read
+pixels once on the graphics owner thread and synchronously encode that owned
+buffer. Window captures do not upload CPU pixels into a temporary texture just
+to read them back again. The encoder adds only one row and bounded 64 KiB IDAT
+storage; no background queue, dependency or native image API is introduced.
+All existing screenshots, input boundaries, readiness checks and deadlines stay
+in the rendered journey. Local capture microbenchmarks are diagnostic evidence,
+not CI timing guarantees or human UX acceptance.
+The fixed encoder is deliberately limited to this capture format. A measured
+existing Windows `Bitmap.Save(Png)` alternative preserved pixels but produced
+much larger files and less improvement on the same authored image; both
+alternatives' results remain separate from the rendered CI journey.
+
 ## Shared public choice previews
 
 `TableChoiceRegression` runs in the ordinary graphics-free client executable.
@@ -1847,6 +1871,11 @@ enter the current pump prefix. It checks accepted-only counts, retained Take
 control, blocked normal commits and the subsequent provider-stop reason, and
 writes its frame/progress/grant timeline before the assertion for first-failure
 diagnosis. Explicit-stop coverage also retains a later committed receipt.
+A controlled continuation predicate ends during evaluation and requires the
+automatic presentation decision to await queued accepted publications while
+the command lane is busy. The old ordering retires too early. This boundary
+control adds no sleeps or test hook; the actual 55-outcome/109-publication
+journey still requires its visible final count within the existing 20 seconds.
 Their authored snapshots establish presentation behavior; Java establishes the
 real rules transitions. Neither supplies human UX approval or all-card coverage.
 

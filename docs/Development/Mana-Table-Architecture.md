@@ -1958,6 +1958,11 @@ MonoGame, GPU textures, sound, input sampling, letterboxing and captures.
 `TableApplication` composes the shared client session, screen navigation and input
 policy. Feature lifecycles have explicit owners; render partials consume their
 views rather than independently accepting asynchronous results.
+Capture reads stay on the graphics owner thread. `CapturePng` receives the
+complete owned CPU pixel buffer and writes bounded, lossless RGBA8 PNG data;
+it cannot access a texture, graphics device or game state. The window and probe
+share this encoding boundary without a temporary GPU upload, another readback,
+an asynchronous capture queue or a change to input/frame timing.
 
 Floating-mana hover captions derive from the currently accepted payment payload.
 A negative explanation requires an explicit own payer and usable-color set;
@@ -3215,6 +3220,10 @@ The worker policy's completion is not a presentation publication. An external
 pump can accept an earlier FIFO prefix after the worker has already stopped.
 GAME keeps the finite presentation reserved until the command lane's queued
 receipts and completion are accepted; explicit Take control remains immediate.
+Automatic retirement checks this boundary after evaluating continuation as well
+as when the policy was already ended. A policy can end during that evaluation;
+its result is then Continue, Await accepted publication, or Retire. Local
+negative fences still withdraw immediately rather than waiting on presentation.
 `FiniteResolutionProgressProjection` separately captures the queue and optional
 subset, then consumes only owner-accepted snapshots. It retains confirmed
 terminal outcomes across history eviction and rejects stale, foreign or changed

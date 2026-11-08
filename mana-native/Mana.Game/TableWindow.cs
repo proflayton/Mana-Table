@@ -121,17 +121,13 @@ public sealed class TableWindow : Game
         if (windowCapture is { } windowPath) {
             windowCapture = null;
             var pixels = new Color[view.Width * view.Height]; GraphicsDevice.GetBackBufferData(pixels);
-            using var texture = new Texture2D(GraphicsDevice, view.Width, view.Height); texture.SetData(pixels);
-            using var output = File.Create(windowPath); texture.SaveAsPng(output, view.Width, view.Height);
+            using var output = File.Create(windowPath); CapturePng.Write(output, view.Width, view.Height, pixels);
         }
         if (capture != null && application.TestPort.Loaded && ++frames >= 90) {
-            using (var output = File.Create(capture)) surface.SaveAsPng(output, surface.Width, surface.Height);
+            CaptureSurface(capture);
             var capturedPixels = new Color[view.Width * view.Height]; GraphicsDevice.GetBackBufferData(capturedPixels);
-            using (var texture = new Texture2D(GraphicsDevice, view.Width, view.Height)) {
-                texture.SetData(capturedPixels);
-                using var output = File.Create(Path.Combine(Path.GetDirectoryName(capture)!, Path.GetFileNameWithoutExtension(capture) + "-window.png"));
-                texture.SaveAsPng(output, view.Width, view.Height);
-            }
+            using (var output = File.Create(Path.Combine(Path.GetDirectoryName(capture)!, Path.GetFileNameWithoutExtension(capture) + "-window.png")))
+                CapturePng.Write(output, view.Width, view.Height, capturedPixels);
             Exit();
         }
         base.Draw(time);
@@ -149,11 +145,18 @@ public sealed class TableWindow : Game
         }
         base.Dispose(disposing);
     }
+    private void CaptureSurface(string path)
+    {
+        var current = surface ?? throw new InvalidOperationException("The window has not loaded.");
+        var pixels = new Color[checked(current.Width * current.Height)]; current.GetData(pixels);
+        using var output = File.Create(path); CapturePng.Write(output, current.Width, current.Height, pixels);
+    }
     internal sealed class Probe(TableWindow window) : TableApplication.Probe(window.application)
     {
         internal GraphicsDevice GraphicsDevice => window.GraphicsDevice;
         internal Texture2D Surface => window.surface ?? throw new InvalidOperationException("The window has not loaded.");
         internal void CaptureWindow(string path) => window.windowCapture = path;
+        internal void CaptureSurface(string path) => window.CaptureSurface(path);
         internal PresentationFrame CaptureLobbySnapshot(Lobby state, string path)
         {
             var frame = ComposeLobbySnapshot(state);
@@ -164,7 +167,7 @@ public sealed class TableWindow : Game
                 window.GraphicsDevice.Clear(new Color(17, 22, 29));
                 window.painter!.Draw(frame.Drawing, view.Scale);
             } finally { window.GraphicsDevice.SetRenderTarget(null); }
-            using var file = File.Create(path); Surface.SaveAsPng(file, Surface.Width, Surface.Height);
+            window.CaptureSurface(path);
             window.windowCapture = Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + "-window.png");
             return frame;
         }

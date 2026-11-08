@@ -19,6 +19,7 @@ internal static class FiniteResolutionPresentationChecks
 {
     internal static void Run(string profile, Action<bool, string> check)
     {
+        CheckWorkerPublicationDisposition(check);
         RunFreshClick(profile, check);
         CheckGroupedAnnouncements(check);
         foreach (var viewport in new[] { new Point(1000, 740), new Point(1540, 980) }) {
@@ -120,6 +121,55 @@ internal static class FiniteResolutionPresentationChecks
             using (var run = new Journey(profile, "unreported-" + viewport.X, viewport, certified: false))
                 check(!run.Has("finite-resolution-decline") && run.Port.Commands.IsEmpty,
                     "An optional-looking legacy payment without engine provenance keeps its single current choices and cannot acquire bulk authority at " + viewport);
+
+            using (var run = new Journey(profile, "scope-withdrawal-" + viewport.X, viewport, holdFirst: true)) {
+                run.Click("finite-resolution-decline"); run.Move(new(20, 60));
+                run.Until(() => run.Port.Started.Task.IsCompleted, "an in-flight answer before an accepted scope change");
+                var intent = run.View.FiniteResolution!;
+                var changed = run.Port.State with { Revision = 1000, Turn = run.Port.State.Turn + 1 };
+                run.Run.QueueObservation(changed); run.Tick();
+                check(run.View.Busy && run.View.FiniteResolution == null && !intent.IsActive && run.Port.Commands.Count == 1,
+                    "An accepted new turn withdraws finite presentation immediately while its one already-sent answer remains in flight at " + viewport);
+                run.Port.Release.TrySetResult();
+                run.Until(() => !run.View.Busy, "reconcile the answer after accepted scope withdrawal");
+                check(run.Port.Commands.Count == 1 && run.View.Match?.Turn == changed.Turn,
+                    "Immediate scope withdrawal cannot send another answer or replace the accepted new turn with its older readback at " + viewport);
+            }
+        }
+    }
+
+    private static void CheckWorkerPublicationDisposition(Action<bool, string> check)
+    {
+        var state = Projection(55, paying: true);
+        var ending = new ControlledContinuation(endsDuringCheck: true);
+        check(ending.IsActive, "The controlled finite worker is still active before its continuation check");
+        var pending = TableApplication.ObserveFiniteContinuation(ending, state, busy: true,
+            static (policy, current) => policy.CanContinue(current));
+        check(pending == TableApplication.FinitePresentationDisposition.AwaitAcceptedPublication
+                && ending.WasActiveDuringCheck && !ending.IsActive && ending.Checks == 1,
+            "A worker ending during its continuation check waits for the owner's accepted-publication boundary instead of retiring presentation early");
+        var delivered = TableApplication.ObserveFiniteContinuation(ending, state, busy: false,
+            static (policy, current) => policy.CanContinue(current));
+        check(delivered == TableApplication.FinitePresentationDisposition.Retire && ending.Checks == 2,
+            "The same ended worker may retire presentation only after its owner has consumed every final publication");
+        var continuing = new ControlledContinuation(endsDuringCheck: false);
+        check(TableApplication.ObserveFiniteContinuation(continuing, state, busy: true,
+                static (policy, current) => policy.CanContinue(current)) == TableApplication.FinitePresentationDisposition.Continue
+                && continuing.IsActive && continuing.Checks == 1,
+            "An ongoing finite worker keeps its existing presentation without acquiring a second continuation or command");
+    }
+
+    private sealed class ControlledContinuation(bool endsDuringCheck)
+    {
+        internal bool IsActive { get; private set; } = true;
+        internal bool WasActiveDuringCheck { get; private set; }
+        internal int Checks { get; private set; }
+        internal bool CanContinue(GameSnapshot state)
+        {
+            if (state.Id != "finite-presentation") throw new InvalidOperationException("Unexpected controlled publication scope.");
+            Checks++; WasActiveDuringCheck = IsActive;
+            if (endsDuringCheck) IsActive = false;
+            return IsActive;
         }
     }
 

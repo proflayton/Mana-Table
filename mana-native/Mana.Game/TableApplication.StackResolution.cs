@@ -9,6 +9,7 @@ internal sealed partial class TableApplication
 {
     private StackResolutionIntent? stackResolutionIntent;
     private FiniteResolutionIntent? finiteResolutionIntent;
+    private (string Game, int Viewer, int Turn, string Phase, int? ActivePlayer)? finitePresentationScope;
     private FiniteResolutionProgressProjection? finiteProgressProjection;
     private GameSnapshot? repeatedDeclineSnapshot;
     private FiniteResolutionIntent? repeatedDeclineOffer;
@@ -73,6 +74,7 @@ internal sealed partial class TableApplication
     private void BeginFinitePresentation(GameSnapshot state, FiniteResolutionIntent intent)
     {
         lastFiniteProgress = null;
+        finitePresentationScope = (state.Id, state.ViewerId, state.Turn, state.PhaseKey, state.ActivePlayerId);
         finiteProgressProjection = intent.CaptureProgressProjection();
         finiteProgressProjection.Observe(state);
         var groups = state.Stack.Where(item => intent.CapturedExecutionIds.Contains(item.ExecutionId))
@@ -114,7 +116,7 @@ internal sealed partial class TableApplication
                 noticeUntil = now + 4;
             }
         }
-        finiteResolutionIntent?.Stop(); finiteResolutionIntent = null;
+        finiteResolutionIntent?.Stop(); finiteResolutionIntent = null; finitePresentationScope = null;
         // Retain accepted outcome facts for an already-sent answer which may
         // publish after explicit Take control. This is read-only history;
         // a new capture or table/viewer reset replaces it, never any authority.
@@ -122,21 +124,32 @@ internal sealed partial class TableApplication
         matchPresentation.EndFinite(); session.CancelAdvance();
     }
 
+    internal enum FinitePresentationDisposition { Continue, AwaitAcceptedPublication, Retire }
+
+    internal static FinitePresentationDisposition ObserveFiniteContinuation<TPolicy>(TPolicy policy, GameSnapshot state,
+        bool busy, Func<TPolicy, GameSnapshot, bool> canContinue)
+    {
+        // Checking continuation can itself observe a worker which has just ended.
+        // Busy belongs to the owner: every accepted receipt precedes its clearing.
+        // Worker completion never substitutes for that publication boundary.
+        if (canContinue(policy, state)) return FinitePresentationDisposition.Continue;
+        return busy ? FinitePresentationDisposition.AwaitAcceptedPublication : FinitePresentationDisposition.Retire;
+    }
+
     private bool UpdateStackResolution(bool interactionBlocked)
     {
-        if (finiteResolutionIntent is { IsActive: false }) {
-            // The worker posts every receipt before its Busy=false completion.
-            // An external pump may have consumed only an earlier FIFO prefix.
-            // Keep this presentation and its reservation until that publication
-            // boundary, without granting the ended policy another command.
-            if (busy) return true;
-            StopStackResolution();
-        }
         if (!ResolvingCapturedStack) return false;
         if (finiteResolutionIntent is { } finite) {
-            if (held || fixture != null || session.NeedsRecovery || commandFailure || match == null || !finite.CanContinue(match)) {
+            // Local withdrawal and an accepted change of scope remain immediate,
+            // even while an already-sent answer still owes its final publication.
+            if (held || fixture != null || session.NeedsRecovery || commandFailure || match == null
+                || match.Status is not ("playing" or "resolving") || match.Viewer is not { Eliminated: false }
+                || finitePresentationScope != (match.Id, match.ViewerId, match.Turn, match.PhaseKey, match.ActivePlayerId)) {
                 StopStackResolution(); return false;
             }
+            var disposition = ObserveFiniteContinuation(finite, match, busy, static (policy, state) => policy.CanContinue(state));
+            if (disposition == FinitePresentationDisposition.AwaitAcceptedPublication) return true;
+            if (disposition == FinitePresentationDisposition.Retire) { StopStackResolution(); return false; }
             bool repeatedCurrent = RepeatedExecution(match, match.Decision?.Payload is PaymentPayload { OptionalDecline: { } currentOffer }
                 ? currentOffer.ProducingTriggerExecutionId : match.Stack.FirstOrDefault()?.ExecutionId ?? "", repeatedPresentationExecutions);
             bool ready = repeatedCurrent ? matchPresentation.ReadyForFinite(now) : matchPresentation.ReadyForStack(now);
