@@ -234,24 +234,63 @@ internal sealed class AiCampaignQualificationTracker
         Validate(observation);
         causal.ObserveOwned(observation);
         ImportCausalWitnesses();
+        var state = observation.State;
+        Dictionary<string, ExecutionOccurrence>? occurrences = null;
+        Dictionary<string, long>? transitionSequences = null;
+        bool occurrencesPrepared = false, transitionsPrepared = false;
+        ExecutionOccurrence? Find(string? id)
+        {
+            if (string.IsNullOrEmpty(id)) return null;
+            if (!occurrencesPrepared) {
+                occurrencesPrepared = true;
+                if (state.Executions is { Occurrences.IsDefault: false } frame
+                    && frame.Occurrences.All(item => item != null && item.Id != null)) {
+                    occurrences = new(StringComparer.Ordinal);
+                    foreach (var item in frame.Occurrences) occurrences.TryAdd(item.Id, item);
+                }
+            }
+            // Preserve the existing lazy lookup/error behavior for malformed
+            // direct collector inputs; admission remains the adapter's job.
+            return occurrences != null ? occurrences.GetValueOrDefault(id) : ExecutionFrames.Find(state, id);
+        }
+        bool Fresh(string id, long prior)
+        {
+            if (!transitionsPrepared) {
+                transitionsPrepared = true;
+                if (state.Executions is { Transitions.IsDefault: false } frame
+                    && frame.Transitions.All(item => item != null && item.ExecutionId != null)) {
+                    transitionSequences = new(StringComparer.Ordinal);
+                    foreach (var item in frame.Transitions)
+                        if (!transitionSequences.TryGetValue(item.ExecutionId, out long previous) || item.Sequence > previous)
+                            transitionSequences[item.ExecutionId] = item.Sequence;
+                }
+            }
+            return transitionSequences != null && id != null
+                ? transitionSequences.TryGetValue(id, out long sequence) && sequence > prior
+                : state.Executions?.Transitions.Any(item => item.ExecutionId == id && item.Sequence > prior) == true;
+        }
+        bool Related(string child, string parent)
+        {
+            var occurrence = Find(child);
+            var root = Find(parent);
+            return child == parent || occurrence != null && root != null && occurrence.BudgetRootId == root.BudgetRootId;
+        }
         foreach (var action in actions.Where(item => item.Before.SeatId == observation.SeatId && item.Before.State.Id == observation.State.Id)) {
-            var state = observation.State;
             if (action.ExecutionId.Length == 0 && state.Executions is { } frame) {
                 var execution = frame.Occurrences.FirstOrDefault(item => item.ActorPlayerId == observation.SeatId
-                    && item.SourceCardId == action.SourceId && frame.Transitions.Any(transition => transition.ExecutionId == item.Id
-                        && transition.Sequence > action.PriorExecutionSequence));
+                    && item.SourceCardId == action.SourceId && Fresh(item.Id, action.PriorExecutionSequence));
                 if (execution != null) action.ExecutionId = execution.Id;
             }
             foreach (var entry in state.Activity) {
                 if (entry.Id <= action.PriorActivity || entry.ExecutionId.Length == 0 || action.ExecutionId.Length == 0
-                    || !Related(state, entry.ExecutionId, action.ExecutionId) || !action.Effects.Add(entry.Id)) continue;
+                    || !Related(entry.ExecutionId, action.ExecutionId) || !action.Effects.Add(entry.Id)) continue;
                 if (entry.Kind == "resolved" && entry.Outcome == "resolved" && entry.CardId == action.SourceId) action.Resolved = true;
                 // Event-time controller and exact producing occurrence must
                 // agree; a teammate's identical card cannot supply this credit.
                 if (entry.Cause?.CardId == action.SourceId && entry.Cause.ControllerId == observation.SeatId)
                     action.Changes.Add(entry);
             }
-            if (ExecutionFrames.Find(state, action.ExecutionId) is { Step: ExecutionStep.Complete, Outcome: ExecutionOutcome.Resolved }) action.Resolved = true;
+            if (Find(action.ExecutionId) is { Step: ExecutionStep.Complete, Outcome: ExecutionOutcome.Resolved }) action.Resolved = true;
         }
     }
 
@@ -377,10 +416,4 @@ internal sealed class AiCampaignQualificationTracker
         => new(observation.State.Id, slots[observation.SeatId], observation.SeatId, sourceId, name,
             (command as DecisionCommand)?.DecisionId ?? "", command.GetType().Name, true, observation.State.Revision,
             observation.State.BoardRevision, afterBoard, executionId, events, consequence);
-    private static bool Related(GameSnapshot state, string child, string parent)
-    {
-        var occurrence = ExecutionFrames.Find(state, child);
-        var root = ExecutionFrames.Find(state, parent);
-        return child == parent || occurrence != null && root != null && occurrence.BudgetRootId == root.BudgetRootId;
-    }
 }

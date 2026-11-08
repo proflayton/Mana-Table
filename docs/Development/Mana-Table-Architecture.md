@@ -621,6 +621,15 @@ immutable evidence never becomes a current command permission. Developmental
 spell timing remains policy-owned in the existing turn planner and consumes only
 the actor's accepted knowledge and current offered action domain.
 
+The campaign's generic accepted-action evidence pass derives call-local execution
+lookups from each owned frame: the first occurrence for an ID and the greatest
+transition sequence for an ID. Candidate discovery still walks the original
+occurrence order. Its existing budget-root association includes siblings; the
+separate causal mechanic verifier continues to require disclosed parent ancestry.
+Every action/event pair, source/controller check, terminal outcome and witness
+limit remains in the evidence owner. The lookups end with that observation, so
+later frames supply their own execution facts and outcomes.
+
 The same verifier now consumes bounded owned-seat history for historic-cast
 untaps and explicit colorless payment. It requires a fresh accepted cast,
 disclosed execution ancestry, actual committed effects or spending, and an

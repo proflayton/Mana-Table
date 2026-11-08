@@ -92,6 +92,7 @@ internal static class AiCampaignQualificationChecks
         check(Has(credited) && credited.Summary("turn-budget", false, null).Skip(1).All(deck => deck.RequiredWitnesses.All(witness => witness.Status != "observed"))
                 && credited.Summary("turn-budget", false, null)[0].RequiredWitnesses.Single(item => item.Id == "rhys-paid-tokens").Evidence.Single().PlayerId == actor,
             "One accepted exact-source activation and attributed authoritative token entry credits only its pinned deck and actual mapped player");
+        CheckOwnedLookupCompatibility(Tracker, observation, command, after, publicAfter, entered, check);
         var foreign = Tracker(); foreign.Receipt(observation, command, true, null);
         foreign.ObserveOwned(observation with { State = after with { Activity = [entered with { Cause = entered.Cause! with { ControllerId = 83 } }] } });
         foreign.ObservePublic(publicAfter);
@@ -174,6 +175,76 @@ internal static class AiCampaignQualificationChecks
             check(blocked && policy.Evaluations == 0 && inner.Executions == 0,
                 "An unauthorized ally-hand disclosure is rejected before any policy evaluation or command in " + (configured ? "configured" : "legacy") + " campaigns");
         }
+    }
+
+    private static void CheckOwnedLookupCompatibility(Func<AiCampaignQualificationTracker> create,
+        AutomatedSeatObservation before, UseOfferedAction command, GameSnapshot after, GameSnapshot publicAfter,
+        ActivityEntry entered, Action<bool, string> check)
+    {
+        bool Has(AiCampaignQualificationTracker tracker) => tracker.Summary("turn-budget", false, null)[0].RequiredWitnesses
+            .Single(item => item.Id == "rhys-paid-tokens").Status == "observed";
+        bool Credits(AutomatedSeatObservation initial, GameSnapshot current) {
+            var tracker = create(); tracker.Receipt(initial, command, true, null);
+            tracker.ObserveOwned(initial with { State = current }); tracker.ObservePublic(publicAfter);
+            return Has(tracker);
+        }
+        var original = after.Executions!.Occurrences.Single();
+        var sibling = original with { Id = "sibling", BudgetRootId = original.Id, ParentId = null, Kind = ExecutionKind.Trigger };
+        var shared = after with { Activity = [entered with { ExecutionId = sibling.Id }],
+            Executions = new(1, 3, [original, sibling], after.Executions.Transitions.Add(
+                new(3, sibling.Id, ExecutionStep.Complete) { Outcome = ExecutionOutcome.Resolved })) };
+        check(Credits(before, shared),
+            "Generic deck qualification retains a same-budget sibling's exact owned-source event without substituting ancestry for its existing association rule");
+        var foreignRoot = original with { Id = "foreign-root", BudgetRootId = "foreign-root", SourceCardId = "foreign-source" };
+        var unrelated = shared with { Executions = new(1, 4, [original, foreignRoot, sibling with { BudgetRootId = foreignRoot.Id }],
+            after.Executions.Transitions.Add(new(3, foreignRoot.Id, ExecutionStep.Complete) { Outcome = ExecutionOutcome.Resolved })
+                .Add(new(4, sibling.Id, ExecutionStep.Complete) { Outcome = ExecutionOutcome.Resolved })) };
+        check(!Credits(before, unrelated)
+                && !Credits(before, after with { Activity = [entered with { ExecutionId = "missing-execution" }] }),
+            "An otherwise identical owned-source token change from another root or an absent execution cannot borrow this accepted action's generic witness");
+
+        var pendingOccurrence = original with { Step = ExecutionStep.Resolution, Outcome = null };
+        var pending = after with { Executions = new(1, 2, [pendingOccurrence],
+            [new(1, original.Id, ExecutionStep.Preparation), new(2, original.Id, ExecutionStep.Resolution)]) };
+        var latest = create(); latest.Receipt(before, command, true, null);
+        latest.ObserveOwned(before with { State = pending }); latest.ObservePublic(publicAfter);
+        bool initiallyPending = !Has(latest);
+        latest.ObserveOwned(before with { State = after }); latest.ObservePublic(publicAfter);
+        var cancelled = after with { Executions = new(1, 2, [original with { Outcome = ExecutionOutcome.Cancelled }],
+            [new(1, original.Id, ExecutionStep.Preparation), new(2, original.Id, ExecutionStep.Complete) { Outcome = ExecutionOutcome.Cancelled }]) };
+        check(initiallyPending && Has(latest) && !Credits(before, cancelled),
+            "Fresh owned observations with unchanged headers still read the current terminal row: pending is not resolved, a later Resolved is credited and Cancelled is not");
+
+        // These direct collector inputs deliberately include a duplicate row.
+        // Adapter execution-invariant validation remains a separate admission gate.
+        check(!Credits(before, after with { Executions = after.Executions with { Occurrences = [pendingOccurrence, original] } })
+                && Credits(before, after with { Executions = after.Executions with { Occurrences = [original, pendingOccurrence] } }),
+            "Direct collector lookup compatibility keeps the first disclosed duplicate occurrence, including its terminal state, rather than silently normalizing it to the last row");
+
+        var undisclosed = before with { State = before.State with {
+            Decision = before.State.Decision! with { ExecutionId = "", ExecutionStep = null },
+            Executions = new(11, 10, [], [])
+        } };
+        GameSnapshot Disclosed(long sequence) => after with { Executions = new(sequence, sequence, [original],
+            [new(sequence, original.Id, ExecutionStep.Complete) { Outcome = ExecutionOutcome.Resolved }]) };
+        var multipleTransitions = after with { Executions = new(9, 11, [original],
+            [new(9, original.Id, ExecutionStep.Preparation), new(11, original.Id, ExecutionStep.Complete) { Outcome = ExecutionOutcome.Resolved }]) };
+        check(!Credits(undisclosed, Disclosed(10)) && Credits(undisclosed, Disclosed(11)) && Credits(undisclosed, multipleTransitions),
+            "An undisclosed action binds only after a strictly newer matching transition; the maximum matching sequence preserves Any semantics across its older preparation and terminal rows");
+
+        var first = original with { Id = "first-candidate", BudgetRootId = "first-candidate" };
+        var second = original with { Id = "second-candidate", BudgetRootId = "second-candidate" };
+        var wrongSource = original with { Id = "wrong-source-candidate", BudgetRootId = "wrong-source-candidate", SourceCardId = "other-source" };
+        var wrongActor = original with { Id = "wrong-actor-candidate", BudgetRootId = "wrong-actor-candidate", ActorPlayerId = 83 };
+        var candidates = after with { Activity = [entered with { ExecutionId = second.Id }],
+            Executions = new(11, 14, [wrongSource, wrongActor, first, second],
+                [new(11, wrongSource.Id, ExecutionStep.Complete) { Outcome = ExecutionOutcome.Resolved },
+                    new(12, wrongActor.Id, ExecutionStep.Complete) { Outcome = ExecutionOutcome.Resolved },
+                    new(13, first.Id, ExecutionStep.Complete) { Outcome = ExecutionOutcome.Resolved },
+                    new(14, second.Id, ExecutionStep.Complete) { Outcome = ExecutionOutcome.Resolved }]) };
+        check(!Credits(undisclosed, candidates)
+                && Credits(undisclosed, candidates with { Executions = candidates.Executions! with { Occurrences = [wrongSource, wrongActor, second, first] } }),
+            "Candidate binding preserves the original disclosed occurrence order after exact actor/source filtering instead of iterating an index or choosing a later convenient effect");
     }
 
     private static void MixedBindings(ImmutableArray<AiCampaignDeckBinding> decks, Action<bool, string> check)
