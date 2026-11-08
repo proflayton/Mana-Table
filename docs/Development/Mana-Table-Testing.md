@@ -580,6 +580,12 @@ history, plan and remaining budgets and evaluate one recorded input without
 executing a command or launching a rules game. An improved replay proposal does
 not count as a natural game outcome or prove a counterfactual combat result.
 
+Combat budget regressions also put an offered finishing flyer after several
+unprofitable ground attacks. They require the policy to reach that candidate
+within the original shared allowance, while preserving defensive checks for
+potentially positive attacks, required declarations and prior held resources.
+Identity, name and order changes must not supply the tactical arithmetic.
+
 The source cancellation candidate extends that same client lane with held
 observation, execution and fault-report operations, plus shutdown during
 background and directly driven observations, and an observation provider that

@@ -583,6 +583,16 @@ current public estimate, not a
 prediction of hidden responses; current offered commands and existing resource,
 defense and mechanical-work guards still control the actual proposal.
 
+Optional attack comparison preserves work for candidates that can still beat
+declaring no attack. After complete exchange and finishing estimates, the score
+including its social adjustment is an upper bound before defensive retention:
+that remaining refinement can only lower it. A nonpositive optional candidate
+therefore needs no expensive retention search. Required declarations keep their
+existing ranking. Skipping that search retains previously held defenders until
+a fresh assessment replaces the old fact; it cannot free a reserved response or
+its funding. The shared work limit remains unchanged. This pruning improves
+coverage within that limit, without claiming an exhaustive or optimal search.
+
 The optional host-only `IAutomatedPriorityContinuation` port represents only
 observation acknowledgement, `NoResponse` consent and withdrawal. It cannot
 carry gameplay, Quiet or finite-yield commands. The policy descriptor explicitly
