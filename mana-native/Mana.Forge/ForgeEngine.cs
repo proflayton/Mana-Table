@@ -417,29 +417,27 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
     public async Task<GameSnapshot?> ObserveAsync()
     {
         var owner = current ?? throw new IOException("The engine is not running");
-        long generation, audience;
-        GameSnapshot? anchor;
+        long generation;
+        ForgeCommandScope.ObservationLease read;
         lock (worldScopeGate) {
-            generation = worldGeneration; audience = owner.Commands.AudienceGeneration; anchor = owner.Commands.ObservedState;
+            generation = worldGeneration; read = owner.Commands.CaptureRead();
         }
         var raw = await Request("matchState", owner.PrivateActionFacesAvailable ? new { privateActionFaces = true } : null);
         lock (worldScopeGate) {
             if (current != owner || owner.Failure != null || worldGeneration != generation)
                 throw new IOException("The observation connection or match changed.");
-            if (owner.Commands.AudienceGeneration != audience) throw new EngineObservationSupersededException();
+            owner.Commands.EnsureCurrentRead(read, raw.ValueKind == JsonValueKind.Null);
             GameSnapshot? state;
             try { state = ForgeSnapshotDecoder.Decode(raw, certifiedUndo: owner.CertifiedUndoAvailable); }
             catch {
                 // A malformed retired read cannot erase a newer publication's
                 // command authority, even when its audience stayed the same.
-                owner.Commands.ClearIfCurrent(anchor, audience);
+                owner.Commands.ClearIfCurrent(read);
                 throw;
             }
             // Absence carries no revision. Only the exact captured publication
             // can be cleared by an in-flight observation returning null.
-            bool accepted = state == null ? owner.Commands.ClearIfCurrent(anchor, audience)
-                : owner.Commands.Observe(state, audience);
-            if (!accepted) throw new EngineObservationSupersededException();
+            owner.Commands.AdmitRead(read, state);
             return state;
         }
     }

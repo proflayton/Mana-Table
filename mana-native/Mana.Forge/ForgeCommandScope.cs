@@ -14,6 +14,36 @@ internal sealed class ForgeCommandScope
     private readonly object observationGate = new();
     private GameSnapshot? observed;
     private long audienceGeneration;
+    private long commandAdmission;
+    internal readonly record struct ObservationLease(long Audience, long Admission, GameSnapshot? Anchor);
+    internal ObservationLease CaptureRead()
+    {
+        lock (observationGate) return new(audienceGeneration, commandAdmission, observed);
+    }
+    internal void EnsureCurrentRead(ObservationLease read, bool? nullReply = null)
+    {
+        lock (observationGate) RequireCurrentRead(read, null, nullReply);
+    }
+    private void RequireCurrentRead(ObservationLease read, long? revision, bool? nullReply)
+    {
+        if (read.Audience != audienceGeneration)
+            throw Superseded(read, ObservationRetirementReason.AudienceChanged, revision, nullReply);
+        if (read.Admission != commandAdmission)
+            throw Superseded(read, ObservationRetirementReason.CommandAdmitted, revision, nullReply);
+    }
+    private EngineObservationSupersededException Superseded(ObservationLease read, ObservationRetirementReason reason,
+        long? revision, bool? nullReply) => new(new(reason, read.Audience, audienceGeneration,
+            read.Admission, commandAdmission, revision, observed?.Revision, nullReply));
+    internal void AdmitRead(ObservationLease read, GameSnapshot? state)
+    {
+        lock (observationGate) {
+            RequireCurrentRead(read, state?.Revision, state == null);
+            if (state == null && !ReferenceEquals(observed, read.Anchor))
+                throw Superseded(read, ObservationRetirementReason.PublicationChanged, null, true);
+            if (!Observe(state, read.Audience))
+                throw Superseded(read, ObservationRetirementReason.RevisionBehind, state?.Revision, state == null);
+        }
+    }
     internal long AudienceGeneration { get { lock (observationGate) return audienceGeneration; } }
     internal string ObservedGameId => Volatile.Read(ref observed)?.Id ?? "";
     internal GameSnapshot? ObservedState => Volatile.Read(ref observed);
@@ -45,10 +75,11 @@ internal sealed class ForgeCommandScope
         }
     }
     internal bool Clear(long? expectedAudience = null) => Observe(null, expectedAudience);
-    internal bool ClearIfCurrent(GameSnapshot? anchor, long expectedAudience)
+    internal bool ClearIfCurrent(ObservationLease read)
     {
         lock (observationGate) {
-            return ReferenceEquals(observed, anchor) && Clear(expectedAudience);
+            RequireCurrentRead(read, null, null);
+            return ReferenceEquals(observed, read.Anchor) && Clear(read.Audience);
         }
     }
     internal bool CanReadSource(string gameId, string decisionId, string key)
@@ -61,6 +92,16 @@ internal sealed class ForgeCommandScope
             && CardViews.CanReadActionSource(state, key);
     }
     internal Dictionary<string, object?> Encode(GameCommand command)
+    {
+        lock (observationGate) {
+            var args = EncodeCurrent(command);
+            // Validation and protocol translation must both finish before a
+            // command retires reads that began under its preceding authority.
+            commandAdmission++;
+            return args;
+        }
+    }
+    private Dictionary<string, object?> EncodeCurrent(GameCommand command)
     {
         command.Validate();
         var state = Volatile.Read(ref observed);

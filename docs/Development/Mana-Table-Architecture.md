@@ -380,13 +380,28 @@ funding witness; command admission and execution still validate live rules state
 The existing table board generation fences publication too: a superseded outer
 publication cannot overwrite a newer seat capture or finish an older spectator
 cohort. Rejecting a superseded AI read preserves the newer published capture.
+Seat publication also owns its reserved view revision and previous committed
+view. Same-board metadata can supersede that owner without changing the rules
+board. A detached prepared view holds the replacement snapshot, response handles,
+decision capture and inspection/choice domains until its final ownership check.
+That owner includes the handle allocation frontier: a nested read which exposes
+a new opaque action handle cannot have it dropped or reused by an older builder.
+The table prepares every seat and the spectator before committing any audience;
+the commit copies staged values and performs no rules queries or callbacks.
+Metadata invalidation permits one fresh nonrecursive whole-cohort capture. A
+second loss fails closed while preserving the prior coherent views and their
+response authority, including the newer nested metadata. It does not restore
+old snapshots over a newer owner or roll back rules state.
+Metadata-only writers recheck their owner after callback-capable stack queries,
+and decision refresh stops before touching later seats when its board or decision
+cohort changes. These are internal ownership fences; the wire actions and saved
+data formats do not change.
 Normal publication observers and finite-stack pass scheduling run only after all
 seat views, public decision metadata and the spectator have completed. Each
 callback rechecks that publication: a reentrant newer publication supersedes the
 remaining older callbacks and passes. A seat which cannot commit its capture
-does not announce a completed table. This completion boundary does not stage or
-roll back audience writes; arbitrary independent polls can still span publications.
-Lifecycle fault and closure notifications remain separate.
+does not announce a completed table. Independent polls can still span separate
+committed publications. Lifecycle fault and closure notifications remain separate.
 A stopped or replaced controller input retires its question without withholding
 that audience's fresh passive board and matching execution frame. Source,
 selection and publication guards share the actual queue/proxy and active-input
@@ -1289,6 +1304,78 @@ poll. The current replica and its synchronization timestamp remain unchanged;
 the next ordinary poll can discover fresh authority. A command or post-command
 readback still uses the normal uncertain-receipt failure path. Catching a safe
 read at this owner must not turn a possibly executed command into a retry.
+
+The Forge provider also fences its own command-authority cache. An ordinary or
+owned read captures its audience, command-admission sequence and observed anchor
+as one immutable lease. Validated command mapping advances that sequence under
+the same gate. An earlier read can no longer replace or clear authority after
+that admission, including when its reply is null or malformed. Current reads
+retain the revision and world/audience guards. This protects provider admission
+independently of the client's callback epoch and does not retry commands or
+substitute a cached rich view for an ordinary observation.
+Superseded-observation diagnostics can retain a closed reason and numeric
+lease/revision facts. Their ordinary message stays generic; private logs receive
+no raw response, card, player, game, decision or command identifiers from these
+facts. The parameterless exception constructor remains available to older callers.
+
+The session's operation lane reserves both the wire exchange and its posted
+owner-side application. A background reading acknowledgement uses that same
+lane while staying visually quiet. One explicit foreground request can wait
+behind it, with pending/busy feedback; it acquires a new command epoch only
+when the prior owner has applied its result and released the reservation.
+The queued request must still match its current audience, decision and source
+authority before transport. Failed acknowledgements and lifecycle retirement
+decline unsent work without replay. A retired queued connection request also
+finishes its loading activity with a certain local rejection and completion;
+notifications run outside the observation gate while their terminal owner still
+prevents reentrant admission. Ordinary discovery polls remain independent
+readers. Closing includes the acknowledgement's active wire task when waiting
+to withdraw existing consent; retiring callbacks alone does not certify that
+the provider worker has finished.
+Completion distinguishes immutable returned observations from current-only
+bookkeeping. A command receipt still reaches normal admission with its original
+operation context after retirement, producing a redacted discarded-publication
+fact. Revocation, acknowledgement and other scoped effects run only for their
+current owner. Recording a returned receipt does not grant it authority to
+replace the current replica.
+
+External decision enrichment uses `ClientSession.ReadCurrentDecisionAsync` rather
+than treating `Busy == false` as a settled connection. The session admits the
+read only after active, queued and retiring operations and negative consent have
+settled, immediately invokes the supplied discovery port, and validates ownership
+after completion. Callers cannot separate capture from invocation. Closed
+Deferred, Retired and Current results distinguish work not started, obsolete work
+and a validated result. Bare discovery supersession retains its original typed
+cause; provider faults and uncertain command failures remain errors.
+Retired means the captured context is no longer current; it does not certify
+session health. The scripted owner checks recovery before interpreting a result.
+
+The result's opaque witness captures the session's epoch, accepted-publication
+version, successful-operation generation and exact immutable ordinary frame.
+Polled sessions apply queued completions before validating the read; external
+delivery retains its existing pump boundary. A quiet operation cannot revive an
+old witness by finishing without accepting a frame. The witness grants no action
+permission or transport reservation. Foreground work and ordinary polling keep
+their existing admission rules; callers still validate the returned payload and
+recheck current ownership after subsequent asynchronous work.
+
+`HasSameOperation` checks only open lifetime, epoch and operation generation.
+Saved enrichment combines this lineage with the full current ordinary payload
+before reuse or policy dispatch. An identical ordinary poll can therefore retain
+valid enrichment while any intervening connection operation retires it.
+`HasNewerPublication` separately measures accepted-publication progress; an
+operation's completion is not an ordinary observation. A retired rich attempt
+waits for a subsequent accepted ordinary publication, and a payload mismatch
+also waits for a changed ordinary payload. Each fresh attempt supplies its own
+refresh baseline, so earlier publications cannot satisfy a later retirement.
+
+The connected-player scenarios share `ConnectedPlayerObservationRound` for rich
+discovery. A deferred or retired read leaves the round incomplete while the
+other ordinary owner still pumps. Such a round supplies no comparison, policy
+dispatch or game-step credit. Only bare read-discovery supersession follows this
+path; a failed command or uncertain post-command readback remains fatal. The
+reader commits its queried marker and saved enrichment only after current
+ordinary ownership and the complete rich payload have both been validated.
 
 `CommandExchange` owns the phase of each serial game-command operation,
 independently of diagnostic subscriptions. Only a first Execute-time rejection

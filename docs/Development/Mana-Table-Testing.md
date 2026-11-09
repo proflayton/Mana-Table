@@ -671,6 +671,68 @@ retired discovery remains noncommitting, and definite rejection still requires
 a freshly observed decision. These controlled checks use no rules RNG or full
 game reruns; full-game release qualification remains separate.
 
+Native engine verification artifacts retain compressed private decision journals
+alongside JSON snapshots and logs. The mixed-lobby journal records the typed
+scripted human commands and their targets, including the last accepted action
+before a failure. These authored private observations stay in CI artifacts and
+are not included in public release downloads.
+
+The owned-observation pipe probe also holds ordinary and rich reads across a
+validated command admission. Late newer, null, malformed and server-superseded
+replies must not change the provider's current authority. Invalid commands do
+not retire a current read; genuinely superseded post-command readbacks still
+fail with typed uncertainty and exactly one command dispatch.
+
+`OperationReservationRegression` holds a quiet reading acknowledgement while a
+foreground gesture and ordinary poll arrive. A valid newer poll must remain
+admissible until the gesture actually owns the lane. Controlled wire and owner
+queue barriers check that a current gesture sends once, changed authority
+declines before transport, and finite policy consent is not consumed while
+waiting. Reset, audience round trips, acknowledgement failure and Close retire
+unsent work without treating an active worker as complete. The original-client
+control fails at the lost-newer-poll assertion; it does not depend on a missing
+new type, a rules RNG seed or a scheduling delay.
+Public connection-work checks require exactly one local pre-dispatch rejection
+and completion, including reentrant notification observers, so retiring a queued
+leave/reconnect request cannot leave a loading activity pending forever.
+The unchanged `ClientDiagnosticRegression` also requires a late command receipt
+to be recorded as a redacted discarded publication after Reset. The typed
+completion result must preserve that evidence while withholding stale effects;
+merely dropping the entire completion on an epoch mismatch is insufficient.
+
+`CurrentReadRegression` and the owner-read partial of
+`PolledFullGameContractChecks` exercise the same read-admission contract used by
+the scripted players. `ReadCurrentDecisionAsync` owns admission, immediate source
+invocation and completion validation; deferred attempts invoke no raw discovery.
+The same checks exercise its closed Deferred, Retired and Current outcomes.
+Held wire and posted-completion gates keep quiet work
+visually non-busy while preventing rich discovery. Certain quiet rejection with
+no accepted frame must still retire an earlier ticket. Identical frame reaccept,
+epoch changes, audience round trips and Close have distinct controlled checks.
+Saved enrichment retains its operation lineage through an identical ordinary
+poll, but cannot supply policy authority after an intervening operation. These
+checks preserve the existing slow-poll decision and accepted-input deadline
+oracles.
+
+The original-production controls fail because a rich read starts while quiet
+work owns the connection, and because an unsuccessful rich read incorrectly
+marks its ordinary frame as already enriched. The corrected reader publishes no
+enrichment from either case. Retired and mismatched attempts must schedule an
+ordinary poll and converge without a tight rich-read loop or fresh authority
+credit from operation completion. Natural games, the mixed-lobby prefix and the
+consuming-mana journey use one independent observation-round helper: a pending
+owner or bare discovery retirement cannot starve the other audience or count a
+completed step. The existing typed `ReadbackUnknown`, genuine-error and
+45-second accepted-authority controls remain separate and blocking. These
+controlled cases run in the ordinary client and full native `all` groups; focused
+receipts do not replace full-suite or real-engine qualification.
+
+`PublicationOwnershipTest` uses real card queries and offered actions to replace
+same-board metadata during projection. It checks whole-cohort publication,
+bounded abandonment under repeated invalidation, preservation of response
+authority, and opaque handles exposed by a nested stack-source read. A failed
+capture must preserve the newer owner without certifying an incomplete table.
+
 `DecisionAdvance` defaults to `TimeProvider.System` and the same350 ms /
 32-command slice. The immediate four-window fixture supplies a controlled
 monotonic clock; explicit349/350 ms checks verify exact prefix return and fresh

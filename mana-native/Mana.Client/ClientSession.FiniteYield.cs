@@ -88,22 +88,19 @@ public sealed partial class ClientSession
 
     private void DrainFiniteRevocation()
     {
-        if (Busy || Polling || Closed || NeedsRecovery || finiteRevocations.Count == 0) return;
+        if (operations.Occupied || Polling || Closed || NeedsRecovery || finiteRevocations.Count == 0) return;
         var pending = finiteRevocations.Values.First();
         Run(async context => {
             var next = await ObserveFiniteRevocationAsync(pending, context);
             bool remains = RemainsActive(next, pending.Command);
             if (remains && time.GetUtcNow() - pending.Started >= TimeSpan.FromSeconds(5))
                 throw new IOException("The finite-yield revocation has not completed.");
-            Post(() => {
-                if (context.Epoch != replica.Epoch) return;
+            return new OwnerCompletion.CurrentOnlyAction(() => {
                 if (!remains) {
                     RecordFiniteRevocation(next, pending.Command);
                     if (finiteIntent is FiniteResolutionIntent finite) finite.AcknowledgeServerRevocation(next, pending.Command);
                     finiteRevocations.Remove((pending.Command.GameId, pending.Command.GrantId));
                 }
-                // Reset/close must never restore a historical game just to
-                // acknowledge withdrawing its consent.
                 if (State is { } current && current.Id == next.Id && current.ViewerId == next.ViewerId)
                     Accept(next, context.Epoch!.Value, failureContext: context);
             });

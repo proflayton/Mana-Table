@@ -376,20 +376,7 @@ internal static class MixedGameCampaign
     // An incomplete round receives no comparison or new policy-dispatch credit.
     internal static async Task<bool> ObservePlayersAsync(ConnectedPlayerDriver host, ConnectedPlayerDriver guest,
         MixedGameProgress progress, int steps)
-    {
-        bool complete = true;
-        progress.Enter(MixedGameStage.HostObservation, steps);
-        try { await host.ObserveAsync(); progress.Complete(); }
-        catch (EngineObservationSupersededException) {
-            progress.SupersededObservation(); complete = false;
-        }
-        progress.Enter(MixedGameStage.GuestObservation, steps);
-        try { await guest.ObserveAsync(); progress.Complete(); }
-        catch (EngineObservationSupersededException) {
-            progress.SupersededObservation(); complete = false;
-        }
-        return complete;
-    }
+        => await ConnectedPlayerObservationRound.ObserveAsync(host, guest, progress, steps);
 
     private static string Hash(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
     private static Task SaveAsync(string path, object value) => File.WriteAllTextAsync(path,
