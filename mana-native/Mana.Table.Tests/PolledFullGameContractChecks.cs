@@ -7,7 +7,7 @@ namespace Mana.Table;
 
 // Controlled ports exercise the actual connected-player owner. They do not
 // simulate rules or turn a rich read into an ordinary accepted publication.
-internal static class PolledFullGameContractChecks
+internal static partial class PolledFullGameContractChecks
 {
     internal static async Task RunAsync(string profile, Action<bool, string> check)
     {
@@ -39,6 +39,7 @@ internal static class PolledFullGameContractChecks
         await IndependentObservationOwners(profile, check);
         await FailedOperationIsNotDiscovery(profile, check);
         await OpeningDiscoveryRetirement(check);
+        await RunOwnerReadAdmissionControlsAsync(profile, check);
     }
 
     private static async Task AcceptedInputProgress(string profile, Action<bool, string> check)
@@ -1073,6 +1074,7 @@ internal static class PolledFullGameContractChecks
         internal Func<GameCommand, GameSnapshot?>? AfterCommand;
         internal Exception? ExecuteError;
         internal Exception? OwnedError;
+        internal Func<GameCommand, Task>? ExecuteGate;
         internal int Reads, OwnedReads, SourceReads, HistoryReads;
         internal bool HoldOwned, HoldNextRead, HoldSource, UseSource;
         internal bool PriorityContinuationAvailable;
@@ -1093,13 +1095,13 @@ internal static class PolledFullGameContractChecks
             if (HoldNextRead) { HoldNextRead = false; NextReadStarted.TrySetResult(); return await ReleaseNextRead.Task; }
             return State;
         }
-        public Task ExecuteAsync(GameCommand command)
+        public async Task ExecuteAsync(GameCommand command)
         {
             Commands.Add(command);
-            if (ExecuteError is { } error) return Task.FromException(error);
+            if (ExecuteGate is { } gate) await gate(command);
+            if (ExecuteError is { } error) throw error;
             if (AfterCommand?.Invoke(command) is { } response) State = response;
             else if (AfterExecute is { } next) State = next;
-            return Task.CompletedTask;
         }
         public Task ConcedeAsync(string gameId) => throw new InvalidOperationException("No synthetic concession is permitted.");
         public Task<OwnedDecisionObservation?> ObserveDecisionAsync(CancellationToken cancellation = default)

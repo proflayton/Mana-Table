@@ -37,6 +37,7 @@ public sealed partial class ClientSession
     private sealed record PendingRetirement(PendingOperation Request, ClientDiagnosticFailure Reason);
     private sealed class OperationLane
     {
+        internal long Generation { get; private set; }
         internal OperationReservation? Active;
         internal PendingOperation? Pending;
         internal PendingRetirement? Retiring;
@@ -45,7 +46,7 @@ public sealed partial class ClientSession
         internal bool TryReserve(OperationReservation owner)
         {
             if (Occupied) return false;
-            Active = owner; return true;
+            Active = owner; Generation++; return true;
         }
         internal bool Release(OperationReservation owner)
         {

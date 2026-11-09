@@ -10,6 +10,11 @@ if (args.Contains("--verify-failure-reporting"))
     throw new InvalidOperationException("Controlled test-runner failure reporting check.");
 int checks = 0;
 void Check(bool value, string description) { if (!value) throw new Exception(description); checks++; Console.WriteLine(description); }
+if (args.Contains("--current-read-checks")) {
+    await CurrentReadRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} current-read ownership checks.");
+    return 0;
+}
 if (args.Contains("--operation-reservation-checks")) {
     await OperationReservationRegression.RunAsync(Check);
     Console.WriteLine($"Passed {checks} operation reservation checks.");
@@ -192,6 +197,7 @@ await FiniteYieldLifecycleRegression.RunAsync(Check);
 await PriorityContinuationRegression.RunAsync(Check);
 await PriorityObservationRegression.RunAsync(Check);
 await OperationReservationRegression.RunAsync(Check);
+await CurrentReadRegression.RunAsync(Check);
 await SourceActionSessionRegression.RunAsync(Check);
 await SourceReadDiagnosticRegression.RunAsync(Check);
 ExecutionRegression.Run(Check);

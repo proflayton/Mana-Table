@@ -55,8 +55,9 @@ internal static class MixedLobbyEngineJourney
             new(TimeSpan.FromSeconds(3), 2048));
         try {
             while (DateTime.UtcNow < deadline && !continued) {
-                try { await hostDriver.ObserveAsync(); await guestDriver.ObserveAsync(); }
-                catch (EngineObservationSupersededException) { continue; }
+                if (!await ConnectedPlayerObservationRound.ObserveAsync(hostDriver, guestDriver)) {
+                    await Task.Delay(1); continue;
+                }
                 hostState = hostDriver.Last?.State;
                 guestState = guestDriver.Last?.State;
                 bots = await engines[0].ObserveAutomatedSeatsAsync();

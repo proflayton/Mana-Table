@@ -42,6 +42,11 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "public-projection") ForgePublicProjectionChecks.Run(profile, Check);
                 else if (group == "known-action-faces") CheckKnownActionFaces(profile, Check, trace, performance);
                 else if (group == "polled-receipt-processing") PolledReceiptProcessingChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+                else if (group == "owner-read-admission") PolledFullGameContractChecks.RunOwnerReadAdmissionControlsAsync(profile, Check).GetAwaiter().GetResult();
+                else if (group == "owner-read-marker") PolledFullGameContractChecks.RunOwnerReadMarkerControlAsync(profile, Check).GetAwaiter().GetResult();
+                else if (group == "owner-read-related") PolledFullGameContractChecks.RunOwnerReadRelatedAsync(profile, Check).GetAwaiter().GetResult();
+                else if (group == "owner-read-lineage") PolledFullGameContractChecks.RunOwnerReadLineageControlAsync(profile, Check).GetAwaiter().GetResult();
+                else if (group == "owner-read-manual-source") PolledFullGameContractChecks.RunManualSourceLineageControlAsync(profile, Check).GetAwaiter().GetResult();
                 else if (group == "configured-simulation") {
                     PolledReceiptProcessingChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     PolledFullGameContractChecks.RunAsync(profile, Check).GetAwaiter().GetResult();

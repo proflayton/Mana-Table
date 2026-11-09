@@ -95,8 +95,11 @@ internal static class PolledManaOutputEngineJourney
             for (int index = 0; index < 2; index++) players[index].BindLobby(await engines[index].LobbyAsync());
             active = Stopwatch.StartNew(); await engines[0].StartAsync(); Guard();
             while (!complete) {
-                Guard(); steps++;
-                foreach (var player in players) await player.ObserveAsync();
+                Guard();
+                if (!await ConnectedPlayerObservationRound.ObserveAsync(players[0], players[1])) {
+                    await Task.Delay(1); continue;
+                }
+                steps++;
                 if (ai.LastFault != null) throw new InvalidDataException("The actual background AI faulted: " + JsonSerializer.Serialize(ai.LastFault));
                 for (int index = 0; index < 2; index++) {
                     if (players[index].Client.State is not { } state) continue;

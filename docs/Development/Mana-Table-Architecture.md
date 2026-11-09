@@ -1339,6 +1339,35 @@ fact. Revocation, acknowledgement and other scoped effects run only for their
 current owner. Recording a returned receipt does not grant it authority to
 replace the current replica.
 
+External decision enrichment uses `ClientSession.TryCaptureCurrentRead` rather
+than treating `Busy == false` as a settled connection. This owner-thread ticket
+is available only after active, queued and retiring operations and negative
+consent have settled. It captures the session's epoch, accepted-publication
+version, successful-operation generation and exact immutable ordinary frame.
+`IsCurrent` validates the complete read context after discovery; a quiet
+operation cannot revive an old ticket by finishing without accepting a frame.
+The ticket is a read-only witness and grants no action permission or transport
+reservation. Foreground work and ordinary polling keep their existing admission
+rules.
+
+`HasSameOperation` checks only open lifetime, epoch and operation generation.
+Saved enrichment combines this lineage with the full current ordinary payload
+before reuse or policy dispatch. An identical ordinary poll can therefore retain
+valid enrichment while any intervening connection operation retires it.
+`HasNewerPublication` separately measures accepted-publication progress; an
+operation's completion is not an ordinary observation. A retired rich attempt
+waits for a subsequent accepted ordinary publication, and a payload mismatch
+also waits for a changed ordinary payload. Each fresh attempt supplies its own
+refresh baseline, so earlier publications cannot satisfy a later retirement.
+
+The connected-player scenarios share `ConnectedPlayerObservationRound` for rich
+discovery. A deferred or retired read leaves the round incomplete while the
+other ordinary owner still pumps. Such a round supplies no comparison, policy
+dispatch or game-step credit. Only bare read-discovery supersession follows this
+path; a failed command or uncertain post-command readback remains fatal. The
+reader commits its queried marker and saved enrichment only after current
+ordinary ownership and the complete rich payload have both been validated.
+
 `CommandExchange` owns the phase of each serial game-command operation,
 independently of diagnostic subscriptions. Only a first Execute-time rejection
 with no earlier applied command is a definite rejection. Read-only observation

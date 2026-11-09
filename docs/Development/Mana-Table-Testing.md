@@ -700,6 +700,30 @@ to be recorded as a redacted discarded publication after Reset. The typed
 completion result must preserve that evidence while withholding stale effects;
 merely dropping the entire completion on an epoch mismatch is insufficient.
 
+`CurrentReadRegression` and the owner-read partial of
+`PolledFullGameContractChecks` exercise the same read-admission contract used by
+the scripted players. Held wire and posted-completion gates keep quiet work
+visually non-busy while preventing rich discovery. Certain quiet rejection with
+no accepted frame must still retire an earlier ticket. Identical frame reaccept,
+epoch changes, audience round trips and Close have distinct controlled checks.
+Saved enrichment retains its operation lineage through an identical ordinary
+poll, but cannot supply policy authority after an intervening operation. These
+checks preserve the existing slow-poll decision and accepted-input deadline
+oracles.
+
+The original-production controls fail because a rich read starts while quiet
+work owns the connection, and because an unsuccessful rich read incorrectly
+marks its ordinary frame as already enriched. The corrected reader publishes no
+enrichment from either case. Retired and mismatched attempts must schedule an
+ordinary poll and converge without a tight rich-read loop or fresh authority
+credit from operation completion. Natural games, the mixed-lobby prefix and the
+consuming-mana journey use one independent observation-round helper: a pending
+owner or bare discovery retirement cannot starve the other audience or count a
+completed step. The existing typed `ReadbackUnknown`, genuine-error and
+45-second accepted-authority controls remain separate and blocking. These
+controlled cases run in the ordinary client and full native `all` groups; focused
+receipts do not replace full-suite or real-engine qualification.
+
 `PublicationOwnershipTest` uses real card queries and offered actions to replace
 same-board metadata during projection. It checks whole-cohort publication,
 bounded abandonment under repeated invalidation, preservation of response

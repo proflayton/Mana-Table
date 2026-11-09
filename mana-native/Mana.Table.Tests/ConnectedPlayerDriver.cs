@@ -54,8 +54,15 @@ internal sealed class ConnectedPlayerDriver : IDisposable
     private readonly AiCausalHistoryReader history = new();
     private AiSeatSession? policy;
     private AiDecisionStamp? rejected;
-    private AutomatedSeatObservation? proposal;
+    private sealed record EnrichedObservation(AutomatedSeatObservation Value, ClientSession.CurrentRead Read);
+    private EnrichedObservation? proposal;
     private GameSnapshot? queried;
+    private sealed record EnrichmentRefresh(ClientSession.CurrentRead Read, GameSnapshot? MismatchedOrdinary)
+    {
+        internal bool WaitsFor(GameSnapshot state) => !Read.HasNewerPublication
+            || MismatchedOrdinary != null && SameOrdinaryPublication(state, MismatchedOrdinary);
+    }
+    private EnrichmentRefresh? enrichmentRefresh;
     private AiDecisionStamp? retired;
     private long nextPoll, audienceGeneration;
     private AiDecisionStamp? acceptedStamp, lastOwnedStamp;
@@ -158,7 +165,7 @@ internal sealed class ConnectedPlayerDriver : IDisposable
                 automaticPasses[continuation.GrantId] = (observedMode,
                     Math.Max(automaticPasses.GetValueOrDefault(continuation.GrantId).Count, continuation.AutomaticPasses));
             Last = new(current.ViewerId, current, DecisionActionDomain.None, new());
-            if (proposal != null && !SameOrdinaryPublication(current, proposal.State)) proposal = null;
+            if (proposal != null && !SameOrdinaryPublication(current, proposal.Value.State)) proposal = null;
         };
     }
 
@@ -182,12 +189,13 @@ internal sealed class ConnectedPlayerDriver : IDisposable
             JsonSerializer.Serialize(source) == JsonSerializer.Serialize(candidate)));
     }
 
-    internal async Task ObserveAsync()
+    internal async Task<bool> ObserveAsync()
     {
         client.Pump();
         evidence.DrainPending();
         if (mode == MixedGameDriveMode.PolledBackground) {
-            try { await ObservePolledAsync(); }
+            bool complete;
+            try { complete = await ObservePolledAsync(); }
             catch (EngineObservationSupersededException) {
                 // Supersession is an ordinary discovery result. Repeated
                 // superseded reads cannot grant an accepted input another wait.
@@ -195,27 +203,32 @@ internal sealed class ConnectedPlayerDriver : IDisposable
                 throw;
             }
             CheckAcceptedProgress();
-            return;
+            return complete;
         }
+        if (client.TryCaptureCurrentRead() is not { } read) { Last = null; proposal = null; return false; }
+        Last = null; proposal = null;
         var own = await owned.ObserveDecisionAsync();
+        if (!read.IsCurrent) { Last = null; RetiredProposals++; return false; }
         if (own == null) throw new InvalidDataException("The connected player lost its match.");
         if (!AiCampaignVisibility.PrivateWindowsAreDisclosed(own.State, own.Semantics, own.Domain))
             throw new InvalidDataException("A connected player received an unauthorized private window.");
         if (!client.Accept(own.State)) throw new InvalidDataException("The player's client rejected its current owned observation.");
         Last = new(own.State.ViewerId, own.State, own.Domain, own.Semantics);
+        proposal = new(Last, read);
         evidence.Observe(Last);
         await history.DrainOwnedAsync(ownedHistory, own, evidence.QualificationEvidence);
+        return true;
     }
 
-    private async Task ObservePolledAsync()
+    private async Task<bool> ObservePolledAsync()
     {
         RequireHealthy();
         client.Pump(); evidence.DrainPending(); RequireHealthy();
         if (passing == ConnectedPlayerPassingMode.ServerAuto) {
             if (client.State is { } automaticState) UpdateServerAuto(automaticState);
         }
-        if (client.Busy || client.Polling) return;
-        if (client.State is not { } state) { PollWhenDue(); return; }
+        if (client.Busy || client.Polling) return false;
+        if (client.State is not { } state) { PollWhenDue(); return false; }
         if (state.Status is "error" || state.Error != null) throw new InvalidDataException(state.Error ?? "Rules error.");
         // The script uses the same standing authority as the shipping client.
         // A routine prompt is never answered by a second, per-prompt owner.
@@ -223,39 +236,58 @@ internal sealed class ConnectedPlayerDriver : IDisposable
             && state.Status == "playing" && state.Viewer is { Eliminated: false } && client.SupportsPriorityContinuation
             && !client.PriorityContinuationReserved) {
             client.EnsurePriorityContinuation(PriorityContinuationMode.NoResponse, phaseStops);
-            if (client.Busy || client.Polling) return;
+            if (client.Busy || client.Polling) return false;
         }
-        if (queried != null && SameOrdinaryPublication(state, queried)) { PollWhenDue(); return; }
-        queried = state;
-        if (state.Status != "playing" || state.Decision == null || state.Viewer?.Eliminated != false || ServerOwnsRoutinePriority(state)) {
+        if (enrichmentRefresh?.WaitsFor(state) == true) {
+            PollWhenDue(); return false;
+        }
+        bool routine = state.Status != "playing" || state.Decision == null || state.Viewer?.Eliminated != false || ServerOwnsRoutinePriority(state);
+        if (queried != null && SameOrdinaryPublication(state, queried)
+            && (routine || proposal?.Read.HasSameOperation == true)) { PollWhenDue(); return true; }
+        if (routine) {
+            queried = state;
             proposal = null;
             Last = new(state.ViewerId, state, DecisionActionDomain.None, new());
             evidence.Observe(Last);
             await history.DrainOwnedAsync(ownedHistory, new(state, DecisionActionDomain.None, new()), evidence.QualificationEvidence);
             PollWhenDue();
-            return;
+            return true;
+        }
+        if (client.TryCaptureCurrentRead() is not { } read || !ReferenceEquals(read.Snapshot, state)) {
+            proposal = null; return false;
         }
         var generation = audienceGeneration;
-        var own = await owned.ObserveDecisionAsync();
+        proposal = null;
+        OwnedDecisionObservation? own;
+        try { own = await owned.ObserveDecisionAsync(); }
+        catch (EngineObservationSupersededException) {
+            enrichmentRefresh = new(read, null); PollWhenDue(); throw;
+        }
         client.Pump(); evidence.DrainPending(); RequireHealthy();
         if (own == null) throw new InvalidDataException("The connected player lost its owned observation.");
         var current = client.State;
-        bool currentOwner = generation == audienceGeneration && current != null && SameOrdinaryPublication(state, current);
+        bool currentOwner = read.IsCurrent && generation == audienceGeneration && current != null && SameOrdinaryPublication(state, current);
         if (!currentOwner || !MatchesOwnedObservation(current!, own.State)) {
             proposal = null; RetiredProposals++;
             LastRetiredOwnedRead = new(state, own, currentOwner ? "rich-payload-mismatch" : "ordinary-owner-changed",
                 generation, audienceGeneration, current?.Revision, current?.BoardRevision, RetiredProposals);
-            return;
+            enrichmentRefresh = new(read, currentOwner ? state : null);
+            PollWhenDue();
+            return false;
         }
         if (!AiCampaignVisibility.PrivateWindowsAreDisclosed(own.State, own.Semantics, own.Domain))
             throw new InvalidDataException("A connected player received an unauthorized private window.");
         var accepted = current!;
-        proposal = new(accepted.ViewerId, accepted, own.Domain, own.Semantics);
-        Last = proposal;
+        enrichmentRefresh = null;
+        queried = accepted;
+        var enriched = new AutomatedSeatObservation(accepted.ViewerId, accepted, own.Domain, own.Semantics);
+        proposal = new(enriched, read);
+        Last = enriched;
         if (waitStatus == ConnectedPlayerWaitStatus.AwaitingAuthority)
             ObserveAcceptedAuthority(new(accepted, domain: own.Domain, semantics: own.Semantics));
-        evidence.Observe(proposal);
+        evidence.Observe(enriched);
         await history.DrainOwnedAsync(ownedHistory, new(accepted, own.Domain, own.Semantics), evidence.QualificationEvidence);
+        return true;
     }
 
     private void PollWhenDue()
@@ -378,11 +410,13 @@ internal sealed class ConnectedPlayerDriver : IDisposable
         client.Pump(); evidence.DrainPending();
         if (mode == MixedGameDriveMode.PolledBackground) RequireHealthy();
         CheckAcceptedProgress();
-        if ((mode == MixedGameDriveMode.PolledBackground ? proposal : Last) is not { } observation) return;
+        if (proposal is not { } enrichment) return;
+        var observation = enrichment.Value;
         var state = observation.State;
         long generation = audienceGeneration;
-        bool Current() => mode != MixedGameDriveMode.PolledBackground || generation == audienceGeneration
-            && !client.Busy && client.State is { } current && SameOrdinaryPublication(state, current);
+        bool Current() => enrichment.Read.HasSameOperation && !client.Busy
+            && client.State is { } current && SameOrdinaryPublication(state, current)
+            && (mode != MixedGameDriveMode.PolledBackground || generation == audienceGeneration);
         if (!Current()) { proposal = null; return; }
         if (mode == MixedGameDriveMode.PolledBackground && ServerOwnsRoutinePriority(state)) return;
         policy ??= new(state.Id, state.ViewerId, evidence.Record(testPolicy ?? new CasualCommanderPolicy()), seed,
@@ -415,8 +449,8 @@ internal sealed class ConnectedPlayerDriver : IDisposable
                     state.ViewerId, card.Key, CardViews.Identity(card)));
                 await PumpUntilAsync(() => client.SourceActions.View.Status != SourceActionStatus.Loading);
                 if (mode == MixedGameDriveMode.PolledBackground) RequireHealthy();
-                if (mode == MixedGameDriveMode.PolledBackground && (!Current()
-                    || client.SourceActions.View.Status == SourceActionStatus.Stale)) {
+                if (!Current() || mode == MixedGameDriveMode.PolledBackground
+                    && client.SourceActions.View.Status == SourceActionStatus.Stale) {
                     policy.Report(ticket, AiExecutionReceipt.Rejected); retired = ticket.Stamp;
                     proposal = null; RetiredProposals++; return;
                 }
