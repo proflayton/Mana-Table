@@ -683,6 +683,23 @@ replies must not change the provider's current authority. Invalid commands do
 not retire a current read; genuinely superseded post-command readbacks still
 fail with typed uncertainty and exactly one command dispatch.
 
+`OperationReservationRegression` holds a quiet reading acknowledgement while a
+foreground gesture and ordinary poll arrive. A valid newer poll must remain
+admissible until the gesture actually owns the lane. Controlled wire and owner
+queue barriers check that a current gesture sends once, changed authority
+declines before transport, and finite policy consent is not consumed while
+waiting. Reset, audience round trips, acknowledgement failure and Close retire
+unsent work without treating an active worker as complete. The original-client
+control fails at the lost-newer-poll assertion; it does not depend on a missing
+new type, a rules RNG seed or a scheduling delay.
+Public connection-work checks require exactly one local pre-dispatch rejection
+and completion, including reentrant notification observers, so retiring a queued
+leave/reconnect request cannot leave a loading activity pending forever.
+The unchanged `ClientDiagnosticRegression` also requires a late command receipt
+to be recorded as a redacted discarded publication after Reset. The typed
+completion result must preserve that evidence while withholding stale effects;
+merely dropping the entire completion on an epoch mismatch is insufficient.
+
 `PublicationOwnershipTest` uses real card queries and offered actions to replace
 same-board metadata during projection. It checks whole-cohort publication,
 bounded abandonment under repeated invalidation, preservation of response

@@ -10,6 +10,26 @@ if (args.Contains("--verify-failure-reporting"))
     throw new InvalidOperationException("Controlled test-runner failure reporting check.");
 int checks = 0;
 void Check(bool value, string description) { if (!value) throw new Exception(description); checks++; Console.WriteLine(description); }
+if (args.Contains("--operation-reservation-checks")) {
+    await OperationReservationRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} operation reservation checks.");
+    return 0;
+}
+if (args.Contains("--operation-reservation-related-checks")) {
+    await OperationReservationRegression.RunAsync(Check);
+    await PriorityObservationRegression.RunAsync(Check);
+    await FiniteYieldLifecycleRegression.RunAsync(Check);
+    await RecoveryScheduleRegression.RunAsync(Check);
+    await FailureNotificationRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} operation reservation and related recovery checks.");
+    return 0;
+}
+if (args.Contains("--operation-receipt-checks")) {
+    await ClientDiagnosticRegression.RunAsync(Check);
+    await OperationReservationRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} operation receipt and reservation checks.");
+    return 0;
+}
 await FailureNotificationRegression.RunAsync(Check);
 var replica = new SessionReplica<GameSnapshot>(s => s.Id, s => s.Revision);
 var state = new GameSnapshot("game", "playing", null, null, 0, 1, "Main phase", "MAIN1", 0, [], [], null, new Decision("decision", new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", false), null, CanAutoPass: false, QuietYieldToken: "", Abilities: []))) { Revision = 8 };
@@ -171,6 +191,7 @@ await CombatAssignmentRegression.RunAsync(Check);
 await FiniteYieldLifecycleRegression.RunAsync(Check);
 await PriorityContinuationRegression.RunAsync(Check);
 await PriorityObservationRegression.RunAsync(Check);
+await OperationReservationRegression.RunAsync(Check);
 await SourceActionSessionRegression.RunAsync(Check);
 await SourceReadDiagnosticRegression.RunAsync(Check);
 ExecutionRegression.Run(Check);

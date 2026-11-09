@@ -37,7 +37,7 @@ public sealed partial class ClientSession
     {
         if (!SupportsPriorityContinuation || Closed || NeedsRecovery || State is not { Status: "playing", Viewer: { Eliminated: false } } state)
             return false;
-        if (pendingManualCommand != null) return true;
+        if (operations.Pending != null) return true;
         if (!Enum.IsDefined(mode) || !PriorityContinuationFacts.Stops(phaseStops)
             || (mode == PriorityContinuationMode.Quiet ? !PriorityContinuationFacts.Identifier(quietYieldToken) : quietYieldToken != ""))
             throw new ArgumentException("A priority policy requires closed own-turn stops and its original quiet token.");
@@ -110,14 +110,13 @@ public sealed partial class ClientSession
 
     private void DrainPriorityContinuation()
     {
-        if (Busy || Polling || Closed || NeedsRecovery) return;
+        if (operations.Occupied || Polling || Closed || NeedsRecovery) return;
         if (priorityRevocations.Values.FirstOrDefault() is { } pending) {
             Run(async context => {
                 var next = await ObservePriorityRevocationAsync(pending, context);
                 if (!PriorityRevoked(next, pending) && time.GetUtcNow() - pending.Started >= TimeSpan.FromSeconds(5))
                     throw new IOException("Priority withdrawal has not completed.");
-                Post(() => {
-                    if (context.Epoch != replica.Epoch) return;
+                return new OwnerCompletion.CurrentOnlyAction(() => {
                     if (PriorityRevoked(next, pending)) RecordPriorityRevocation(next, pending);
                     if (State is { } current && current.Id == next.Id && current.ViewerId == next.ViewerId)
                         Accept(next, context.Epoch!.Value, failureContext: context);
@@ -125,7 +124,7 @@ public sealed partial class ClientSession
             });
             return;
         }
-        if (priorityIntent is not { } intent || priorityInstruction != null || finiteRevocations.Count > 0 || pendingManualCommand != null
+        if (priorityIntent is not { } intent || priorityInstruction != null || finiteRevocations.Count > 0 || operations.Pending != null
             || State is not { PriorityContinuation: { } prior, Decision: { } decision } state
             || state.Id != intent.Game || state.ViewerId != intent.Viewer) return;
         long sequence = checked(Math.Max(prioritySequence, prior.Sequence) + 1);
@@ -144,7 +143,7 @@ public sealed partial class ClientSession
                     throw new IOException("The priority consent receipt does not identify its captured instruction.");
             });
             var phase = exchange.ObservationFailurePhase;
-            Post(() => Accept(next, context.Epoch!.Value, commandObservation: true, observationFailurePhase: phase, failureContext: context));
+            return new OwnerCompletion.ObservedReceipt(next, phase, true);
         });
     }
 

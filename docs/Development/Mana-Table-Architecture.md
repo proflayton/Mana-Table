@@ -1318,6 +1318,27 @@ lease/revision facts. Their ordinary message stays generic; private logs receive
 no raw response, card, player, game, decision or command identifiers from these
 facts. The parameterless exception constructor remains available to older callers.
 
+The session's operation lane reserves both the wire exchange and its posted
+owner-side application. A background reading acknowledgement uses that same
+lane while staying visually quiet. One explicit foreground request can wait
+behind it, with pending/busy feedback; it acquires a new command epoch only
+when the prior owner has applied its result and released the reservation.
+The queued request must still match its current audience, decision and source
+authority before transport. Failed acknowledgements and lifecycle retirement
+decline unsent work without replay. A retired queued connection request also
+finishes its loading activity with a certain local rejection and completion;
+notifications run outside the observation gate while their terminal owner still
+prevents reentrant admission. Ordinary discovery polls remain independent
+readers. Closing includes the acknowledgement's active wire task when waiting
+to withdraw existing consent; retiring callbacks alone does not certify that
+the provider worker has finished.
+Completion distinguishes immutable returned observations from current-only
+bookkeeping. A command receipt still reaches normal admission with its original
+operation context after retirement, producing a redacted discarded-publication
+fact. Revocation, acknowledgement and other scoped effects run only for their
+current owner. Recording a returned receipt does not grant it authority to
+replace the current replica.
+
 `CommandExchange` owns the phase of each serial game-command operation,
 independently of diagnostic subscriptions. Only a first Execute-time rejection
 with no earlier applied command is a definite rejection. Read-only observation

@@ -50,11 +50,12 @@ internal static class PriorityObservationRegression
         await Until(session, () => port.AckStarted.Task.IsCompleted);
         check(session.Submit(new PassPriority(port.State.Id, port.State.Decision!.Id)),
             "An outstanding observer acknowledgement cannot block an explicit gameplay answer");
-        await Until(session, () => !session.Busy);
-        var answered = session.State;
-        port.ReleaseAck.TrySetResult(); await Until(session, () => !session.PriorityObservationInFlight);
-        check(session.State!.Revision == answered!.Revision && session.State.Decision == null && !session.NeedsRecovery,
-            "A late metadata result from the earlier epoch cannot clobber the explicit answer or restore its old prompt");
+        check(session.Busy && session.PriorityObservationInFlight,
+            "An accepted gesture waits behind the acknowledgement through its owner-side application");
+        port.ReleaseAck.TrySetResult(); await Until(session, () => !session.PriorityObservationInFlight && !session.Busy);
+        check(port.Commands.ToArray() is [AcknowledgePriorityObservation, PassPriority]
+                && session.State!.Decision == null && !session.NeedsRecovery,
+            "A quiet acknowledgement applies before the exact queued answer is dispatched once");
         session.Close();
 
         port = new Port(); session = new(port); session.Accept(port.State);
