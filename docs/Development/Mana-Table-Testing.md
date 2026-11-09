@@ -671,6 +671,24 @@ retired discovery remains noncommitting, and definite rejection still requires
 a freshly observed decision. These controlled checks use no rules RNG or full
 game reruns; full-game release qualification remains separate.
 
+Native engine verification artifacts retain compressed private decision journals
+alongside JSON snapshots and logs. The mixed-lobby journal records the typed
+scripted human commands and their targets, including the last accepted action
+before a failure. These authored private observations stay in CI artifacts and
+are not included in public release downloads.
+
+The owned-observation pipe probe also holds ordinary and rich reads across a
+validated command admission. Late newer, null, malformed and server-superseded
+replies must not change the provider's current authority. Invalid commands do
+not retire a current read; genuinely superseded post-command readbacks still
+fail with typed uncertainty and exactly one command dispatch.
+
+`PublicationOwnershipTest` uses real card queries and offered actions to replace
+same-board metadata during projection. It checks whole-cohort publication,
+bounded abandonment under repeated invalidation, preservation of response
+authority, and opaque handles exposed by a nested stack-source read. A failed
+capture must preserve the newer owner without certifying an incomplete table.
+
 `DecisionAdvance` defaults to `TimeProvider.System` and the same350 ms /
 32-command slice. The immediate four-window fixture supplies a controlled
 monotonic clock; explicit349/350 ms checks verify exact prefix return and fresh

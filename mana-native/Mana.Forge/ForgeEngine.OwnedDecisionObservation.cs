@@ -16,35 +16,33 @@ public sealed partial class ForgeEngine : IOwnedDecisionObservations
         var owner = current ?? throw new IOException("The engine is not running");
         if (!owner.OwnedDecisionAvailable)
             throw new NotSupportedException("This provider does not expose owned decision observations.");
-        long generation, audience;
-        GameSnapshot? anchor;
+        long generation;
+        ForgeCommandScope.ObservationLease read;
         lock (worldScopeGate) {
-            generation = worldGeneration; audience = owner.Commands.AudienceGeneration; anchor = owner.Commands.ObservedState;
+            generation = worldGeneration; read = owner.Commands.CaptureRead();
         }
         JsonElement raw;
         try { raw = await Request("matchDecisionObservation", owner.PrivateActionFacesAvailable ? new { privateActionFaces = true } : null,
             cancellation: cancellation); }
         catch (EngineObservationSupersededException) {
-            owner.Commands.ClearIfCurrent(anchor, audience);
+            owner.Commands.ClearIfCurrent(read);
             throw;
         }
         lock (worldScopeGate) {
             cancellation.ThrowIfCancellationRequested();
             if (current != owner || owner.Failure != null || worldGeneration != generation)
                 throw new IOException("The decision observation connection or match changed.");
-            if (owner.Commands.AudienceGeneration != audience) throw new EngineObservationSupersededException();
+            owner.Commands.EnsureCurrentRead(read, raw.ValueKind == JsonValueKind.Null);
             OwnedDecisionObservation? result;
             try { result = DecodeOwnedDecisionObservation(raw, owner.CertifiedUndoAvailable); }
             catch {
                 // A malformed current observation withdraws its authority. An
                 // old read can never clear a newly bound audience's scope.
-                owner.Commands.ClearIfCurrent(anchor, audience);
+                owner.Commands.ClearIfCurrent(read);
                 throw;
             }
             cancellation.ThrowIfCancellationRequested();
-            bool admitted = result == null ? owner.Commands.ClearIfCurrent(anchor, audience)
-                : owner.Commands.Observe(result.State, audience);
-            if (!admitted) throw new EngineObservationSupersededException();
+            owner.Commands.AdmitRead(read, result?.State);
             return result;
         }
     }

@@ -381,6 +381,7 @@ jobs:
           path: |
             dist/*-checks/**/*.json
             dist/*-checks/**/*.log
+            dist/*-checks/**/*.jsonl.gz
             dist/*-checks/**/whole-seat-ai-public.jsonl
             dist/ci-inputs/ci-engine-manifest.json
             dist/ci-inputs/ci-harness-manifest.json

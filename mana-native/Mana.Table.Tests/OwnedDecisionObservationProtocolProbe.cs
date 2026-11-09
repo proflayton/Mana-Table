@@ -19,6 +19,7 @@ internal static partial class OwnedDecisionObservationProtocolProbe
         int index = Array.IndexOf(arguments, Marker);
         string mode = arguments[index + 1], directory = Path.GetDirectoryName(arguments[index + 2])!;
         Directory.CreateDirectory(directory);
+        if (mode.StartsWith("publication-admission-", StringComparison.Ordinal)) return ServePublicationAdmission(mode, directory);
         if (mode.StartsWith("source-read-", StringComparison.Ordinal)) return ServeSourceReads(mode, directory);
         var capabilities = ForgeProtocol.RequiredCapabilities.Add("automated-seats");
         if (mode != "legacy") capabilities = capabilities.Add("owned-decision-observation");
@@ -149,6 +150,7 @@ internal static partial class OwnedDecisionObservationProtocolProbe
     internal static async Task RunAsync(string profile, Action<bool, string> check)
     {
         CheckWire(check);
+        await CheckPublicationAdmissionAsync(profile, check);
         await CheckSourceReadsAsync(profile, check);
         await CheckAutomatedReadsAsync(profile, check);
         await CheckOrdinaryReadsAsync(profile, check);

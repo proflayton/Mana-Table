@@ -40,6 +40,9 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     private final Map<Integer, EncounterContext.Participant> encounterParticipants = new LinkedHashMap<>();
     private volatile boolean encounterRetirementAllowed;
     private final ThreadLocal<MatchSession> dialogOwner = new ThreadLocal<>();
+    static final class ViewPublicationSupersededException extends IllegalStateException {
+        ViewPublicationSupersededException() { super("View ownership changed during both bounded cohort captures"); }
+    }
     private long boardRevision;
     private final java.util.concurrent.atomic.AtomicLong publicStateGeneration = new java.util.concurrent.atomic.AtomicLong();
     private long publishedStateGeneration = -1;
@@ -313,35 +316,57 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
                 game.getTracker().flushForCommittedObservation();
             else if (game.getTracker().isFrozen()) return;
             observeStackChoices();
-            long revision = ++boardRevision;
             boolean publicationClosed = closed;
-            // Rules rollback can restore a card directly to a hidden zone
-            // without a movement event. Revoke every audience's previous view
-            // before any seat allocates IDs for this publication, regardless
-            // of which seat owns the newly private occurrence.
-            for (var seat : seats.values()) seat.refreshVisibility();
-            for (var seat : seats.values()) {
-                if (!seat.publishView(revision) || !currentPublication(revision)) return;
-            }
-            refreshDecisionState();
-            if (!currentPublication(revision)) return;
-            publishedStateGeneration = publicStateGeneration.get();
-            publishedPriorityBoundary = priorityBoundary();
-            if (automatedOnly) {
-                var spectator = SpectatorObservation.project(this, revision, spectatorError);
-                if (currentPublication(revision)) spectatorState = spectator;
-            }
-            if (!currentPublication(revision)) return;
-            // Certify the whole audience cohort before any observer can publish
-            // reentrantly or acknowledge a frame. Partial builders grant no credit.
-            for (var seat : seats.values()) seat.commitPublication(revision);
-            // Observers can inspect every audience or publish reentrantly. No
-            // normal completion may expose a partially projected table, and a
-            // newer publication owns all remaining callbacks and queued passes.
-            BooleanSupplier current = () -> currentPublication(revision) && !faulted && closed == publicationClosed;
-            for (var seat : seats.values()) {
-                if (!current.getAsBoolean()) return;
-                seat.completePublication(current);
+            // A metadata writer may supersede a reserved view without moving
+            // the rules board. Allow one fresh capture, never recursive retries.
+            for (int attempt = 0; attempt < 2; attempt++) {
+                long revision = ++boardRevision;
+                // Rules rollback can restore a card directly to a hidden zone
+                // without a movement event. Reconcile all audience visibility
+                // before allocating any occurrence for this candidate cohort.
+                for (var seat : seats.values()) seat.refreshVisibility();
+                var prepared = new ArrayList<MatchSession.PreparedView>();
+                boolean incomplete = false, ownershipSuperseded = false;
+                for (var seat : seats.values()) {
+                    var capture = seat.prepareView(revision);
+                    if (!currentPublication(revision)) return;
+                    if (capture.view() == null) {
+                        incomplete = true; ownershipSuperseded = capture.ownershipSuperseded(); break;
+                    }
+                    prepared.add(capture.view());
+                }
+                var spectator = !incomplete && automatedOnly ? SpectatorObservation.project(this, revision, spectatorError) : null;
+                if (!currentPublication(revision)) return;
+                // A later seat or public projection can replace an earlier
+                // seat's metadata. Validate every owner after every query.
+                for (var capture : prepared) if (!capture.current()) {
+                    incomplete = true; ownershipSuperseded |= capture.ownershipSuperseded();
+                }
+                if (incomplete) {
+                    if (!ownershipSuperseded) return;
+                    if (attempt == 0) continue;
+                    // No prepared cut has been installed. The prior coherent
+                    // views and their response domains remain intact, including
+                    // accepted newer metadata, without revision rollback.
+                    throw new ViewPublicationSupersededException();
+                }
+                // No callback occurs between final validation and installing
+                // every immutable view plus its response/inspection authority.
+                for (var capture : prepared) capture.commit();
+                if (spectator != null) spectatorState = spectator;
+                refreshDecisionState();
+                if (!currentPublication(revision)) return;
+                publishedStateGeneration = publicStateGeneration.get();
+                publishedPriorityBoundary = priorityBoundary();
+                // Certify the entire installed cohort before an observer may
+                // publish reentrantly or acknowledge its delivery.
+                for (var seat : seats.values()) seat.commitPublication(revision);
+                BooleanSupplier current = () -> currentPublication(revision) && !faulted && closed == publicationClosed;
+                for (var seat : seats.values()) {
+                    if (!current.getAsBoolean()) return;
+                    seat.completePublication(current);
+                }
+                return;
             }
         } });
     }
@@ -349,6 +374,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     /** Called inside the rules-state/table boundary. A reentrant publication
      * supersedes the whole earlier cohort, including its public observer. */
     boolean currentPublication(long revision) { return boardRevision == revision; }
+    long publicationGeneration() { return boardRevision; }
 
     /** Rules generation excludes only the routine player-priority notification.
      * Every other engine event conservatively requires a real publication. */
@@ -380,15 +406,27 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     /** Public decision ownership only; a seat's options and prompt remain private. */
     void refreshDecisionState() {
         synchronized (gate) {
+            long publication = boardRevision;
             observeStackChoices();
             var decisions = seats.values().stream().map(MatchSession::publicDecision).filter(Objects::nonNull).toList();
             Integer owner = decisions.size() == 1 ? decisions.get(0).ownerId() : null;
             String actionClass = decisions.isEmpty() ? "resolving" : decisions.size() == 1 ? decisions.get(0).actionClass() : "simultaneous";
             var inspection = publicInspectionContext(owner, actionClass);
             var choice = publicChoiceContext(owner, actionClass);
-            for (var seat : seats.values()) seat.updatePublicDecision(owner, actionClass, inspection, choice);
-            for (var seat : seats.values()) seat.observeTempo();
+            for (var seat : seats.values()) {
+                if (!decisionPublicationCurrent(publication, decisions)) return;
+                seat.updatePublicDecision(owner, actionClass, inspection, choice);
+            }
+            for (var seat : seats.values()) {
+                if (!decisionPublicationCurrent(publication, decisions)) return;
+                seat.observeTempo();
+            }
         }
+    }
+
+    private boolean decisionPublicationCurrent(long publication, List<MatchSession.PublicDecision> decisions) {
+        return currentPublication(publication)
+                && seats.values().stream().map(MatchSession::publicDecision).filter(Objects::nonNull).toList().equals(decisions);
     }
 
     private MatchPresence.Context publicInspectionContext(Integer owner, String actionClass) {

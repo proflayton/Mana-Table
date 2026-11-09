@@ -380,13 +380,28 @@ funding witness; command admission and execution still validate live rules state
 The existing table board generation fences publication too: a superseded outer
 publication cannot overwrite a newer seat capture or finish an older spectator
 cohort. Rejecting a superseded AI read preserves the newer published capture.
+Seat publication also owns its reserved view revision and previous committed
+view. Same-board metadata can supersede that owner without changing the rules
+board. A detached prepared view holds the replacement snapshot, response handles,
+decision capture and inspection/choice domains until its final ownership check.
+That owner includes the handle allocation frontier: a nested read which exposes
+a new opaque action handle cannot have it dropped or reused by an older builder.
+The table prepares every seat and the spectator before committing any audience;
+the commit copies staged values and performs no rules queries or callbacks.
+Metadata invalidation permits one fresh nonrecursive whole-cohort capture. A
+second loss fails closed while preserving the prior coherent views and their
+response authority, including the newer nested metadata. It does not restore
+old snapshots over a newer owner or roll back rules state.
+Metadata-only writers recheck their owner after callback-capable stack queries,
+and decision refresh stops before touching later seats when its board or decision
+cohort changes. These are internal ownership fences; the wire actions and saved
+data formats do not change.
 Normal publication observers and finite-stack pass scheduling run only after all
 seat views, public decision metadata and the spectator have completed. Each
 callback rechecks that publication: a reentrant newer publication supersedes the
 remaining older callbacks and passes. A seat which cannot commit its capture
-does not announce a completed table. This completion boundary does not stage or
-roll back audience writes; arbitrary independent polls can still span publications.
-Lifecycle fault and closure notifications remain separate.
+does not announce a completed table. Independent polls can still span separate
+committed publications. Lifecycle fault and closure notifications remain separate.
 A stopped or replaced controller input retires its question without withholding
 that audience's fresh passive board and matching execution frame. Source,
 selection and publication guards share the actual queue/proxy and active-input
@@ -1289,6 +1304,19 @@ poll. The current replica and its synchronization timestamp remain unchanged;
 the next ordinary poll can discover fresh authority. A command or post-command
 readback still uses the normal uncertain-receipt failure path. Catching a safe
 read at this owner must not turn a possibly executed command into a retry.
+
+The Forge provider also fences its own command-authority cache. An ordinary or
+owned read captures its audience, command-admission sequence and observed anchor
+as one immutable lease. Validated command mapping advances that sequence under
+the same gate. An earlier read can no longer replace or clear authority after
+that admission, including when its reply is null or malformed. Current reads
+retain the revision and world/audience guards. This protects provider admission
+independently of the client's callback epoch and does not retry commands or
+substitute a cached rich view for an ordinary observation.
+Superseded-observation diagnostics can retain a closed reason and numeric
+lease/revision facts. Their ordinary message stays generic; private logs receive
+no raw response, card, player, game, decision or command identifiers from these
+facts. The parameterless exception constructor remains available to older callers.
 
 `CommandExchange` owns the phase of each serial game-command operation,
 independently of diagnostic subscriptions. Only a first Execute-time rejection
