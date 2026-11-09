@@ -161,20 +161,26 @@ internal static partial class PolledFullGameContractChecks
         var initial = Priority();
         // Lifecycle admission is a ClientSession contract. The connected-game
         // driver intentionally rejects Reset as a lost live match.
-        var client = new ClientSession(new Port(initial, initial));
-        var bootstrap = client.TryCaptureCurrentRead();
+        var port = new Port(initial, initial);
+        var client = new ClientSession(port);
+        async Task<ClientSession.CurrentRead?> Read() => (await client.ReadCurrentDecisionAsync(port)) switch {
+            ClientSession.CurrentReadResult.Current current => current.Read,
+            ClientSession.CurrentReadResult.Deferred => null,
+            _ => throw new InvalidOperationException("An immediate lifecycle control read unexpectedly retired.")
+        };
+        var bootstrap = await Read();
         check(bootstrap is { Snapshot: null, IsCurrent: true },
             "The owner read stamp permits an unbound manual bootstrap without granting a command");
         client.Accept(initial);
         check(!bootstrap!.IsCurrent, "The first accepted publication retires the unbound read stamp");
-        var same = client.TryCaptureCurrentRead(); client.Accept(initial);
-        check(same is { IsCurrent: false } && client.TryCaptureCurrentRead() is { IsCurrent: true },
+        var same = await Read(); client.Accept(initial);
+        check(same is { IsCurrent: false } && await Read() is { IsCurrent: true },
             "Reaccepting an identical snapshot retires a read stamp even when its reference and payload stay equal");
-        var old = client.TryCaptureCurrentRead(); client.Reset();
+        var old = await Read(); client.Reset();
         check(old is { IsCurrent: false }, "Reset and equal-frame restoration cannot revive a previous read epoch");
         var resetFrame = initial with { Id = initial.Id + "-fresh-world" };
         check(client.Accept(resetFrame), "A reset read fixture binds a new game without resurrecting its retired game identity");
-        var audience = client.TryCaptureCurrentRead();
+        var audience = await Read();
         bool away = client.Accept(resetFrame with { ViewerId = 1, Revision = initial.Revision + 1, Decision = null });
         bool back = client.Accept(resetFrame with { Revision = initial.Revision + 2 });
         check(away && back && audience is { IsCurrent: false }, "Returning to an earlier viewer cannot revive an ABA-retired read stamp");
@@ -182,15 +188,16 @@ internal static partial class PolledFullGameContractChecks
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         client.Run(async () => { entered.TrySetResult(); await release.Task; });
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        check(client.TryCaptureCurrentRead() == null,
+        int readsBeforeDeferred = port.OwnedReads;
+        check(await Read() == null && port.OwnedReads == readsBeforeDeferred,
             "General foreground connection work excludes current-read admission independently of command kind");
         release.TrySetResult();
         await client.WaitForQueuedWorkAsync().WaitAsync(TimeSpan.FromSeconds(5));
-        check(client.TryCaptureCurrentRead() == null,
+        check(await Read() == null && port.OwnedReads == readsBeforeDeferred,
             "A returned foreground worker cannot grant a read before its posted completion releases ownership");
         client.Pump();
-        var closed = client.TryCaptureCurrentRead(); client.Close();
-        check(closed is { IsCurrent: false } && client.TryCaptureCurrentRead() == null,
+        var closed = await Read(); client.Close();
+        check(closed is { IsCurrent: false } && await Read() == null,
             "Close retires captured read stamps and refuses new admissions without transport work");
     }
 

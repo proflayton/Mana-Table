@@ -1339,16 +1339,25 @@ fact. Revocation, acknowledgement and other scoped effects run only for their
 current owner. Recording a returned receipt does not grant it authority to
 replace the current replica.
 
-External decision enrichment uses `ClientSession.TryCaptureCurrentRead` rather
-than treating `Busy == false` as a settled connection. This owner-thread ticket
-is available only after active, queued and retiring operations and negative
-consent have settled. It captures the session's epoch, accepted-publication
+External decision enrichment uses `ClientSession.ReadCurrentDecisionAsync` rather
+than treating `Busy == false` as a settled connection. The session admits the
+read only after active, queued and retiring operations and negative consent have
+settled, immediately invokes the supplied discovery port, and validates ownership
+after completion. Callers cannot separate capture from invocation. Closed
+Deferred, Retired and Current results distinguish work not started, obsolete work
+and a validated result. Bare discovery supersession retains its original typed
+cause; provider faults and uncertain command failures remain errors.
+Retired means the captured context is no longer current; it does not certify
+session health. The scripted owner checks recovery before interpreting a result.
+
+The result's opaque witness captures the session's epoch, accepted-publication
 version, successful-operation generation and exact immutable ordinary frame.
-`IsCurrent` validates the complete read context after discovery; a quiet
-operation cannot revive an old ticket by finishing without accepting a frame.
-The ticket is a read-only witness and grants no action permission or transport
-reservation. Foreground work and ordinary polling keep their existing admission
-rules.
+Polled sessions apply queued completions before validating the read; external
+delivery retains its existing pump boundary. A quiet operation cannot revive an
+old witness by finishing without accepting a frame. The witness grants no action
+permission or transport reservation. Foreground work and ordinary polling keep
+their existing admission rules; callers still validate the returned payload and
+recheck current ownership after subsequent asynchronous work.
 
 `HasSameOperation` checks only open lifetime, epoch and operation generation.
 Saved enrichment combines this lineage with the full current ordinary payload

@@ -10,27 +10,31 @@ internal static class CurrentReadRegression
     {
         var port = new Port(); var client = new ClientSession(port);
         client.SetPriorityObservationReady(false); client.Accept(port.State);
-        var prior = client.TryCaptureCurrentRead();
-        check(prior is { IsCurrent: true }, "An idle owner captures current read-only publication ownership");
+        var prior = await CurrentWitness(client, port);
+        check(prior is { IsCurrent: true } && port.OwnedReads == 1, "An idle owner captures current read-only publication ownership");
         client.SetPriorityObservationReady(true);
         try {
             await port.AckEntered.Task.WaitAsync(Guard);
-            check(!client.Busy && client.PriorityObservationInFlight && client.TryCaptureCurrentRead() == null && !prior!.IsCurrent,
+            check(!client.Busy && client.PriorityObservationInFlight && await CurrentWitness(client, port) == null
+                    && port.OwnedReads == 1 && !prior!.IsCurrent,
                 "Non-Busy metadata ownership excludes read admission and captured stamps until its complete owner release");
             var newer = port.State with { Revision = 11, BoardRevision = 2,
                 PriorityObservation = port.State.PriorityObservation! with { BoardRevision = 2 } };
             port.State = newer; client.Poll(false, _ => { });
             await client.WaitForQueuedWorkAsync().WaitAsync(Guard); client.Pump();
-            check(ReferenceEquals(client.State, newer) && client.PriorityObservationInFlight && client.TryCaptureCurrentRead() == null,
+            check(ReferenceEquals(client.State, newer) && client.PriorityObservationInFlight
+                    && await CurrentWitness(client, port) == null && port.OwnedReads == 1,
                 "Ordinary polling remains independent and admits newer authority while the metadata read gate remains closed");
-            check(client.Submit(new PassPriority(newer.Id, newer.Decision!.Id)) && client.TryCaptureCurrentRead() == null,
+            check(client.Submit(new PassPriority(newer.Id, newer.Decision!.Id))
+                    && await CurrentWitness(client, port) == null && port.OwnedReads == 1,
                 "A queued explicit gesture retains its existing Busy feedback and excludes observation admission");
             port.ReleaseAck.TrySetResult();
             await client.WaitForQueuedWorkAsync().WaitAsync(Guard);
-            check(client.TryCaptureCurrentRead() == null && port.Commands.ToArray() is [AcknowledgePriorityObservation],
+            check(await CurrentWitness(client, port) == null && port.OwnedReads == 1
+                    && port.Commands.ToArray() is [AcknowledgePriorityObservation],
                 "Returned wire work cannot release read or queued gesture ownership before posted application");
             await Settle(client, () => !client.Busy && !client.PriorityObservationInFlight);
-            check(client.TryCaptureCurrentRead() is { IsCurrent: true } && !prior!.IsCurrent
+            check(await CurrentWitness(client, port) is { IsCurrent: true } && port.OwnedReads == 2 && !prior!.IsCurrent
                     && port.Commands.ToArray() is [AcknowledgePriorityObservation, PassPriority],
                 "Exactly one queued gesture settles before a fresh read stamp is available, without reviving its predecessor");
         } finally { port.ReleaseAck.TrySetResult(); client.Close(); }
@@ -41,11 +45,13 @@ internal static class CurrentReadRegression
             PriorityContinuation = new(1, "prior-owner", PriorityContinuationMode.NoResponse,
                 PriorityContinuationStatus.Active, "no-response", 0, []) };
         orphan.Accept(orphanPort.State);
-        check(!orphan.Busy && orphanPort.Commands.IsEmpty && orphan.TryCaptureCurrentRead() == null,
+        check(!orphan.Busy && orphanPort.Commands.IsEmpty && await CurrentWitness(orphan, orphanPort) == null
+                && orphanPort.OwnedReads == 0,
             "Queued negative consent excludes current reads before any withdrawal worker is dispatched");
         try {
             orphan.Pump(); await Settle(orphan, () => !orphan.Busy && !orphan.PriorityContinuationWithdrawing);
-            check(orphan.TryCaptureCurrentRead() is { IsCurrent: true } && orphanPort.Commands.ToArray() is [RevokePriorityContinuation],
+            check(await CurrentWitness(orphan, orphanPort) is { IsCurrent: true } && orphanPort.OwnedReads == 1
+                    && orphanPort.Commands.ToArray() is [RevokePriorityContinuation],
                 "Read readiness returns only after the exact prior-owner withdrawal is applied through its ordinary lane");
         } finally { orphan.Close(); }
         await FailedQuietOperationDoesNotRevive(check);
@@ -55,7 +61,7 @@ internal static class CurrentReadRegression
     {
         var port = new Port { FailAck = true }; var client = new ClientSession(port);
         client.SetPriorityObservationReady(false); client.Accept(port.State);
-        var captured = client.TryCaptureCurrentRead()!; client.SetPriorityObservationReady(true);
+        var captured = (await CurrentWitness(client, port))!; client.SetPriorityObservationReady(true);
         try {
             await port.AckEntered.Task.WaitAsync(Guard);
             check(!captured.IsCurrent && !captured.HasSameOperation && !captured.HasNewerPublication,
@@ -67,10 +73,18 @@ internal static class CurrentReadRegression
             client.SetPriorityObservationReady(false);
             client.Poll(false, _ => { });
             await client.WaitForQueuedWorkAsync().WaitAsync(Guard); client.Pump();
-            check(captured.HasNewerPublication && !captured.IsCurrent && client.TryCaptureCurrentRead() is { IsCurrent: true },
+            check(captured.HasNewerPublication && !captured.IsCurrent
+                    && await CurrentWitness(client, port) is { IsCurrent: true } && port.OwnedReads == 2,
                 "An accepted ordinary frame separately unlocks fresh discovery after the failed operation and never revives the old ticket");
         } finally { port.ReleaseAck.TrySetResult(); client.Close(); }
     }
+
+    private static async Task<ClientSession.CurrentRead?> CurrentWitness(ClientSession client, IOwnedDecisionObservations source)
+        => (await client.ReadCurrentDecisionAsync(source)) switch {
+            ClientSession.CurrentReadResult.Current current => current.Read,
+            ClientSession.CurrentReadResult.Deferred => null,
+            _ => throw new InvalidOperationException("An immediate control read unexpectedly retired.")
+        };
 
     private static async Task Settle(ClientSession client, Func<bool> done)
     {
@@ -81,7 +95,7 @@ internal static class CurrentReadRegression
         throw new InvalidOperationException("The bounded current-read owner did not settle.");
     }
 
-    private sealed class Port : IMatchConnection
+    private sealed class Port : IMatchConnection, IOwnedDecisionObservations
     {
         internal GameSnapshot State = new("read-admission", "playing", null, null, 0, 1, "Main phase", "MAIN1", 0,
             [new(0, "You", 40, true, false, ImmutableDictionary<string, int>.Empty, [])], [], null,
@@ -94,8 +108,14 @@ internal static class CurrentReadRegression
         internal readonly TaskCompletionSource AckEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal readonly TaskCompletionSource ReleaseAck = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal bool FailAck;
+        internal int OwnedReads;
         public bool SupportsPriorityContinuation => true;
         public Task<GameSnapshot?> ObserveAsync() => Task.FromResult<GameSnapshot?>(State);
+        public Task<OwnedDecisionObservation?> ObserveDecisionAsync(CancellationToken cancellation = default)
+        {
+            cancellation.ThrowIfCancellationRequested(); OwnedReads++;
+            return Task.FromResult<OwnedDecisionObservation?>(new(State, DecisionActionDomain.None, new()));
+        }
         public Task ConcedeAsync(string id) => throw new InvalidOperationException("No synthetic concession.");
         public async Task ExecuteAsync(GameCommand command)
         {

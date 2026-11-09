@@ -139,3 +139,86 @@ See the [architecture ownership map](Mana-Table-Architecture.md) and
 [test commands and evidence scopes](Mana-Table-Testing.md). Future changes should
 state the owner, lifecycle invalidation and observable invariant they strengthen,
 and add a failing sequence to the nearest existing journey.
+
+## Multiplayer stabilization execution: 9 November 2026
+
+This is the bounded execution plan for PR #130, not a release announcement.
+The product goal is a complicated Commander game with two human players and two
+AI seats, from a synchronized lobby through completion. Automated scripted seats
+cannot establish human usability. The existing encounter roadmap's M1/M2
+acceptance remains separate.
+
+### Pods, work and handoffs
+
+| Pod | Owned work | Deliverable and exit | Handoff |
+| --- | --- | --- | --- |
+| 1: Lifecycle contracts | C1: name each owner, authority and invalidation rule. C2: map every changed file to a contract. C3: independently review boundary changes. | The contract below and scope audit are complete. The four-file boundary consolidation passed independent source review. | Pod 2 implements only accepted contract changes; Pod 3 derives observable checks. |
+| 2: Boundary implementation | B1: inspect all rich-read callers. B2: move admission, immediate invocation and completion validation into the existing session owner. B3: preserve cache and policy checks after awaits. | B1/B2/B3 are implemented, independently reviewed and covered by the passing normal client/native suites. Real-engine qualification remains pending. | Root freezes the source after Pod 1 review, then admits validation. |
+| 3: Validation | V1: bind each contract to existing checks. V2: validate the smallest failing real-engine payment journey. V3: assess exact-candidate campaign and presentation evidence. | V1, dependency reuse and normal client/native suites passed. V2 is next; V3 remains pending. | Root admits a candidate for upload only after the local integration result. |
+| Integration: Root | I1: maintain this plan and resolve design/scope decisions. I2: integrate, commit and upload one candidate. I3: review required PR/master checks and the published package. | A short release argument linking each guarantee to its evidence, with explicit remaining limits. | Human review receives the exact playable candidate; findings return to the relevant contract. |
+
+Only root changes Git state, remote PR/release state and the canonical handoff.
+Pods own disjoint source files; shared documentation stays with root. A pod
+reports a blocker at its boundary instead of expanding into another workstream.
+
+### Lifecycle contract
+
+| Owner | Authority and lifetime | Required outcome | Existing verification owner |
+| --- | --- | --- | --- |
+| Java `MatchTable` / `MatchSession` | One rules publication and its entire audience cohort. A newer publication retires preparation. | Prepare all audience views before callback-free commit; retain the last coherent cohort when preparation loses ownership. Never restore old handles over newer state. | `PublicationOwnershipTest` and existing publication checks. |
+| `ForgeCommandScope` | A read lease binds audience, command-admission generation and anchor. | An obsolete read cannot install or clear newer authority. Bare discovery retirement supplies no action authority; uncertain post-command readback remains recovery, without replay. | `OwnedDecisionObservationProtocolProbe.PublicationAdmission`. |
+| `ClientSession` operation lane | A command or quiet acknowledgement owns both its wire exchange and owner-side receipt application. | Quiet work can remain visually non-busy while occupying the connection. Unsent work terminates once; late receipts remain discarded evidence; unknown execution cannot become permission to retry. | `OperationReservationRegression`, diagnostics and priority checks. |
+| `ClientSession` read boundary | A settled lane and exact accepted ordinary frame admit one read attempt. | The owner invokes discovery immediately and validates its captured context at completion. Closed Deferred/Retired/Current outcomes replace the caller's optional capture/invoke/check sequence. No asynchronous lock or second replica. | `CurrentReadRegression` and owner-read controls. |
+| `ConnectedPlayerDriver` | Validated enrichment plus the current ordinary audience and complete payload. | Cache reuse requires unchanged operation lineage and matching payload; policy/source awaits require revalidation. Identical polls may preserve valid enrichment. | Lineage, equal-reaccept, mismatch-convergence and manual-source controls. |
+| Observation round | Two independent ordinary owners. | Both audiences receive service. Incomplete discovery grants no policy, comparison or completed-step credit. Genuine command uncertainty and existing progress deadlines remain blocking. | Shared round controls, mixed campaign, post-concession lobby and consuming-mana journey. |
+
+The latest discovery failure occurred in the scripted ordinary-player driver;
+it does not itself establish a shipping AI strategy or mana-rules defect.
+Earlier failing runs did not retain every competing command or raw response.
+Reproduced boundary defects do not retrospectively identify those missing events.
+
+### Scope and decisions
+
+The audited PR consists of server publication (3 files), provider authority and
+diagnostics (7), client lifecycle (10), scripted observation and verification (8),
+and supporting workflow/documentation (3). This plan adds the existing audit
+document to that scope. No unrelated source change requires a separate split.
+The accepted implementation task closes the optional read protocol inside the
+existing session owner; it does not introduce another coordinator, game-state
+model, command retry, provider interface, wire schema or timer.
+
+AI policy, card-catalog optimization, rendering and new UX features wait for this
+candidate's stabilization. A newly found issue enters this change only when it
+violates one of the declared contracts; other findings become separate work.
+
+### Ordered acceptance and stop conditions
+
+1. **Contract and scope:** Pods 1/2 agree on the owner and the smallest enforceable
+   interface. Root accepts the scope before implementation; Pod 1 reviews the
+   resulting diff before the source freezes.
+2. **Controlled boundaries:** Run the normal client and native suites once for the
+   frozen implementation, including the affected existing negative and positive
+   controls. Use focused reruns only when a failure needs investigation. Preserve
+   the original failure. Test totals do not replace the named invariant.
+3. **Smallest real-engine witness:** Build a source-bound package and harness,
+   then run the existing consuming-source mana journey once. It must show the
+   actual cast, sacrifice, tap, empty pool and typed payment history, coherent
+   ordinary owners, preserved privacy and clean disposal. Keep its 90-second
+   total and 45-second active limits.
+4. **One fixed candidate:** Require its own PR checks, including applicable iOS;
+   then the actual merged master's checks and package verification. Keep the four
+   natural games' 180-second/160-turn limits, 110-trigger/four-view workload,
+   schema4 admission and all current safety/progress gates. Expected read
+   retirement, repeated discovery churn and command uncertainty must be reported
+   separately; no gate is silently loosened to make a run green.
+5. **Player acceptance:** Review an actual two-human/two-AI journey for passing,
+   resources, required choices and readable resolution. Record the exact candidate
+   and feedback separately from automation; this remains pending until observed.
+
+Any failed effect assertion, ownership violation, uncertainty, stalled progress
+or cleanup failure stops that validation attempt. Classify the failing contract
+and inspect the first evidence before changing code. Do not rerun unchanged games,
+reroll randomness, expand deadlines, or add broad scaffolding around the failure.
+Use supported test/package entrypoints and the already reviewed orchestration;
+do not add a new proof wrapper for each result. Consolidating that tooling is a
+separate follow-up after this product boundary is stable.

@@ -1,12 +1,54 @@
+using Mana.Contracts;
+
 namespace Mana.Client;
 
 public sealed partial class ClientSession
 {
-    // This is owner-thread admission, not an exclusive asynchronous lock.
-    // Callers invoke their read immediately, without Pump/await between capture
-    // and invocation, and do not concurrently pump this owner while awaiting it.
+    // Owner-thread discovery, not an exclusive asynchronous lock. Capture and
+    // source invocation cannot be separated by a caller's Pump or await.
     // Ordinary Poll remains independent and may retire the captured publication.
-    public CurrentRead? TryCaptureCurrentRead()
+    // Outcomes describe only read ownership. Retired does not classify or clear
+    // session recovery; callers must surface that health before using a result.
+    public async Task<CurrentReadResult> ReadCurrentDecisionAsync(IOwnedDecisionObservations source,
+        CancellationToken cancellation = default)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        cancellation.ThrowIfCancellationRequested();
+        if (TryCaptureCurrentRead() is not { } read) return new CurrentReadResult.Deferred();
+        OwnedDecisionObservation? observation;
+        try { observation = await source.ObserveDecisionAsync(cancellation); }
+        catch (EngineObservationSupersededException error) { return new CurrentReadResult.Retired(read, null, error); }
+        // Polled owners apply already-posted completions before validating the
+        // returned read. External producers retain their existing pump boundary.
+        if (ObservationDelivery == ObservationDeliveryMode.Polled) Pump();
+        return read.IsCurrent ? new CurrentReadResult.Current(read, observation)
+            : new CurrentReadResult.Retired(read, observation, null);
+    }
+
+    public abstract class CurrentReadResult
+    {
+        private CurrentReadResult() { }
+        public sealed class Deferred : CurrentReadResult
+        {
+            internal Deferred() { }
+        }
+        public sealed class Retired : CurrentReadResult
+        {
+            internal Retired(CurrentRead read, OwnedDecisionObservation? observation, EngineObservationSupersededException? superseded)
+                => (Read, Observation, Superseded) = (read, observation, superseded);
+            public CurrentRead Read { get; }
+            public OwnedDecisionObservation? Observation { get; }
+            public EngineObservationSupersededException? Superseded { get; }
+        }
+        public sealed class Current : CurrentReadResult
+        {
+            internal Current(CurrentRead read, OwnedDecisionObservation? observation) => (Read, Observation) = (read, observation);
+            public CurrentRead Read { get; }
+            public OwnedDecisionObservation? Observation { get; }
+        }
+    }
+
+    private CurrentRead? TryCaptureCurrentRead()
     {
         lock (observationGate) return CurrentReadReady
             ? new(this, replica.Epoch, acceptedObservationVersion, operations.Generation, State) : null;
@@ -22,8 +64,8 @@ public sealed partial class ClientSession
     {
         private readonly ClientSession owner;
         private readonly long epoch, publication, operation;
-        public Mana.Contracts.GameSnapshot? Snapshot { get; }
-        internal CurrentRead(ClientSession owner, long epoch, long publication, long operation, Mana.Contracts.GameSnapshot? snapshot)
+        public GameSnapshot? Snapshot { get; }
+        internal CurrentRead(ClientSession owner, long epoch, long publication, long operation, GameSnapshot? snapshot)
             => (this.owner, this.epoch, this.publication, this.operation, Snapshot) = (owner, epoch, publication, operation, snapshot);
         /// <summary>Only accepted publication advances this stamp. A returned
         /// or failed connection operation cannot supply fresh observation credit.</summary>

@@ -702,7 +702,10 @@ merely dropping the entire completion on an epoch mismatch is insufficient.
 
 `CurrentReadRegression` and the owner-read partial of
 `PolledFullGameContractChecks` exercise the same read-admission contract used by
-the scripted players. Held wire and posted-completion gates keep quiet work
+the scripted players. `ReadCurrentDecisionAsync` owns admission, immediate source
+invocation and completion validation; deferred attempts invoke no raw discovery.
+The same checks exercise its closed Deferred, Retired and Current outcomes.
+Held wire and posted-completion gates keep quiet work
 visually non-busy while preventing rich discovery. Certain quiet rejection with
 no accepted frame must still retire an earlier ticket. Identical frame reaccept,
 epoch changes, audience round trips and Close have distinct controlled checks.

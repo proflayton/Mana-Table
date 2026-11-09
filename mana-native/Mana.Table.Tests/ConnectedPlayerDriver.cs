@@ -3,6 +3,7 @@ using Mana.Client;
 using Mana.Contracts;
 using Mana.Forge;
 using System.Collections.Immutable;
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 
 namespace Mana.Table;
@@ -205,16 +206,21 @@ internal sealed class ConnectedPlayerDriver : IDisposable
             CheckAcceptedProgress();
             return complete;
         }
-        if (client.TryCaptureCurrentRead() is not { } read) { Last = null; proposal = null; return false; }
         Last = null; proposal = null;
-        var own = await owned.ObserveDecisionAsync();
-        if (!read.IsCurrent) { Last = null; RetiredProposals++; return false; }
+        var attempt = await client.ReadCurrentDecisionAsync(owned);
+        if (attempt is ClientSession.CurrentReadResult.Deferred) return false;
+        if (attempt is ClientSession.CurrentReadResult.Retired retirement) {
+            if (retirement.Superseded is { } error) ExceptionDispatchInfo.Throw(error);
+            RetiredProposals++; return false;
+        }
+        var currentRead = (ClientSession.CurrentReadResult.Current)attempt;
+        var own = currentRead.Observation;
         if (own == null) throw new InvalidDataException("The connected player lost its match.");
         if (!AiCampaignVisibility.PrivateWindowsAreDisclosed(own.State, own.Semantics, own.Domain))
             throw new InvalidDataException("A connected player received an unauthorized private window.");
         if (!client.Accept(own.State)) throw new InvalidDataException("The player's client rejected its current owned observation.");
         Last = new(own.State.ViewerId, own.State, own.Domain, own.Semantics);
-        proposal = new(Last, read);
+        proposal = new(Last, currentRead.Read);
         evidence.Observe(Last);
         await history.DrainOwnedAsync(ownedHistory, own, evidence.QualificationEvidence);
         return true;
@@ -253,20 +259,22 @@ internal sealed class ConnectedPlayerDriver : IDisposable
             PollWhenDue();
             return true;
         }
-        if (client.TryCaptureCurrentRead() is not { } read || !ReferenceEquals(read.Snapshot, state)) {
-            proposal = null; return false;
-        }
         var generation = audienceGeneration;
         proposal = null;
-        OwnedDecisionObservation? own;
-        try { own = await owned.ObserveDecisionAsync(); }
-        catch (EngineObservationSupersededException) {
-            enrichmentRefresh = new(read, null); PollWhenDue(); throw;
+        var attempt = await client.ReadCurrentDecisionAsync(owned);
+        evidence.DrainPending(); RequireHealthy();
+        if (attempt is ClientSession.CurrentReadResult.Deferred) return false;
+        if (attempt is ClientSession.CurrentReadResult.Retired { Superseded: { } error } superseded) {
+            enrichmentRefresh = new(superseded.Read, null); PollWhenDue(); ExceptionDispatchInfo.Throw(error);
         }
-        client.Pump(); evidence.DrainPending(); RequireHealthy();
+        var (read, own) = attempt switch {
+            ClientSession.CurrentReadResult.Current currentRead => (currentRead.Read, currentRead.Observation),
+            ClientSession.CurrentReadResult.Retired retirement => (retirement.Read, retirement.Observation),
+            _ => throw new InvalidOperationException("The session returned an unknown read outcome.")
+        };
         if (own == null) throw new InvalidDataException("The connected player lost its owned observation.");
         var current = client.State;
-        bool currentOwner = read.IsCurrent && generation == audienceGeneration && current != null && SameOrdinaryPublication(state, current);
+        bool currentOwner = attempt is ClientSession.CurrentReadResult.Current && ReferenceEquals(read.Snapshot, state);
         if (!currentOwner || !MatchesOwnedObservation(current!, own.State)) {
             proposal = null; RetiredProposals++;
             LastRetiredOwnedRead = new(state, own, currentOwner ? "rich-payload-mismatch" : "ordinary-owner-changed",
