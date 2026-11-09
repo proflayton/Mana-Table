@@ -211,6 +211,7 @@ await EncounterAdmissionRegression.RunAsync(Check);
 await InteractionContractMatrix.RunAsync(Check);
 AllocationRegression.Run(Check);
 await RecoveryRegression.RunAsync(Check);
+await RecoveryScheduleRegression.RunAsync(Check);
 await ClientDiagnosticRegression.RunAsync(Check);
 await CommandExchangeRegression.RunAsync(Check);
 await ClientDiagnosticJournalRegression.RunAsync(Check);

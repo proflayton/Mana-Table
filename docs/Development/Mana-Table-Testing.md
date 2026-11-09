@@ -649,6 +649,21 @@ operation context, first recovery cause, later failure facts and reconciliation
 without command replay. Held reads exercise reset and audience retirement. The
 early notification probe can run against the previous client assembly and must
 fail at the lost-phase behavioral assertion, before tests using the new types.
+`RecoveryScheduleRegression` exercises a bounded set of event orderings through
+the real `ClientSession` and a held connection. A newer or stale same-audience
+frame can arrive while dispatch waits, followed by a returned or failed
+readback; Reset, viewer round trips and Close can retire work before the owner
+pumps its posted completion. The checks
+observe command/read counts, accepted state, typed failure context and callbacks;
+they do not reproduce the session's recovery implementation as a second model.
+Each schedule runs with diagnostics absent, recording, and a throwing subscriber,
+and its gameplay transcript must agree. Task gates and the session's queued-work
+signal establish ordering without sleep-based timing assertions. A settled
+operation cannot add I/O, and recovery permits only a deliberately requested
+current action. Closed-session checks do not require `Busy` to clear after its
+completion callbacks have been retired. These graphics-free checks run in the
+ordinary client executable; they cover these lifecycle schedules, not every
+distributed ordering, card interaction or human multiplayer experience.
 `PolledFullGameContractChecks` exercises the real two-owner campaign boundary:
 an accepted command followed by a failed readback must surface a typed session
 failure instead of repeatedly entering the benign discovery catch. A genuine
