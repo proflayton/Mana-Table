@@ -140,7 +140,7 @@ internal sealed partial class TableApplication : IDisposable
         sourceActions = session.SourceActions;
         session.Changed += AcceptPresentation;
         session.Completed += () => { FinishActivity(); nextPoll = 0; };
-        session.Failed += ex => { error = ex.Message; commandFailure = session.LastFailureWasCommand; FailActivity(); try { File.AppendAllText(Path.Combine(profile, "client.log"), ex + "\n"); } catch (Exception logError) when (logError is IOException or UnauthorizedAccessException) { } };
+        session.Failed += failure => { error = failure.Message; commandFailure = failure.IsCommand; FailActivity(); try { File.AppendAllText(Path.Combine(profile, "client.log"), failure + "\n"); } catch (Exception logError) when (logError is IOException or UnauthorizedAccessException) { } };
         // Fresh observations restore play, but an explicit action failure remains
         // available until acknowledged instead of disappearing between frames.
         session.Recovered += () => { if (!commandFailure) error = ""; pendingActionLabel = ""; };

@@ -37,6 +37,8 @@ internal static class PolledFullGameContractChecks
         await AcceptedInputProgress(profile, check);
         await AcceptedInputRetirement(profile, check);
         await IndependentObservationOwners(profile, check);
+        await FailedOperationIsNotDiscovery(profile, check);
+        await OpeningDiscoveryRetirement(check);
     }
 
     private static async Task AcceptedInputProgress(string profile, Action<bool, string> check)
@@ -298,6 +300,102 @@ internal static class PolledFullGameContractChecks
         }
     }
 
+    private static async Task FailedOperationIsNotDiscovery(string profile, Action<bool, string> check)
+    {
+        var signal = new EngineObservationSupersededException();
+        var hostState = ObservationAudience(0, 0); var guestState = ObservationAudience(1, 0);
+        using (var host = new DriverCase(profile, "typed-discovery-host", hostState, hostState,
+            passing: ConnectedPlayerPassingMode.FullControl))
+        using (var guest = new DriverCase(profile, "typed-discovery-guest", guestState, guestState,
+            passing: ConnectedPlayerPassingMode.FullControl)) {
+            await host.Prime(); await guest.Prime();
+            host.Port.OwnedError = signal;
+            var progress = new MixedGameProgress(() => 0, 1000); progress.BeginAttempt();
+            bool complete = await MixedGameCampaign.ObservePlayersAsync(host.Driver, guest.Driver, progress, 0);
+            check(!complete && progress.Capture().SupersededObservations == 1
+                    && host.Driver.Client.LastFailure == null && !host.Driver.Client.NeedsRecovery
+                    && progress.Capture().Tail.Last().Stage == "GuestObservation"
+                    && host.Port.Commands.Count == 0 && guest.Port.Commands.Count == 0,
+                "A genuine retired owned discovery remains benign and pumps the other audience without a session failure or command");
+        }
+
+        using (var host = new DriverCase(profile, "typed-readback-host", hostState, hostState,
+            passing: ConnectedPlayerPassingMode.FullControl))
+        using (var guest = new DriverCase(profile, "typed-readback-guest", guestState, guestState,
+            passing: ConnectedPlayerPassingMode.FullControl)) {
+            await host.Prime(); await guest.Prime();
+            host.Port.HoldNextRead = true;
+            check(host.Driver.Client.Submit(new PassPriority(hostState.Id, hostState.Decision!.Id)),
+                "One current ordinary command is admitted before its controlled post-dispatch readback fails");
+            await host.Port.NextReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            host.Port.ReleaseNextRead.TrySetException(signal);
+            await Drain(host.Driver.Client);
+            var failed = host.Driver.Client.LastFailure;
+            check(failed is { Phase: ClientFailurePhase.ReadbackUnknown, IsCommand: true }
+                    && ReferenceEquals(failed.Cause, signal) && ReferenceEquals(host.Driver.Client.RecoveryOrigin, failed)
+                    && failed.Context.GameId == hostState.Id && failed.Context.ViewerId == hostState.ViewerId
+                    && failed.Context.DecisionId == hostState.Decision!.Id && failed.Context.Revision == hostState.Revision
+                    && failed.Context.BoardRevision == hostState.BoardRevision && failed.Context.Epoch is > 0
+                    && host.Driver.Client.NeedsRecovery && host.Driver.Client.UncertainCommand
+                    && host.Port.Commands.Count == 1,
+                "The same superseded signal after accepted dispatch retains readback uncertainty, original cause and operation audience");
+            int hostReads = host.Port.Reads, guestReads = guest.Port.Reads;
+            int hostOwned = host.Port.OwnedReads, guestOwned = guest.Port.OwnedReads;
+            for (int attempt = 0; attempt < 2; attempt++) {
+                var progress = new MixedGameProgress(() => 0, 1000); progress.BeginAttempt();
+                Exception? thrown = null;
+                try { await MixedGameCampaign.ObservePlayersAsync(host.Driver, guest.Driver, progress, 0); }
+                catch (Exception error) { thrown = error; }
+                check(thrown is ClientOperationFailureException operation
+                        && ReferenceEquals(operation.Failure, failed) && ReferenceEquals(operation.InnerException, signal)
+                        && operation.Message.Contains(nameof(ClientFailurePhase.ReadbackUnknown), StringComparison.Ordinal)
+                        && progress.Capture().SupersededObservations == 0
+                        && progress.Capture().Current?.Stage == "HostObservation",
+                    "A stored command readback failure escapes the actual campaign discovery catch with its complete original context");
+                check(host.Port.Reads == hostReads && guest.Port.Reads == guestReads
+                        && host.Port.OwnedReads == hostOwned && guest.Port.OwnedReads == guestOwned
+                        && host.Port.Commands.Count == 1 && guest.Port.Commands.Count == 0
+                        && host.Policy.Evaluations == 0 && guest.Policy.Evaluations == 0
+                        && !host.Driver.Client.Submit(new PassPriority(hostState.Id, hostState.Decision!.Id)),
+                    "Repeated owner inspection surfaces the failure without a new RPC, policy evaluation, counted supersession or command replay");
+                progress.Stop(failed: true);
+            }
+        }
+    }
+
+    private static async Task OpeningDiscoveryRetirement(Action<bool, string> check)
+    {
+        foreach (int retiredSeat in Enumerable.Range(0, 3)) {
+            var ports = Enumerable.Range(0, 3).Select(seat => {
+                var state = ObservationAudience(seat, 0);
+                return new Port(state, state);
+            }).ToArray();
+            for (int seat = 0; seat < ports.Length; seat++) {
+                if (seat == retiredSeat) ports[seat].ReleaseOrdinary.TrySetException(new EngineObservationSupersededException());
+                else ports[seat].ReleaseOrdinary.TrySetResult(ports[seat].State);
+            }
+            var partial = await LobbyThreePlayerSmoke.ObserveOpeningViewsAsync(ports);
+            check(!partial.Complete && partial.Views[retiredSeat] == null
+                    && partial.Views.Where((_, index) => index != retiredSeat).All(state => state != null)
+                    && ports.All(port => port.Reads == 1 && port.Commands.Count == 0),
+                "A retired three-player opening discovery completes every audience read and supplies no partial-round command authority");
+            var fresh = await LobbyThreePlayerSmoke.ObserveOpeningViewsAsync(ports);
+            check(fresh.Complete && fresh.Views.Select(state => state?.ViewerId).SequenceEqual([0, 1, 2])
+                    && ports.All(port => port.Reads == 2 && port.Commands.Count == 0),
+                "The next opening round returns all three current private views without widening the owner's deadline or replaying actions");
+        }
+        var initial = ObservationAudience(0, 0);
+        var failedPort = new Port(initial, initial); var healthyPort = new Port(initial, initial);
+        var original = new IOException("Controlled opening connection fault.");
+        failedPort.ReleaseOrdinary.TrySetException(original); healthyPort.ReleaseOrdinary.TrySetResult(initial);
+        Exception? thrown = null;
+        try { await LobbyThreePlayerSmoke.ObserveOpeningViewsAsync([failedPort, healthyPort]); }
+        catch (Exception error) { thrown = error; }
+        check(ReferenceEquals(thrown, original) && failedPort.Reads == 1 && healthyPort.Reads == 1
+                && failedPort.Commands.Count == 0 && healthyPort.Commands.Count == 0,
+            "An opening connection failure remains fatal with its original identity rather than being relabeled as retired discovery");
+    }
+
     private static GameSnapshot ObservationAudience(int viewer, int owner)
     {
         var state = Priority();
@@ -522,8 +620,8 @@ internal static class PolledFullGameContractChecks
 
     private static async Task RejectedCommandWaitsForOrdinary(string profile, Action<bool, string> check)
     {
-        var first = Opening();
-        using var run = new DriverCase(profile, "rejected-command", first, first);
+        var first = Opening(); var clock = new ProgressClock();
+        using var run = new DriverCase(profile, "rejected-command", first, first, operationClock: clock);
         await run.Prime();
         await run.Driver.ObserveAsync();
         run.Port.ExecuteError = new EngineCommandRejectedException("Controlled definite dispatch rejection");
@@ -537,11 +635,28 @@ internal static class PolledFullGameContractChecks
         await run.Driver.StepAsync();
         check(run.Port.Commands.Count == 1 && run.Port.OwnedReads == 1 && run.Policy.Evaluations == 1,
             "A held ordinary poll after rejection cannot replay the old proposal or mistake its old stamp for a fresh failure");
+        var rejection = run.Driver.Client.LastFailure;
+        clock.Advance(TimeSpan.FromSeconds(6));
+        check(rejection is { Phase: ClientFailurePhase.DispatchRejected }
+                && run.Driver.Client.RecoveryOrigin == null && run.Driver.Client.NeedsRecovery
+                && !run.Driver.Client.UncertainCommand && run.Driver.Client.LastConnectionError.Length == 0
+                && ReferenceEquals(run.Driver.Client.LastFailure, rejection),
+            "A clock-only stalled poll keeps the historical rejection as evidence without assigning it as the active recovery cause");
+        Exception? healthFailure = null;
+        try { await run.Driver.ObserveAsync(); }
+        catch (Exception error) { healthFailure = error; }
+        check(healthFailure is InvalidDataException { InnerException: null }
+                && run.Port.Commands.Count == 1 && run.Port.OwnedReads == 1 && run.Policy.Evaluations == 1
+                && ReferenceEquals(run.Driver.Client.LastFailure, rejection),
+            "The driver surfaces current clock-only staleness instead of wrapping an unrelated old rejected operation or replaying its command");
         var fresh = first with { Revision = 11, BoardRevision = 11,
             Decision = first.Decision! with { Id = "fresh-after-rejection" } };
         run.Port.State = run.Port.RichState = fresh;
         run.Port.ReleaseNextRead.TrySetResult(fresh);
         await Drain(run.Driver.Client);
+        check(!run.Driver.Client.NeedsRecovery && !run.Driver.Client.UncertainCommand
+                && run.Driver.Client.RecoveryOrigin == null && ReferenceEquals(run.Driver.Client.LastFailure, rejection),
+            "A fresh ordinary publication clears only the clock health stall while preserving the historical rejection and single dispatch");
         run.Port.ExecuteError = null;
         run.Port.AfterExecute = fresh with { Revision = 12, BoardRevision = 12, Decision = null };
         await run.Driver.ObserveAsync();

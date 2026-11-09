@@ -212,7 +212,7 @@ internal static class AdvanceRegression
         wire = new(initial, Next(1), Next(2), response);
         var session = new ClientSession(wire); session.Accept(initial);
         var presented = new List<GameSnapshot?>(); session.Changed += (_, after) => presented.Add(after);
-        Exception? failure = null; session.Failed += e => failure = e;
+        ClientOperationFailure? failure = null; session.Failed += e => failure = e;
         Check(session.Advance(CanPass, PresentationPacing.ShouldPresent), "Shared client starts an advance through the normal seat connection");
         await Pump(session);
         Check(failure == null && presented.Count == 1 && session.State == response,

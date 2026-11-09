@@ -49,7 +49,7 @@ internal static class AiRepeatedCadenceEngineJourney
         for (int seat = 0; seat < 2; seat++) {
             int capturedSeat = seat;
             humans[seat].Failed += error => Interlocked.CompareExchange(ref clientFailure,
-                new ClientFailure(capturedSeat, ExceptionDispatchInfo.Capture(error)), null);
+                new ClientFailure(capturedSeat, ExceptionDispatchInfo.Capture(new ClientOperationFailureException(error))), null);
             humans[seat].Changed += (_, _) => {
                 foreach (var item in humans[capturedSeat].ExecutionChanges.Transitions.Where(item => item.Step == ExecutionStep.Complete))
                     terminals[capturedSeat].Add(item.ExecutionId);

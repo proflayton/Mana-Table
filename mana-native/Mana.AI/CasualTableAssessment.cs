@@ -14,6 +14,116 @@ public sealed record CasualThreat(int PlayerId, double Board, double Resources, 
 // simulated; this never establishes combat legality or a resolved outcome.
 internal sealed record CasualCombatExchange(bool AttackerDies, bool BlockerDies, long DamageToDefender);
 
+// A lower bound from individually supported current life-damage contributions,
+// not complete combat prediction, future safety or rules authority. Unsupported
+// bodies add no credit; unfinished indexing/work invalidates the entire bound.
+// Cache only within this policy evaluation.
+internal sealed class CasualStagedAttackAssessment(GameSnapshot state, AiTurnPlan? plan, AiWorkBudget work)
+{
+    // These traits leave the published current unblocked power/double-strike
+    // calculation applicable. Prowess uses current power, never a future cast.
+    // Infect, toughness substitution and unrecognized traits stay unsupported.
+    private static readonly HashSet<string> CurrentDamageTraits = new([
+        "flying", "reach", "haste", "vigilance", "first strike", "double strike", "trample", "deathtouch",
+        "indestructible", "lifelink", "hexproof", "ward", "shroud", "protection", "flash", "prowess", "partner", "partner with"
+    ], StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<int, long?> byDefender = [];
+    private readonly Dictionary<int, List<Card>> staged = [];
+    private readonly Dictionary<string, Card> own = new(StringComparer.Ordinal);
+    private readonly HashSet<string> reserved = new(StringComparer.Ordinal);
+    private readonly HashSet<string> assigned = new(StringComparer.Ordinal);
+    private bool prepared, complete;
+
+    internal bool CrossesLife(Player defender, Card candidate)
+    {
+        long? added = CurrentFlyingDamage(candidate);
+        if (added is not > 0) return false;
+        long? prior = Against(defender);
+        string id = CardViews.Identity(candidate);
+        return prior is > 0 && added is > 0 && prior.Value < defender.Life
+            && prior.Value + added.Value >= defender.Life
+            && own.TryGetValue(id, out var current) && ReferenceEquals(current, candidate)
+            && !assigned.Contains(id) && !reserved.Contains(id);
+    }
+
+    private long? Against(Player defender)
+    {
+        if (byDefender.TryGetValue(defender.Id, out var known)) return known;
+        long? result = Measure(defender);
+        byDefender.Add(defender.Id, result);
+        return result;
+    }
+
+    private long? Measure(Player defender)
+    {
+        if (!Prepare() || defender.States.IsDefault || !defender.States.IsEmpty) return null;
+        if (!staged.TryGetValue(defender.Id, out var attackers)) return 0;
+        var field = defender.Zones.FirstOrDefault(zone => zone.Name == "Battlefield");
+        if (field == null || field.Cards.IsDefault || field.Count != field.Cards.Length) return null;
+        foreach (var blocker in field.Cards) {
+            if (!work.TrySpend()) return null;
+            if (blocker.PhasedOut || blocker.Tapped) continue;
+            if (string.IsNullOrEmpty(blocker.Type) || blocker.FaceDown) return null;
+            if (!CasualTableAssessment.IsCreature(blocker)) continue;
+            if (!KnownCurrentBody(blocker)) return null;
+            // A single possible flying/reach blocker suffices to decline this
+            // deliberately narrow unblocked contribution, regardless of slots.
+            if (CasualTableAssessment.HasKeyword(blocker, "flying") || CasualTableAssessment.HasKeyword(blocker, "reach")) return 0;
+        }
+        long damage = 0;
+        foreach (var card in attackers) {
+            if (!work.TrySpend()) return null;
+            damage += CurrentFlyingDamage(card) ?? 0;
+        }
+        return damage;
+    }
+
+    private bool Prepare()
+    {
+        if (prepared) return complete;
+        prepared = true;
+        if (state.Combat is not { } combat || state.Viewer is not { } actor
+            || state.States.IsDefault || !state.States.IsEmpty || actor.States.IsDefault || !actor.States.IsEmpty) return false;
+        if (combat.Attackers.IsEmpty) return complete = true;
+        var field = actor.Zones.FirstOrDefault(zone => zone.Name == "Battlefield");
+        if (field == null || field.Cards.IsDefault || field.Count != field.Cards.Length) return false;
+        foreach (var card in field.Cards) {
+            if (!work.TrySpend()) return false;
+            foreach (string id in new[] { card.VisualId, card.CombatId }.Where(id => !string.IsNullOrEmpty(id)).Distinct(StringComparer.Ordinal))
+                if (!own.TryAdd(id, card)) return false;
+        }
+        if (plan != null) {
+            if (!plan.RetainedBlockerIds.IsEmpty && !work.TrySpend(plan.RetainedBlockerIds.Length)) return false;
+            reserved.UnionWith(plan.RetainedBlockerIds);
+            foreach (var held in plan.Reservations) {
+                if (!work.TrySpend(1 + held.ManaSourceIds.Length)) return false;
+                reserved.Add(held.SourceCardId); reserved.UnionWith(held.ManaSourceIds);
+            }
+        }
+        foreach (var attack in combat.Attackers) {
+            if (!work.TrySpend()) return false;
+            if (string.IsNullOrEmpty(attack.CardId) || !own.TryGetValue(attack.CardId, out var card)) continue;
+            if (!assigned.Add(CardViews.Identity(card))) return false;
+            if (!attack.HasDefender || attack.Defender is not { Kind: "player" } target
+                || target.PlayerId != attack.DefendingPlayerId || attack.Blocked || attack.BlockerIds.IsDefault || !attack.BlockerIds.IsEmpty) continue;
+            if (!staged.TryGetValue(target.PlayerId, out var group)) staged[target.PlayerId] = group = [];
+            group.Add(card);
+        }
+        return complete = true;
+    }
+
+    private static long? CurrentFlyingDamage(Card card) => KnownCurrentBody(card)
+        && CasualTableAssessment.HasKeyword(card, "flying") ? CasualTableAssessment.UnblockedDamage(card) : null;
+
+    private static bool KnownCurrentBody(Card card) => !card.FaceDown && !card.PhasedOut
+        && (!string.IsNullOrEmpty(card.VisualId) || !string.IsNullOrEmpty(card.CombatId))
+        && card.Power is >= 0 && card.Toughness is > 0 && !string.IsNullOrEmpty(card.Type) && CasualTableAssessment.IsCreature(card)
+        && !card.CombatKeywords.IsDefault && card.CombatKeywords.All(CurrentDamageTraits.Contains)
+        // Legacy keyword hints alone cannot certify current damage semantics.
+        && card.States is { IsDefault: false } states && states.All(shown => shown != null
+            && (shown.Kind != "ability" || shown.Value == 0 || shown.Value is > 0 && CurrentDamageTraits.Contains(shown.Key)));
+}
+
 public static class CasualTableAssessment
 {
     public static ImmutableArray<CasualThreat> Assess(GameSnapshot state, AiSeatHistory history)

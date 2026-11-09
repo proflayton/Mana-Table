@@ -571,6 +571,28 @@ scoped bot knowledge and complete timing-legal source domains; remote players
 and the renderer cannot access it. Normal authoritative input controllers execute
 all bot choices, including manual producer and floating-pool payment. Forge's
 strategic controller is never a fallback for that negotiated mode.
+
+Attack scoring reads the current declaration as a group. A bounded, call-local
+assessment derives nominal unblocked life damage already assigned to each player
+before valuing another attacker. Its cached facts belong only to that immutable
+owned frame; they retain no action keys or authority across observations.
+Missing, blocked or unsupported contributions cannot create finishing credit.
+The additional group-finishing value applies only to a newly crossed life
+threshold; an already lethal group grants no extra group credit. This remains a
+current public estimate, not a
+prediction of hidden responses; current offered commands and existing resource,
+defense and mechanical-work guards still control the actual proposal.
+
+Optional attack comparison preserves work for candidates that can still beat
+declaring no attack. After complete exchange and finishing estimates, the score
+including its social adjustment is an upper bound before defensive retention:
+that remaining refinement can only lower it. A nonpositive optional candidate
+therefore needs no expensive retention search. Required declarations keep their
+existing ranking. Skipping that search retains previously held defenders until
+a fresh assessment replaces the old fact; it cannot free a reserved response or
+its funding. The shared work limit remains unchanged. This pruning improves
+coverage within that limit, without claiming an exhaustive or optimal search.
+
 The optional host-only `IAutomatedPriorityContinuation` port represents only
 observation acknowledgement, `NoResponse` consent and withdrawal. It cannot
 carry gameplay, Quiet or finite-yield commands. The policy descriptor explicitly
@@ -1288,6 +1310,26 @@ The session rechecks the same rules before any posted publication.
 Only pre-commit contract failures enter this phase-aware recovery path; public
 direct acceptance and post-commit presentation callback exceptions keep their
 existing explicit failure behavior.
+
+Session failure notifications preserve that phase as `ClientOperationFailure`,
+alongside the diagnostic cause and the epoch, audience and decision context
+captured when the operation starts. Consumers must not reconstruct dispatch
+knowledge from the cause's exception type. `ClientSession` owns the recovery
+state; its compatibility flags are projections of that state. The first
+`RecoveryOrigin` remains attached to an active reconciliation episode even if
+later reads fail, while `LastFailure` retains the latest reported fact. A fresh
+accepted observation clears active recovery without replaying a command or
+erasing the last diagnostic fact. Reset and completed retired-world cleanup
+retain their explicit clearing behavior; pending negative consent still follows
+its existing acknowledgement and ownership guards.
+
+The ordinary client, renderer and mixed-game driver consume this same contract.
+A definite rejection still retires its exact scripted proposal and requires a
+fresh current decision before another command. A command/readback failure cannot
+escape as the raw supersession cause and enter the campaign's benign discovery
+catch. The driver holds no independent permanent exception latch. Failure logs
+retain the phase and captured context; a supersession catch count alone does
+not establish a count of provider RPCs or publication changes.
 
 `IOwnedDecisionObservations` is the corresponding narrow on-demand read port for
 an ordinary connection. The provider chooses its bound audience; the caller

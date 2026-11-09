@@ -223,7 +223,7 @@ internal static class InteractionContractMatrix
         var client = new ClientSession(provider, sourceActions: provider);
         client.Accept(fixture.Before);
         Exception? failure = null;
-        client.Failed += error => failure = error;
+        client.Failed += error => failure = error.Cause;
 
         // Source commands must belong to the session's exact current catalog.
         // Remaining published constraints are checked before provider dispatch;

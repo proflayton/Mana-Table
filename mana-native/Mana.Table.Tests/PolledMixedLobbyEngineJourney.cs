@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
@@ -228,7 +227,6 @@ internal static partial class PolledMixedLobbyEngineJourney
         internal readonly List<object> Receipts = [];
         internal int ClientAdmissions, PollCallbacks, Publications, HeldPublications;
         internal bool InputReceiptsReconciled => ClientAdmissions == Port.InputAccepted;
-        private readonly ConcurrentQueue<Exception> failures = new();
         private GameSnapshot? prior;
         private (string Game, long Revision, string Decision)? handed;
         private long nextPoll;
@@ -237,7 +235,6 @@ internal static partial class PolledMixedLobbyEngineJourney
         {
             Index = index; Engine = engine; Port = new(engine); Client = new(Port, engine, sourceActions: engine);
             InspectionPort = new(engine); Inspection = new(InspectionPort, callback => InspectionPort.Post(Client.Post, callback));
-            Client.Failed += failures.Enqueue;
             Client.Changed += (_, state) => {
                 if (state == null) { if (prior != null) throw new InvalidDataException("A polled player lost its bound match."); return; }
                 if (prior != null && (state.Id != prior.Id || state.ViewerId != prior.ViewerId
@@ -251,7 +248,7 @@ internal static partial class PolledMixedLobbyEngineJourney
         }
         internal void RequireHealthy()
         {
-            if (failures.TryPeek(out var error)) ExceptionDispatchInfo.Capture(error).Throw();
+            if ((Client.RecoveryOrigin ?? Client.LastFailure) is { } failure) throw new ClientOperationFailureException(failure);
             if (Client.UncertainCommand || Client.NeedsRecovery) throw new InvalidDataException("A healthy polled player entered command uncertainty or recovery.");
         }
         internal void Poll()

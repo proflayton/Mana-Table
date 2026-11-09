@@ -112,15 +112,15 @@ public sealed partial class ClientSession
     {
         if (Busy || Polling || Closed || NeedsRecovery) return;
         if (priorityRevocations.Values.FirstOrDefault() is { } pending) {
-            Run(async epoch => {
-                var next = await ObservePriorityRevocationAsync(pending);
+            Run(async context => {
+                var next = await ObservePriorityRevocationAsync(pending, context);
                 if (!PriorityRevoked(next, pending) && time.GetUtcNow() - pending.Started >= TimeSpan.FromSeconds(5))
                     throw new IOException("Priority withdrawal has not completed.");
                 Post(() => {
-                    if (epoch != replica.Epoch) return;
+                    if (context.Epoch != replica.Epoch) return;
                     if (PriorityRevoked(next, pending)) RecordPriorityRevocation(next, pending);
                     if (State is { } current && current.Id == next.Id && current.ViewerId == next.ViewerId)
-                        Accept(next, epoch);
+                        Accept(next, context.Epoch!.Value, failureContext: context);
                 });
             });
             return;
@@ -133,9 +133,9 @@ public sealed partial class ClientSession
         if (!GameCommandPermissions.Allows(state, grant)) return;
         prioritySequence = sequence;
         priorityInstruction = new(grant, state.ViewerId, state.Revision);
-        Run(async epoch => {
-            var exchange = new CommandExchange(connection, diagnostics);
-            var attempt = diagnostics.Begin(state, grant, ClientDiagnosticOrigin.Direct, epoch);
+        Run(async context => {
+            var exchange = new CommandExchange(connection, context, diagnostics);
+            var attempt = diagnostics.Begin(state, grant, ClientDiagnosticOrigin.Direct, context.Epoch!.Value);
             await exchange.ExecuteAsync(grant, attempt);
             var next = await exchange.ObserveAsync(state, attempt, validate: next => {
                 if (next?.PriorityContinuation is not { } accepted || next.ViewerId != state.ViewerId
@@ -144,17 +144,17 @@ public sealed partial class ClientSession
                     throw new IOException("The priority consent receipt does not identify its captured instruction.");
             });
             var phase = exchange.ObservationFailurePhase;
-            Post(() => Accept(next, epoch, commandObservation: true, observationFailurePhase: phase));
+            Post(() => Accept(next, context.Epoch!.Value, commandObservation: true, observationFailurePhase: phase, failureContext: context));
         });
     }
 
-    private async Task<GameSnapshot> ObservePriorityRevocationAsync(PendingPriorityRevoke pending)
+    private async Task<GameSnapshot> ObservePriorityRevocationAsync(PendingPriorityRevoke pending, ClientFailureContext context)
     {
-        var exchange = new CommandExchange(connection, commandSubmitted: pending.Sent);
+        var exchange = new CommandExchange(connection, context, commandSubmitted: pending.Sent);
         if (!pending.Sent) {
             pending.Sent = true; pending.Started = time.GetUtcNow();
             try { await exchange.ExecuteAsync(pending.Command); }
-            catch (CommandExchangeException error) when (error.Phase == CommandFailurePhase.DispatchRejected) { }
+            catch (CommandExchangeException error) when (error.Phase == ClientFailurePhase.DispatchRejected) { }
         }
         return (await exchange.ObserveAsync(validate: next => {
             if (next == null) throw new IOException("Priority withdrawal could not be observed.");
@@ -169,19 +169,19 @@ public sealed partial class ClientSession
         }))!;
     }
 
-    private async Task RevokePriorityAtCloseAsync(Task prior, IReadOnlyList<PendingPriorityRevoke> pending)
+    private async Task RevokePriorityAtCloseAsync(Task prior, IReadOnlyList<PendingPriorityRevoke> pending, ClientFailureContext context)
     {
         await prior;
         foreach (var item in pending) {
             try {
                 if (item.Sent) {
-                    var observed = await ObservePriorityRevocationAsync(item);
+                    var observed = await ObservePriorityRevocationAsync(item, context);
                     if (PriorityRevoked(observed, item)) continue;
                     item.Sent = false;
                 }
-                if (!PriorityRevoked(await ObservePriorityRevocationAsync(item), item))
+                if (!PriorityRevoked(await ObservePriorityRevocationAsync(item, context), item))
                     throw new IOException("Priority withdrawal was not acknowledged before closing.");
-            } catch (Exception error) { LastConnectionError = error.Message; }
+            } catch (Exception error) { LastCleanupFailure ??= OperationFailure(error, ClientFailurePhase.DispatchUnknown, context); }
         }
     }
 }

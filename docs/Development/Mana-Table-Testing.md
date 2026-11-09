@@ -570,6 +570,22 @@ and insufficient shared work retain the existing fallback. This is a narrow
 public combat estimate, not a complete multiplayer strategy or prediction of
 hidden responses.
 
+Staged-combat scoring checks include four plus one nominal unblocked flying
+damage already aimed at a six-life opponent, with a one-power candidate and a
+competing defender. They distinguish a new threshold crossing from already
+lethal damage and exclude blocked, unknown, non-life and other-defender
+contributions. Current offer scope, retained resources and bounded work remain
+independent controls. Archived decision replays preserve the original seed,
+history, plan and remaining budgets and evaluate one recorded input without
+executing a command or launching a rules game. An improved replay proposal does
+not count as a natural game outcome or prove a counterfactual combat result.
+
+Combat budget regressions also put an offered finishing flyer after several
+unprofitable ground attacks. They require the policy to reach that candidate
+within the original shared allowance, while preserving defensive checks for
+potentially positive attacks, required declarations and prior held resources.
+Identity, name and order changes must not supply the tactical arithmetic.
+
 The source cancellation candidate extends that same client lane with held
 observation, execution and fault-report operations, plus shutdown during
 background and directly driven observations, and an observation provider that
@@ -627,6 +643,19 @@ The owner acknowledgement validates continuation without publishing every
 passing frame; the existing `AdvanceRegression` keeps its one-presentation-
 checkpoint contract. Hold publishes its already-sent result once; Reset and unpumped Close
 release the retired wait and retain the exact serialized negative grant cleanup.
+`RecoveryRegression` also injects the same exception during discovery, dispatch
+and accepted-command readback. It verifies the typed notification, captured
+operation context, first recovery cause, later failure facts and reconciliation
+without command replay. Held reads exercise reset and audience retirement. The
+early notification probe can run against the previous client assembly and must
+fail at the lost-phase behavioral assertion, before tests using the new types.
+`PolledFullGameContractChecks` exercises the real two-owner campaign boundary:
+an accepted command followed by a failed readback must surface a typed session
+failure instead of repeatedly entering the benign discovery catch. A genuine
+retired discovery remains noncommitting, and definite rejection still requires
+a freshly observed decision. These controlled checks use no rules RNG or full
+game reruns; full-game release qualification remains separate.
+
 `DecisionAdvance` defaults to `TimeProvider.System` and the same350 ms /
 32-command slice. The immediate four-window fixture supplies a controlled
 monotonic clock; explicit349/350 ms checks verify exact prefix return and fresh

@@ -16,8 +16,9 @@ public sealed class DecisionAdvance
     private FiniteReadAnchor? finiteReadAnchor;
     private readonly ClientCommandDiagnostics? diagnostics;
     private long operationEpoch;
-    private readonly Func<GameSnapshot, CommandFailurePhase, long, CancellationToken, Task<ObservationAdmission>>? admit;
-    internal CommandFailurePhase ObservationFailurePhase { get; private set; } = CommandFailurePhase.Observation;
+    private ClientFailureContext? operationContext;
+    private readonly Func<GameSnapshot, ClientFailurePhase, ClientFailureContext, CancellationToken, Task<ObservationAdmission>>? admit;
+    internal ClientFailurePhase ObservationFailurePhase { get; private set; } = ClientFailurePhase.Observation;
     internal bool SuppressFinalObservation { get; private set; }
     private string? automaticSubmitted, quietSubmitted;
     public DecisionAdvance(IMatchConnection connection) : this(connection, TimeProvider.System) { }
@@ -27,12 +28,13 @@ public sealed class DecisionAdvance
         this.time = time ?? throw new ArgumentNullException(nameof(time));
     }
     internal DecisionAdvance(IMatchConnection connection, ClientCommandDiagnostics diagnostics,
-        Func<GameSnapshot, CommandFailurePhase, long, CancellationToken, Task<ObservationAdmission>> admit, TimeProvider? clock = null)
+        Func<GameSnapshot, ClientFailurePhase, ClientFailureContext, CancellationToken, Task<ObservationAdmission>> admit, TimeProvider? clock = null)
         : this(connection, clock ?? TimeProvider.System) { this.diagnostics = diagnostics; this.admit = admit; }
-    internal void SetOperationEpoch(long epoch)
+    internal void SetOperationContext(ClientFailureContext context)
     {
-        operationEpoch = epoch;
-        ObservationFailurePhase = CommandFailurePhase.Observation;
+        operationEpoch = context.Epoch ?? throw new ArgumentException("A session continuation requires its admitted epoch.", nameof(context));
+        operationContext = context;
+        ObservationFailurePhase = ClientFailurePhase.Observation;
         SuppressFinalObservation = false;
     }
     internal void RetireFiniteReadCadence()
@@ -77,8 +79,9 @@ public sealed class DecisionAdvance
         long started = time.GetTimestamp();
         var state = initial;
         int passes = 0;
-        var exchange = new CommandExchange(connection, diagnostics);
-        ObservationFailurePhase = CommandFailurePhase.Observation;
+        var context = operationContext ?? ClientFailureContext.Capture(null, initial);
+        var exchange = new CommandExchange(connection, context, diagnostics);
+        ObservationFailurePhase = ClientFailurePhase.Observation;
         SuppressFinalObservation = false;
         try {
             while (!cancellation.IsCancellationRequested) {
@@ -109,7 +112,7 @@ public sealed class DecisionAdvance
                     finiteReadAnchor = new(intent, (step as FiniteNextStep.AwaitAcknowledgedServerProgress)?.Scope, time.GetTimestamp());
                 var next = await exchange.ObserveAsync(state, attempt);
                 if (next != null && next.Revision >= state.Revision && admit != null
-                    && await AdmitAsync(next, cancellation) != ObservationAdmission.Validated) return next;
+                    && await AdmitAsync(next, context, cancellation) != ObservationAdmission.Validated) return next;
                 if (next == null) { intent.Stop(); return null; }
                 if (next.Revision >= state.Revision) {
                     bool changed = !Equals(state, next);
@@ -170,8 +173,9 @@ public sealed class DecisionAdvance
         long started = time.GetTimestamp();
         var state = initial;
         int passes = 0;
-        var exchange = new CommandExchange(connection, diagnostics);
-        ObservationFailurePhase = CommandFailurePhase.Observation;
+        var context = operationContext ?? ClientFailureContext.Capture(null, initial);
+        var exchange = new CommandExchange(connection, context, diagnostics);
+        ObservationFailurePhase = ClientFailurePhase.Observation;
         SuppressFinalObservation = false;
         long activity = quietToken == null ? 0 : initial.Activity.Select(entry => entry.Id).DefaultIfEmpty().Max();
         while (!cancellation.IsCancellationRequested) {
@@ -201,7 +205,7 @@ public sealed class DecisionAdvance
             ObservationFailurePhase = exchange.ObservationFailurePhase;
             var next = await exchange.ObserveAsync(state, attempt);
             if (next != null && next.Revision >= state.Revision && admit != null
-                && await AdmitAsync(next, cancellation) != ObservationAdmission.Validated) return next;
+                && await AdmitAsync(next, context, cancellation) != ObservationAdmission.Validated) return next;
             if (next == null) return null;
             if (next.Revision >= state.Revision) state = next;
             // Yield periodically to present progress and avoid owning the connection indefinitely.
@@ -214,9 +218,9 @@ public sealed class DecisionAdvance
         return state;
     }
 
-    private async Task<ObservationAdmission> AdmitAsync(GameSnapshot state, CancellationToken cancellation)
+    private async Task<ObservationAdmission> AdmitAsync(GameSnapshot state, ClientFailureContext context, CancellationToken cancellation)
     {
-        var result = await admit!(state, ObservationFailurePhase, operationEpoch, cancellation);
+        var result = await admit!(state, ObservationFailurePhase, context, cancellation);
         if (result == ObservationAdmission.Retired) SuppressFinalObservation = true;
         return result;
     }

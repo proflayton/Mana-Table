@@ -75,10 +75,14 @@ internal static class CommandExchangeRegression
         var initial = State(mode);
         var port = new Port(initial) { ReadError = new EngineCommandRejectedException("Readback unavailable") };
         var client = Session(port, diagnostics); client.Accept(initial);
+        ClientOperationFailure? reported = null; client.Failed += failure => reported = failure;
         check(await Start(client, mode), "The " + mode + " readback control starts through its ordinary current owner; diagnostics=" + diagnostics);
         await Drain(client);
         var old = port.Commands.Single();
         check(client.State == initial && client.NeedsRecovery && client.UncertainCommand && client.LastFailureWasCommand
+                && reported is { Phase: ClientFailurePhase.ReadbackUnknown, Cause: EngineCommandRejectedException }
+                && reported.Context.GameId == initial.Id && reported.Context.ViewerId == initial.ViewerId
+                && reported.Context.Revision == initial.Revision && reported.Context.DecisionId == initial.Decision!.Id
                 && port.Reads == 1 && !client.Submit(old) && !client.Advance(_ => true, (_, _) => false)
                 && !client.AdvanceOptionalPayments((_, _) => false) && port.Commands.Count == 1,
             "Post-dispatch " + mode + " read failure blocks stale controls and all continuations independently of exception type/logging");
@@ -99,10 +103,11 @@ internal static class CommandExchangeRegression
     {
         var initial = State(mode); var rejection = new EngineCommandRejectedException("Current dispatch was rejected");
         var port = new Port(initial) { RejectAt = 1, Rejection = rejection };
-        var client = Session(port, diagnostics); client.Accept(initial); Exception? reported = null;
+        var client = Session(port, diagnostics); client.Accept(initial); ClientOperationFailure? reported = null;
         client.Failed += error => reported = error;
         check(await Start(client, mode), "The first " + mode + " dispatch rejection begins in the ordinary lane"); await Drain(client);
-        check(ReferenceEquals(reported, rejection) && !client.NeedsRecovery && !client.UncertainCommand && client.LastFailureWasCommand
+        check(ReferenceEquals(reported?.Cause, rejection) && reported?.Phase == ClientFailurePhase.DispatchRejected
+                && !client.NeedsRecovery && !client.UncertainCommand && client.LastFailureWasCommand
                 && client.State == initial && port.Commands.Count == 1 && port.Reads == 0,
             "A definite first " + mode + " Execute rejection preserves its original cause and never invents an uncertain application");
         client.Close();
