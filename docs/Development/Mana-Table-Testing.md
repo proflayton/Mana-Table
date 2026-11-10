@@ -936,6 +936,17 @@ manifests and summaries identify the shared `ServerAuto` policy and derive the
 bot's `automatedPriorityPolicy` from the actual policy descriptor; earlier
 NoResponse-only evidence cannot silently qualify it. Grant/automatic-pass counts
 are reported separately by mode and must sum to their existing aggregates.
+The shared client retains an armed `NoResponse` policy while a response is
+`Available`, `Unknown` or unreported, but sends no new grant and leaves the exact
+foreground decision usable. A later accepted `Absent` input enables that same
+intent. This does not retire an actual in-flight or Held grant: its original
+negative fence and receipt still govern Take control, manual mana and audience
+replacement. Bots likewise skip only new impossible grants and continue to
+return actual observation credit. Run the efficient client lifecycle group with
+`dotnet run --project mana-native/Mana.Client.Tests/Mana.Client.Tests.csproj -c Release -- --priority-continuation-checks`;
+it includes current-scope replacement, late receipts, Quiet/finite isolation,
+recovery and actual-grant withdrawal controls. The native `server-auto` headless
+group also exercises the visible response gesture and ordinary polled owner.
 Across all four natural rotations, at least one actual original-token Quiet
 window must have accepted consent and certified progress. A seat which never
 encounters such a window does not invent one. Exact token, interruption, response

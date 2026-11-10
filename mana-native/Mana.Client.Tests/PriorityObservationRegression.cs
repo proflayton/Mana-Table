@@ -184,7 +184,8 @@ internal static class PriorityObservationRegression
     {
         internal GameSnapshot State = new("observation-game", "playing", null, null, 0, 2, "Main phase", "MAIN1", 1,
             [new(0, "You", 40, true, false, ImmutableDictionary<string, int>.Empty, [])], [], null,
-            new("priority", new(), new PriorityPayload(new("Pass once", true)))) {
+            new("priority", new(), new PriorityPayload(new("Pass once", true), CanAutoPass: true) {
+                ResponseAvailability = PriorityResponseAvailability.Absent })) {
                 Revision = 10, BoardRevision = 1,
                 PriorityContinuation = new(0, "", null, PriorityContinuationStatus.Idle, "", 0, []),
                 PriorityObservation = new(1, 0, 0, 0, false, false)

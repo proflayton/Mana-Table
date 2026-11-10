@@ -17,6 +17,9 @@ internal static class ServerAutoPresentationChecks
     internal static void Run(string profile, Action<bool, string> check)
     {
         foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) })
+        foreach (var availability in new[] { PriorityResponseAvailability.Available, PriorityResponseAvailability.Unknown })
+            ArmedResponse(profile, size, availability, check);
+        foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) })
         foreach (bool reduced in new[] { false, true }) {
             var path = Path.Combine(profile, "server-auto-" + size.X + "-" + reduced);
             Directory.CreateDirectory(path);
@@ -86,6 +89,41 @@ internal static class ServerAutoPresentationChecks
         }
     }
 
+    private static void ArmedResponse(string profile, Point size, PriorityResponseAvailability availability, Action<bool, string> check)
+    {
+        var path = Path.Combine(profile, "armed-auto-response-" + size.X + "-" + availability);
+        Directory.CreateDirectory(path);
+        new PlayPreferences { Automatic = false, Sounds = false, Stops = [], TextScale = 1.3f }.Save(path);
+        var initial = PriorityAbilitySmoke.Example();
+        initial = initial with { Id = "armed-auto-ui", Revision = 1, BoardRevision = 1, Turn = 4,
+            ActivePlayerId = initial.ViewerId, PriorityPlayerId = initial.ViewerId, DecisionOwnerId = initial.ViewerId,
+            PhaseKey = "UPKEEP", Stack = [], Activity = [], Executions = new(1, 0, [], []),
+            PriorityContinuation = new(0, "", null, PriorityContinuationStatus.Idle, "", 0, []),
+            PriorityObservation = new(1, 0, 1, 0, true, false),
+            Decision = new("armed-response", new(), new PriorityPayload(new("Pass priority", true), CanAutoPass: false) {
+                ResponseAvailability = availability }) };
+        var port = new Port(initial); var setup = new InteractionScenarioEngine();
+        using var run = new PresentationRun(new(setup, setup, port, () => Task.CompletedTask), path, initial, size);
+        void Tick(TimeSpan elapsed = default) => run.Tick(elapsed, default);
+        Tick(); run.View.SetAutomatic(true); Tick(TimeSpan.FromSeconds(3));
+        for (int frame = 0; frame < 20; frame++) Tick();
+        check(run.View.PriorityContinuationReserved && !run.View.Busy && port.Commands.IsEmpty
+                && run.Frame.Hits.Any(hit => hit.Id == "confirm"),
+            "Visible Auto stays armed beside an immediately usable " + availability + " response without starting consent RPCs at " + size
+                + "; reserved=" + run.View.PriorityContinuationReserved + "; busy=" + run.View.Busy
+                + "; commands=" + port.Commands.Count + "; dock=" + run.View.DecisionDock?.Surface);
+        var target = run.Frame.Hits.Single(hit => hit.Id == "confirm").Bounds.Center;
+        var physical = RenderViewport.Fit(size, run.View.DesignHeight).ToPhysical(target.ToVector2());
+        run.Tick(TimeSpan.Zero, new((int)MathF.Ceiling(physical.X), (int)MathF.Ceiling(physical.Y), 0,
+            ButtonState.Pressed, default, default, default, default));
+        run.Tick(TimeSpan.Zero, new((int)MathF.Ceiling(physical.X), (int)MathF.Ceiling(physical.Y), 0,
+            ButtonState.Released, default, default, default, default));
+        var deadline = DateTime.UtcNow.AddSeconds(3);
+        while ((run.View.Busy || port.Commands.IsEmpty) && DateTime.UtcNow < deadline) { Tick(); Thread.Sleep(1); }
+        check(port.Commands.ToArray() is [PassPriority { DecisionId: "armed-response" }] && !run.View.Busy,
+            "The physical response gesture submits once without an unnecessary grant or negative receipt at " + size + "; " + availability);
+    }
+
     private sealed class Port(GameSnapshot initial) : IMatchConnection
     {
         internal GameSnapshot State = initial;
@@ -106,6 +144,8 @@ internal static class ServerAutoPresentationChecks
                     await Release.Task;
                     State = State with { Revision = State.Revision + 1,
                         PriorityContinuation = State.PriorityContinuation! with { Status = PriorityContinuationStatus.Revoked } }; break;
+                case PassPriority:
+                    State = State with { Revision = State.Revision + 1, Decision = null }; break;
                 default: throw new InvalidOperationException("A server-owned policy must not dispatch individual client passes.");
             }
         }

@@ -48,6 +48,21 @@ bindings remain unknown. The AI shares one bounded nominal combat assessment
 between blocking and reserving defenders; it does not turn this forecast into
 rules authority or claim to simulate every prevention/replacement effect.
 
+Standing Auto also separates desired policy from wire ownership. A retained
+`NoResponse` intent reserves the automatic progression route, but an available
+or unknown response does not become a pending grant or block the foreground
+decision. Fresh authoritative absence makes a new grant eligible. An actual
+instruction, its Held receipt and its withdrawal fence retain their existing
+lifetimes; Quiet continues to require its exact captured token. The bot owner
+uses the same absence requirement before starting a new grant.
+
+Input staging is different from completion. A combat toggle can leave its
+current prompt identity unchanged; drivers must witness the exact staged
+assignment before completing that declaration. Likewise, optional combat work
+reserves future effort from the current declaration's bounded search size,
+including completion and its mechanical allowance. A changed world requires
+fresh evaluation, rather than inheriting a previously proposed attack group.
+
 Java CI isolates API tests in two process-owned workspaces while keeping methods
 and upstream modules serial. Its opt-in Maven profile and shared accounting
 checker bind current compiled inputs, process owners, reports and invocation

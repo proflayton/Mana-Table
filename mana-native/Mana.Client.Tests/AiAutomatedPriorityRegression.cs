@@ -10,6 +10,7 @@ internal static class AiAutomatedPriorityRegression
     {
         DescriptorAndClosedControls(check);
         await FullControlAndLegacy(check);
+        await AvailableResponsesWithoutNewGrants(check);
         await CertificatesAndChoices(check);
         await PacingAndHumanCredit(check);
         await PublishedActionBarrier(check);
@@ -24,6 +25,31 @@ internal static class AiAutomatedPriorityRegression
         await LostObserverDelivery(check);
         await ObserverDeliveryGuards(check);
         await ObserverDeliveryRetirementAndReceipts(check);
+    }
+
+    private static async Task AvailableResponsesWithoutNewGrants(Action<bool, string> check)
+    {
+        foreach (var availability in new PriorityResponseAvailability?[] {
+            PriorityResponseAvailability.Available, PriorityResponseAvailability.Unknown, null }) {
+            var port = new Port(); port.Priority(PriorityResponseAvailability.Available);
+            port.State = port.State with { Decision = port.State.Decision! with {
+                Payload = ((PriorityPayload)port.State.Decision.Payload) with { ResponseAvailability = availability } } };
+            var policy = new Policy();
+            await using var host = new AiTableHost(port, _ => policy, 1);
+            await host.StepAsync();
+            check(port.Controls is [AutomatedPriorityControl.Acknowledge] && policy.Calls == 0 && port.Commands.Count == 0,
+                "Available or unknown bot responses return actual reading credit without installing futile NoResponse consent: " + availability);
+            await host.StepAsync();
+            check(port.Controls is [AutomatedPriorityControl.Acknowledge] && port.Commands is [PassPriority]
+                    && policy.Calls == 1 && host.PriorityContinuations.Single() is { AcceptedGrants: 0, AcceptedWithdrawals: 0 },
+                "The next owned rich response reaches the policy without a grant/withdraw round trip: " + availability);
+            port.Priority(PriorityResponseAvailability.Absent);
+            string fresh = port.State.Decision!.Id;
+            await host.StepAsync(); await host.StepAsync();
+            check(port.Controls is [AutomatedPriorityControl.Acknowledge, AutomatedPriorityControl.NoResponse { DecisionId: var id }]
+                    && id == fresh && host.PriorityContinuations.Single().AcceptedGrants == 1 && policy.Calls == 1,
+                "The same opted-in bot installs exactly one grant when a later owned input is explicitly Absent: " + availability);
+        }
     }
 
     private static void DescriptorAndClosedControls(Action<bool, string> check)
@@ -246,7 +272,14 @@ internal static class AiAutomatedPriorityRegression
 
     private static async Task ReceiptChains(Action<bool, string> check)
     {
-        var port = new Port(); port.Priority(PriorityResponseAvailability.Available);
+        var port = new Port();
+        port.BeforeControl = control => {
+            if (control is AutomatedPriorityControl.NoResponse) port.State = port.State with {
+                Revision = port.State.Revision + 1, Decision = port.State.Decision! with {
+                    Payload = ((PriorityPayload)port.State.Decision.Payload) with {
+                        CanAutoPass = false, ResponseAvailability = PriorityResponseAvailability.Available } } };
+            return Task.CompletedTask;
+        };
         var policy = new Policy();
         await using var host = new AiTableHost(port, _ => policy, 1);
         await host.StepAsync();
@@ -254,7 +287,7 @@ internal static class AiAutomatedPriorityRegression
                 AutomatedPriorityControl.NoResponse, AutomatedPriorityControl.Withdraw]
             && policy.Calls == 0 && port.Commands.Count == 0
             && host.PriorityContinuations.Single() is { AcceptedAcknowledgements: 1, AcceptedGrants: 1, AcceptedWithdrawals: 1 },
-            "One owned read reconciles ACK, held NoResponse and negative withdrawal from typed receipts, eliminating two control-only full reads without a policy action");
+            "A response arriving during a genuinely Absent grant still reconciles ACK, actual Held consent and negative withdrawal without a policy action");
         await host.StepAsync();
         check(port.Reads == 2 && policy.Calls == 1 && port.Commands is [PassPriority]
             && port.CommandReadCounts is [2],

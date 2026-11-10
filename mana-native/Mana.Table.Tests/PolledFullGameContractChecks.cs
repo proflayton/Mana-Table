@@ -753,32 +753,40 @@ internal static partial class PolledFullGameContractChecks
             using var run = new DriverCase(profile, "server-held-" + availability, initial, initial);
             run.Port.PriorityContinuationAvailable = true;
             run.Port.AfterCommand = command => command switch {
-                GrantPriorityContinuation grant => initial with { Revision = 11, PriorityContinuation = Granted(grant, PriorityContinuationStatus.Held) },
-                RevokePriorityContinuation => run.Port.State with { Revision = 12,
+                GrantPriorityContinuation grant => run.Port.State with { Revision = run.Port.State.Revision + 1,
+                    PriorityContinuation = Granted(grant, PriorityContinuationStatus.Held) },
+                RevokePriorityContinuation => run.Port.State with { Revision = run.Port.State.Revision + 1,
                     PriorityContinuation = run.Port.State.PriorityContinuation! with { Status = PriorityContinuationStatus.Revoked, ReasonCode = "withdrawn" } },
-                PassPriority => run.Port.State with { Revision = 13, BoardRevision = 11, Decision = null },
+                PassPriority => run.Port.State with { Revision = run.Port.State.Revision + 1, BoardRevision = 11, Decision = null },
                 _ => null
             };
             await run.Prime(); await run.Driver.ObserveAsync(); await Drain(run.Driver.Client);
             run.Port.RichState = run.Port.State;
             await run.Driver.ObserveAsync(); await run.Driver.StepAsync();
-            check(run.Port.Commands is [GrantPriorityContinuation, PassPriority]
+            check(run.Port.Commands is [PassPriority]
                     && run.Policy.Evaluations == 1 && run.Port.OwnedReads == 1
                     && run.Driver.ClientAdmissions == 1 && run.Driver.ProviderAcceptances == 1
-                    && run.Driver.AutoEvidence is { AcceptedGrants: 1, AcceptedWithdrawals: 0, AcceptedPolicyPriorityPasses: 1 }
+                    && run.Driver.AutoEvidence is { AcceptedGrants: 0, AcceptedWithdrawals: 0, AcceptedPolicyPriorityPasses: 1 }
                     && run.Driver.Client.PriorityContinuationReserved
                     && !run.Driver.Client.NeedsRecovery && !run.Driver.Client.UncertainCommand,
-                "A server-held " + availability + " window preserves standing Auto while counting only the ordinary policy action's actual command receipt");
+                "An armed " + availability + " window reaches the ordinary policy without futile grant/withdraw RPCs or metadata input credit");
+            var absent = ServerPriority(PriorityResponseAvailability.Absent) with { Revision = 20, BoardRevision = 12,
+                Decision = ServerPriority(PriorityResponseAvailability.Absent).Decision! with { Id = "later-absent-" + availability } };
+            await PublishAuto(run, absent);
+            check(run.Port.Commands is [PassPriority, GrantPriorityContinuation { DecisionId: var current }]
+                    && current == absent.Decision!.Id && run.Driver.AutoEvidence.AcceptedGrants == 1,
+                "A later accepted Absent input dispatches the retained ordinary Auto intent exactly once: " + availability);
         }
     }
 
     private static async Task RetiredQueuedServerAction(string profile, Action<bool, string> check)
     {
-        var initial = ServerPriority(PriorityResponseAvailability.Available);
+        var initial = ServerPriority(PriorityResponseAvailability.Absent);
         using var run = new DriverCase(profile, "server-retired-queued-action", initial, initial);
         run.Port.PriorityContinuationAvailable = true;
         run.Port.AfterCommand = command => command switch {
-            GrantPriorityContinuation grant => initial with { Revision = 11, PriorityContinuation = Granted(grant, PriorityContinuationStatus.Held) },
+            GrantPriorityContinuation grant => ServerPriority(PriorityResponseAvailability.Available) with {
+                Revision = 11, PriorityContinuation = Granted(grant, PriorityContinuationStatus.Held) },
             RevokePriorityContinuation => run.Port.State with { Revision = 13,
                 Decision = run.Port.State.Decision! with { Id = "new-prompt-after-negative-consent" },
                 PriorityContinuation = run.Port.State.PriorityContinuation! with { Status = PriorityContinuationStatus.Revoked, ReasonCode = "withdrawn" } },
@@ -876,8 +884,9 @@ internal static partial class PolledFullGameContractChecks
         await PublishAuto(run, changed);
         check(run.Driver.AutoEvidence.QuietAcceptedGrants == 1 && run.Port.Commands.OfType<GrantPriorityContinuation>().All(command =>
                 command.Mode != PriorityContinuationMode.Quiet || command.QuietYieldToken == original)
-                && run.Port.State.PriorityContinuation?.Mode == PriorityContinuationMode.NoResponse,
-            "A changed permission token ends the original Quiet window and requires attention instead of silently granting a replacement token");
+                && run.Driver.AutoEvidence.NoResponseAcceptedGrants == 0
+                && run.Port.State.PriorityContinuation?.Status == PriorityContinuationStatus.Revoked,
+            "A changed permission token withdraws the actual Quiet grant and requires attention without silently granting replacement Quiet or futile NoResponse");
     }
 
     private static async Task ServerAutoResponses(string profile, Action<bool, string> check)
@@ -894,7 +903,8 @@ internal static partial class PolledFullGameContractChecks
             await PublishAuto(run, stacked);
             await run.Driver.ObserveAsync();
             check(run.Port.Commands.OfType<GrantPriorityContinuation>().Count(command => command.Mode == PriorityContinuationMode.Quiet) == 1
-                    && run.Port.State.Stack.Length == 1 && run.Port.State.PriorityContinuation?.Mode == PriorityContinuationMode.NoResponse
+                    && run.Port.State.Stack.Length == 1 && run.Port.State.PriorityContinuation?.Status == PriorityContinuationStatus.Revoked
+                    && run.Driver.AutoEvidence.NoResponseAcceptedGrants == 0
                     && run.Port.OwnedReads == 1 && run.Policy.Evaluations == 0,
                 "An announced stack action interrupts Quiet and remains an actionable ordinary response until the actual manual policy answers it");
             await run.Driver.StepAsync();

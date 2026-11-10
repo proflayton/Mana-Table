@@ -25,8 +25,10 @@ public sealed partial class ClientSession
     private readonly Dictionary<(string Game, int Viewer), (long Through, long Revision)> priorityAcknowledgements = [];
     public bool SupportsPriorityContinuation => Authority == ClientSessionAuthority.Interactive
         && connection.SupportsPriorityContinuation && State?.PriorityContinuation != null;
+    // Retaining Auto prevents a second local pass loop. It does not reserve an
+    // available foreground decision until an actual grant can be dispatched.
     public bool PriorityContinuationReserved => priorityIntent != null || priorityInstruction != null || priorityRevocations.Count > 0;
-    public bool PriorityContinuationPending => priorityIntent != null && priorityInstruction == null
+    public bool PriorityContinuationPending => priorityIntent is { } intent && priorityInstruction == null && CanDispatchPriorityIntent(intent)
         || priorityInstruction is { } instruction && State?.PriorityContinuation?.GrantId != instruction.Command.GrantId;
     public bool PriorityContinuationWithdrawing => priorityRevocations.Count > 0;
 
@@ -108,6 +110,11 @@ public sealed partial class ClientSession
         priorityRevocations.Remove((pending.Command.GameId, pending.Viewer));
     }
 
+    private bool CanDispatchPriorityIntent(PriorityIntent intent) => State is { } state
+        && state.Id == intent.Game && state.ViewerId == intent.Viewer
+        && (intent.Mode != PriorityContinuationMode.NoResponse
+            || state.Decision?.Payload is PriorityPayload { ResponseAvailability: PriorityResponseAvailability.Absent });
+
     private void DrainPriorityContinuation()
     {
         if (operations.Occupied || Polling || Closed || NeedsRecovery) return;
@@ -126,7 +133,7 @@ public sealed partial class ClientSession
         }
         if (priorityIntent is not { } intent || priorityInstruction != null || finiteRevocations.Count > 0 || operations.Pending != null
             || State is not { PriorityContinuation: { } prior, Decision: { } decision } state
-            || state.Id != intent.Game || state.ViewerId != intent.Viewer) return;
+            || !CanDispatchPriorityIntent(intent)) return;
         long sequence = checked(Math.Max(prioritySequence, prior.Sequence) + 1);
         var grant = new GrantPriorityContinuation(state.Id, decision.Id, sequence, Guid.NewGuid().ToString("N"), intent.Mode, intent.Stops, intent.QuietToken);
         if (!GameCommandPermissions.Allows(state, grant)) return;

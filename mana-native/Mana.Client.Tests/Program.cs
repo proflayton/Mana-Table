@@ -10,9 +10,21 @@ if (args.Contains("--verify-failure-reporting"))
     throw new InvalidOperationException("Controlled test-runner failure reporting check.");
 int checks = 0;
 void Check(bool value, string description) { if (!value) throw new Exception(description); checks++; Console.WriteLine(description); }
+if (args.Contains("--priority-continuation-checks")) {
+    await PriorityContinuationRegression.RunAsync(Check);
+    await PriorityObservationRegression.RunAsync(Check);
+    await AiAutomatedPriorityRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} priority continuation lifecycle checks.");
+    return 0;
+}
 if (args.Contains("--ai-combat-survival-checks")) {
     await AiCombatSurvivalRegression.RunAsync(Check);
     Console.WriteLine($"Passed {checks} AI combat survival checks.");
+    return 0;
+}
+if (args.Contains("--ai-swarm-combat-checks")) {
+    await AiSwarmCombatRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} AI swarm combat checks.");
     return 0;
 }
 if (args.Contains("--solo-opponent-checks")) {

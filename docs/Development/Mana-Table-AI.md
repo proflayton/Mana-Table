@@ -1115,6 +1115,17 @@ veto every creature in a large army. Missing, unlimited or unsupported facts
 retain the ordinary policy; each staged attacker still needs current command
 authority. The forecast does not predict hidden responses or resolved damage.
 
+The free-for-all elimination path reserves later staging work from the actual
+declaration size. After the first assignment fixes its defender, each later
+search has bounded creature, commander-row, staged-assignment, option and
+candidate scans. Their sum includes policy entry, completion and the final
+mechanical allowance. Charging the full 384-unit search ceiling for every
+sparse stage wrongly excluded a twelve-body cohort from a 4096-unit episode.
+Both limits remain unchanged. One persistent session now checks that the group
+fits while current offers, capacity changes and genuinely insufficient work
+still govern each next answer. This is not a retained certificate after an
+unrelated world change, or an expansion of the existing forecast's trait model.
+
 Graphics-free checks exercise last-blue versus spare-blue spending, lethal
 responses, third-party removal, exact copied-spell identity, unknown effects,
 retaliation/evasion/vigilance, receipt races and plan lifetime. Real-engine

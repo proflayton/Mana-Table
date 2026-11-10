@@ -60,6 +60,12 @@ internal static class PriorityContinuationChecks
             "A delayed routine automatic pass preserves the takeover target without resubmitting its decision");
 
         var observation = new TaskCompletionSource<GameSnapshot?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var observationEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var receipts = new List<object>();
+        void Receipt(string stage) => receipts.Add(new { stage, whilePolling, viewport,
+            entered = observationEntered.Task.IsCompleted, released = observation.Task.IsCompleted,
+            run.View.Automatic, run.View.Held, run.View.Busy, run.View.Polling,
+            replies = run.Replies.Count, decision = run.View.Match?.Decision?.Id, acceptedHit = run.AcceptedHit });
         try {
             if (whilePolling) {
                 run.Engine.Present(own with { Decision = null, DecisionOwnerId = 1, PriorityPlayerId = 1 });
@@ -69,15 +75,19 @@ internal static class PriorityContinuationChecks
                 check(run.Has(control.Id) && run.Frame.Hits.Single(hit => hit.Id == control.Id).Bounds == control.Bounds
                         && run.View.CurrentHit(run.Frame.Hits.Single(hit => hit.Id == control.Id)) && !run.Has("confirm"),
                     "The same takeover position survives a foreign publication even though no local game action is available");
-                run.Engine.ObserveOverride = () => observation.Task;
+                run.Engine.ObserveOverride = () => { observationEntered.TrySetResult(); return observation.Task; };
+                Receipt("held-observer-installed");
                 var lobby = new Lobby("local", "Controlled routine Auto observation", null, false, null, true, "", null, [], []);
                 run.View.PresentLobby(lobby, false); run.Tick(); run.View.PresentLobby(lobby, true);
-                run.Until(() => run.View.Polling, "A controlled background observation is actually pending before takeover");
+                run.Until(() => observationEntered.Task.IsCompleted && run.View.Polling,
+                    "The owned controlled background observation actually enters before takeover");
+                Receipt("held-observer-entered");
                 check(run.Frame.Hits.Single(hit => hit.Id == control.Id).Bounds == control.Bounds,
                     "Polling a foreign priority leaves the global Take control target in place");
             }
 
             run.Click(control.Id);
+            Receipt("take-control-click");
             check(run.View.Automatic && run.View.Held && !run.Has(control.Id)
                     && (whilePolling ? run.View.Polling : run.View.Busy) && run.Replies.Count == 1,
                 "The physical takeover gesture immediately holds Auto during transport without passing or activating anything");
@@ -93,6 +103,7 @@ internal static class PriorityContinuationChecks
             if (whilePolling) observation.TrySetResult(run.Engine.State); else run.Release(0);
             run.Until(() => !run.View.Busy && !run.View.Polling && run.View.Match?.Decision?.Id == current,
                 "Take control reconciles the already-started transport and its fresh authoritative response");
+            Receipt("reply-adopted");
             run.Settle();
             check(run.View.Automatic && run.View.Held && run.Has("confirm") && CanPlayInstant(run.View.Match)
                     && run.View.Match?.Decision?.Id == current && run.Engine.State.Decision?.Id == current
@@ -102,6 +113,8 @@ internal static class PriorityContinuationChecks
         } finally {
             observation.TrySetResult(run.Engine.State);
             run.Engine.ObserveOverride = null;
+            File.WriteAllText(Path.Combine(profile, "legacy-take-control-owner-" + viewport.X + "-" + whilePolling + ".json"),
+                System.Text.Json.JsonSerializer.Serialize(receipts, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
         }
     }
 
@@ -350,6 +363,7 @@ internal static class PriorityContinuationChecks
         internal InteractionScenarioEngine Engine { get; } = new();
         internal ConcurrentQueue<GameCommand> Replies { get; } = new();
         internal TableApplication.Probe View => app.View;
+        internal string? AcceptedHit => app.AcceptedHit;
         internal PresentationFrame Frame { get; private set; } = null!;
         internal IEnumerable<string> Text => Frame.Drawing.Commands.Select(command => command switch {
             DrawCommand.Text text => text.Value, DrawCommand.CenterText text => text.Value, _ => null }).OfType<string>();

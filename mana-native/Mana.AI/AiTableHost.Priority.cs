@@ -104,13 +104,15 @@ public sealed partial class AiTableHost
             }
             bool priority = state.Status == "playing" && state.Turn > 0
                 && state.Decision?.Payload is PriorityPayload { Pass.Enabled: true };
+            bool canGrant = priority && state.Decision?.Payload is PriorityPayload {
+                ResponseAvailability: PriorityResponseAvailability.Absent };
             if ((active || priority) && NeedsPriorityAcknowledgement(owner, state, credit)) {
                 var result = await AcknowledgePriorityAsync(owner, state, credit, controls, cancellation).ConfigureAwait(false);
                 if (result is AutomatedPriorityControlResult.Accepted accepted) {
                     // The receipt already confirms the ACK. Only an unchanged
                     // exact priority input can chain a grant, never a policy
                     // evaluation or a command against this earlier rich frame.
-                    if (!active && priority && accepted.Receipt.SamePriorityInput(state)
+                    if (!active && canGrant && accepted.Receipt.SamePriorityInput(state)
                         && accepted.Receipt.Continuation.Status is not (PriorityContinuationStatus.Active or PriorityContinuationStatus.Held)
                         && (pacing == null || pacing.Ready(state.Id, observation.SeatId)))
                         return await BeginPriorityGrantAsync(owner, state, controls, cancellation).ConfigureAwait(false);
@@ -120,7 +122,7 @@ public sealed partial class AiTableHost
             if (active && frame.ReasonCode is "awaiting-observation" or "observation-overflow")
                 return PriorityWork.Reserved;
             if (active) return PriorityWork.Reserved;
-            if (!priority || owner.AttemptRevision == state.Revision) return PriorityWork.Policy;
+            if (!canGrant || owner.AttemptRevision == state.Revision) return PriorityWork.Policy;
             return await BeginPriorityGrantAsync(owner, state, controls, cancellation).ConfigureAwait(false);
         } finally { PublishPriorityEvidence(); }
     }
