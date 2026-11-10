@@ -60,6 +60,16 @@ internal static class AiSwarmCombatRegression
     {
         await StageFfa(check, 3, []);
         await StageFfa(check, 4, [2, 3]);
+        foreach (int players in new[] { 3, 4 }) {
+            int[] returning = players == 3 ? [11] : [5, 6];
+            var stagedOriginal = await StageFfa(check, players, returning, powers: Enumerable.Repeat(1, 13).ToArray(),
+                enemyLife: 10, ownLife: 18, expected: 12);
+            var stagedReordered = await StageFfa(check, players, returning, powers: Enumerable.Repeat(1, 13).ToArray(),
+                enemyLife: 10, ownLife: 18, expected: 12, reverse: true);
+            check(stagedOriginal.SequenceEqual(stagedReordered),
+                "A twelve-body FFA cohort retains the same distinct assignments through reordered players, rows, fields and offers");
+        }
+        await LargeCohortBoundaries(check);
         var first = FfaFrame(3, []);
         var reversed = Change(first, first.State with { Players = first.State.Players.Reverse().Select(player => player with {
             Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Reverse().ToImmutableArray() }).ToImmutableArray()
@@ -156,17 +166,27 @@ internal static class AiSwarmCombatRegression
         await Declines(split, "an already split declaration rather than redirecting or reusing its staged assignments");
     }
 
-    private static async Task StageFfa(Action<bool, string> check, int players, int[] returnPowers)
+    private static async Task<ImmutableArray<string>> StageFfa(Action<bool, string> check, int players, int[] returnPowers,
+        int[]? powers = null, int enemyLife = 9, int ownLife = 40, int expected = 7, bool reverse = false)
     {
         using var seat = new AiSeatSession("swarm-regression", 0, new CasualCommanderPolicy(), 17, new(TimeSpan.FromSeconds(10), 4096));
         var assigned = new List<string>(); bool completed = false; DecisionCommand? prior = null;
-        for (int step = 0; step <= 8; step++) {
-            var frame = FfaFrame(players, returnPowers, assigned: assigned, revision: step + 1);
+        int previousRemaining = 4096;
+        for (int step = 0; step <= 32; step++) {
+            var frame = FfaFrame(players, returnPowers, powers, enemyLife: enemyLife, ownLife: ownLife,
+                assigned: assigned, revision: step + 1);
+            if (reverse) frame = ReverseFfa(frame);
             seat.Observe(frame); await seat.EvaluateAsync(); var ticket = seat.TakeCommand();
             check(ticket != null && frame.Allows(ticket.Command) && seat.View.Status != AiSeatStatus.BudgetExceeded
                     && (prior == null || !frame.Allows(prior)),
                 "Every staged FFA elimination answers a fresh current offer within one shared input budget");
             if (ticket == null) throw new InvalidOperationException("The FFA elimination did not retain a current answer.");
+            if (step == 0) check(ticket.Command is ToggleAttackPlayer && ticket.ReasonCode == "combat-stage-swarm-finish",
+                $"The {expected}-body FFA finishing cohort starts inside the unchanged 4096-unit shared episode instead of refusing its future-work reserve");
+            int remainingWork = SubmittedWork(seat, ticket);
+            check(remainingWork >= 64 && remainingWork < previousRemaining,
+                "FFA staging and completion consume the same persistent allowance while preserving mechanical work instead of renewing the budget");
+            previousRemaining = remainingWork;
             if (ticket.Command is ToggleAttackPlayer attack) {
                 var card = frame.State.Viewer!.Zone("Battlefield").Cards.Single(card => card.Key == attack.Attacker);
                 bool distinct = !assigned.Contains(card.VisualId);
@@ -181,9 +201,52 @@ internal static class AiSwarmCombatRegression
             prior = ticket.Command;
             if (completed) break;
         }
-        check(completed && assigned.Count == 7 && assigned.Count < 8,
-            $"The explicit {players}-player FFA eliminates one nominal nine-life defender without spending the entire army or assuming the game ends");
+        check(completed && assigned.Count == expected && assigned.Count < (powers?.Length ?? 8),
+            $"The explicit {players}-player FFA completes its minimal {expected}-body nominal elimination without spending the entire army or assuming the game ends");
+        return assigned.ToImmutableArray();
     }
+
+    private static async Task LargeCohortBoundaries(Action<bool, string> check)
+    {
+        var frame = FfaFrame(3, [11], powers: Enumerable.Repeat(1, 13).ToArray(), enemyLife: 10, ownLife: 18);
+        var limited = await Evaluate(frame, work: 512);
+        check(limited.Status == AiSeatStatus.Ready && limited.Proposal != null && frame.Allows(limited.Proposal)
+                && limited.Evidence is { RemainingWork: >= 64, ReasonCode: not "combat-stage-swarm-finish" },
+            "A twelve-body opportunity with insufficient shared work still declines expansion and preserves a current mechanical answer");
+        foreach (var capacity in new BlockingCapacity?[] { new(2), new(null, true), null }) {
+            using var seat = new AiSeatSession("swarm-regression", 0, new CasualCommanderPolicy(), 17,
+                new(TimeSpan.FromSeconds(10), 4096));
+            seat.Observe(frame); await seat.EvaluateAsync(); var first = seat.TakeCommand();
+            check(first?.Command is ToggleAttackPlayer && first.ReasonCode == "combat-stage-swarm-finish",
+                "The current twelve-body cohort first receives its own legal staged assignment before a capacity mutation");
+            if (first?.Command is not ToggleAttackPlayer attack) throw new InvalidOperationException("The large FFA fixture did not start.");
+            var card = frame.State.Viewer!.Zone("Battlefield").Cards.Single(card => card.Key == attack.Attacker);
+            int firstRemaining = SubmittedWork(seat, first);
+            check(seat.Report(first, AiExecutionReceipt.Accepted), "The large FFA boundary changes only after the first assignment is accepted");
+            var changed = FfaFrame(3, [11], powers: Enumerable.Repeat(1, 13).ToArray(), enemyLife: 10,
+                ownLife: 18, assigned: [card.VisualId], revision: 2);
+            changed = WithEnemyCards(changed, cards => cards.Select(card => card with { BlockingCapacity = capacity }).ToImmutableArray());
+            seat.Observe(changed); await seat.EvaluateAsync(); var next = seat.TakeCommand();
+            int nextRemaining = next == null ? -1 : SubmittedWork(seat, next);
+            check(next != null && changed.Allows(next.Command) && !changed.Allows(first.Command)
+                    && nextRemaining >= 64 && nextRemaining < firstRemaining
+                    && next.ReasonCode is not ("combat-stage-swarm-finish" or "combat-complete-swarm-finish"),
+                "Changed finite, unlimited or unknown block slots retire the earlier large-cohort forecast without stale authority or a renewed allowance");
+        }
+    }
+
+    private static int SubmittedWork(AiSeatSession seat, AiSubmission submission)
+        => seat.History.Decisions.Last(record => record.Outcome == AiDecisionOutcome.Submitted
+            && record.Stamp == submission.Stamp).RemainingWork;
+
+    private static AiDecisionFrame ReverseFfa(AiDecisionFrame frame) => Change(frame, frame.State with {
+        Players = frame.State.Players.Reverse().Select(player => player with {
+            CommanderDamage = player.CommanderDamage.Reverse().ToImmutableArray(),
+            Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Reverse().ToImmutableArray() }).ToImmutableArray()
+        }).ToImmutableArray(),
+        Combat = frame.State.Combat! with { Attackers = frame.State.Combat.Attackers.Reverse().ToImmutableArray(),
+            AttackOptions = frame.State.Combat.AttackOptions.Reverse().ToImmutableArray() }
+    });
 
     private static AiDecisionFrame FfaFrame(int players, int[] returnPowers, int[]? powers = null,
         int blockers = 2, int enemyLife = 9, int ownLife = 40, List<string>? assigned = null, int revision = 1)

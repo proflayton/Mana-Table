@@ -126,8 +126,39 @@ same presence owner. Both intervals retain the single-task/four-Hz checks and
 the prefix's existing 45-second deadline. A green prefix is a bounded transport
 and ownership journey, not a full natural game or a private-choice-sharing claim.
 
+The prefix's single foreground owner conserves each locally admitted command as
+an exact provider ACK, an explicitly typed retirement before dispatch, or one
+still-live attempt. `Submit(true)` can queue a gesture behind the quiet observer
+ACK; revalidation can safely retire that original source offer without sending
+it to Forge. Reconciliation requires no live attempts, every admission accounted
+for, and exact equality between acknowledged inputs and real provider receipts.
+Its private evidence retains the original sequence, game/viewer/decision stamp,
+dispatch identity or retirement diagnostic/reason. Failed or unknown outcomes
+remain fatal. `PolledPlayerAttemptChecks` exercises actual quiet-ACK retirement
+then a fresh command, unrelated declines, unmatched command instances and double
+accounting through the existing client hooks. These controls run in the full
+native suite and the focused `polled-receipt-processing` group; no deadline or
+rules gate is relaxed. Historical failures without those terminal diagnostics
+cannot establish which retirement reason occurred.
+
 See [the considered-play journey](Mana-Table-Experience-Review.md#seeing-a-player-consider-a-public-play-source-candidate)
 for game references, confidentiality limits and pending human review.
+
+## Commander combat lineage and command boundaries
+
+`CommanderCombatWireChecks` exercises the actual Forge snapshot decoder and
+command owner. Missing/null commander-combat rules are legacy unknown; a present
+`damageLimit: null` explicitly disables that loss rule, while a rules object
+missing its required limit is malformed. Public lineage IDs preserve separate
+partners and defender totals through name/control changes. Partial old rows stay
+unknown rather than becoming inferred zero damage. Tests reject malformed or
+unbounded IDs/rows, contradictory owners, private/noncurrent bindings and source
+portraits without the exact current public zoned visual. Same-named copies and
+commander tax cannot establish lineage. Existing selection/action handles remain
+the only command authority, and malformed observations revoke previous grants.
+The checks run in the full headless suite and the focused `commander-combat`
+group. They verify wire and authority boundaries; Java rules journeys and AI
+combat-policy regressions establish their separate behavior guarantees.
 
 ## Shared public inspection
 
@@ -294,6 +325,13 @@ exercise actual team winners, an earlier eliminated ally, rules draws, ordinary
 free-for-all completion and failures; they do not establish a cooperative lobby.
 Include `EliminationRegressionTest` for natural elimination and concession of a
 lone human: both retain Defeat while cleanup keeps the global outcome absent.
+`TerminalProjectionTest` also manifests a real library card in controlled setup,
+then causes an actual commander-damage loss and pauses at the surviving player's
+required face-down disclosure before the final outcome. Historical battlefield
+portraits remain readable but have no current action/payment authority; the
+original revealed face, unrelated living handles and exact final-board identities
+remain intact. This deterministic control reproduced the stale-handle publication
+failure without changing the strict native public-projection guard.
 The packaged `AiFrameworkEngineCheck` exercises that same concession through the
 native adapter before allowing its next match to start.
 
@@ -898,6 +936,17 @@ manifests and summaries identify the shared `ServerAuto` policy and derive the
 bot's `automatedPriorityPolicy` from the actual policy descriptor; earlier
 NoResponse-only evidence cannot silently qualify it. Grant/automatic-pass counts
 are reported separately by mode and must sum to their existing aggregates.
+The shared client retains an armed `NoResponse` policy while a response is
+`Available`, `Unknown` or unreported, but sends no new grant and leaves the exact
+foreground decision usable. A later accepted `Absent` input enables that same
+intent. This does not retire an actual in-flight or Held grant: its original
+negative fence and receipt still govern Take control, manual mana and audience
+replacement. Bots likewise skip only new impossible grants and continue to
+return actual observation credit. Run the efficient client lifecycle group with
+`dotnet run --project mana-native/Mana.Client.Tests/Mana.Client.Tests.csproj -c Release -- --priority-continuation-checks`;
+it includes current-scope replacement, late receipts, Quiet/finite isolation,
+recovery and actual-grant withdrawal controls. The native `server-auto` headless
+group also exercises the visible response gesture and ordinary polled owner.
 Across all four natural rotations, at least one actual original-token Quiet
 window must have accepted consent and certified progress. A seat which never
 encounters such a window does not invent one. Exact token, interruption, response
@@ -976,6 +1025,8 @@ control counts, and retired ownership after disposal; the result and teardown
 must agree. These records never count as gameplay acceptances or invent policy
 decisions. The controlled fanout's bot port does not expose this optional
 capability, so its 220 explicit bot queue passes retain their original meaning.
+Failed bot receipt admission identifies the exact rotation, physical seat and
+failed fields; valid retirement cannot substitute for missing grants or passes.
 Missing rare required-mechanic witnesses remain explicitly Inconclusive; absent
 causal integrity/role evidence, any mechanical failure, or any incomplete natural
 rotation fails this gate. This never substitutes `natural` for the stricter
@@ -999,6 +1050,38 @@ derive the receipt from the exact captured action result rather than a later
 publication, and prove that no private card/action graph enters the receipt.
 Unknown or lost current-world replies remain uncertain failures; they cannot
 cause an automatic full-action fallback or replay of positive consent.
+
+Bot response preparation must cover the production Java controller and wire
+decoder, not merely an authored `PriorityPayload` containing `Absent`. Initial
+external `Unknown` becomes an actual completed `Absent` or `Available` scan
+through the separately negotiated, current-input preparation control while
+continuation remains Idle, sequence stays zero and the actual priority input
+remains active. A distinct Prepared receipt cannot become a policy observation:
+the host obtains a fresh owned rich frame before granting or proposing an action.
+Duplicate attempts and metadata-only revisions do not repeat expensive scans;
+changed input/source/activity, stale or foreign scopes, retirement, pacing,
+capability absence and lost replies need their own controls. Ordinary human
+initial scans and legacy external FullControl remain separate cases. The
+natural campaign must still witness actual positive bot grants and certified
+passes; completing games through ordinary policy passes does not qualify Auto.
+The native `priority-responses` group exercises the actual child-process codec
+and host using authored wire frames. The headless engine journey separately
+reuses its warm production JVM for a four-bot, basic-land opportunity with a
+45-second active watchdog. Ordinary policies must observe initial `Unknown`,
+prepare actual facts, obtain a fresh `Absent` read and receive a real certified
+pass; preparation's before/after consent fields must remain unchanged. This
+small controlled opportunity does not replace varied natural games or certify
+strategy. `--smoke-priority-responses` exposes the same journey for diagnosis
+with matching harness, production engine and resources; retain its runtime
+provenance and result files in a fresh disposable profile.
+The same controlled engine journey must read the bot's real history immediately
+after Prepared, before another rich observation, while old gameplay/grant scopes
+remain retired. Separate process tests hold history replies across same-audience
+refresh, audience removal and reappearance, malformed batches and world/process
+replacement. Continuous ownership survives an ordinary refresh; an old in-flight
+read cannot borrow a new lease after retirement. Foreign audiences and changed
+history game/viewer/cursors remain rejected. This distinguishes a journal's
+reading lifetime from permission to answer the current decision.
 
 The campaign's `PublicProjectionPreparation` owns bounded derived evidence for
 the actual bound audiences. Batch validation, pair comparisons, cohort tracking
@@ -1259,11 +1342,21 @@ stale Surefire files do not belong to a later focused run.
 `AiResourceQualificationJourney` reuses the initialized fixture engine in the
 normal source-bound headless engine smoke, with an optional local
 `--smoke-ai-resources` route. Its declared pregame fixture supplies eight Wastes
-and an eight-card runtime library. Scripted ordinary commands cast Traxos using
+and a nine-card runtime library with duplicate Mind Stone and Spatial Contortion
+copies, guaranteeing both in the initial eight draws and leaving one real card
+to draw. Scripted ordinary commands cast Traxos using
 generic mana, then Mind Stone to trigger its actual untap, then Spatial Contortion
 with an explicit colorless requirement. Archived receipts must distinguish the
-generic negative control from actual `C` consumption. The saved Commander list
-is legal; the deliberately shortened runtime is a test fixture. This does not
+generic negative control from actual `C` consumption. After the original three
+casts and eight paid Wastes are verified, the driver plays a genuine hand Wastes.
+The unfiltered production policy then chooses and pays for Mind Stone's sacrifice
+activation. The shared causal reader requires its exact source sacrifice,
+resolved activation, attributed one-card draw and public hand/library change.
+`AiConsumingArtifactEvidenceChecks` and the campaign tracker checks protect wrong
+actors, sources, stages, unrelated draws, cancellation, retention loss and credit
+to another deck. This is the first supported consuming-artifact witness, scoped
+to a positive draw; other consuming outcomes remain unproven.
+The saved Commander list is legal; the deliberately shortened runtime is a test fixture. This does not
 qualify a campaign deck, prove AI strategy, or replace mixed human play review.
 External resources alone remain unbound; exact-source CI establishes package
 identity separately. No test cutoff becomes a draw or a reason to extend budgets.
@@ -2682,6 +2775,12 @@ global and temporary mute, silent expiry, foreground mute gestures and permitted
 background reminders. The actual portrait bell must remain separately reachable
 from phase/Auto/Hold controls at both supported review sizes. These checks do not
 establish that a listener finds the bundled cue quiet or pleasant.
+The focused `priority-notifications` group also holds an actual automatic pass
+inside the controlled provider, crosses the reminder grace while it is held,
+then requires the real reply and adopted no-decision observation within the
+existing five-second guard. An idle `Busy` flag before dispatch cannot count as
+a receipt. Retained stage evidence distinguishes initial presentation, in-flight
+dispatch and adopted completion; no product notification timing is changed.
 **Source candidate:** the same headless lane includes `AudioSettingsChecks`:
 legacy mute migration, normalized full-mix roundtrip, live master gain through
 the real settings pointer path, release-only persistence, decision replacement,

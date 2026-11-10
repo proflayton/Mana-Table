@@ -542,6 +542,8 @@ internal sealed class AiCampaignProvider(IAutomatedSeatProvider inner, AiCampaig
     private int controlsExecuting;
     public bool SupportsAutomatedPriorityContinuation => inner is IAutomatedPriorityContinuation {
         SupportsAutomatedPriorityContinuation: true };
+    public bool SupportsAutomatedPriorityResponses => inner is IAutomatedPriorityContinuation {
+        SupportsAutomatedPriorityResponses: true };
     public long AutomatedPriorityEpoch => inner is IAutomatedPriorityContinuation port ? port.AutomatedPriorityEpoch : 0;
     internal int PriorityControlsExecuting => Volatile.Read(ref controlsExecuting);
     public async Task<AutomatedPriorityControlResult> ExecuteAutomatedPriorityControlAsync(long epoch, int seatId,

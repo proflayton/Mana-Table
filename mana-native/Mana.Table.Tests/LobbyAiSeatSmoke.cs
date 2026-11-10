@@ -65,7 +65,7 @@ internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
         Click("lobby-ai:1");
         Wait(() => Seat(1)?.Type == "AI" && view.SetupModal.Length == 0, 20, () => {
             var seat = Seat(1)!;
-            Check(seat.Ready && view.Lobby!.AiOpponents.Any(opponent => opponent.Id == seat.OpponentId && opponent.Name == seat.Deck),
+            Check(HasReadyAiAssignment(view.Lobby!, seat),
                 "Add AI automatically assigns an advertised compatible deck to the exact seat");
             Check(HostReady() && view.DeckConfirmed && view.DeckDetails!.Id == deckId,
                 "Automatic AI assignment preserves the host's selected deck, confirmation and readiness");
@@ -78,7 +78,7 @@ internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
         });
         ClickAi(() => firstAi);
         Wait(() => Seat(1)?.Type == "AI" && view.SetupModal.Length == 0, 20, () => {
-            Check(Seat(1) is { Ready: true } seat && seat.OpponentId == firstAi && seat.Deck == view.Lobby!.AiOpponents[0].Name,
+            Check(Seat(1) is { } seat && seat.OpponentId == firstAi && HasReadyAiAssignment(view.Lobby!, seat),
                 "Choosing an AI deck fills the exact seat with its readable deck name and ready state");
             Check(HostReady() && view.DeckConfirmed && view.DeckDetails!.Id == deckId,
                 "Adding AI preserves the host's selected deck, confirmation and readiness");
@@ -161,6 +161,16 @@ internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
         catch (Exception ex) when (ex.Message.Contains("Only the host can change this table", StringComparison.Ordinal)) { guestRejected = true; }
         if (!guestRejected) throw new InvalidOperationException("A guest unexpectedly changed the host's AI seat");
         hostView = await view.Services.Tables.LobbyAsync();
+    }
+    // Catalog labels describe a choice; the captured assignment owns its deck
+    // title and public commander faces. Built-in choices deliberately differ.
+    internal static bool HasReadyAiAssignment(Lobby current, Seat seat)
+    {
+        if (seat is not { Type: "AI", Ready: true, DeckPreview: { Problem: null, Commanders.Length: > 0 } preview }
+            || string.IsNullOrWhiteSpace(seat.OpponentId) || string.IsNullOrWhiteSpace(seat.Deck)
+            || string.IsNullOrWhiteSpace(preview.SelectionId)) return false;
+        return current.AiOpponents.Any(opponent => opponent.Id == seat.OpponentId) && seat.Deck == preview.Name
+            && preview.Commanders.All(card => !string.IsNullOrWhiteSpace(card.Name) && !card.FaceDown && card.Key.Length == 0);
     }
     private bool HostReady() => view.Lobby?.Seats.FirstOrDefault(s => s.Index == 0) is { Ready: true, Deck: "Mixed table host" };
     private static bool PairedGuestPreview(Lobby state) => state.Seats.Single(seat => seat.Index == 2).DeckPreview?.Commanders

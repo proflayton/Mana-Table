@@ -170,12 +170,15 @@ public sealed record Lobby(string Mode, string Status, string? Error, bool CanSt
 }
 public sealed record Card
 {
-    private string key = "", visualId = "", combatId = "";
+    private string key = "", visualId = "", combatId = "", commanderId = "";
     // Legacy and read-only faces may have no occurrence. Keep that absence an
     // empty string; never mint an identity or command handle while decoding it.
     public string Key { get => key; init => key = value ?? ""; }
     public string VisualId { get => visualId; init => visualId = value ?? ""; }
     public string CombatId { get => combatId; init => combatId = value ?? ""; }
+    // Public rules lineage, stable across zone/control changes. This is not a
+    // current occurrence, action key, or authority to inspect a concealed card.
+    public string CommanderId { get => commanderId; init => commanderId = value ?? ""; }
     public CardAttachment? AttachedTo { get; init; }
     public ImmutableArray<CardAttachment> Attachments { get; init; } = [];
     public string Name { get; init; } = "";
@@ -246,7 +249,11 @@ public sealed record Player(int Id, string Name, int Life, bool Priority, bool E
     public ImmutableArray<CommanderDamage> CommanderDamage { get; init; } = [];
     public Zone Zone(string name) => Zones.FirstOrDefault(z => z.Name == name) ?? new(name, 0, [], null);
 }
-public sealed record CommanderDamage(string Name, int OwnerId, string Owner, int Damage);
+public sealed record CommanderDamage(string Name, int OwnerId, string Owner, int Damage)
+{
+    private string commanderId = "";
+    public string CommanderId { get => commanderId; init => commanderId = value ?? ""; }
+}
 public sealed record Choice(int Index, string Label, Card? Card)
 {
     private string label = DecisionValue.Text(Label), cardId = "", detail = "", mana = "";
@@ -346,6 +353,9 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
     int Turn, string Phase, string PhaseKey, int? ActivePlayerId, ImmutableArray<Player> Players,
     ImmutableArray<StackItem> Stack, Combat? Combat, Decision? Decision)
 {
+    // Missing rules are unknown legacy coverage. A present null limit means
+    // this engine/format explicitly has no commander-combat loss condition.
+    public CommanderCombatRules? CommanderCombat { get; init; }
     // Viewer-independent rules completion. A viewer leaving or conceding does not supply this fact.
     public MatchOutcome? Outcome { get; init; }
     public EncounterIdentity? Encounter { get; init; }

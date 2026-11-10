@@ -24,6 +24,7 @@ public final class DesktopEngine implements AutoCloseable {
     static final int PROTOCOL_VERSION = 3;
     static final String AUTOMATED_PRIORITY_CONTINUATION = "automated-priority-continuation-v1";
     static final String AUTOMATED_PRIORITY_METADATA = "automated-priority-metadata-v1";
+    static final String AUTOMATED_PRIORITY_RESPONSES = "automated-priority-responses-v1";
     private static final Gson JSON = new GsonBuilder().serializeNulls().create();
     private final CardCatalog catalog;
     private final Path directory;
@@ -92,7 +93,7 @@ public final class DesktopEngine implements AutoCloseable {
         var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]), simulationTables, pregameSetup);
         engine.resources = Path.of(args[0]);
         engine.documents.loadAnalysisFormats(engine.resources);
-        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", PROTOCOL_VERSION, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo", "automated-seats", "certified-one-step-undo", "match-history", "history-announcements", "match-setup", "durable-encounter-admission", "simulation-match-setup", "automated-match-history", "owned-decision-observation", "private-action-faces", "table-presence", "table-choices-v1", "priority-continuation-v1", AUTOMATED_PRIORITY_CONTINUATION, AUTOMATED_PRIORITY_METADATA))));
+        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", PROTOCOL_VERSION, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo", "automated-seats", "certified-one-step-undo", "match-history", "history-announcements", "match-setup", "durable-encounter-admission", "simulation-match-setup", "automated-match-history", "owned-decision-observation", "private-action-faces", "table-presence", "table-choices-v1", "priority-continuation-v1", AUTOMATED_PRIORITY_CONTINUATION, AUTOMATED_PRIORITY_METADATA, AUTOMATED_PRIORITY_RESPONSES))));
         try (engine; var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = input.readLine()) != null) {
@@ -168,7 +169,7 @@ public final class DesktopEngine implements AutoCloseable {
 
     private static boolean automatedPriorityControl(JsonObject command) {
         return switch (string(command, "action", "")) {
-            case "acknowledgePriorityObservation", "revokePriorityContinuation" -> true;
+            case "acknowledgePriorityObservation", "revokePriorityContinuation", "preparePriorityResponses" -> true;
             case "grantPriorityContinuation" -> string(command, "mode", "").equals("NoResponse");
             default -> false;
         };
@@ -299,7 +300,9 @@ public final class DesktopEngine implements AutoCloseable {
             case "automatedAction" -> ownedAutomatedSeat(p, automatedPriorityControl(p)).action(p);
             case "automatedPriorityControl" -> {
                 if (!automatedPriorityControl(p)) throw new IllegalArgumentException("This endpoint accepts only automated priority metadata controls");
-                yield AutomatedPriorityMetadata.from(ownedAutomatedSeat(p, true).action(p));
+                var owner = ownedAutomatedSeat(p, true);
+                yield string(p, "action", "").equals("preparePriorityResponses") ? owner.preparePriorityResponses(p)
+                        : AutomatedPriorityMetadata.from(owner.action(p));
             }
             case "automatedFault" -> {
                 var owner = ownedAutomatedSeat(p);

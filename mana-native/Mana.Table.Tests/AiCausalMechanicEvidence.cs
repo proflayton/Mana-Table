@@ -33,7 +33,8 @@ internal sealed partial class AiCausalMechanicEvidence(int maximumAttempts = 64,
         internal bool HasFrame, HasHistory, HistoryBacklog;
     }
     private sealed class Attempt(AutomatedSeatObservation before, GameCommand command, ActionCost cost,
-        string sourceId, string sourceName, string selectedId, string executionId, int epoch, bool drawRoute)
+        string sourceId, string sourceName, string selectedId, string executionId, int epoch, bool drawRoute,
+        bool consumingArtifactDraw = false)
     {
         internal readonly AutomatedSeatObservation Before = before;
         internal readonly GameCommand Command = command;
@@ -43,8 +44,9 @@ internal sealed partial class AiCausalMechanicEvidence(int maximumAttempts = 64,
         internal readonly long PriorSequence = before.State.Executions?.LastSequence ?? 0;
         internal readonly int Epoch = epoch;
         internal readonly bool DrawRoute = drawRoute;
+        internal readonly bool ConsumingArtifactDraw = consumingArtifactDraw;
         internal string ExecutionId = executionId;
-        internal bool CostRecorded, LochRecorded, PartnerRecorded, Ambiguous, CompetingExecutions;
+        internal bool CostRecorded, LochRecorded, PartnerRecorded, ArtifactDrawRecorded, Ambiguous, CompetingExecutions;
     }
     private readonly Dictionary<(string Game, int Player), Ledger> ledgers = [];
     private readonly List<Attempt> attempts = [];
@@ -92,7 +94,12 @@ internal sealed partial class AiCausalMechanicEvidence(int maximumAttempts = 64,
             foreach (var cost in semantics.Costs.Where(SupportedCost)) {
                 if (semantics.Costs.Count(item => item.Kind == cost.Kind) != 1) continue;
                 Add(new(before, command, cost, source.SourceCardId, physical.Name, source.SourceCardId, "",
-                    ledger.Epoch, semantics.Effect == ActionEffectKind.Draw && semantics.EffectAmount == 1));
+                    ledger.Epoch, semantics.Effect == ActionEffectKind.Draw && semantics.EffectAmount == 1,
+                    cost.Kind == ActionCostKind.Sacrifice && cost.Amount == 1
+                        && physical.Type.Contains("Artifact", StringComparison.Ordinal)
+                        && before.State.Viewer!.Zone("Battlefield").Cards.Any(card => CardViews.Identity(card) == source.SourceCardId)
+                        && source.Actions.Single(item => item.Id == offered.ActionId).Kind == "activate"
+                        && semantics.Effect == ActionEffectKind.Draw && semantics.EffectAmount == 1));
             }
         } else if (command is SelectCard selected && before.Semantics.CostPayment is { } payment
             && payment.PayerId == before.SeatId && payment.SourceCardId.Length > 0
@@ -185,6 +192,19 @@ internal sealed partial class AiCausalMechanicEvidence(int maximumAttempts = 64,
                 .FirstOrDefault(card => CardViews.Identity(card) == attempt.SourceId);
             if (visibleSource != null && costs[0].Change is { Kind: "counters" } paid
                 && visibleSource.Counters.GetValueOrDefault(paid.Property) != paid.After) continue;
+            if (attempt.ConsumingArtifactDraw && !attempt.ArtifactDrawRecorded
+                && state.Players.SingleOrDefault(item => item.Id == player) is { } artifactRecipient
+                && attempt.Before.State.Viewer is { } before
+                && before.Zone("Library").Count > 0
+                && artifactRecipient.Zone("Library").Count == before.Zone("Library").Count - 1
+                && artifactRecipient.Zone("Hand").Count == before.Zone("Hand").Count + 1
+                && visibleSource == null
+                && costs[0].Impact is { ToZone: "Graveyard" or "Exile" } departure
+                && artifactRecipient.Zone(departure.ToZone).Cards.Any(card => CardViews.Identity(card) == attempt.SourceId)) {
+                Emit(attempt, "positive-consuming-artifact-activation", state.BoardRevision, [costs[0].Id, draws[0].Id],
+                    "The accepted artifact activation sacrificed its exact owned source as a committed cost, resolved and drew one attributed card, confirmed by the public source departure and one-card library/hand change.");
+                attempt.ArtifactDrawRecorded = true;
+            }
             if (attempt.DrawRoute && attempt.SourceName == "Loch Mare" && !attempt.LochRecorded) {
                 Emit(attempt, "loch-mare-counter-cost-draw", state.BoardRevision, [costs[0].Id, draws[0].Id],
                     "The exact owned activation committed its source counter cost, drew one actual card in Resolution and completed Resolved.");

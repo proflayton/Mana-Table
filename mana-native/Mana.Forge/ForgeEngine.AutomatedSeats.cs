@@ -12,8 +12,33 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         PropertyNameCaseInsensitive = true,
         Converters = { new JsonStringEnumConverter(allowIntegerValues: false) }
     };
-    private readonly Dictionary<(string Game, int Seat), (ForgeCommandScope Scope, DecisionActionDomain Domain)> automatedScopes = [];
+    private Dictionary<(string Game, int Seat), (ForgeCommandScope Scope, DecisionActionDomain Domain)> automatedScopes = [];
+    // A passive owned audience outlives any one decision's action offers. Keep
+    // its object identity through healthy refreshes, but never through retirement
+    // and re-admission of the same game/seat pair.
+    private sealed class AutomatedAudienceLease(EngineProcess owner, long generation)
+    {
+        internal readonly EngineProcess Owner = owner;
+        internal readonly long Generation = generation;
+    }
+    private readonly Dictionary<(string Game, int Seat), AutomatedAudienceLease> automatedAudiences = [];
     private JsonElement? lastDecodedAutomatedWire;
+
+    private void RetireAutomatedWorldScopes()
+    {
+        automatedScopes.Clear();
+        automatedAudiences.Clear();
+    }
+
+    private void ReconcileAutomatedAudiences(EngineProcess owner, long generation, ImmutableArray<AutomatedSeatObservation> observed)
+    {
+        var currentAudiences = observed.Select(item => (item.State.Id, item.SeatId)).ToHashSet();
+        foreach (var prior in automatedAudiences.Where(item => !currentAudiences.Contains(item.Key)
+            || !ReferenceEquals(item.Value.Owner, owner) || item.Value.Generation != generation).Select(item => item.Key).ToArray())
+            automatedAudiences.Remove(prior);
+        foreach (var key in currentAudiences)
+            if (!automatedAudiences.ContainsKey(key)) automatedAudiences.Add(key, new(owner, generation));
+    }
 
     // Commit provider-owned table replacement while receiving its successful
     // receipt, before asynchronous request continuations can finish out of order.
@@ -25,7 +50,7 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         lock (worldScopeGate) {
             if (current != owner || owner.Failure != null) return;
             Interlocked.Increment(ref worldGeneration);
-            automatedScopes.Clear();
+            RetireAutomatedWorldScopes();
             owner.Commands.Clear();
         }
     }
@@ -48,7 +73,7 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
             EnsureSimulationConnection(owner);
             var raw = await Request("automatedSimulationStart", new { decks = deckIds });
             EnsureSimulationConnection(owner);
-            lock (worldScopeGate) { Interlocked.Increment(ref worldGeneration); automatedScopes.Clear(); }
+            lock (worldScopeGate) { Interlocked.Increment(ref worldGeneration); RetireAutomatedWorldScopes(); }
             return ForgeSnapshotDecoder.Decode(raw, spectator: true, certifiedUndo: owner.CertifiedUndoAvailable)
                 ?? throw new IOException("The simulation did not start.");
         } finally { simulationLifecycle.Release(); }
@@ -71,7 +96,7 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
             EnsureSimulationConnection(owner);
             await Request("automatedSimulationStop", new { sessionId = gameId });
             EnsureSimulationConnection(owner);
-            lock (worldScopeGate) { Interlocked.Increment(ref worldGeneration); automatedScopes.Clear(); }
+            lock (worldScopeGate) { Interlocked.Increment(ref worldGeneration); RetireAutomatedWorldScopes(); }
         } finally { simulationLifecycle.Release(); }
     }
 
@@ -90,29 +115,32 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         }
         lock (worldScopeGate) EnsureAutomatedObservationOwner(owner, generation, cancellation);
         ImmutableArray<AutomatedSeatObservation> result;
+        Dictionary<(string Game, int Seat), (ForgeCommandScope Scope, DecisionActionDomain Domain)> nextScopes;
         try {
             cancellation.ThrowIfCancellationRequested();
             result = DecodeAutomatedObservations(raw, owner.CertifiedUndoAvailable);
+            nextScopes = [];
+            foreach (var item in result) {
+                var scope = new ForgeCommandScope(); scope.Observe(item.State);
+                nextScopes.Add((item.State.Id, item.SeatId), (scope, item.Domain));
+            }
             cancellation.ThrowIfCancellationRequested();
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { throw; }
         catch (Exception error) {
             lock (worldScopeGate) {
                 EnsureAutomatedObservationOwner(owner, generation, cancellation);
-                automatedScopes.Clear();
+                RetireAutomatedWorldScopes();
             }
             PreserveRejectedAutomatedObservation(paths.Profile, raw, error);
             throw;
         }
         lock (worldScopeGate) {
             EnsureAutomatedObservationOwner(owner, generation, cancellation);
-            automatedScopes.Clear();
             // Request already returned an owned immutable JSON clone.
             lastDecodedAutomatedWire = raw;
-            foreach (var item in result) {
-                var scope = new ForgeCommandScope(); scope.Observe(item.State);
-                automatedScopes.Add((item.State.Id, item.SeatId), (scope, item.Domain));
-            }
+            automatedScopes = nextScopes;
+            ReconcileAutomatedAudiences(owner, generation, result);
         }
         return result;
     }

@@ -171,9 +171,26 @@ internal static class AiSwarmCombat
         if (plan == null) return null;
         int remaining = plan.Cohort.Count - staged.Count;
         if (remaining == 0) return new CompleteAttackers(state.Id, state.Decision!.Id);
-        // Each later stage recomputes from fresh state, within the same capped
-        // optional search. Reserve its worst-case work before starting a group.
-        if (request.Work.Remaining < (long)remaining * MultiplayerWork + mechanicalReserve) return null;
+        // Later inputs have a locked defender. Each bounded search charges:
+        // creature indexing, staged validation, commander rows, the other
+        // opponents' return bodies plus that defender's blockers, all current
+        // options and at most the remaining cohort slots. Completion is bounded
+        // by that same path even if its current capacity facts change. Reserving
+        // 384 for every sparse stage needlessly made a twelve-body group cost
+        // more than the entire episode before any declaration could begin.
+        int options = combat.AttackOptions.Length;
+        int totalCreatures = creatures.Values.Sum(cards => cards.Length);
+        int commanderRows = actor.CommanderDamage.IsDefaultOrEmpty || actor.CommanderDamage.Length > MaxCandidates
+            ? 0 : actor.CommanderDamage.Length;
+        long fixedStageWork = Math.Max(1, totalCreatures) + commanderRows + totalCreatures - creatures[actor.Id].Length;
+        long futureWork = Math.Max(mechanicalReserve,
+            Math.Max(64L, 2L * options + plan.Cohort.Count + combat.AttackRepair.Length + 1));
+        for (int stagedCount = staged.Count + 1; stagedCount <= plan.Cohort.Count; stagedCount++) {
+            long search = fixedStageWork + stagedCount + options + Math.Min(options, MaxCohort - stagedCount);
+            // The policy entry is outside the unchanged optional search slice.
+            futureWork += 1 + Math.Min(MultiplayerWork, search);
+        }
+        if (request.Work.Remaining < futureWork) return null;
         var next = plan.Cohort.First(card => !assigned.Contains(CardViews.Identity(card)));
         var command = new ToggleAttackPlayer(state.Id, state.Decision!.Id, next.Key, plan.Opponent.Id);
         return request.Frame.Allows(command) ? command : null;

@@ -11,6 +11,8 @@ public sealed partial class ForgeEngine : IAutomatedPriorityContinuation
     public bool SupportsAutomatedPriorityContinuation => current is {
         AutomationAvailable: true, PriorityContinuationAvailable: true, AutomatedPriorityContinuationAvailable: true, Failure: null } owner
         && !disposed && owner.Ready.Task.IsCompletedSuccessfully && !owner.Process.HasExited;
+    public bool SupportsAutomatedPriorityResponses => SupportsAutomatedPriorityContinuation
+        && current is { AutomatedPriorityMetadataAvailable: true, AutomatedPriorityResponsesAvailable: true };
 
     public long AutomatedPriorityEpoch {
         get {
@@ -39,6 +41,8 @@ public sealed partial class ForgeEngine : IAutomatedPriorityContinuation
         lock (worldScopeGate) {
             if (!SupportsAutomatedPriorityContinuation || epoch != AutomatedPriorityEpoch || current is not { } process)
                 return new AutomatedPriorityControlResult.Retired();
+            if (control is AutomatedPriorityControl.PrepareResponses && !SupportsAutomatedPriorityResponses)
+                return new AutomatedPriorityControlResult.Retired();
             owner = process;
             if (control is AutomatedPriorityControl.Withdraw withdraw
                 && automatedPriorityFences.TryGetValue((control.GameId, seatId), out long fence)
@@ -51,7 +55,22 @@ public sealed partial class ForgeEngine : IAutomatedPriorityContinuation
                 if (!automatedScopes.TryGetValue((control.GameId, seatId), out var scope))
                     return new AutomatedPriorityControlResult.Retired();
                 anchor = scope.Scope.ObservedState;
-                if (control is AutomatedPriorityControl.NoResponse chained && anchor != null
+                if (control is AutomatedPriorityControl.PrepareResponses preparation) {
+                    if (anchor is not { Status: "playing", Viewer: { Eliminated: false },
+                            Decision: { Payload: PriorityPayload { Pass.Enabled: true } } decision }
+                        || anchor.Id != preparation.GameId || anchor.ViewerId != seatId || decision.Id != preparation.DecisionId
+                        || anchor.DecisionOwnerId is { } chooser && chooser != seatId
+                        || anchor.PriorityPlayerId is { } responder && responder != seatId
+                        || anchor.PriorityContinuation is { Status: PriorityContinuationStatus.Active or PriorityContinuationStatus.Held }
+                        || anchor.FiniteStackYield is { Status: FiniteStackYieldStatus.Active })
+                        return new AutomatedPriorityControlResult.Retired();
+                    args = new() { ["sessionId"] = preparation.GameId, ["promptId"] = preparation.DecisionId,
+                        ["expectedTask"] = "priority", ["action"] = "preparePriorityResponses" };
+                    // Preparation may refresh controller facts. Neither its
+                    // receipt nor the preceding ACK can reuse this rich scope.
+                    automatedScopes.Remove((control.GameId, seatId));
+                    automatedPriorityReceipts.Remove((control.GameId, seatId));
+                } else if (control is AutomatedPriorityControl.NoResponse chained && anchor != null
                     && automatedPriorityReceipts.TryGetValue((control.GameId, seatId), out var cursor)
                     && ReferenceEquals(cursor.Anchor, anchor)) {
                     if (cursor.Receipt.Epoch != epoch || !cursor.Receipt.SamePriorityInput(anchor)
@@ -97,6 +116,18 @@ public sealed partial class ForgeEngine : IAutomatedPriorityContinuation
                 return new AutomatedPriorityControlResult.Retired();
         }
         AutomatedPriorityReceipt metadata;
+        if (control is AutomatedPriorityControl.PrepareResponses requestedPreparation) {
+            var receipt = ForgeAutomatedPriorityResponsesDecoder.Decode(raw, epoch);
+            if (receipt.GameId != requestedPreparation.GameId || receipt.SeatId != seatId
+                || receipt.DecisionId != requestedPreparation.DecisionId || anchor == null
+                || receipt.BoardRevision < anchor.BoardRevision
+                || anchor.PriorityObservation is { } observed && receipt.PublicActivitySequence < observed.PublicActivitySequence)
+                throw new IOException("Priority response preparation belongs to another input or public prefix.");
+            lock (worldScopeGate)
+                if (current != owner || owner.Failure != null || epoch != AutomatedPriorityEpoch)
+                    return new AutomatedPriorityControlResult.Retired();
+            return new AutomatedPriorityControlResult.Prepared(receipt);
+        }
         if (owner.AutomatedPriorityMetadataAvailable) {
             metadata = ForgeAutomatedPriorityMetadataDecoder.Decode(raw, epoch);
             if (metadata.GameId != control.GameId || metadata.SeatId != seatId)

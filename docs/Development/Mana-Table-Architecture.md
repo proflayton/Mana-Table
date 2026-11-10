@@ -37,6 +37,32 @@ preserving every enclosing freeze. Incidental refreshes retain the previous
 coherent cohort while frozen. Speculative queries cannot request that cut, and
 historical portraits never acquire new current occurrence identities.
 
+Public rules lineage has a different lifetime again. The source candidate's
+`CommanderCombat` fact carries the rules engine's applicable loss threshold;
+`Card.CommanderId` joins a current public commander to each recipient's separate
+damage record. The table owns that lineage across zone and control changes,
+while current visual IDs and input handles retain their existing revocation.
+Names, controller IDs and commander tax cannot substitute for the lineage.
+Private or concealed faces receive no binding. Missing legacy rules or damage
+bindings remain unknown. The AI shares one bounded nominal combat assessment
+between blocking and reserving defenders; it does not turn this forecast into
+rules authority or claim to simulate every prevention/replacement effect.
+
+Standing Auto also separates desired policy from wire ownership. A retained
+`NoResponse` intent reserves the automatic progression route, but an available
+or unknown response does not become a pending grant or block the foreground
+decision. Fresh authoritative absence makes a new grant eligible. An actual
+instruction, its Held receipt and its withdrawal fence retain their existing
+lifetimes; Quiet continues to require its exact captured token. The bot owner
+uses the same absence requirement before starting a new grant.
+
+Input staging is different from completion. A combat toggle can leave its
+current prompt identity unchanged; drivers must witness the exact staged
+assignment before completing that declaration. Likewise, optional combat work
+reserves future effort from the current declaration's bounded search size,
+including completion and its mechanical allowance. A changed world requires
+fresh evaluation, rather than inheriting a previously proposed attack group.
+
 Java CI isolates API tests in two process-owned workspaces while keeping methods
 and upstream modules serial. Its opt-in Maven profile and shared accounting
 checker bind current compiled inputs, process owners, reports and invocation
@@ -566,6 +592,11 @@ actionable or accepting a historical graph entity.
 Finished tables may retain the last loser's actual registered-player rules zones.
 Those exact final views remain readable display state, with no pending input or
 action scope. They are distinct from a historical copy and from an active seat.
+Before the outcome exists, a rules-required loss disclosure can also retain
+eliminated-player portraits while a surviving viewer acknowledges the reveal.
+Every card-state authority field uses the same exact current-occurrence boundary:
+historical faces receive no prompt handle, selectable/highlighted flag or payment
+certificate. Reading the original face does not reauthorize the departed card.
 Absent card identities use empty strings; decoding never invents identifiers.
 Operation entities canonicalize a rules card only when its game timestamp
 matches the current incarnation, and semantic references reject historical view
@@ -609,7 +640,7 @@ its funding. The shared work limit remains unchanged. This pruning improves
 coverage within that limit, without claiming an exhaustive or optimal search.
 
 The optional host-only `IAutomatedPriorityContinuation` port represents only
-observation acknowledgement, `NoResponse` consent and withdrawal. It cannot
+observation acknowledgement, scoped response preparation, `NoResponse` consent and withdrawal. It cannot
 carry gameplay, Quiet or finite-yield commands. The policy descriptor explicitly
 opts into `NoResponse`; custom policies default to full control. `AiTableHost`
 owns sequence fences and observed certificates per game, seat and provider epoch,
@@ -628,9 +659,39 @@ seat cycle. Each control rechecks pacing. These receipts cannot enter gameplay
 scopes or policy observations; gameplay always needs a fresh owned rich read.
 The adapter keeps a separate metadata cursor anchored to that rich observation;
 late replies cannot replace a newer cursor or revive an advanced input.
+Response preparation has a distinct `Prepared` receipt and the separate optional
+`automated-priority-responses-v1` capability. An external controller initially
+reports `Unknown`; requiring `Absent` before the operation which requests its
+first scan would deadlock discovery. A paced owner therefore acknowledges its
+observed delivery prefix, requests preparation for the exact current priority
+input, then obtains a new owned rich observation. Preparation does not grant
+passing, advance a sequence, queue a rules input or install a gameplay scope.
+The host bounds attempts by the current decision/domain and public activity;
+metadata-only revision changes do not request another expensive scan. Java
+separately binds the actual input instance, sequence and source generation.
+Only a later rich frame's authoritative `Absent` permits a new grant.
+`Available`, incomplete/invalidated `Unknown` and unsupported providers retain
+ordinary policy work. Reading a snapshot never requests preparation, and
+ordinary human response scans remain independent of bot preparation.
+Automated history reads have a separate registered audience lifetime, bound to
+the actual process, table world, game and seat. A complete validated owned batch
+reconciles those private leases atomically. A continuously present audience
+keeps its lease through preparation, ACKs, consent changes and ordinary refreshes;
+retiring a decision scope cannot remove permission to read its journal. History
+captures that exact lease before its RPC and requires the same live lease after
+the reply. Removing and later reintroducing the same game/seat cannot revive an
+in-flight read from the retired audience. This read lease carries no action
+domain, card handles or permission to answer a decision.
+Actual world/process retirement, stop/leave, authoritative audience removal and
+malformed or uncertain ownership retire read leases. A failed rejected table
+replacement or concession does not itself retire the table. A superseded
+decision read in the same healthy world can retire current command scopes while
+preserving established audience ownership. Unknown audiences are never minted
+from metadata receipts or unvalidated observations.
 The optional `automated-priority-metadata-v1` capability makes that separation
 explicit on the private process wire. `automatedPriorityControl` accepts only
-the three closed continuation controls and returns a versioned metadata receipt
+the three closed continuation controls and, when separately negotiated, scoped
+response preparation. Continuation controls return a versioned metadata receipt
 from that action's exact committed audience publication. It carries no cards,
 action domain, timer or provider epoch. Native code supplies its captured process
 epoch and validates the closed receipt before reconciling consent. An unchanged

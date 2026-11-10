@@ -10,7 +10,8 @@ internal static class PriorityContinuationRegression
     {
         var initial = State();
         var grant = new GrantPriorityContinuation(initial.Id, initial.Decision!.Id, 1, "closed-consent", PriorityContinuationMode.NoResponse, ["MAIN1"]);
-        check(GameCommandPermissions.Allows(initial, grant), "Ordinary server Auto can register a Held policy while a response is available");
+        check(GameCommandPermissions.Allows(Availability(initial, PriorityResponseAvailability.Available), grant),
+            "The engine contract can register Held consent while a response is available; the client need not issue that futile grant");
         check(!GameCommandPermissions.Allows(initial, grant with { Sequence = 0 })
             && !GameCommandPermissions.Allows(initial, grant with { PhaseStops = ["MAIN1", "MAIN1"] })
             && !GameCommandPermissions.Allows(initial, grant with { Mode = (PriorityContinuationMode)99 }),
@@ -22,7 +23,7 @@ internal static class PriorityContinuationRegression
             "Standing withdrawal is prompt free and remains legal during retirement");
         bool inconsistent = false;
         try { PriorityContinuationFacts.Validate(initial with { Decision = initial.Decision with {
-            Payload = ((PriorityPayload)initial.Decision.Payload) with { CanAutoPass = true } } }); }
+            Payload = ((PriorityPayload)initial.Decision.Payload) with { CanAutoPass = false } } }); }
         catch (ArgumentException) { inconsistent = true; }
         check(inconsistent, "A tri-state response advertisement cannot contradict legacy automatic-pass permission");
 
@@ -30,6 +31,7 @@ internal static class PriorityContinuationRegression
         var legacy = new ClientSession(unsupported); legacy.Accept(initial);
         check(!legacy.EnsurePriorityContinuation(PriorityContinuationMode.NoResponse, []) && !legacy.PriorityContinuationReserved,
             "A frame without negotiated transport support preserves the legacy runner"); legacy.Close();
+        await ArmedIntentAsync(check);
 
         var port = new Port(initial);
         var session = new ClientSession(port); session.Accept(initial);
@@ -148,6 +150,76 @@ internal static class PriorityContinuationRegression
         await CleanupAfterObservationFailure(check);
     }
 
+    private static async Task ArmedIntentAsync(Action<bool, string> check)
+    {
+        foreach (var availability in new PriorityResponseAvailability?[] {
+            PriorityResponseAvailability.Available, PriorityResponseAvailability.Unknown, null }) {
+            var initial = Availability(State(), availability);
+            var port = new Port(initial); var session = new ClientSession(port); session.Accept(initial);
+            check(session.EnsurePriorityContinuation(PriorityContinuationMode.NoResponse, [])
+                    && session.PriorityContinuationReserved && !session.PriorityContinuationPending && !session.Busy,
+                "Armed Auto leaves a current response available without pretending a grant is in flight: " + availability);
+            for (int frame = 0; frame < 25; frame++) {
+                session.EnsurePriorityContinuation(PriorityContinuationMode.NoResponse, []); session.Pump();
+            }
+            check(port.Commands.Count == 0 && !session.PriorityContinuationPending,
+                "Available, unknown or missing response evidence cannot dispatch new NoResponse consent: " + availability);
+            check(session.Submit(new PassPriority(initial.Id, initial.Decision!.Id)),
+                "The exact manual response remains admissible while Auto is only armed: " + availability);
+            await Pump(session);
+            check(port.Commands is [PassPriority { DecisionId: var decision }] && decision == initial.Decision.Id
+                    && session.PriorityContinuationReserved && !session.PriorityContinuationPending && !session.NeedsRecovery,
+                "A manual response preserves armed Auto without a grant or withdrawal RPC when no consent was dispatched: " + availability);
+            session.Close();
+        }
+
+        var available = Availability(State(), PriorityResponseAvailability.Available);
+        var continuation = new Port(available); var owner = new ClientSession(continuation); owner.Accept(available);
+        owner.EnsurePriorityContinuation(PriorityContinuationMode.NoResponse, ["MAIN2"]);
+        var absent = Availability(available with { Revision = available.Revision + 1,
+            Decision = available.Decision! with { Id = "fresh-absent" } }, PriorityResponseAvailability.Absent);
+        continuation.State = absent;
+        check(owner.Accept(absent), "A fresh absent publication is adopted while the original Auto intent stays armed");
+        await Pump(owner);
+        for (int frame = 0; frame < 25; frame++) owner.Pump();
+        check(continuation.Commands is [GrantPriorityContinuation { DecisionId: "fresh-absent", Sequence: 1, PhaseStops: ["MAIN2"] }]
+                && !owner.PriorityContinuationPending && owner.State?.PriorityContinuation?.Status == PriorityContinuationStatus.Held,
+            "Fresh Absent authority dispatches exactly one retained intent and preserves the actual Held receipt");
+        continuation.HoldRevoke = true;
+        owner.CancelAdvance();
+        check(owner.Submit(new PassPriority(absent.Id, absent.Decision!.Id)),
+            "A real Held grant still fences a subsequently admitted manual response");
+        await Until(owner, () => continuation.RevokeStarted.Task.IsCompleted);
+        check(continuation.Commands is [GrantPriorityContinuation, RevokePriorityContinuation]
+                && owner.Busy && owner.PriorityContinuationWithdrawing,
+            "Actual grant ownership cannot be inferred revoked from Available evidence or bypass its negative receipt");
+        continuation.ReleaseRevoke.TrySetResult(); await Pump(owner);
+        check(continuation.Commands is [GrantPriorityContinuation, RevokePriorityContinuation, PassPriority]
+                && continuation.MaximumConcurrent == 1 && !owner.NeedsRecovery,
+            "Only the matching withdrawal receipt releases the retained exact manual response");
+        owner.Close();
+
+        continuation = new Port(available); owner = new(continuation); owner.Accept(available);
+        owner.EnsurePriorityContinuation(PriorityContinuationMode.NoResponse, []);
+        var replacement = State() with { Id = "new-audience", Revision = 1,
+            Decision = State().Decision! with { Id = "new-audience-input" } };
+        continuation.State = replacement;
+        check(owner.Accept(replacement), "A new audience can replace an armed policy that never dispatched consent");
+        for (int frame = 0; frame < 25; frame++) owner.Pump();
+        check(continuation.Commands.Count == 0 && !owner.PriorityContinuationPending,
+            "Fresh Absent evidence from another game cannot activate the old audience's armed intent");
+        owner.EnsurePriorityContinuation(PriorityContinuationMode.NoResponse, []); await Pump(owner);
+        check(continuation.Commands is [GrantPriorityContinuation { GameId: "new-audience", DecisionId: "new-audience-input" }],
+            "Only a new audience-bound Auto request can dispatch against the replacement current input");
+        owner.Close();
+
+        continuation = new Port(available); owner = new(continuation); owner.Accept(available);
+        owner.EnsurePriorityContinuation(PriorityContinuationMode.Quiet, [], "original-quiet"); await Pump(owner);
+        check(continuation.Commands is [GrantPriorityContinuation { Mode: PriorityContinuationMode.Quiet, QuietYieldToken: "original-quiet" }],
+            "Explicit Quiet still dispatches its exact token even when a response exists");
+        owner.Close();
+    }
+
     private static async Task CleanupAfterObservationFailure(Action<bool, string> check)
     {
         foreach (bool retired in new[] { true, false }) {
@@ -201,11 +273,15 @@ internal static class PriorityContinuationRegression
     private static GameSnapshot State() => new("continuation-game", "playing", null, null, 0, 2, "Main phase", "MAIN1", 1,
         [new(0, "You", 40, true, false, ImmutableDictionary<string, int>.Empty, []),
          new(1, "Opponent", 40, false, false, ImmutableDictionary<string, int>.Empty, [])], [], null,
-        new("priority-1", new(), new PriorityPayload(new("Pass once", true), null, false, "original-quiet", []) {
-            ResponseAvailability = PriorityResponseAvailability.Available })) {
+        new("priority-1", new(), new PriorityPayload(new("Pass once", true), null, true, "original-quiet", []) {
+            ResponseAvailability = PriorityResponseAvailability.Absent })) {
         Revision = 10, PriorityPlayerId = 0, DecisionOwnerId = 0,
         PriorityContinuation = new(0, "", null, PriorityContinuationStatus.Idle, "", 0, [])
     };
+
+    private static GameSnapshot Availability(GameSnapshot state, PriorityResponseAvailability? availability)
+        => state with { Decision = state.Decision! with { Payload = ((PriorityPayload)state.Decision.Payload) with {
+            CanAutoPass = availability == PriorityResponseAvailability.Absent, ResponseAvailability = availability } } };
 
     private static async Task Pump(ClientSession session)
         => await Until(session, () => !session.Busy && !session.PriorityContinuationPending && !session.PriorityContinuationWithdrawing);
@@ -239,6 +315,9 @@ internal static class PriorityContinuationRegression
                 if (command is GrantPriorityContinuation grant) {
                     State = State with { Revision = State.Revision + 1, PriorityContinuation = new(grant.Sequence, grant.GrantId,
                         grant.Mode, PriorityContinuationStatus.Held, "response-available", 0, grant.PhaseStops) };
+                    // A response may arrive while a legitimately Absent grant
+                    // is in flight; its actual Held ownership must survive.
+                    State = Availability(State, PriorityResponseAvailability.Available);
                     GrantStarted.TrySetResult();
                     if (HoldGrant) await ReleaseGrant.Task;
                     if (FailGrant) { FailGrant = false; throw new IOException("Lost grant reply"); }

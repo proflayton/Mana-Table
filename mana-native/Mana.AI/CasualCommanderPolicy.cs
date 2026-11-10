@@ -755,8 +755,8 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 ? Answer(request, new CompleteBlockers(state.Id, state.Decision!.Id), "combat-complete-repaired-blocks")
                 : Missing("combat-block-repair-completion");
         var assigned = combat.Attackers.SelectMany(attack => attack.BlockerIds).ToHashSet();
-        var incomingByDefender = new Dictionary<int, long?>();
-        var options = new List<(DecisionCommand Command, double Score, double Tie)>();
+        var incomingByDefender = new Dictionary<int, AiCombatSurvival?>();
+        var options = new List<(DecisionCommand Command, AiCombatSurvivalRank Survival, double Score, double Tie)>();
         int retained = (int)Math.Min(int.MaxValue, Math.Max(64L,
             2L * combat.Attackers.SelectMany(attack => attack.EligibleBlockerIds).Distinct(StringComparer.Ordinal).Count() + combat.Attackers.Length + 1));
         var work = request.Work.CreateSlice(256, retained);
@@ -765,8 +765,8 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         foreach (var attack in combat.Attackers.Where(attack => AiPlayerRelations.Friendly(state, attack.DefendingPlayerId)).OrderBy(attack => attack.CardId, StringComparer.Ordinal)) {
             if (attack.BlockerIds.Length > 0 && string.IsNullOrEmpty(combat.BlockProblem)) continue;
             var defended = state.Players.First(player => player.Id == attack.DefendingPlayerId);
-            if (!incomingByDefender.TryGetValue(defended.Id, out long? incoming))
-                incomingByDefender[defended.Id] = incoming = CasualTableAssessment.IncomingDamage(state, defended.Id);
+            if (!incomingByDefender.TryGetValue(defended.Id, out var incoming))
+                incomingByDefender[defended.Id] = incoming = AiCombatSurvival.Current(state, defended);
             var attacker = CardViews.FindZoneOccurrence(state, attack.CardId)?.Card;
             if (attacker == null || attacker.Key.Length == 0) continue;
             foreach (string id in attack.EligibleBlockerIds.Where(id => !assigned.Contains(id)).Order(StringComparer.Ordinal)) {
@@ -781,19 +781,21 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                     ? Math.Max(0, CasualTableAssessment.UnblockedDamage(attacker) - exchange.DamageToDefender) : 0;
                 double score = (exchange.BlockerDies ? -CasualTableAssessment.OpportunityCost(state, blocker, "Battlefield") : .5)
                     + (exchange.AttackerDies ? CasualTableAssessment.CardValue(attacker) : 0);
-                if (incoming is { } predicted && predicted >= defended.Life && prevented > 0)
-                    score += predicted - prevented < defended.Life ? 100 : Math.Min(50, prevented * 3);
-                else if (defended.Life < 10) score += prevented * .4;
+                var survival = incoming == null ? AiCombatSurvivalRank.None
+                    : AiCombatSurvival.Improvement(incoming.Risk, incoming.AfterBlock(attacker, exchange.DamageToDefender));
+                if (survival == AiCombatSurvivalRank.None && incoming?.ModelsLife == true && defended.Life < 10) score += prevented * .4;
                 if (attack.BlockerIds.Length > 0) score -= 10;
                 if (!string.IsNullOrEmpty(combat.BlockProblem)) score += attack.BlockerIds.Length > 0 ? 20 : 1;
-                options.Add((command, score,
+                options.Add((command, survival, score,
                     CasualTableAssessment.Tie(request.Seed, attacker.VisualId + ":" + blocker.VisualId)));
             }
             if (limited) break;
         }
-        var best = options.OrderByDescending(item => item.Score).ThenBy(item => item.Tie).FirstOrDefault();
-        if (best.Command != null && (best.Score > 0 || !payload.Complete.Enabled || !string.IsNullOrEmpty(combat.BlockProblem)))
-            return Answer(request, best.Command, "combat-public-defensive-trade");
+        var best = options.OrderByDescending(item => item.Survival).ThenByDescending(item => item.Score).ThenBy(item => item.Tie).FirstOrDefault();
+        if (best.Command != null && (best.Survival != AiCombatSurvivalRank.None || best.Score > 0
+            || !payload.Complete.Enabled || !string.IsNullOrEmpty(combat.BlockProblem)))
+            return Answer(request, best.Command, best.Survival != AiCombatSurvivalRank.None
+                ? "combat-reduce-modeled-defeat" : "combat-public-defensive-trade");
         if ((!payload.Complete.Enabled || !string.IsNullOrEmpty(combat.BlockProblem)) && fallback != null)
             return Answer(request, fallback, "combat-required-offered-block");
         return payload.Complete.Enabled && string.IsNullOrEmpty(combat.BlockProblem)

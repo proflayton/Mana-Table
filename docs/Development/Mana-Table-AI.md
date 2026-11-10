@@ -1,5 +1,66 @@
 # Multiplayer AI framework and investigation
 
+## Response preparation is independent of pass consent
+
+An external controller previously requested its availability scan only after a
+NoResponse grant. Requiring an authoritative Absent frame before that grant
+exposed a bootstrap cycle: ordinary bot frames stayed Unknown and no consent
+could start. Unknown remains ineligible; neither an empty action catalog nor
+the preparation receipt can substitute for the controller's completed scan.
+
+The optional `automated-priority-responses-v1` host port prepares one exact
+current priority input after pacing and observer acknowledgement. Its closed
+Prepared receipt confirms only the owned attempt, with no grant sequence, pass
+or gameplay receipt. The native adapter retires the preceding rich action scope
+and ACK cursor. The host must obtain another owned rich observation before
+granting or evaluating a policy. Available and bounded Unknown results preserve
+ordinary policy control; older providers keep that fallback without a new RPC.
+The attempt latch follows the exact input, source generation and public prefix,
+not metadata revisions. Lost current-world receipts remain uncertain; late
+epochs and known retired inputs cannot become fresh authority.
+
+That decision scope is separate from the passive audience's lifetime. A stable
+process/world-bound audience lease permits owned history before the next rich
+read, including immediately after preparation. Valid same-audience refreshes,
+concession and a rejected table replacement preserve it. Actual world/process
+retirement, authoritative removal or malformed discovery retires the lease;
+reappearing identifiers receive a different lease. History checks that exact
+lease before dispatch and after the reply, so an old in-flight read cannot
+cross removal and re-admission. This never restores stale action offers.
+
+Client host regressions and the native `priority-responses` headless group cover
+this lifecycle, including malformed wire receipts and misleading Absent metadata.
+The real-engine controlled opportunity also requires an actual Unknown input,
+independent preparation, a freshly decoded Absent frame, a certified rules pass
+and acknowledged retirement. It reads actual history immediately after Prepared
+without first refreshing decision authority. Its basic-land simulation is a transport check;
+the varied four-game natural campaign and human UX review remain separate gates.
+
+## Mechanic qualification and internal choices: source candidate
+
+The campaign still has no fully qualified deck lists. Five defining witnesses
+previously had no verifier, independently of whether a sampled game finished.
+The consuming-artifact slice adds one: an accepted activation of an owned
+artifact sacrifices that exact source, resolves, and produces an attributed
+one-card draw with public source and hand/library confirmation. It uses the
+same bounded causal reader as the campaign, without a card-name strategy.
+A controlled real-engine opportunity delegates the activation and payment to
+the production policy; it does not establish natural deck execution or general
+strategic timing. Equipment remains a separate gap: attaching is not a modeled
+effect, and treating every attachment as beneficial would be unsafe for cards
+with harmful or triggered consequences. Missing or truncated evidence must not
+be reported as a poor decision.
+
+An already-announced stack occurrence can move between resolution, choice and
+cost without announcing another action. The cadence comparison now preserves
+its original reading beat through those internal steps only when the exact
+queue, targets, known execution identity and public events agree. Terminal
+outcomes, new public effects or abilities, identity changes and unknown evidence
+keep their ordinary reading beats. Every answer still uses fresh decision
+authority. `AiRepeatedCadenceRegression` exercises this through the actual host
+with a fake clock, including conservative boundary controls; it does not measure
+backend or policy compute time.
+
 ## Automated waits and payment cadence: source candidate
 
 A friend reported that AI players were stalling games, without a version or
@@ -1055,8 +1116,31 @@ one of several opponents does not waive self-preservation; winning against the
 last opponent can. Estimates are cached per attacker, bounded independently of
 required declarations, and incomplete comparisons do not manufacture lethal
 certainty. Engine-required assignments and repair witnesses remain authoritative.
-Hidden pumps, future removal, multi-block optimization, commander damage and
-political promises are outside this estimate.
+Ordinary blocking and retaining a possible defender share a bounded nominal
+survival assessment. It preserves each attacking source instead of collapsing
+all incoming damage into life loss. The rules provider supplies the applicable
+commander-damage limit and an opaque registered-commander lineage shared by
+the visible card and cumulative damage rows. Previous damage is joined only by
+that lineage: partners stay separate, control/name changes preserve the actual
+commander, and a same-name copy gains no commander status. Missing legacy rules
+or cumulative rows remain unknown; commander tax and printed names are never
+substitutes. A provider-declared absent limit means the rule does not apply.
+
+Reducing known nominal defeat ranks before material value. A necessary offered
+chump block cannot lose to an arbitrarily valuable body merely because the old
+finite survival bonus was smaller. A block that clears the currently known
+nominal defeat ranks ahead of one that only reduces a still-lethal modeled
+exposure; neither rank certifies actual survival. Single-block
+trample and strike timing reuse the existing exchange estimate; current staged
+blocks are included before the next assignment is valued.
+
+This is not complete combat simulation or proof of actual survival. Unknown
+prevention/replacements and poison channels remain explicitly unknown. Infect
+is not treated as ordinary life loss, but a separately known commander threat
+can still justify a block. Unsupported multi-block trample, hidden pumps, future
+removal, multi-block optimization and political promises remain outside the
+estimate. Current engine offers, joint repair witnesses and work reserves keep
+their existing authority.
 Plain menace requires two available blockers; a mixed menace/trample forecast
 stays incomplete instead of pretending a single-block exchange applies.
 Final duels also have a bounded group forecast. It uses currently offered
@@ -1066,6 +1150,17 @@ crediting blocked attackers with zero damage. This avoids letting one blocker
 veto every creature in a large army. Missing, unlimited or unsupported facts
 retain the ordinary policy; each staged attacker still needs current command
 authority. The forecast does not predict hidden responses or resolved damage.
+
+The free-for-all elimination path reserves later staging work from the actual
+declaration size. After the first assignment fixes its defender, each later
+search has bounded creature, commander-row, staged-assignment, option and
+candidate scans. Their sum includes policy entry, completion and the final
+mechanical allowance. Charging the full 384-unit search ceiling for every
+sparse stage wrongly excluded a twelve-body cohort from a 4096-unit episode.
+Both limits remain unchanged. One persistent session now checks that the group
+fits while current offers, capacity changes and genuinely insufficient work
+still govern each next answer. This is not a retained certificate after an
+unrelated world change, or an expansion of the existing forecast's trait model.
 
 Graphics-free checks exercise last-blue versus spare-blue spending, lethal
 responses, third-party removal, exact copied-spell identity, unknown effects,

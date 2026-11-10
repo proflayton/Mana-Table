@@ -238,6 +238,17 @@ test('drained gameplay receipts cannot hide an in-flight automated priority cont
   assert.equal(assess(fixture()).naturalRotationsCompleted, 4);
 });
 
+test('strict AI admission identifies the actual seat and missing certificates without substituting valid retirement', () => {
+  const f = fixture(), row = f.rotations[2];
+  for (const records of [row.result.AutomatedPriorityContinuations, row.owners.automatedPriorityContinuations]) {
+    const bot = records.find(value => value.SeatId === 3);
+    bot.AcceptedGrants = 0; bot.CertifiedAutomaticPasses = 0; bot.LastSequence = 0;
+  }
+  assert.throws(() => assess(f), /Rotation 2, seat 3; failed fields: AcceptedGrants, CertifiedAutomaticPasses, LastSequence\./);
+  row.owners.automatedPriorityContinuations.find(value => value.SeatId === 3).AcceptedAcknowledgements++;
+  assert.throws(() => assess(f), /Rotation 2, seat 3; failed fields: AcceptedGrants, CertifiedAutomaticPasses, LastSequence, retirementMatch\./);
+});
+
 test('stale source/package bytes, workload cutoffs, relaxed deadlines and incomplete replay all fail closed', () => {
   for (const mutate of [
     f => { f.manifest.launchJarSha256 = 'f'.repeat(64); }, f => { f.fanout.runtime.SourceRevision = 'b'.repeat(40); },

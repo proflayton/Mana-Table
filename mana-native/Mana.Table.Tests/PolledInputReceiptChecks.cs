@@ -10,6 +10,7 @@ internal static class PolledInputReceiptChecks
 {
     internal static async Task RunAsync(Action<bool, string> check)
     {
+        await PolledPlayerAttemptChecks.RunAsync(check);
         GameCommand[] controls = [
             new GrantPriorityContinuation("game", "priority", 1, "grant", PriorityContinuationMode.NoResponse, []),
             new RevokePriorityContinuation("game", 1),

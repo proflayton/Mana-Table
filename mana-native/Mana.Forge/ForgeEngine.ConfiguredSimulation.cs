@@ -28,7 +28,7 @@ public sealed partial class ForgeEngine
                 EnsureSimulationConnection(owner);
                 lock (worldScopeGate) {
                     generation = Interlocked.Increment(ref worldGeneration);
-                    automatedScopes.Clear();
+                    RetireAutomatedWorldScopes();
                 }
                 start = DecodeConfiguredSimulation(receipt.Value, setup, owner.CertifiedUndoAvailable);
             } finally { simulationLifecycle.Release(); }
@@ -49,7 +49,7 @@ public sealed partial class ForgeEngine
             return start with { State = state };
         } catch (Exception error) {
             lock (worldScopeGate)
-                if (generation != 0 && current == owner && worldGeneration == generation) automatedScopes.Clear();
+                if (generation != 0 && current == owner && worldGeneration == generation) RetireAutomatedWorldScopes();
             PreserveRejectedConfiguredSimulation(paths.Profile, receipt, observed, error);
             if (error is EngineCommandRejectedException) throw;
             if (error is InvalidOperationException or JsonException or ArgumentException or FormatException or OverflowException)

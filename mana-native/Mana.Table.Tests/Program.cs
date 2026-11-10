@@ -16,6 +16,7 @@ internal static class Program
             if (args.Contains(ForgeRequestCancellationProtocolProbe.Marker)) return ForgeRequestCancellationProtocolProbe.Serve(args);
             if (args.Contains(OwnedDecisionObservationProtocolProbe.Marker)) return OwnedDecisionObservationProtocolProbe.Serve(args);
             if (args.Contains(AutomatedPriorityProtocolProbe.Marker)) return AutomatedPriorityProtocolProbe.Serve(args);
+            if (args.Contains(PriorityResponsesProtocolProbe.Marker)) return PriorityResponsesProtocolProbe.Serve(args);
         } catch (Exception error) {
             Console.Error.WriteLine(error);
             return 1;
@@ -50,6 +51,7 @@ internal static class Program
         testRun |= args.Contains("--replay-projection");
         testRun |= args.Contains("--smoke-execution-journey");
         testRun |= args.Contains("--smoke-ai-repeated-cadence");
+        testRun |= args.Contains("--smoke-priority-responses");
         testRun |= args.Contains("--smoke-ai-campaign");
         testRun |= args.Contains("--evaluate-ai-release");
         testRun |= args.Contains("--qualify-mixed-game");
@@ -199,6 +201,11 @@ internal static class Program
             if (args.Contains("--smoke-ai-repeated-cadence")) {
                 AiRepeatedCadenceEngineJourney.RunStandaloneAsync(paths, Arg("--production-engine-jar")
                     ?? throw new ArgumentException("The cadence journey requires its real production engine dependency.")).GetAwaiter().GetResult();
+                return 0;
+            }
+            if (args.Contains("--smoke-priority-responses")) {
+                PriorityResponsesEngineJourney.RunStandaloneAsync(paths, Arg("--production-engine-jar")
+                    ?? throw new ArgumentException("Priority response preparation requires its real production engine dependency.")).GetAwaiter().GetResult();
                 return 0;
             }
             if (args.Contains("--smoke-deck-import")) { DeckImportSmoke.Run(paths, Arg("--import-file") ?? Path.Combine(AppContext.BaseDirectory, "Fixtures", "annotated-toph.txt"), size); return 0; }

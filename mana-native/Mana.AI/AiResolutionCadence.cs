@@ -153,9 +153,32 @@ internal sealed class AiResolutionCadence
         if (!Valid(before) || !Valid(after)) return Changed(before, after);
         var beforeCosts = ManaTapCosts(before!);
         var afterCosts = ManaTapCosts(after!);
-        return before!.Queue.Length != after!.Queue.Length || !before.Queue.Zip(after.Queue).All(pair => Same(pair.First, pair.Second))
-            || !before.Executions.Where(item => !beforeCosts.Contains(item.Id)).SequenceEqual(after.Executions.Where(item => !afterCosts.Contains(item.Id)))
-            || !before.Events.Where(item => !beforeCosts.Contains(item.ExecutionId)).SequenceEqual(after.Events.Where(item => !afterCosts.Contains(item.ExecutionId)));
+        if (before!.Queue.Length != after!.Queue.Length || !before.Queue.Zip(after.Queue).All(pair => Same(pair.First, pair.Second))
+            || !before.Events.Where(item => !beforeCosts.Contains(item.ExecutionId)).SequenceEqual(after.Events.Where(item => !afterCosts.Contains(item.ExecutionId))))
+            return true;
+        using var prior = before.Executions.Where(item => !beforeCosts.Contains(item.Id)).GetEnumerator();
+        using var next = after.Executions.Where(item => !afterCosts.Contains(item.Id)).GetEnumerator();
+        while (prior.MoveNext()) {
+            if (!next.MoveNext()) return true;
+            if (prior.Current == next.Current) continue;
+            // The already announced stack occurrence can ask for an internal
+            // target, cost or resolution choice. Those steps do not announce
+            // another action. Preserve only this exact known queued identity;
+            // public effects, terminals and unqueued progress keep their beat.
+            var left = prior.Current;
+            var right = next.Current;
+            bool internalStep = left.Outcome == null && right.Outcome == null
+                && left.ActorId != null && !string.IsNullOrEmpty(left.SourceId)
+                && left.Step is ExecutionStep.Stack or ExecutionStep.Resolution or ExecutionStep.Choice or ExecutionStep.Cost
+                && right.Step is ExecutionStep.Stack or ExecutionStep.Resolution or ExecutionStep.Choice or ExecutionStep.Cost
+                && (left with { Step = right.Step }) == right
+                && before.Queue.Any(item => item.ExecutionId == left.Id && item.ControllerId == left.ActorId
+                    && (item.Kind == StackActionKind.Spell && left.Kind == ExecutionKind.Spell
+                        || item.Kind == StackActionKind.ActivatedAbility && left.Kind == ExecutionKind.Activation
+                        || item.Kind == StackActionKind.TriggeredAbility && left.Kind == ExecutionKind.Trigger));
+            if (!internalStep) return true;
+        }
+        return next.MoveNext();
     }
 
     private static HashSet<string> ManaTapCosts(AiResolutionProgress progress)

@@ -52,7 +52,7 @@ public class AutomatedPriorityContinuationTest {
         var ready = Files.readString(evidence.resolve("protocol.jsonl")).lines().map(line -> JsonParser.parseString(line).getAsJsonObject())
                 .filter(value -> text(value, "event").equals("ready")).findFirst().orElseThrow();
         var capabilities = ready.getAsJsonArray("capabilities").asList().stream().map(value -> value.getAsString()).toList();
-        assertTrue(capabilities.containsAll(List.of("automated-seats", "priority-continuation-v1", "automated-priority-continuation-v1", "automated-priority-metadata-v1")),
+        assertTrue(capabilities.containsAll(List.of("automated-seats", "priority-continuation-v1", "automated-priority-continuation-v1", "automated-priority-metadata-v1", "automated-priority-responses-v1")),
                 "Human Auto support alone cannot negotiate the bot's completed-scan and self-observer contract");
         assertEquals(Set.copyOf(capabilities).size(), capabilities.size());
     }
@@ -67,6 +67,173 @@ public class AutomatedPriorityContinuationTest {
             assertEquals(text(fixture.state(2).getAsJsonObject("priorityContinuation"), "status"), "Idle");
             assertEquals(text(fixture.state(2).getAsJsonObject("prompt"), "responseAvailability"), "Unknown");
         }
+    }
+
+    @Test(timeOut = 90000)
+    public void scopedPreparationPublishesRealResponsesWithoutConsentOrPassing() throws Exception {
+        for (boolean available : new boolean[] { false, true }) try (var fixture = new Fixture("bot-preparation-" + available, available);
+                var engine = fixture.controlEngine()) {
+            var main = fixture.main(); var input = fixture.actual();
+            for (int read = 0; read < 3; read++) {
+                fixture.bot().automatedObservation();
+                assertEquals(text(fixture.state(2).getAsJsonObject("prompt"), "responseAvailability"), "Unknown",
+                        "Ordinary snapshots and action discovery cannot silently request a controller scan");
+            }
+            fixture.acknowledge(2);
+            var before = fixture.state(2); var physical = physicalFacts(before);
+            var observation = before.getAsJsonObject("priorityObservation").deepCopy();
+            var receipt = JSON.toJsonTree(engine.dispatch("automatedPriorityControl", preparation(fixture, main))).getAsJsonObject();
+            assertEquals(receipt.keySet(), Set.of("schemaVersion", "status", "gameId", "seatId", "decisionId",
+                    "boardRevision", "publicActivitySequence", "responseAvailability"));
+            assertEquals(text(receipt, "status"), "prepared"); assertEquals(receipt.get("schemaVersion").getAsInt(), 1);
+            assertEquals(text(receipt, "gameId"), fixture.table.id); assertEquals(receipt.get("seatId").getAsInt(), 2);
+            assertEquals(text(receipt, "decisionId"), text(main.prompt(), "id"));
+            assertEquals(text(receipt, "responseAvailability"), available ? "Available" : "Absent");
+            var after = fixture.state(2);
+            assertEquals(text(after.getAsJsonObject("prompt"), "responseAvailability"), text(receipt, "responseAvailability"));
+            assertEquals(physicalFacts(after), physical, "Preparation cannot spend/refund a different pool, tap a card or move any physical card");
+            assertEquals(after.get("activity"), before.get("activity")); assertEquals(after.get("stack"), before.get("stack"));
+            assertEquals(after.get("executions"), before.get("executions"));
+            assertEquals(after.get("priorityContinuation"), before.get("priorityContinuation"));
+            assertEquals(after.get("finiteStackYield"), before.get("finiteStackYield"));
+            assertEquals(after.getAsJsonObject("priorityObservation").get("acknowledgedBoardRevision"), observation.get("acknowledgedBoardRevision"));
+            assertEquals(after.getAsJsonObject("priorityObservation").get("acknowledgedPublicActivitySequence"), observation.get("acknowledgedPublicActivitySequence"));
+            assertEquals(text(after.getAsJsonObject("prompt"), "id"), text(main.prompt(), "id"));
+            assertSame(fixture.actual(), input); assertTrue(input.isPriorityActive());
+            var repeated = JSON.toJsonTree(engine.dispatch("automatedPriorityControl", preparation(fixture, fixture.input(2))));
+            assertEquals(repeated, receipt, "The same completed current-input facts are idempotent, not another publication or scan");
+            Files.writeString(fixture.evidence.resolve("prepared-without-consent.json"), JSON.toJson(Map.of("before", before, "prepared", receipt, "after", after)));
+            if (!available) {
+                try (var barrier = new Barrier(fixture.table)) {
+                    fixture.bot().action(grant(fixture.input(2), 1, List.of()));
+                    assertTrue(input.isPriorityActive(), "Only the later independent grant may queue a real pass");
+                    barrier.release(); HeadlessPlatform.query(fixture.table, () -> null);
+                }
+                assertFalse(input.isPriorityActive());
+                assertTrue(fixture.state(2).getAsJsonObject("priorityContinuation").get("automaticPasses").getAsInt() > 0);
+                fixture.revoke(1);
+                var next = fixture.until(candidate -> candidate.seat() == 2 && text(candidate.prompt(), "inputType").equals("InputPassPriority"));
+                assertEquals(text(next.prompt(), "responseAvailability"), "Unknown", "One-shot preparation cannot enable future FullControl scans");
+            }
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void incompletePreparationCannotRenewOnMetadataButRealPublicChangesAllowNewFacts() throws Exception {
+        try (var fixture = new Fixture("bot-preparation-incomplete", true); var engine = fixture.controlEngine()) {
+            fixture.main(); fixture.acknowledge(2);
+            engine.dispatch("automatedPriorityControl", preparation(fixture, fixture.input(2)));
+            HeadlessPlatform.query(fixture.table, () -> {
+                // Controlled incomplete-fact fault; no physical card/rule event.
+                // A repeated scan would wrongly turn this flag true again.
+                fixture.actual().setAvailabilityVerified(false); fixture.table.publish(); return null;
+            });
+            fixture.acknowledge(2);
+            long beforeRevision = fixture.state(2).get("revision").getAsLong();
+            var incomplete = JSON.toJsonTree(engine.dispatch("automatedPriorityControl", preparation(fixture, fixture.input(2)))).getAsJsonObject();
+            assertEquals(text(incomplete, "responseAvailability"), "Unknown");
+            assertEquals(fixture.state(2).get("revision").getAsLong(), beforeRevision,
+                    "A metadata-only revision cannot renew this exact input/source/activity scan attempt");
+            assertEquals(fixture.actual().getResponseAvailability(), InputPassPriority.ResponseAvailability.Unknown);
+            fixture.publicChanges(0, 1);
+            var fresh = JSON.toJsonTree(engine.dispatch("automatedPriorityControl", preparation(fixture, fixture.input(2)))).getAsJsonObject();
+            assertEquals(text(fresh, "responseAvailability"), "Available", "A genuine public/rules generation can prepare fresh current facts");
+            assertTrue(fresh.get("publicActivitySequence").getAsLong() > incomplete.get("publicActivitySequence").getAsLong());
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void aPreparedRealFloatingManaCastKeepsItsPoolAndPhysicalResources() throws Exception {
+        try (var fixture = new Fixture("bot-preparation-real-mana", false, false, true); var engine = fixture.controlEngine()) {
+            var main = fixture.main();
+            var ring = zone(viewer(main.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(card -> text(card, "name").equals("Sol Ring")).findFirst().orElseThrow();
+            var actions = JSON.toJsonTree(fixture.bot().sourceActions(request(main, Map.of("key", text(ring, "key"))))).getAsJsonObject();
+            var activation = actions.getAsJsonArray("actions").get(0).getAsJsonObject();
+            fixture.bot().action(request(main, Map.of("action", "useSourceAction", "key", text(ring, "key"), "actionId", text(activation, "id"))));
+            main = fixture.until(candidate -> candidate.seat() == 2 && text(candidate.prompt(), "inputType").equals("InputPassPriority")
+                    && viewer(candidate.state()).getAsJsonObject("mana").get("C").getAsInt() == 2);
+            assertEquals(text(main.prompt(), "responseAvailability"), "Unknown");
+            fixture.acknowledge(2);
+            var before = fixture.state(2); var receipt = JSON.toJsonTree(engine.dispatch("automatedPriorityControl", preparation(fixture, fixture.input(2)))).getAsJsonObject();
+            assertEquals(text(receipt, "responseAvailability"), "Available", "Two real floating C plus the separate Forest fund a real Manalith cast");
+            assertEquals(physicalFacts(fixture.state(2)), physicalFacts(before), "The funding scan must restore the exact borrowed pool without tapping the Forest");
+            assertEquals(fixture.state(2).get("activity"), before.get("activity"));
+            Files.writeString(fixture.evidence.resolve("prepared-real-floating-mana.json"), JSON.toJson(Map.of("before", before, "prepared", receipt, "after", fixture.state(2))));
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void ordinaryHumansAlreadyPublishInitialAbsentAndAvailableWithoutPreparation() throws Exception {
+        for (boolean available : new boolean[] { false, true }) try (var fixture = new Fixture("human-initial-responses-" + available, false, available, false)) {
+            var main = fixture.until(candidate -> candidate.seat() == 0 && text(candidate.prompt(), "inputType").equals("InputPassPriority")
+                    && text(candidate.state(), "phaseKey").equals("MAIN1") && candidate.state().get("activePlayerId").getAsInt() == 0);
+            assertEquals(text(main.prompt(), "responseAvailability"), available ? "Available" : "Absent");
+            assertEquals(main.prompt().get("canAutoPass").getAsBoolean(), !available);
+            assertEquals(main.state().getAsJsonObject("priorityContinuation").get("sequence").getAsInt(), 0);
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void preparationRejectsMalformedForeignStaleAndConcededInputsWithoutBorrowingAuthority() throws Exception {
+        try (var fixture = new Fixture("bot-preparation-rejections", false); var engine = fixture.controlEngine()) {
+            var main = fixture.main(); fixture.acknowledge(2); var before = fixture.state(2);
+            for (int seat : new int[] { 0, 1, 3, 999 }) {
+                var command = preparation(fixture, main); command.addProperty("seatId", seat);
+                assertThrows(AutomatedPriorityControlRetired.class, () -> engine.dispatch("automatedPriorityControl", command));
+            }
+            for (String malformed : List.of("action", "promptId", "expectedTask")) {
+                var command = preparation(fixture, main); command.addProperty(malformed, 5);
+                var error = expectThrows(IllegalArgumentException.class, () -> fixture.bot().preparePriorityResponses(command));
+                assertFalse(error instanceof AutomatedPriorityControlRetired);
+            }
+            var contradictory = preparation(fixture, main); contradictory.addProperty("grantId", "not-consent");
+            assertThrows(IllegalArgumentException.class, () -> engine.dispatch("automatedPriorityControl", contradictory));
+            var wrongInput = preparation(fixture, main); wrongInput.addProperty("promptId", "another-current-input");
+            assertThrows(AutomatedPriorityControlRetired.class, () -> engine.dispatch("automatedPriorityControl", wrongInput));
+            var wrongGame = preparation(fixture, main); wrongGame.addProperty("sessionId", "another-game");
+            assertThrows(AutomatedPriorityControlRetired.class, () -> engine.dispatch("automatedPriorityControl", wrongGame));
+            assertEquals(fixture.state(2), before, "Rejected preparation cannot register credit, consent, facts or another input");
+            fixture.bot().action(request(main, Map.of("action", "passPriority")));
+            fixture.until(candidate -> candidate.seat() == 2 && text(candidate.prompt(), "inputType").equals("InputPassPriority")
+                    && !text(candidate.prompt(), "id").equals(text(main.prompt(), "id")));
+            assertThrows(AutomatedPriorityControlRetired.class, () -> engine.dispatch("automatedPriorityControl", preparation(fixture, main)));
+            fixture.eliminate(2);
+            assertThrows(AutomatedPriorityControlRetired.class, () -> engine.dispatch("automatedPriorityControl", preparation(fixture, main)));
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void preparationCannotCertifyOrOverwriteAReentrantNewerRulesPublication() throws Exception {
+        try (var fixture = new Fixture("bot-preparation-reentrant", false); var engine = fixture.controlEngine()) {
+            var main = fixture.main(); fixture.acknowledge(2); var before = fixture.state(2); var input = fixture.actual();
+            var armed = new AtomicBoolean(); var nested = new JsonObject[1];
+            fixture.bot().observePlaytest(frame -> {
+                if (!armed.compareAndSet(true, false)) return;
+                fixture.publicChanges(0, 1);
+                nested[0] = fixture.state(2).deepCopy();
+            });
+            armed.set(true);
+            assertThrows(AutomatedPriorityControlRetired.class, () -> engine.dispatch("automatedPriorityControl", preparation(fixture, main)));
+            assertNotNull(nested[0], "The actual preparation publication must encounter the one-shot nested rules callback");
+            assertEquals(fixture.state(2), nested[0], "The retired outer operation cannot overwrite the newer committed cohort");
+            assertEquals(fixture.state(2).get("priorityContinuation"), before.get("priorityContinuation"));
+            assertEquals(fixture.state(2).get("finiteStackYield"), before.get("finiteStackYield"));
+            assertSame(fixture.actual(), input); assertTrue(input.isPriorityActive());
+            Files.writeString(fixture.evidence.resolve("prepared-callback-retired.json"), JSON.toJson(Map.of("before", before, "nested", nested[0], "after", fixture.state(2))));
+        }
+    }
+
+    private static JsonObject preparation(Fixture fixture, Input input) {
+        return JSON.toJsonTree(Map.of("sessionId", fixture.table.id, "seatId", input.seat(), "action", "preparePriorityResponses",
+                "promptId", text(input.prompt(), "id"), "expectedTask", "priority")).getAsJsonObject();
+    }
+
+    private static Object physicalFacts(JsonObject state) {
+        return state.getAsJsonArray("players").asList().stream().map(value -> value.getAsJsonObject()).map(player -> List.of(
+                player.get("id"), player.get("life"), player.get("mana"), player.getAsJsonArray("zones").asList().stream().map(value -> value.getAsJsonObject())
+                        .map(zone -> List.of(zone.get("name"), zone.get("count"), zone.getAsJsonArray("cards").asList().stream()
+                                .map(value -> value.getAsJsonObject()).map(card -> List.of(card.get("name"), card.get("tapped"), card.get("counters"))).toList())).toList())).toList();
     }
 
     @Test(timeOut = 90000)
@@ -519,6 +686,9 @@ public class AutomatedPriorityContinuationTest {
         final Path evidence;
         private final Map<Integer, String> answered = new HashMap<>();
         Fixture(String name, boolean available) throws Exception {
+            this(name, available, false, false);
+        }
+        Fixture(String name, boolean available, boolean humanAvailable, boolean floatingMana) throws Exception {
             if (StaticData.instance() == null) EngineResources.load(RESOURCES);
             var players = java.util.stream.IntStream.range(0, 4).mapToObj(seat -> {
                 var deck = new Deck("Bot continuation seat " + seat);
@@ -526,7 +696,8 @@ public class AutomatedPriorityContinuationTest {
                 deck.getOrCreate(DeckSection.Commander).add(StaticData.instance().getCommonCards().getCard("Progenitus"));
                 var player = seat < 2 ? MatchTable.human(deck, "Commander", "Human " + seat) : MatchTable.automated(deck, "Commander", "Policy " + seat);
                 player.addExtraCardsOnBattlefield(List.of(StaticData.instance().getCommonCards().getCard("Spellbook"),
-                        StaticData.instance().getCommonCards().getCard(available && seat == 2 ? "Arid Mesa" : "Forest")));
+                        StaticData.instance().getCommonCards().getCard(available && seat == 2 || humanAvailable && seat == 0 ? "Arid Mesa" : "Forest")));
+                if (floatingMana && seat == 2) player.addExtraCardsOnBattlefield(List.of(StaticData.instance().getCommonCards().getCard("Sol Ring")));
                 return player;
             }).toList();
             evidence = ApiTestWorkspace.evidence(name);

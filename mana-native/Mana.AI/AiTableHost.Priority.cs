@@ -25,6 +25,7 @@ public sealed partial class AiTableHost
         internal bool Retired, Legacy;
         internal long WithdrawThrough, AttemptRevision = -1;
         internal string ManualDecision = "";
+        internal (string Decision, long Sources, long Activity)? PreparationAttempt;
         internal AiAutomatedPriorityEvidence Evidence => new(Game, Seat, Epoch, Acknowledgements, Grants, Withdrawals,
             CertifiedPasses, Sequence, AcknowledgedBoard, AcknowledgedActivity, Retired);
     }
@@ -104,13 +105,15 @@ public sealed partial class AiTableHost
             }
             bool priority = state.Status == "playing" && state.Turn > 0
                 && state.Decision?.Payload is PriorityPayload { Pass.Enabled: true };
+            bool canGrant = priority && state.Decision?.Payload is PriorityPayload {
+                ResponseAvailability: PriorityResponseAvailability.Absent };
             if ((active || priority) && NeedsPriorityAcknowledgement(owner, state, credit)) {
                 var result = await AcknowledgePriorityAsync(owner, state, credit, controls, cancellation).ConfigureAwait(false);
                 if (result is AutomatedPriorityControlResult.Accepted accepted) {
                     // The receipt already confirms the ACK. Only an unchanged
                     // exact priority input can chain a grant, never a policy
                     // evaluation or a command against this earlier rich frame.
-                    if (!active && priority && accepted.Receipt.SamePriorityInput(state)
+                    if (!active && canGrant && accepted.Receipt.SamePriorityInput(state)
                         && accepted.Receipt.Continuation.Status is not (PriorityContinuationStatus.Active or PriorityContinuationStatus.Held)
                         && (pacing == null || pacing.Ready(state.Id, observation.SeatId)))
                         return await BeginPriorityGrantAsync(owner, state, controls, cancellation).ConfigureAwait(false);
@@ -120,7 +123,32 @@ public sealed partial class AiTableHost
             if (active && frame.ReasonCode is "awaiting-observation" or "observation-overflow")
                 return PriorityWork.Reserved;
             if (active) return PriorityWork.Reserved;
-            if (!priority || owner.AttemptRevision == state.Revision) return PriorityWork.Policy;
+            if (priority && !canGrant && state.Decision?.Payload is PriorityPayload {
+                    ResponseAvailability: null or PriorityResponseAvailability.Unknown }
+                && state.FiniteStackYield is not { Status: FiniteStackYieldStatus.Active }
+                && controls.SupportsAutomatedPriorityResponses) {
+                var attempt = (state.Decision.Id, observation.Domain.Version, credit.PublicActivitySequence);
+                if (owner.PreparationAttempt != attempt) {
+                    // Remember the attempt before transport. A bounded Unknown
+                    // result or metadata refresh cannot restart this same work.
+                    owner.PreparationAttempt = attempt;
+                    var result = await AwaitProvider("priority-responses", token => controls.ExecuteAutomatedPriorityControlAsync(owner.Epoch,
+                        owner.Seat, new AutomatedPriorityControl.PrepareResponses(owner.Game, state.Decision.Id), token), cancellation).ConfigureAwait(false);
+                    if (controls.AutomatedPriorityEpoch != owner.Epoch || result is AutomatedPriorityControlResult.Retired)
+                        return PriorityWork.Reserved;
+                    if (result is not AutomatedPriorityControlResult.Prepared { Receipt: { } receipt })
+                        throw new InvalidDataException("Priority response preparation did not return its action-specific receipt.");
+                    receipt.Validate();
+                    if (receipt.Epoch != owner.Epoch || receipt.GameId != owner.Game || receipt.SeatId != owner.Seat
+                        || receipt.DecisionId != state.Decision.Id || receipt.BoardRevision < state.BoardRevision
+                        || receipt.PublicActivitySequence < credit.PublicActivitySequence)
+                        throw new InvalidDataException("Priority response preparation belongs to another owner or input.");
+                    // Receipt availability is not gameplay authority. A fresh
+                    // owned rich read must rediscover both permission and offers.
+                    return PriorityWork.Refreshed;
+                }
+            }
+            if (!canGrant || owner.AttemptRevision == state.Revision) return PriorityWork.Policy;
             return await BeginPriorityGrantAsync(owner, state, controls, cancellation).ConfigureAwait(false);
         } finally { PublishPriorityEvidence(); }
     }

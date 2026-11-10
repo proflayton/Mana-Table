@@ -17,23 +17,33 @@ public sealed partial class ForgeEngine : IAutomatedMatchHistory
         if (owner is not { AutomationAvailable: true, AutomatedHistoryAvailable: true, Failure: null })
             throw new NotSupportedException("This provider does not expose automated-seat history.");
         long generation;
+        AutomatedAudienceLease audience;
         lock (worldScopeGate) {
             generation = worldGeneration;
-            RequireAudience();
+            audience = RequireAudience();
         }
         int requestedVersion = owner.HistoryAnnouncementsAvailable ? HistoryFacts.SchemaVersion : HistoryFacts.LegacySchemaVersion;
         var raw = await Request("automatedMatchHistory", owner.HistoryAnnouncementsAvailable
             ? new { gameId, seatId, afterSequence, limit, historySchemaVersion = requestedVersion }
-            : (object)new { gameId, seatId, afterSequence, limit });
+            : (object)new { gameId, seatId, afterSequence, limit }, expectedOwner: owner,
+            beforeDispatch: () => { lock (worldScopeGate) RequireCapturedAudience(); });
         var batch = DecodeAutomatedHistory(raw, gameId, seatId, afterSequence, limit, requestedVersion);
-        lock (worldScopeGate) RequireAudience();
+        lock (worldScopeGate) RequireCapturedAudience();
         return batch;
 
-        void RequireAudience()
+        void RequireCapturedAudience()
+        {
+            if (!ReferenceEquals(RequireAudience(), audience))
+                throw new EngineCommandRejectedException("The automated history audience retired before its reply completed.");
+        }
+
+        AutomatedAudienceLease RequireAudience()
         {
             EnsureSimulationOwner(owner, generation);
-            if (!automatedScopes.ContainsKey((gameId, seatId)))
+            if (!automatedAudiences.TryGetValue((gameId, seatId), out var lease)
+                || !ReferenceEquals(lease.Owner, owner) || lease.Generation != generation)
                 throw new EngineCommandRejectedException("Observe this host-owned automated audience before reading its history.");
+            return lease;
         }
     }
 

@@ -354,6 +354,7 @@ internal static class HeadlessEngineSmoke
             if (productionJar != null) {
                 await ExecutionEngineJourney.RunAsync(engine, paths.Profile, Check, sourceRevision);
                 await AiResourceQualificationJourney.RunAsync(engine, paths.Profile, Check);
+                await PriorityResponsesEngineJourney.RunAsync(engine, paths.Profile, Check);
                 await AiRepeatedCadenceEngineJourney.RunAsync(engine, paths.Profile, Check);
                 await PolledFanoutEngineJourney.RunAsync(paths, verifiedRuntime!, Check);
                 await AiReleaseGoldens.RunAsync(engine, paths.Profile, Check);

@@ -37,6 +37,8 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "capture-png") CapturePngChecks.Run(Check);
                 else if (group == "mana-pool") CheckManaPoolPaymentClarity(profile, Check, trace, performance);
                 else if (group == "keyword-help") CheckKeywordHelp(profile, Check, trace, performance);
+                else if (group == "commander-combat") CommanderCombatWireChecks.Run(Check);
+                else if (group == "priority-notifications") PriorityNotificationChecks.Run(profile, Check);
                 else if (group == "target-restrictions") {
                     TargetRestrictionWireChecks.Run(Check);
                     TargetRestrictionPresentationChecks.Run(profile, Check);
@@ -46,7 +48,10 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "cooperative-opening") CooperativeOpeningChecks.Run(Check);
                 else if (group == "public-projection") ForgePublicProjectionChecks.Run(profile, Check);
                 else if (group == "known-action-faces") CheckKnownActionFaces(profile, Check, trace, performance);
-                else if (group == "polled-receipt-processing") PolledReceiptProcessingChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+                else if (group == "polled-receipt-processing") {
+                    PolledReceiptProcessingChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+                    PolledInputReceiptChecks.RunAsync(Check).GetAwaiter().GetResult();
+                }
                 else if (group == "owner-read-admission") PolledFullGameContractChecks.RunOwnerReadAdmissionControlsAsync(profile, Check).GetAwaiter().GetResult();
                 else if (group == "owner-read-marker") PolledFullGameContractChecks.RunOwnerReadMarkerControlAsync(profile, Check).GetAwaiter().GetResult();
                 else if (group == "owner-read-related") PolledFullGameContractChecks.RunOwnerReadRelatedAsync(profile, Check).GetAwaiter().GetResult();
@@ -87,7 +92,9 @@ internal static partial class HeadlessPresentationSmoke
                     QuietPriorityPresentationChecks.Run(profile, Check);
                     PriorityContinuationChecks.Run(profile, Check);
                 }
+                else if (group == "priority-responses") PriorityResponsesProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                 else if (group == "server-auto") {
+                    PriorityResponsesProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                     AutomatedPriorityProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                     Utf8JsonLinesChecks.Run(Check);
                     PriorityContinuationWireChecks.Run(Check);
@@ -121,9 +128,11 @@ internal static partial class HeadlessPresentationSmoke
             ProviderIsolationChecks.Run(Check);
             ManaFundingWireChecks.Run(Check);
             AutomatedWireFailureChecks.Run(profile, Check);
+            PriorityResponsesProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             AutomatedPriorityProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             CostOrderingWireChecks.Run(Check);
             ExecutionWireChecks.Run(Check);
+            CommanderCombatWireChecks.Run(Check);
             TargetRestrictionWireChecks.Run(Check);
             MatchOutcomeWireChecks.Run(Check);
             MatchSetupWireChecks.Run(Check);

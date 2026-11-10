@@ -75,6 +75,31 @@ There is no card graph, action domain, timer or wire-supplied provider epoch.
 The native host validates this closed metadata independently; every policy or
 gameplay action still requires a fresh owned rich observation. Engines without
 the extra capability retain the full `automatedAction` response and decoder.
+
+The separate optional `automated-priority-responses-v1` capability adds one
+closed `automatedPriorityControl` action, `preparePriorityResponses`, with
+`sessionId`, `seatId`, `promptId` and optional `expectedTask: "priority"`.
+It requires that bot's exact current living `InputPassPriority`, an acknowledged
+observation, no accepted standing consent and no active finite yield. It prepares
+the ordinary controller's current response facts without granting consent,
+acknowledging another cohort, consuming an input or queuing a priority pass.
+Human controllers already run their ordinary scan; this operation is bot-only.
+
+Its distinct eight-field response is `{schemaVersion:1, status:"prepared",
+gameId, seatId, decisionId, boardRevision, publicActivitySequence,
+responseAvailability}`, where availability is `Absent`, `Available` or `Unknown`.
+There is no grant ID, consent sequence, automatic-pass count or action graph.
+The host must obtain another owned rich observation before using these facts;
+the compact receipt itself cannot authorize gameplay or a passing grant.
+
+Preparation attempts are bounded by actual input identity/sequence and rules
+generation/public activity, not metadata revisions or repeated polls. A current
+completed scan is reused; an incomplete attempt remains unknown until a genuine
+input or rules/activity change. The controller's persistent external-scan flag
+is unchanged. Ordinary snapshots never request a scan. Malformed requests remain
+errors, and a provably expired/foreign/conceded input uses the existing typed
+automated-priority retirement code; an uncertain transport failure is not retirement.
+
 Action semantics may include `phaseRestricted`: true reports declared phase/turn,
 sorcery-speed or combat-step restrictions; false reports their absence on the
 live route. This descriptive fact does not predict future legality, resource
@@ -1815,6 +1840,27 @@ variant, 40 life, and 100-card singleton AI decks. Missing commander assignments
 can be supplied from the main deck for that game without changing the saved list.
 Existing commanders, including legal partner pairs, remain intact. Color identity
 and deck conformance are checked before launching.
+
+**Source candidate:** match and independent public snapshots add
+`commanderCombat: { damageLimit: 21 }` when the rules engine's commander-combat
+state-based loss condition applies. A present `{ damageLimit: null }` confirms
+that condition is disabled; a missing object is an older provider with unknown
+support. This value comes from the same read-only rules accessor used by the
+existing state-based loss check, without changing damage accrual or game rules.
+
+Every `players[].commanderDamage[]` row adds `commanderId`, an opaque UUID for the
+actual registered commander lineage; existing `name`, `ownerId`, `owner` and
+`damage` remain. The same table-owned ID appears on an entitled face-up current
+Battlefield or Command card as optional `commanderId`. Partners have distinct
+IDs, including when other players use the same names. Actual control/name and
+zone changes preserve the lineage; copying the card does not copy commander
+designation. Merged commander sources use Forge's real commander component.
+Hidden, private-zone and historical portraits omit the binding. The damage rows
+retain public designation, but cannot be used to discover a concealed occurrence.
+Neither this lineage nor the threshold grants a card action, certifies damage
+through prevention/replacement effects, or promises that a player can lose.
+Occurrence IDs, command keys and the engine's current combat legality remain
+separate authorities. Older clients can ignore these additive facts.
 
 Visible card snapshots include `commanderTax`: the extra generic mana for that
 commander's next cast from the command zone, based on its owner's engine cast

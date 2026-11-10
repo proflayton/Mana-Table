@@ -55,6 +55,7 @@ internal static class ForgeSnapshotDecoder
                 wire.Phase ?? "Starting game", wire.PhaseKey ?? "PREGAME", wire.ActivePlayerId, wire.Players,
                 wire.Stack.Select(item => item.Native()).ToImmutableArray(), wire.Combat?.Native(), decision) {
                 Revision = wire.Revision, BoardRevision = wire.BoardRevision, PublicInspection = wire.PublicInspection, PublicChoice = wire.PublicChoice,
+                CommanderCombat = wire.CommanderCombat,
                 StackInterruptionVersion = wire.StackInterruptionVersion,
                 StackActionVersion = wire.StackActionVersion, ResolutionChoiceVersion = wire.ResolutionChoiceVersion,
                 FiniteStackYield = wire.FiniteStackYield,
@@ -80,6 +81,7 @@ internal static class ForgeSnapshotDecoder
             ExecutionFrames.Validate(snapshot);
             PublicActivityFacts.Validate(snapshot);
             BlockingCapacityFacts.Validate(snapshot);
+            CommanderCombatFacts.Validate(snapshot);
             CombatRepairFacts.Validate(snapshot);
             TargetRestrictionFacts.Validate(snapshot);
             FiniteResolutionFacts.Validate(snapshot);
@@ -165,6 +167,7 @@ internal static class ForgeSnapshotDecoder
         public string? Error { get; init; }
         public string? Result { get; init; }
         public MatchOutcome? Outcome { get; init; }
+        public CommanderCombatRules? CommanderCombat { get; init; }
         public string? PartyId { get; init; }
         public string? EncounterId { get; init; }
         public int ViewerId { get; init; }

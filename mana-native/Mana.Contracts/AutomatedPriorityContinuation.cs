@@ -8,6 +8,7 @@ namespace Mana.Contracts;
 public interface IAutomatedPriorityContinuation
 {
     bool SupportsAutomatedPriorityContinuation { get; }
+    bool SupportsAutomatedPriorityResponses => false;
     long AutomatedPriorityEpoch { get; }
     Task<AutomatedPriorityControlResult> ExecuteAutomatedPriorityControlAsync(long epoch, int seatId, AutomatedPriorityControl control,
         CancellationToken cancellation = default);
@@ -20,7 +21,22 @@ public abstract record AutomatedPriorityControlResult
 {
     private protected AutomatedPriorityControlResult() { }
     public sealed record Accepted(AutomatedPriorityReceipt Receipt) : AutomatedPriorityControlResult;
+    public sealed record Prepared(AutomatedPriorityResponsesReceipt Receipt) : AutomatedPriorityControlResult;
     public sealed record Retired : AutomatedPriorityControlResult;
+}
+
+// Completion of an owned availability preparation attempt, not a decision
+// observation, pass permission, accepted grant or reusable gameplay authority.
+public sealed record AutomatedPriorityResponsesReceipt(long Epoch, string GameId, int SeatId,
+    string DecisionId, long BoardRevision, long PublicActivitySequence, PriorityResponseAvailability ResponseAvailability)
+{
+    public void Validate()
+    {
+        if (Epoch <= 0 || !PriorityContinuationFacts.Identifier(GameId) || SeatId < 0
+            || !PriorityContinuationFacts.Identifier(DecisionId) || BoardRevision < 0 || PublicActivitySequence < 0
+            || !Enum.IsDefined(ResponseAvailability))
+            throw new ArgumentException("Priority response preparation must identify its exact owned input and bounded public prefix.");
+    }
 }
 
 public enum AutomatedPriorityMatchStatus { Starting, Playing, Resolving, Finished, Error }
@@ -74,6 +90,7 @@ public abstract record AutomatedPriorityControl
     private protected AutomatedPriorityControl(string gameId) => GameId = gameId;
     public sealed record Acknowledge(string GameId, long BoardRevision, long PublicActivitySequence)
         : AutomatedPriorityControl(GameId);
+    public sealed record PrepareResponses(string GameId, string DecisionId) : AutomatedPriorityControl(GameId);
     public sealed record NoResponse(string GameId, string DecisionId, long Sequence, string GrantId,
         ImmutableArray<string> PhaseStops) : AutomatedPriorityControl(GameId);
     public sealed record Withdraw(string GameId, long ThroughSequence) : AutomatedPriorityControl(GameId);
@@ -82,6 +99,7 @@ public abstract record AutomatedPriorityControl
     {
         bool valid = !string.IsNullOrWhiteSpace(GameId) && this switch {
             Acknowledge value => value.BoardRevision >= 0 && value.PublicActivitySequence >= 0,
+            PrepareResponses value => PriorityContinuationFacts.Identifier(value.DecisionId),
             NoResponse value => PriorityContinuationFacts.Identifier(value.DecisionId) && value.Sequence > 0
                 && PriorityContinuationFacts.Identifier(value.GrantId) && PriorityContinuationFacts.Stops(value.PhaseStops),
             Withdraw value => value.ThroughSequence > 0,

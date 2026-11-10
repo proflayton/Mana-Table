@@ -10,6 +10,11 @@ internal static class AiAutomatedPriorityRegression
     {
         DescriptorAndClosedControls(check);
         await FullControlAndLegacy(check);
+        await AvailableResponsesWithoutNewGrants(check);
+        await PreparedResponsesNeedFreshAuthority(check);
+        await PreparationFallbackAndScope(check);
+        await PreparationReceiptGuards(check);
+        await PreparationRetirementAndPacing(check);
         await CertificatesAndChoices(check);
         await PacingAndHumanCredit(check);
         await PublishedActionBarrier(check);
@@ -26,6 +31,210 @@ internal static class AiAutomatedPriorityRegression
         await ObserverDeliveryRetirementAndReceipts(check);
     }
 
+    private static async Task AvailableResponsesWithoutNewGrants(Action<bool, string> check)
+    {
+        foreach (var availability in new PriorityResponseAvailability?[] {
+            PriorityResponseAvailability.Available, PriorityResponseAvailability.Unknown, null }) {
+            var port = new Port(); port.Priority(PriorityResponseAvailability.Available);
+            port.State = port.State with { Decision = port.State.Decision! with {
+                Payload = ((PriorityPayload)port.State.Decision.Payload) with { ResponseAvailability = availability } } };
+            var policy = new Policy();
+            await using var host = new AiTableHost(port, _ => policy, 1);
+            await host.StepAsync();
+            check(port.Controls is [AutomatedPriorityControl.Acknowledge] && policy.Calls == 0 && port.Commands.Count == 0,
+                "Available or unknown bot responses return actual reading credit without installing futile NoResponse consent: " + availability);
+            await host.StepAsync();
+            check(port.Controls is [AutomatedPriorityControl.Acknowledge] && port.Commands is [PassPriority]
+                    && policy.Calls == 1 && host.PriorityContinuations.Single() is { AcceptedGrants: 0, AcceptedWithdrawals: 0 },
+                "The next owned rich response reaches the policy without a grant/withdraw round trip: " + availability);
+            port.Priority(PriorityResponseAvailability.Absent);
+            string fresh = port.State.Decision!.Id;
+            await host.StepAsync(); await host.StepAsync();
+            check(port.Controls is [AutomatedPriorityControl.Acknowledge, AutomatedPriorityControl.NoResponse { DecisionId: var id }]
+                    && id == fresh && host.PriorityContinuations.Single().AcceptedGrants == 1 && policy.Calls == 1,
+                "The same opted-in bot installs exactly one grant when a later owned input is explicitly Absent: " + availability);
+        }
+    }
+
+    private static async Task PreparedResponsesNeedFreshAuthority(Action<bool, string> check)
+    {
+        var port = new Port { ResponsesSupported = true }; port.Priority(PriorityResponseAvailability.Unknown);
+        var policy = new Policy();
+        await using var host = new AiTableHost(port, _ => policy, 1);
+        await host.StepAsync();
+        check(port.Reads == 1 && port.Controls is [AutomatedPriorityControl.Acknowledge] && policy.Calls == 0,
+            "An Unknown bot first acknowledges its accepted publication without preparing responses or granting consent on that same read");
+        await host.StepAsync();
+        check(port.Reads == 2 && port.Controls is [AutomatedPriorityControl.Acknowledge, AutomatedPriorityControl.PrepareResponses]
+                && port.PreparationAccepted == 1 && port.Commands.Count == 0 && policy.Calls == 0 && Accepted(host) == 0
+                && host.PriorityContinuations.Single() is { AcceptedAcknowledgements: 1, AcceptedGrants: 0,
+                    AcceptedWithdrawals: 0, CertifiedAutomaticPasses: 0, LastSequence: 0 },
+            "An action-specific Prepared receipt earns no gameplay, grant, sequence or automatic-pass credit and cannot chain consent from the old Unknown observation");
+        await host.StepAsync();
+        check(port.Reads == 3 && port.Controls is [AutomatedPriorityControl.Acknowledge,
+                AutomatedPriorityControl.PrepareResponses, AutomatedPriorityControl.NoResponse]
+                && port.ControlReadCounts.SequenceEqual(new[] { 1, 2, 3 }) && policy.Calls == 0 && port.Commands.Count == 0
+                && host.PriorityContinuations.Single() is { AcceptedGrants: 1, LastSequence: 1 },
+            "Only the next owned rich read of explicit Absent authority installs NoResponse after response preparation");
+        port.State = port.State with { Revision = port.State.Revision + 1,
+            PriorityContinuation = port.State.PriorityContinuation! with { AutomaticPasses = 4 } };
+        await host.StepAsync(); await host.StepAsync();
+        check(host.PriorityContinuations.Single().CertifiedAutomaticPasses == 4 && port.PreparationAccepted == 1
+                && port.Controls.Count == 3 && Accepted(host) == 0,
+            "Prepared metadata never fabricates a pass certificate or restarts preparation while a real standing grant owns routine priority");
+        port.Priority(PriorityResponseAvailability.Available);
+        await host.StepAsync();
+        check(port.Controls.Last() is AutomatedPriorityControl.Withdraw && policy.Calls == 0,
+            "A response after prepared Auto still withdraws actual consent before its foreground answer");
+        await host.StepAsync();
+        check(port.Commands is [PassPriority] && port.CommandReadCounts is [7] && policy.Calls == 1
+                && host.PriorityContinuations.Single() is { AcceptedWithdrawals: 1, CertifiedAutomaticPasses: 4 }
+                && host.LastFault == null,
+            "The post-preparation response uses another owned read after the exact real-grant withdrawal fence");
+    }
+
+    private static async Task PreparationFallbackAndScope(Action<bool, string> check)
+    {
+        foreach (var available in new PriorityResponseAvailability?[] {
+            PriorityResponseAvailability.Available, PriorityResponseAvailability.Unknown, null }) {
+            var port = new Port { ResponsesSupported = true, PreparedAvailability = available };
+            port.Priority(PriorityResponseAvailability.Unknown);
+            // A malicious or overconfident metadata hint must not replace the
+            // fresh provider observation's actual Available/Unknown evidence.
+            port.PreparedResult = receipt => new AutomatedPriorityControlResult.Prepared(receipt with {
+                ResponseAvailability = PriorityResponseAvailability.Absent });
+            var policy = new Policy();
+            await using var host = new AiTableHost(port, _ => policy, 1);
+            await host.StepAsync(); await host.StepAsync(); await host.StepAsync();
+            check(port.Controls is [AutomatedPriorityControl.Acknowledge, AutomatedPriorityControl.PrepareResponses]
+                    && port.Commands is [PassPriority] && port.CommandReadCounts is [3] && policy.Calls == 1
+                    && host.PriorityContinuations.Single() is { AcceptedGrants: 0, LastSequence: 0 }
+                    && host.LastFault == null,
+                "A Prepared Absent hint cannot override the next rich response or install futile consent: " + available);
+        }
+        var known = new Port { ResponsesSupported = true }; known.Priority(PriorityResponseAvailability.Available);
+        var knownPolicy = new Policy();
+        await using (var host = new AiTableHost(known, _ => knownPolicy, 1)) {
+            await host.StepAsync(); await host.StepAsync();
+            check(known.Controls is [AutomatedPriorityControl.Acknowledge] && known.Commands is [PassPriority],
+                "Known Available authority needs neither response preparation nor a futile grant even when preparation is supported");
+        }
+
+        var portScope = new Port { ResponsesSupported = true, PreparedAvailability = PriorityResponseAvailability.Unknown,
+            RetainCommandObservation = true };
+        portScope.Priority(PriorityResponseAvailability.Unknown);
+        var scopePolicy = new Policy();
+        await using var scoped = new AiTableHost(portScope, _ => scopePolicy, 1);
+        await scoped.StepAsync(); await scoped.StepAsync();
+        for (int update = 0; update < 8; update++) {
+            // The provider may repeat a delayed accepted-input publication at
+            // a newer metadata revision before displaying its next decision.
+            portScope.State = portScope.State with { Revision = portScope.State.Revision + 1 };
+            await scoped.StepAsync();
+        }
+        check(portScope.Controls.Count(control => control is AutomatedPriorityControl.PrepareResponses) == 1
+                && portScope.Commands.Count > 0 && scoped.LastFault == null,
+            "An incomplete Unknown preparation reaches ordinary policy without repeating its scan for metadata-only revisions of the same input");
+        portScope.DomainVersion++; await scoped.StepAsync();
+        check(portScope.Controls.Count(control => control is AutomatedPriorityControl.PrepareResponses) == 2,
+            "A genuinely replaced current source domain can request one fresh response preparation within the same decision");
+        portScope.State = portScope.State with { Revision = portScope.State.Revision + 1,
+            PriorityObservation = portScope.State.PriorityObservation! with { PublicActivitySequence = 1 } };
+        await scoped.StepAsync();
+        check(portScope.Controls.Count(control => control is AutomatedPriorityControl.PrepareResponses) == 3,
+            "A new actual public activity prefix can request response preparation without borrowing the old attempt's evidence");
+        portScope.Priority(PriorityResponseAvailability.Unknown); await scoped.StepAsync();
+        check(portScope.Controls.Count(control => control is AutomatedPriorityControl.PrepareResponses) == 4
+                && portScope.Controls.All(control => control is not AutomatedPriorityControl.NoResponse)
+                && scoped.LastFault == null,
+            "A different current decision gets its own bounded attempt while all incomplete results remain non-consent");
+    }
+
+    private static async Task PreparationReceiptGuards(Action<bool, string> check)
+    {
+        foreach (string kind in new[] { "foreign-game", "foreign-seat", "foreign-input", "foreign-epoch",
+            "negative-board", "older-board", "older-activity", "unknown-enum", "accepted-instead", "lost" }) {
+            var port = new Port { ResponsesSupported = true }; port.Priority(PriorityResponseAvailability.Unknown);
+            port.State = port.State with { BoardRevision = 2,
+                PriorityObservation = port.State.PriorityObservation! with { BoardRevision = 2, PublicActivitySequence = 3 } };
+            port.LosePreparationReceipt = kind == "lost";
+            port.PreparedResult = receipt => kind == "accepted-instead"
+                ? new AutomatedPriorityControlResult.Accepted(port.Metadata())
+                : new AutomatedPriorityControlResult.Prepared(kind switch {
+                    "foreign-game" => receipt with { GameId = "another-table" },
+                    "foreign-seat" => receipt with { SeatId = 99 },
+                    "foreign-input" => receipt with { DecisionId = "another-priority" },
+                    "foreign-epoch" => receipt with { Epoch = receipt.Epoch + 1 },
+                    "negative-board" => receipt with { BoardRevision = -1 },
+                    "older-board" => receipt with { BoardRevision = 1 },
+                    "older-activity" => receipt with { PublicActivitySequence = 2 },
+                    "unknown-enum" => receipt with { ResponseAvailability = (PriorityResponseAvailability)99 },
+                    _ => receipt
+                });
+            var policy = new Policy();
+            await using var host = new AiTableHost(port, _ => policy, 1);
+            await host.StepAsync(); await host.StepAsync(); await host.StepAsync();
+            check(host.LastFault?.ReasonCode == "priority-control-unknown" && port.Reports is ["priority-control-unknown"]
+                    && port.Controls is [AutomatedPriorityControl.Acknowledge, AutomatedPriorityControl.PrepareResponses]
+                    && port.Commands.Count == 0 && policy.Calls == 0 && Accepted(host) == 0
+                    && host.PriorityContinuations.Single() is { AcceptedAcknowledgements: 1, AcceptedGrants: 0,
+                        AcceptedWithdrawals: 0, CertifiedAutomaticPasses: 0, LastSequence: 0 },
+                "A malformed, foreign, wrong-family or lost current preparation receipt faults instead of fabricating consent, known retirement or a same-frame policy answer: " + kind);
+        }
+    }
+
+    private static async Task PreparationRetirementAndPacing(Action<bool, string> check)
+    {
+        var retired = new Port { ResponsesSupported = true, RetirePreparation = true };
+        retired.Priority(PriorityResponseAvailability.Unknown); var retiredPolicy = new Policy();
+        await using (var host = new AiTableHost(retired, _ => retiredPolicy, 1)) {
+            await host.StepAsync(); await host.StepAsync();
+            check(host.LastFault == null && retiredPolicy.Calls == 0 && retired.PreparationAccepted == 0,
+                "Known preparation retirement stops that cycle without pretending a scan completed or evaluating the earlier input");
+            retired.RetirePreparation = false; await host.StepAsync();
+            check(retired.Reads == 3 && retired.Commands is [PassPriority] && retired.CommandReadCounts is [3]
+                    && retired.Controls.Count(control => control is AutomatedPriorityControl.PrepareResponses) == 1,
+                "Known retirement requires another owned read and does not retry preparation forever on the same still-current Unknown scope");
+        }
+        foreach (bool changeEpoch in new[] { false, true }) {
+            var delayed = new Port { ResponsesSupported = true }; delayed.Priority(PriorityResponseAvailability.Unknown);
+            var policy = new Policy(); var entered = NewSignal(); var release = NewSignal();
+            delayed.BeforeControl = async control => { if (control is AutomatedPriorityControl.PrepareResponses) {
+                entered.TrySetResult(); await release.Task;
+            } };
+            await using var host = new AiTableHost(delayed, _ => policy, 1);
+            await host.StepAsync();
+            string originalDecision = delayed.State.Decision!.Id;
+            var pending = host.StepAsync(); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            if (changeEpoch) delayed.Epoch++; else delayed.Priority(PriorityResponseAvailability.Unknown);
+            release.TrySetResult(); await pending;
+            check(delayed.PreparationAccepted == 0 && delayed.Controls is [AutomatedPriorityControl.Acknowledge,
+                    AutomatedPriorityControl.PrepareResponses { DecisionId: var attempted }] && attempted == originalDecision
+                    && host.LastFault == null && policy.Calls == 0 && delayed.Commands.Count == 0
+                    && host.PriorityContinuations.Single() is { AcceptedGrants: 0, LastSequence: 0 },
+                "A delayed preparation cannot cross a replaced exact input or provider epoch: " + changeEpoch);
+        }
+        var paced = new Port { ResponsesSupported = true }; paced.Priority(PriorityResponseAvailability.Unknown);
+        var pacedPolicy = new Policy(); var pace = new Pace();
+        await using var pacedHost = new AiTableHost(paced, _ => pacedPolicy, 1, pacing: pace);
+        await pacedHost.StepAsync();
+        check(paced.Controls.Count == 0, "A reading pause does not start preparation, consent or an observation ACK");
+        pace.Open = true; await pacedHost.StepAsync();
+        pace.Open = false; await pacedHost.StepAsync();
+        check(paced.Controls is [AutomatedPriorityControl.Acknowledge],
+            "Opening enough time for an ACK does not authorize response preparation through a later reading pause");
+        pace.Open = true;
+        paced.AfterControl = control => { if (control is AutomatedPriorityControl.PrepareResponses) pace.Open = false; };
+        await pacedHost.StepAsync(); await pacedHost.StepAsync();
+        check(paced.Controls is [AutomatedPriorityControl.Acknowledge, AutomatedPriorityControl.PrepareResponses]
+                && pacedPolicy.Calls == 0 && paced.Commands.Count == 0,
+            "A Prepared Absent receipt cannot bypass a newly closed reading gate or produce gameplay on the old frame");
+        pace.Open = true; await pacedHost.StepAsync();
+        check(paced.Reads == 6 && paced.Controls.Last() is AutomatedPriorityControl.NoResponse
+                && paced.PreparationAccepted == 1 && pacedPolicy.Calls == 0 && pacedHost.LastFault == null,
+            "After the pause the host rereads current Absent authority before granting without repeating the preparation attempt");
+    }
+
     private static void DescriptorAndClosedControls(Action<bool, string> check)
     {
         check(new AiPolicyDescriptor("custom.v1", AiTasks.All).PriorityAutomation == AiPriorityAutomation.FullControl
@@ -35,10 +244,11 @@ internal static class AiAutomatedPriorityRegression
         try { _ = new AiPolicyDescriptor("invalid.v1", AiTasks.All, (AiPriorityAutomation)99); }
         catch (ArgumentOutOfRangeException) { invalid = true; }
         check(invalid && typeof(AutomatedPriorityControl).Assembly.GetTypes().Where(type => type.IsSubclassOf(typeof(AutomatedPriorityControl)))
-            .Select(type => type.Name).Order().SequenceEqual(new[] { "Acknowledge", "NoResponse", "Withdraw" }),
-            "Automated priority metadata has a closed ACK/NoResponse/withdraw family with no Quiet, finite or gameplay variant");
+            .Select(type => type.Name).Order().SequenceEqual(new[] { "Acknowledge", "NoResponse", "PrepareResponses", "Withdraw" }),
+            "Automated priority metadata has a closed ACK/preparation/NoResponse/withdraw family with no Quiet, finite or gameplay variant");
         foreach (var control in new AutomatedPriorityControl[] {
             new AutomatedPriorityControl.Acknowledge("", 0, 0), new AutomatedPriorityControl.Acknowledge("g", -1, 0),
+            new AutomatedPriorityControl.PrepareResponses("g", ""), new AutomatedPriorityControl.PrepareResponses("", "d"),
             new AutomatedPriorityControl.NoResponse("g", "", 1, "grant", []),
             new AutomatedPriorityControl.NoResponse("g", "d", 0, "grant", []),
             new AutomatedPriorityControl.NoResponse("g", "d", 1, "grant", ["BAD"]),
@@ -51,7 +261,7 @@ internal static class AiAutomatedPriorityRegression
     private static async Task FullControlAndLegacy(Action<bool, string> check)
     {
         foreach (bool supported in new[] { false, true }) {
-            var port = new Port { Supported = supported }; var policy = new Policy(AiPriorityAutomation.FullControl);
+            var port = new Port { Supported = supported, ResponsesSupported = true }; var policy = new Policy(AiPriorityAutomation.FullControl);
             await using var host = new AiTableHost(port, _ => policy, 1);
             await host.StepAsync();
             check(policy.Calls == 1 && port.Commands is [PassPriority] && port.Controls.Count == 0,
@@ -246,7 +456,14 @@ internal static class AiAutomatedPriorityRegression
 
     private static async Task ReceiptChains(Action<bool, string> check)
     {
-        var port = new Port(); port.Priority(PriorityResponseAvailability.Available);
+        var port = new Port();
+        port.BeforeControl = control => {
+            if (control is AutomatedPriorityControl.NoResponse) port.State = port.State with {
+                Revision = port.State.Revision + 1, Decision = port.State.Decision! with {
+                    Payload = ((PriorityPayload)port.State.Decision.Payload) with {
+                        CanAutoPass = false, ResponseAvailability = PriorityResponseAvailability.Available } } };
+            return Task.CompletedTask;
+        };
         var policy = new Policy();
         await using var host = new AiTableHost(port, _ => policy, 1);
         await host.StepAsync();
@@ -254,7 +471,7 @@ internal static class AiAutomatedPriorityRegression
                 AutomatedPriorityControl.NoResponse, AutomatedPriorityControl.Withdraw]
             && policy.Calls == 0 && port.Commands.Count == 0
             && host.PriorityContinuations.Single() is { AcceptedAcknowledgements: 1, AcceptedGrants: 1, AcceptedWithdrawals: 1 },
-            "One owned read reconciles ACK, held NoResponse and negative withdrawal from typed receipts, eliminating two control-only full reads without a policy action");
+            "A response arriving during a genuinely Absent grant still reconciles ACK, actual Held consent and negative withdrawal without a policy action");
         await host.StepAsync();
         check(port.Reads == 2 && policy.Calls == 1 && port.Commands is [PassPriority]
             && port.CommandReadCounts is [2],
@@ -449,17 +666,22 @@ internal static class AiAutomatedPriorityRegression
                 PriorityContinuation = new(0, "", null, PriorityContinuationStatus.Idle, "", 0, []),
                 PriorityObservation = new(1, 0, 0, 0, false, false)
             };
-        internal bool Supported = true, RetireControls, LoseGrantReceipt, LoseWithdrawReceipt, SuppressObservation;
-        internal long Epoch = 1, Fence;
-        internal int PositiveAccepted, Reads;
+        internal bool Supported = true, ResponsesSupported, RetireControls, LoseGrantReceipt, LoseWithdrawReceipt, SuppressObservation;
+        internal bool RetirePreparation, LosePreparationReceipt, RetainCommandObservation;
+        internal long Epoch = 1, Fence, DomainVersion = 1;
+        internal int PositiveAccepted, PreparationAccepted, Reads;
+        internal PriorityResponseAvailability? PreparedAvailability = PriorityResponseAvailability.Absent;
         internal List<GameCommand> Commands = [];
         internal List<int> CommandReadCounts = [];
         internal List<AutomatedPriorityControl> Controls = [];
+        internal List<int> ControlReadCounts = [];
         internal List<string> Reports = [];
         internal Func<AutomatedPriorityControl, Task>? BeforeControl;
         internal Action<AutomatedPriorityControl>? AfterControl;
+        internal Func<AutomatedPriorityResponsesReceipt, AutomatedPriorityControlResult>? PreparedResult;
         internal TaskCompletionSource PositiveFinished = NewSignal();
         public bool SupportsAutomatedPriorityContinuation => Supported;
+        public bool SupportsAutomatedPriorityResponses => ResponsesSupported;
         public long AutomatedPriorityEpoch => Epoch;
         public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) => Task.CompletedTask;
         public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default)
@@ -467,23 +689,39 @@ internal static class AiAutomatedPriorityRegression
             Reads++;
             if (SuppressObservation) return Task.FromResult(ImmutableArray<AutomatedSeatObservation>.Empty);
             return Task.FromResult(ImmutableArray.Create(new AutomatedSeatObservation(0, State,
-                State.Decision?.Payload is PriorityPayload ? new(1, ActionDomainCoverage.Complete, [], []) : DecisionActionDomain.None, new())));
+                State.Decision?.Payload is PriorityPayload ? new(DomainVersion, ActionDomainCoverage.Complete, [], []) : DecisionActionDomain.None, new())));
         }
         public Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default)
         {
             if (seatId != 0 || !GameCommandPermissions.Allows(State, command)) throw new InvalidDataException("Unowned test command.");
             Commands.Add(command); CommandReadCounts.Add(Reads);
-            State = State with { Revision = State.Revision + 1, Decision = null, Status = "resolving" };
+            State = RetainCommandObservation ? State with { Revision = State.Revision + 1 }
+                : State with { Revision = State.Revision + 1, Decision = null, Status = "resolving" };
             return Task.CompletedTask;
         }
         public async Task<AutomatedPriorityControlResult> ExecuteAutomatedPriorityControlAsync(long epoch, int seatId,
             AutomatedPriorityControl control, CancellationToken cancellation = default)
         {
-            control.Validate(); Controls.Add(control);
+            control.Validate(); Controls.Add(control); ControlReadCounts.Add(Reads);
             if (BeforeControl != null) await BeforeControl(control);
             if (epoch != Epoch || seatId != 0 || control.GameId != State.Id || RetireControls)
                 return new AutomatedPriorityControlResult.Retired();
             switch (control) {
+                case AutomatedPriorityControl.PrepareResponses preparation:
+                    if (!ResponsesSupported || RetirePreparation || State.Decision is not { Payload: PriorityPayload } priority
+                        || priority.Id != preparation.DecisionId)
+                        return new AutomatedPriorityControlResult.Retired();
+                    PreparationAccepted++;
+                    State = State with { Revision = State.Revision + 1, Decision = priority with {
+                        Payload = ((PriorityPayload)priority.Payload) with {
+                            ResponseAvailability = PreparedAvailability,
+                            CanAutoPass = PreparedAvailability == PriorityResponseAvailability.Absent } } };
+                    if (LosePreparationReceipt) throw new IOException("Controlled lost response-preparation receipt.");
+                    AfterControl?.Invoke(control);
+                    var prepared = new AutomatedPriorityResponsesReceipt(Epoch, State.Id, 0, preparation.DecisionId,
+                        State.BoardRevision, State.PriorityObservation!.PublicActivitySequence,
+                        PreparedAvailability ?? PriorityResponseAvailability.Unknown);
+                    return PreparedResult?.Invoke(prepared) ?? new AutomatedPriorityControlResult.Prepared(prepared);
                 case AutomatedPriorityControl.Acknowledge ack:
                     State = State with { Revision = State.Revision + 1, PriorityObservation = State.PriorityObservation! with {
                         Registered = true, AcknowledgedBoardRevision = ack.BoardRevision,
@@ -509,7 +747,9 @@ internal static class AiAutomatedPriorityRegression
                     break;
             }
             AfterControl?.Invoke(control);
-            return new AutomatedPriorityControlResult.Accepted(new(Epoch, State.Id, 0, State.Revision, State.BoardRevision,
+            return new AutomatedPriorityControlResult.Accepted(Metadata());
+        }
+        internal AutomatedPriorityReceipt Metadata() => new(Epoch, State.Id, 0, State.Revision, State.BoardRevision,
                 State.StackInterruptionVersion!.Value, State.Status switch {
                     "playing" => AutomatedPriorityMatchStatus.Playing, "resolving" => AutomatedPriorityMatchStatus.Resolving,
                     "finished" => AutomatedPriorityMatchStatus.Finished, _ => AutomatedPriorityMatchStatus.Starting },
@@ -517,8 +757,7 @@ internal static class AiAutomatedPriorityRegression
                 State.Status == "playing" && (State.DecisionOwnerId == null || State.DecisionOwnerId == State.ViewerId)
                     && (State.PriorityPlayerId == null || State.PriorityPlayerId == State.ViewerId)
                     && State.Decision?.Payload is PriorityPayload ? State.Decision.Id : null,
-                State.PriorityContinuation!, State.PriorityObservation!));
-        }
+                State.PriorityContinuation!, State.PriorityObservation!);
         public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode, CancellationToken cancellation = default)
         { Reports.Add(reasonCode); return Task.CompletedTask; }
         internal void Priority(PriorityResponseAvailability availability)

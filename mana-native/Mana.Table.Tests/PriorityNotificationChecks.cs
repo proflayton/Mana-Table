@@ -167,12 +167,55 @@ internal static class PriorityNotificationChecks
         using var auto = new NotificationRun(profile, "priority-chime-auto", state with {
             Decision = state.Decision! with { Payload = new PriorityPayload(new("Pass priority", true), CanAutoPass: true) }
         });
+        var entered = new TaskCompletionSource<GameCommand>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int entries = 0;
+        auto.Engine.ReplyOverride = async reply => {
+            Interlocked.Increment(ref entries); entered.TrySetResult(reply);
+            await release.Task;
+            auto.Engine.ReplyOverride = null;
+            await auto.Engine.ExecuteAsync(reply);
+        };
         auto.View.SetAutomatic(true); auto.Tick();
         var deadline = System.Diagnostics.Stopwatch.StartNew();
-        while (auto.View.Busy && deadline.Elapsed < TimeSpan.FromSeconds(5)) { auto.Tick(); Thread.Yield(); }
-        auto.Tick(3);
-        check(auto.Engine.Replies.SingleOrDefault() is AutoPassPriority && auto.Chimes.Count == 0,
-            "The notification runs after actual automatic dispatch and stays quiet for a response the client already passes");
+        try {
+            var initial = new { auto.View.Automatic, auto.View.Busy, auto.View.Polling,
+                entered = entered.Task.IsCompleted, replies = auto.Engine.Replies.Select(reply => reply.GetType().Name).ToArray(),
+                chimes = auto.Chimes.ToArray(), state = auto.View.Match };
+            WriteEvidence("before-dispatch", initial);
+            check(!initial.Busy && !initial.entered && initial.replies.Length == 0,
+                "The real initial presentation beat can be idle before Auto starts; Busy=false is not a dispatch receipt");
+            // Finish the initial 1.2s presentation beat below the reminder's
+            // two-second grace, then pump without accelerating virtual time
+            // while the actual asynchronous dispatch enters its owned gate.
+            auto.Tick(1.3);
+            while (!entered.Task.IsCompleted && deadline.Elapsed < TimeSpan.FromSeconds(5)) { auto.Tick(0); Thread.Yield(); }
+            check(entered.Task.IsCompletedSuccessfully && entered.Task.Result is AutoPassPriority,
+                "The priority-notification control reaches an actual AutoPassPriority provider dispatch before checking its quiet outcome");
+            var held = auto.View.Match;
+            auto.Tick(3);
+            WriteEvidence("held-dispatch", new { command = entered.Task.Result.GetType().Name,
+                answer = System.Text.Json.JsonSerializer.SerializeToElement(entered.Task.Result, entered.Task.Result.GetType()),
+                entries = Volatile.Read(ref entries), auto.View.Automatic, auto.View.Busy, auto.View.Polling,
+                replies = auto.Engine.Replies.Select(reply => reply.GetType().Name).ToArray(), chimes = auto.Chimes.ToArray(),
+                original = held, state = auto.View.Match });
+            check(auto.View.Busy && Volatile.Read(ref entries) == 1 && auto.Engine.Replies.Count == 0
+                    && ReferenceEquals(held, auto.View.Match) && held?.Decision != null && auto.Chimes.Count == 0,
+                "An actual held Auto dispatch remains silent across the full notification grace without inventing a provider receipt or changing the waiting decision");
+            release.TrySetResult();
+            while ((auto.View.Busy || auto.View.Polling || auto.View.Match?.Decision != null)
+                    && deadline.Elapsed < TimeSpan.FromSeconds(5)) { auto.Tick(0); Thread.Yield(); }
+            check(!auto.View.Busy && !auto.View.Polling && auto.View.Match is { Decision: null } adopted
+                    && adopted.Id == auto.Engine.State.Id && adopted.Revision == auto.Engine.State.Revision,
+                "The released automatic pass reconciles its actual provider observation and adopted decision within the unchanged five-second guard");
+            auto.Tick(3);
+            WriteEvidence("adopted", new { entries = Volatile.Read(ref entries), auto.View.Automatic, auto.View.Busy, auto.View.Polling,
+                replies = auto.Engine.Replies.Select(reply => reply.GetType().Name).ToArray(), chimes = auto.Chimes.ToArray(), state = auto.View.Match });
+            check(auto.Engine.Replies.SingleOrDefault() is AutoPassPriority && auto.Chimes.Count == 0,
+                "The notification runs after actual automatic dispatch and stays quiet for a response the client already passes");
+        } finally { release.TrySetResult(); }
+        void WriteEvidence(string stage, object evidence) => File.WriteAllText(Path.Combine(auto.Profile, "automatic-" + stage + ".json"),
+            System.Text.Json.JsonSerializer.Serialize(evidence, new System.Text.Json.JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
     }
 
     private sealed record Sound(string Key, float Volume);

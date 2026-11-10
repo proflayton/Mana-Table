@@ -8,6 +8,7 @@ internal static class AiCausalMechanicEvidenceChecks
 {
     internal static void Run(Action<bool, string> check)
     {
+        AiConsumingArtifactEvidenceChecks.Run(check);
         var fixture = new Fixture();
         AiCausalMechanicEvidence Collect(GameSnapshot? after = null, AutomatedSeatObservation? before = null,
             bool accepted = true, bool publicResult = true)
