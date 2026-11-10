@@ -36,6 +36,10 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "capture-png") CapturePngChecks.Run(Check);
                 else if (group == "mana-pool") CheckManaPoolPaymentClarity(profile, Check, trace, performance);
                 else if (group == "keyword-help") CheckKeywordHelp(profile, Check, trace, performance);
+                else if (group == "target-restrictions") {
+                    TargetRestrictionWireChecks.Run(Check);
+                    TargetRestrictionPresentationChecks.Run(profile, Check);
+                }
                 else if (group == "match-header") MatchHeaderInteractionChecks.Run(profile, Check);
                 else if (group == "cooperative-lobby") CooperativeLobbyInteractionChecks.Run(profile, Check);
                 else if (group == "cooperative-opening") CooperativeOpeningChecks.Run(Check);
@@ -119,6 +123,7 @@ internal static partial class HeadlessPresentationSmoke
             AutomatedPriorityProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             CostOrderingWireChecks.Run(Check);
             ExecutionWireChecks.Run(Check);
+            TargetRestrictionWireChecks.Run(Check);
             MatchOutcomeWireChecks.Run(Check);
             MatchSetupWireChecks.Run(Check);
             ConfiguredSimulationWireChecks.Run(Check);
@@ -202,6 +207,7 @@ internal static partial class HeadlessPresentationSmoke
             TokenArtworkChecks.Run(profile, Check);
             AttachmentStackChecks.Run(profile, Check);
             PendingEffectPresentationChecks.Run(profile, Check);
+            TargetRestrictionPresentationChecks.Run(profile, Check);
             StackCombatLayoutChecks.Run(profile, Check);
             CardPlayChecks.RunPresentation(profile, Check);
             ImpactFeedbackChecks.RunPresentation(profile, Check);

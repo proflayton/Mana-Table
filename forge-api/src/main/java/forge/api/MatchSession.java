@@ -2204,6 +2204,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var automatedFacts = emptyDecisionSemantics();
         var playerChoices = new ArrayList<Integer>();
         var poolColors = new ArrayList<String>();
+        projectedPrompt.remove("targetRestrictions");
         boolean selection = isSelectionInput(prompt.input) || selectionDialog(prompt);
         // Residual inputs and plain dialogs retain the same ambient cost
         // classification as selections, copied at this publication boundary.
@@ -2215,7 +2216,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (prompt.input instanceof InputSelectTargets) {
                 projectedPrompt.remove("min"); projectedPrompt.remove("max");
                 projectedPrompt.remove("effect"); projectedPrompt.remove("librarySearch");
-                captured = captureTargets(prompt, boardRevision, sourceVersion, promptFacts, automatedFacts, playerChoices);
+                captured = captureTargets(prompt, boardRevision, sourceVersion, execution, promptFacts, automatedFacts, playerChoices);
             } else if (prompt.input instanceof InputSelectManyBase<?>) {
                 projectedPrompt.remove("manaReduction"); projectedPrompt.remove("counterPayment");
                 captured = captureMany(prompt, boardRevision, sourceVersion, promptFacts, automatedFacts, playerChoices);
@@ -2314,7 +2315,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 && (!direct || sourceInputCurrent(prompt)) && (!nested || human.getInputQueue().getInput() == owner);
     }
 
-    private boolean captureTargets(Pending prompt, long boardRevision, long sourceVersion,
+    private boolean captureTargets(Pending prompt, long boardRevision, long sourceVersion, ExecutionTracker.Reference execution,
                                    Map<String, Object> promptFacts, Map<String, Object> automatedFacts, List<Integer> playerChoices) {
         if (!(prompt.input instanceof InputSelectTargets targeting) || !selectionInputCurrent(prompt)) return false;
         var ability = targeting.getSpellAbility();
@@ -2334,6 +2335,15 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 targets.getTargetPlayers().spliterator(), false).map(Player::getId).toList();
         promptFacts.put("targetSelectionProgress", map("selectedCount", targets.size(), "selectedPlayers", selectedPlayers));
         automatedFacts.put("selectedPlayers", selectedPlayers);
+        if (!promptFacts.containsKey("librarySearch")) {
+            var previous = prompt.publishedDecision;
+            Object restrictions = previous != null && previous.matches(prompt.id, boardRevision, sourceVersion,
+                    execution == null ? null : execution.id(), execution == null ? null : execution.step())
+                    ? previous.promptFacts().get("targetRestrictions") : null;
+            if (!(restrictions instanceof List<?>)) restrictions = TargetRestrictionProjection.describe(targeting,
+                    game.getCardsIn(ZoneType.Battlefield), human.getPlayer(), selectable::contains, activity::visualId);
+            promptFacts.put("targetRestrictions", restrictions);
+        }
         return table.currentPublication(boardRevision) && pending == prompt && sourceActionVersion.get() == sourceVersion
                 && selectionInputCurrent(prompt);
     }

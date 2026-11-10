@@ -1,5 +1,38 @@
 # Review the Mana Table experience
 
+## Understanding a blocked target: source candidate
+
+**Source candidate; human review pending.** A player tried to use Staff of
+Domination on Omnath, Locus of the Void, then confirmed that equipped Lightning
+Greaves granted Shroud. The intent is to understand why that actual card cannot
+be selected while preserving the current targeting decision.
+
+The player's supplied MTG Arena battlefield references show legal-action light
+on the actual card and source-attached full-card reading. This candidate adapts
+that spatial vocabulary: hovering a blocked public permanent adds a quiet red
+rim and an adjacent engine-written explanation; a currently public granting
+card receives a gold rim and its complete name appears in the explanation.
+The exact red treatment and reason panel are Mana Table adaptations, not a
+claim that the supplied Arena images demonstrate this precise blocked-target
+interaction. Arena's [secret-selection correction](https://mtgarena-support.wizards.com/hc/en-us/articles/31307518959252-Patch-Notes-2024-42-00)
+also supplies the privacy limit: this feedback stays in the acting player's
+current prompt and never broadcasts hidden choices or granting sources.
+
+Clicking the blocked card retains the existing card inspector used during
+targeting, with the current explanation first in its details. No selection,
+activation, payment or cancellation is caused by reading. Legal cards retain the same current target
+command. New inputs, concealed occurrences, and lost public source bindings
+withdraw the old explanation. Cost selections and library searches do not
+inherit targeting rules. The client displays rules-provider facts and does not
+recalculate Shroud, Hexproof, protection or ward.
+
+Review the exact candidate with Staff/Greaves/Omnath, a legal neighbor, selected
+target deselection, intrinsic Shroud, opponent Hexproof, protection, a source
+that changes visibility, crowded attachments, both supported window sizes and
+normal/enlarged reading. Confirm the explanation fits without hiding the
+target or decision controls, that opening the reader remains easy, and that the
+game's decision clock continues while the player reads.
+
 Use the Experience Lab to reproduce a presentation problem immediately, then
 review the corresponding live-game behavior. Automated checks establish scoped
 command safety, state projection, privacy and geometry invariants. They do not
