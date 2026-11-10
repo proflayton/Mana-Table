@@ -56,6 +56,7 @@ internal sealed partial class TableApplication
         bool changed = selectedDeckDetails?.Id != details.Id;
         string? previousFormat = selectedDeckDetails?.Format;
         int? identity = CommanderIdentity;
+        if (selectedDeckDetails?.Id != details.Id || selectedDeckDetails.Revision != details.Revision) RetireSoloPreparation();
         selectedDeck = new(details.Id, details.Name) { LibraryToken = details.LibraryToken }; selectedDeckDetails = details; InvalidateDeckConfirmation();
         deckPersistence.Observe(details);
         if (partnerCandidates && details.CommanderIds.Length != 1) {

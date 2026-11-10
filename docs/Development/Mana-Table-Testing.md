@@ -23,6 +23,36 @@ uses that authored projection and actual hover/click reading, saving separate
 chosen disposable profile. Use `--size 1000x740` and `--size 1540x980`, with a
 populated `--art-cache`, and check the accompanying artwork/completion metadata.
 
+## Varied default AI pods
+
+`SoloOpponentSelectionRegression` runs in the ordinary graphics-free client
+executable, or alone with `--solo-opponent-checks`. It checks provider-default
+precedence, seeded legacy fallback, catalog-order independence, semantic aliases,
+same-name distinct choices, bounded repeats for small pools, immutable reviewed
+rosters, deliberate duplicate choices, retirement of automatic seats and stale
+committed handles, old-provider JSON and malformed provider references. These
+checks establish composition and selection intent, not deck strength or AI skill.
+`SoloSetupWireChecks` additionally calls the production Forge adapter mapper:
+new fields reach selection, absent/null defaults keep older providers usable,
+malformed JSON fails decoding, and foreign/retired references fail current-catalog
+selection. Direct contract deserialization alone does not supply that evidence.
+
+`--smoke-headless-presentation --presentation-group ai-pods` runs the production
+pregame pointer journey with a controlled provider. It opens the existing AI
+picker, pins a saved deck, refreshes a reordered catalog, acknowledges an actual
+saved human-deck revision, starts the reviewed roster, and returns from an
+authored completed match before preparing the next pod. Automatic choices retire
+at those lifetime boundaries; explicit preferences remain. A separate older
+provider lacks composition/default metadata but retains a stable playable roster.
+The group also protects exact host AI assignment, public saved-deck names and
+unchanged human Ready consent. It runs in the full headless suite as well.
+
+The controlled provider's completion is authored presentation evidence, not a
+natural-game result. These journeys do not certify power matching, a balanced
+win rate, gameplay legality independent of the provider, or human acceptance.
+See [the opponent-composition journey](Mana-Table-Experience-Review.md#varied-default-opponents-source-candidate)
+for the official game precedent and pending review.
+
 ## GPU capture encoding
 
 `--smoke-headless-presentation --presentation-group capture-png` checks the

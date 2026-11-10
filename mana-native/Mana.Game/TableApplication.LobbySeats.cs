@@ -44,21 +44,23 @@ internal sealed partial class TableApplication
     }
     private void OpenLobbyAiPicker(int seat)
     {
-        if (busy || ManagedLobbySeat(seat) == null) return;
-        lobbyAiSeat = seat; lobbyAiPage = 0; setupModal = "lobby-ai"; textFocus = false;
+        if (busy || ManagedLobbySeat(seat) is not { } target) return;
+        lobbyAiSeat = seat; lobbyAiPage = 0; textFocus = false;
+        if (target.Type == "OPEN") { SetLobbyAi(null); return; }
+        setupModal = "lobby-ai";
     }
-    private void SetLobbyAi(string opponentId)
+    private void SetLobbyAi(string? opponentId)
     {
         if (busy || ManagedLobbySeat(lobbyAiSeat) == null || services.Seats is not { } service || lobby is not { } current
-            || !current.AiOpponents.Any(o => o.Id == opponentId)) return;
+            || current.AiOpponents.IsEmpty || opponentId != null && !current.AiOpponents.Any(o => o.Id == opponentId)) return;
         int seat = lobbyAiSeat; string table = current.TableId;
-        string deck = current.AiOpponents.Single(o => o.Id == opponentId).Name;
         Work(async () => {
             var state = await service.SetSeatAsync(table, seat, "AI", opponentId);
             updates.Enqueue(() => {
                 if (lobby?.TableId != table) return;
                 session.AcceptLobby(state); setupModal = "";
-                message = $"AI seat {seat + 1} will play {deck}.";
+                var assigned = state.Seats.FirstOrDefault(candidate => candidate.Index == seat);
+                message = $"AI seat {seat + 1} will play {assigned?.DeckPreview?.Name ?? assigned?.Deck ?? "its selected deck"}.";
             });
         }, "Preparing this AI seat", "Loading its deck and letting everyone at the table know.");
     }

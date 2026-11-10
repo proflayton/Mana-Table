@@ -10,6 +10,11 @@ if (args.Contains("--verify-failure-reporting"))
     throw new InvalidOperationException("Controlled test-runner failure reporting check.");
 int checks = 0;
 void Check(bool value, string description) { if (!value) throw new Exception(description); checks++; Console.WriteLine(description); }
+if (args.Contains("--solo-opponent-checks")) {
+    SoloOpponentSelectionRegression.Run(Check);
+    Console.WriteLine($"Passed {checks} solo opponent selection checks.");
+    return 0;
+}
 if (args.Contains("--current-read-checks")) {
     await CurrentReadRegression.RunAsync(Check);
     Console.WriteLine($"Passed {checks} current-read ownership checks.");
@@ -257,6 +262,7 @@ ImmutableStateChecks.Run(Check);
 CardIdentityBoundaryRegression.Run(Check);
 PublicStateDescriptorChecks.Run(Check);
 DeckExperienceChecks.Run(Check);
+SoloOpponentSelectionRegression.Run(Check);
 await PrintingArtRegression.RunAsync(Check);
 Console.WriteLine($"Passed {checks} headless checks.");
 return 0;

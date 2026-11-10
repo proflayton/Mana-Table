@@ -33,6 +33,7 @@ internal static partial class HeadlessPresentationSmoke
         try {
             if (group != null) {
                 if (group == "startup-playback") StartupPlaybackChecks.Run(profile, Check);
+                else if (group == "ai-pods") PregameFlowChecks.RunAiPods(profile, Check);
                 else if (group == "capture-png") CapturePngChecks.Run(Check);
                 else if (group == "mana-pool") CheckManaPoolPaymentClarity(profile, Check, trace, performance);
                 else if (group == "keyword-help") CheckKeywordHelp(profile, Check, trace, performance);
