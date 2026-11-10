@@ -35,7 +35,8 @@ internal sealed partial class TableApplication
             error = "";
             session.SubmitSetting(new(state.Id, ability.Id));
         }
-        overlay = "";
+        // Keep the list/reader available for consecutive preference changes.
+        // Normal presentation reconciliation still retires vanished options.
     }
 
     private void PriorityAbilityButton(string id, string label, Rectangle bounds, UiIntent action, bool enabled = true, bool active = false)
