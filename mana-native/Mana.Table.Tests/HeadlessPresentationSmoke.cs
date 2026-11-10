@@ -38,6 +38,7 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "mana-pool") CheckManaPoolPaymentClarity(profile, Check, trace, performance);
                 else if (group == "keyword-help") CheckKeywordHelp(profile, Check, trace, performance);
                 else if (group == "commander-combat") CommanderCombatWireChecks.Run(Check);
+                else if (group == "priority-notifications") PriorityNotificationChecks.Run(profile, Check);
                 else if (group == "target-restrictions") {
                     TargetRestrictionWireChecks.Run(Check);
                     TargetRestrictionPresentationChecks.Run(profile, Check);

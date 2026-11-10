@@ -2698,6 +2698,12 @@ global and temporary mute, silent expiry, foreground mute gestures and permitted
 background reminders. The actual portrait bell must remain separately reachable
 from phase/Auto/Hold controls at both supported review sizes. These checks do not
 establish that a listener finds the bundled cue quiet or pleasant.
+The focused `priority-notifications` group also holds an actual automatic pass
+inside the controlled provider, crosses the reminder grace while it is held,
+then requires the real reply and adopted no-decision observation within the
+existing five-second guard. An idle `Busy` flag before dispatch cannot count as
+a receipt. Retained stage evidence distinguishes initial presentation, in-flight
+dispatch and adopted completion; no product notification timing is changed.
 **Source candidate:** the same headless lane includes `AudioSettingsChecks`:
 legacy mute migration, normalized full-mix roundtrip, live master gain through
 the real settings pointer path, release-only persistence, decision replacement,
