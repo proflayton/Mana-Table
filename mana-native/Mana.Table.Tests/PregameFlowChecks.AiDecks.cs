@@ -13,14 +13,14 @@ internal static partial class PregameFlowChecks
         var solo = new PregameEngine { AdditionalAiDecks = [saved] };
         using (var run = new Runner(profile, "saved-ai-solo", solo, check)) {
             run.Click("choose-ai:0");
-            run.Until(() => run.View.SetupModal == "decks" && !run.View.Busy, "The existing AI seat gesture opens its provider-supplied saved decks alongside presets");
+            run.Until(() => run.View.SetupModal == "decks" && !run.View.Busy && !run.View.ActivityOpen, "The existing AI seat gesture opens its provider-supplied saved decks alongside presets");
             check(run.Frame.Hits.Any(hit => hit.Id == "opponent:" + savedId),
                 "A saved dual-commander deck is selectable through the ordinary opponent deck control");
             run.Click("opponent:" + savedId);
             check(run.View.SetupModal.Length == 0 && run.View.SelectedDeck?.Id == "a" && solo.StartCalls == 0,
                 "Choosing an AI's saved deck preserves the human deck and does not start a game");
             run.Click("choose-ai:0");
-            run.Until(() => run.View.SetupModal == "decks" && !run.View.Busy, "Reopening the picker refreshes committed deck versions without discarding an unchanged selection");
+            run.Until(() => run.View.SetupModal == "decks" && !run.View.Busy && !run.View.ActivityOpen, "Reopening the picker refreshes committed deck versions without discarding an unchanged selection");
             check(run.View.SoloSetup!.Opponents.Single(opponent => opponent.Id == savedId).Name == saved.Name,
                 "Reopening the AI picker retains the named saved deck from the same prepared catalog");
             run.Click("setup-close"); run.Click("start-solo");

@@ -73,6 +73,21 @@ same presence owner. Both intervals retain the single-task/four-Hz checks and
 the prefix's existing 45-second deadline. A green prefix is a bounded transport
 and ownership journey, not a full natural game or a private-choice-sharing claim.
 
+The prefix's single foreground owner conserves each locally admitted command as
+an exact provider ACK, an explicitly typed retirement before dispatch, or one
+still-live attempt. `Submit(true)` can queue a gesture behind the quiet observer
+ACK; revalidation can safely retire that original source offer without sending
+it to Forge. Reconciliation requires no live attempts, every admission accounted
+for, and exact equality between acknowledged inputs and real provider receipts.
+Its private evidence retains the original sequence, game/viewer/decision stamp,
+dispatch identity or retirement diagnostic/reason. Failed or unknown outcomes
+remain fatal. `PolledPlayerAttemptChecks` exercises actual quiet-ACK retirement
+then a fresh command, unrelated declines, unmatched command instances and double
+accounting through the existing client hooks. These controls run in the full
+native suite and the focused `polled-receipt-processing` group; no deadline or
+rules gate is relaxed. Historical failures without those terminal diagnostics
+cannot establish which retirement reason occurred.
+
 See [the considered-play journey](Mana-Table-Experience-Review.md#seeing-a-player-consider-a-public-play-source-candidate)
 for game references, confidentiality limits and pending human review.
 
