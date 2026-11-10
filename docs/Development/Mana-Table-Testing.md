@@ -1,5 +1,28 @@
 # Testing Mana Table
 
+## Current target restriction feedback
+
+`--smoke-headless-presentation --presentation-group target-restrictions` runs the
+actual provider decoder and production pointer/reading paths at 1000x740 and
+1540x980. It checks that an engine-reported blocked Omnath explains Shroud and
+its public Lightning Greaves source, remains inspectable without a command,
+and leaves a legal neighboring target's exact current `SelectCard` unchanged.
+The ordinary full headless suite includes these checks.
+
+Wire controls reject malformed, duplicate, legal-card-contradicting, hidden and
+non-battlefield references, plus misplaced search/cost annotations. Missing or
+null fields from older providers remain empty. A future reason code remains
+unknown with no hint; its identities still pass the same visibility fence.
+These authored presentation fixtures do not evaluate Magic rules. Java tests
+exercise the real target input and rule rejection. Human readability review of
+the exact candidate remains separate and pending.
+
+For real GPU review, `--capture-large-table --capture-view target-restrictions`
+uses that authored projection and actual hover/click reading, saving separate
+`target-restriction-hover.png` and `target-restriction-reader.png` files in the
+chosen disposable profile. Use `--size 1000x740` and `--size 1540x980`, with a
+populated `--art-cache`, and check the accompanying artwork/completion metadata.
+
 ## GPU capture encoding
 
 `--smoke-headless-presentation --presentation-group capture-png` checks the

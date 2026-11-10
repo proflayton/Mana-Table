@@ -81,6 +81,7 @@ internal static class ForgeSnapshotDecoder
             PublicActivityFacts.Validate(snapshot);
             BlockingCapacityFacts.Validate(snapshot);
             CombatRepairFacts.Validate(snapshot);
+            TargetRestrictionFacts.Validate(snapshot);
             FiniteResolutionFacts.Validate(snapshot);
             FiniteStackYieldFacts.Validate(snapshot);
             PriorityContinuationFacts.Validate(snapshot);

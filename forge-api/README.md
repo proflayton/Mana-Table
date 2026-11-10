@@ -1739,6 +1739,25 @@ needs the current `action: ok`; selection progress does not submit that action.
 The field is additive within protocol 1; older clients ignore it, and newer
 clients retain the prior presentation when an older engine omits it.
 
+The same choosing controller's current target prompt can add
+`targetRestrictions: [{cardId, reason, detail, sourceCardId?}]`. These are readable
+negative facts for face-up, visible battlefield cards which the current target
+input cannot select. `cardId` is that card's public `visualId`; `sourceCardId`,
+when present, is the current face-up public battlefield origin of the blocking
+effect, such as an Equipment granting shroud. Intrinsic or unavailable origins
+are omitted. The closed reasons are `shroud`, `hexproof`, `protection`, and
+`restriction`. Specific keyword reasons come from the actual blocking rules
+ability after exceptions and controller restrictions are applied; a displayed
+keyword alone does not establish a blocked target. `detail` describes that
+current restriction and is bounded to 1024 characters. A projection inspects at
+most 512 public battlefield cards and returns at most 256 rows; omission never
+means legal. This list contains no action keys and cannot authorize a command.
+Already-selected cards which remain available for deselection get no rejection.
+Search prompts, entity/cost selections, other players and spectators receive no
+target restrictions. The list shares the current decision's immutable
+publication and ownership fences, and is refreshed when that publication changes.
+Older engines may omit it or return null; clients then retain no explanation.
+
 `deckPresets` returns four attributed offline Commander precons with card counts,
 commander entries, and source links. `presetImport {id}` validates the complete
 list before creating a new saved Commander deck; existing decks are never replaced.

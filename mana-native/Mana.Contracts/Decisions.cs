@@ -132,6 +132,9 @@ public sealed record TargetSelectionPayload(DecisionReply Complete, DecisionRepl
     private ImmutableArray<int> players = Players.IsDefault ? [] : Players;
     public ImmutableArray<int> Players { get => players; init => players = value.IsDefault ? [] : value; }
     public TargetSelectionProgress? Progress { get; init; }
+    private ImmutableArray<TargetRestriction> targetRestrictions = [];
+    public ImmutableArray<TargetRestriction> TargetRestrictions { get => targetRestrictions; init =>
+        targetRestrictions = TargetRestrictionFacts.ValidateRows(value); }
 }
 /// <summary>The controller's exact staged targets; this grants no selection or completion permission.</summary>
 public sealed record TargetSelectionProgress

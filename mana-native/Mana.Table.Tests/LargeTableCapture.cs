@@ -15,18 +15,20 @@ internal static class LargeTableCapture
 {
     internal static void Run(string profile, Point? size, string? artCache, string captureView)
     {
-        if (captureView is not ("table" or "lobby" or "access" or "admission" or "admission-failed"))
+        if (captureView is not ("table" or "lobby" or "access" or "admission" or "admission-failed" or "target-restrictions"))
             throw new ArgumentOutOfRangeException(nameof(captureView));
         Directory.CreateDirectory(profile);
         new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false }.Save(profile);
-        var state = captureView == "access" ? LargeTablePlayAccessChecks.CaptureState() : LargeTableChecks.State(6, 0);
-        state = LargeTableChecks.WithFarMana(LargeTableChecks.WithRemoteHandCount(state, 7));
-        string fixture = Path.Combine(profile, "six-seat-authored-fixture.json");
+        bool targeting = captureView == "target-restrictions";
+        var state = targeting ? TargetRestrictionWireChecks.Decode(TargetRestrictionWireChecks.Wire())
+            : captureView == "access" ? LargeTablePlayAccessChecks.CaptureState() : LargeTableChecks.State(6, 0);
+        if (!targeting) state = LargeTableChecks.WithFarMana(LargeTableChecks.WithRemoteHandCount(state, 7));
+        string fixture = Path.Combine(profile, targeting ? "target-restriction-authored-fixture.json" : "six-seat-authored-fixture.json");
         File.WriteAllText(fixture, JsonSerializer.Serialize(state));
         var engine = new InteractionScenarioEngine(); engine.Present(state);
         using var source = new MagicArtSource(artCache ?? profile);
         bool admission = captureView is "admission" or "admission-failed";
-        bool table = captureView is "table" or "access";
+        bool table = captureView is "table" or "access" or "target-restrictions";
         var services = table ? TestTableServices.For(engine) : CooperativeLobbyInteractionChecks.CreateCaptureServices(
             holdAdmission: admission, failAdmission: captureView == "admission-failed");
         using var window = new TableWindow(services, profile, null, null, size,
@@ -41,8 +43,65 @@ internal static class LargeTableCapture
         }
         var cards = state.Players.SelectMany(player => player.Zones).SelectMany(zone => zone.Cards)
             .Where(card => !card.FaceDown).ToArray();
-        window.Automation = table ? new Capture(window.TestPort, cards) : new LobbyCapture(window.TestPort, captureView);
+        window.Automation = targeting ? new TargetRestrictionCapture(window.TestPort, engine, cards)
+            : table ? new Capture(window.TestPort, cards) : new LobbyCapture(window.TestPort, captureView);
         window.Run();
+    }
+
+    private sealed class TargetRestrictionCapture(TableWindow.Probe view, InteractionScenarioEngine engine, Card[] required) : ITableAutomation
+    {
+        private readonly DateTime deadline = DateTime.UtcNow.AddSeconds(90);
+        private Point pointer = new(-100, -100);
+        private int stage, mousePhase;
+        public string? ExpectedClick { get; private set; }
+        public bool ClickAccepted { get; set; }
+        public KeyboardState? ReadKeyboard() => new KeyboardState();
+        public MouseState ReadMouse()
+        {
+            bool down = mousePhase == 1;
+            if (mousePhase is 1 or 2) mousePhase++;
+            return new(pointer.X, pointer.Y, 0, down ? ButtonState.Pressed : ButtonState.Released,
+                ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
+        }
+        public void Frame(Texture2D surface)
+        {
+            if (DateTime.UtcNow > deadline) throw new TimeoutException("Target explanation GPU capture timed out at stage " + stage);
+            if (engine.Replies.Count != 0) throw new InvalidOperationException("Reading a blocked target submitted a command.");
+            if (mousePhase is 1 or 2) return;
+            if (mousePhase == 3) {
+                if (!ClickAccepted) throw new InvalidOperationException("The blocked card lost its ordinary inspection hit.");
+                mousePhase = 0; ExpectedClick = null; stage = 3; return;
+            }
+            if (!view.Loaded || view.Frame?.Scene?.Seats.Count != 4) return;
+            var missing = required.Where(card => view.Art(card) == null).Select(card => card.Name).Distinct().ToArray();
+            if (missing.Length > 0 && DateTime.UtcNow < deadline.AddSeconds(-5)) return;
+            if (stage == 0) {
+                var hit = view.Hits.Last(hit => hit.Card?.VisualId == "omnath");
+                pointer = SmokePointer.Hit(view, hit); stage = 1; return;
+            }
+            if (stage == 1) {
+                if (!view.Hits.Any(hit => hit.Id == "target-restriction-help")) return;
+                Capture("target-restriction-hover");
+                var hit = view.Hits.Last(hit => hit.Card?.VisualId == "omnath");
+                pointer = SmokePointer.Hit(view, hit); ExpectedClick = hit.Id; ClickAccepted = false;
+                mousePhase = 1; stage = 2; return;
+            }
+            if (stage == 3 && view.Overlay == "inspect") {
+                Capture("target-restriction-reader"); stage = 4; return;
+            }
+            if (stage == 4) view.Exit();
+
+            void Capture(string name)
+            {
+                string prefix = Path.Combine(view.Profile, name);
+                using (var output = File.Create(prefix + ".png")) surface.SaveAsPng(output, surface.Width, surface.Height);
+                File.WriteAllText(prefix + ".json", JsonSerializer.Serialize(new {
+                    completeArtwork = missing.Length == 0, missingArtwork = missing, replies = engine.Replies.Count,
+                    text = view.Frame.Observe().Text, humanReview = "pending", backgroundWindow = true, syntheticInputOnly = true,
+                    source = "authored current engine explanation; production decoder, renderer and pointer reading; not a Magic rules simulation"
+                }, new JsonSerializerOptions { WriteIndented = true }));
+            }
+        }
     }
 
     private sealed class Capture(TableWindow.Probe view, Card[] required) : ITableAutomation

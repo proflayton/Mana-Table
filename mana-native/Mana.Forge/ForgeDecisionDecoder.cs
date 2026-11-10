@@ -32,6 +32,7 @@ internal static class ForgeDecisionDecoder
                 || Present(prompt, "openingHand") && task != "openingHand"
                 || Present(prompt, "effect") && !(task == "selection" && purpose == "targets")
                 || Present(prompt, "targetSelectionProgress") && !(task == "selection" && purpose == "targets")
+                || Present(prompt, "targetRestrictions") && !(task == "selection" && purpose == "targets")
                 || Present(prompt, "counterPayment") && !(task == "selection" && purpose == "")
                 || Present(prompt, "counterPaymentChoice") && !(task == "choice" && purpose == "" && !ordered)) throw Invalid();
             if (Present(prompt, "disclosedCards") && (task != "choice" || purpose != "" || ordered
@@ -78,7 +79,7 @@ internal static class ForgeDecisionDecoder
                 "attack" => new AttackPayload(Ok()), "block" => new BlockPayload(Ok()),
                 "selection" when purpose == "targets" => new TargetSelectionPayload(Ok(), Cancel(), Range(prompt),
                     PlayerChoices(prompt, players), Optional<PendingEffect>(prompt, "effect"), SearchTarget(prompt)) {
-                    Progress = TargetProgress(prompt, players)
+                    Progress = TargetProgress(prompt, players), TargetRestrictions = TargetRestrictions(prompt)
                 },
                 "selection" => new EntitySelectionPayload(Ok(), Cancel(), PlayerChoices(prompt, players), OptionalRange(prompt), CounterPayment(prompt)) {
                     ManaReduction = ManaReduction(prompt)
@@ -246,6 +247,24 @@ internal static class ForgeDecisionDecoder
             .Select(item => item.TryGetInt32(out int id) ? id : throw Invalid()).ToImmutableArray();
         if (selected.Any(id => players == null || !players.Contains(id))) throw Invalid();
         return new(Integer(value, "selectedCount"), selected);
+    }
+    private static ImmutableArray<TargetRestriction> TargetRestrictions(JsonElement prompt)
+    {
+        if (!Present(prompt, "targetRestrictions")) return [];
+        var rows = Array(prompt, "targetRestrictions", required: true).Select(value => {
+            Object(value);
+            string reason = Text(value, "reason", required: true);
+            if (string.IsNullOrWhiteSpace(reason) || reason.Length > 64 || reason.Any(char.IsControl)) throw Invalid();
+            var known = reason switch {
+                "shroud" => TargetRestrictionReason.Shroud, "hexproof" => TargetRestrictionReason.Hexproof,
+                "protection" => TargetRestrictionReason.Protection, "restriction" => TargetRestrictionReason.Restriction,
+                _ => TargetRestrictionReason.Unknown
+            };
+            return new TargetRestriction(Text(value, "cardId", required: true), known,
+                Text(value, "detail", required: known != TargetRestrictionReason.Unknown),
+                Present(value, "sourceCardId") ? Text(value, "sourceCardId", required: true) : null);
+        }).ToImmutableArray();
+        return TargetRestrictionFacts.ValidateRows(rows);
     }
     private static SelectionRange Range(JsonElement prompt) => new(Integer(prompt, "min"), Integer(prompt, "max"));
     private static SelectionRange? OptionalRange(JsonElement prompt) => Present(prompt, "min") || Present(prompt, "max") ? Range(prompt) : null;
