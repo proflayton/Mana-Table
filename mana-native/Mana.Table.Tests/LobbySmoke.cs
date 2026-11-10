@@ -165,7 +165,9 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
                 Check(!view.Hits.Any(h => h.Id is "import" or "picker-saved"), "AI deck selection exposes only supported opponent decks");
                 Click("picker-search", 211); break;
             case 211:
-                var opponent = view.SoloSetup!.Opponents.First(o => o.Id != choices[1]); opponentId = opponent.Id;
+                // This fixture deliberately pins a bundled deck whose committed
+                // identity survives the following edits to the human document.
+                var opponent = view.SoloSetup!.Opponents.First(o => o.Id.StartsWith("preset:", StringComparison.Ordinal) && o.Id != choices[1]); opponentId = opponent.Id;
                 view.TypeSetupText(opponent.Name); stage++; break;
             case 212: Capture("08-ai-deck-picker"); Click("opponent:" + opponentId, 213); break;
             case 213:
@@ -182,11 +184,13 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
                 Click("review-deck", 1010); break;
             case 1010: Click("confirm-deck", 11); break;
             case 11:
-                Check(!view.DeckConfirmed && Deck.Revision == reviewRevision && Opponents().SequenceEqual(choices),
-                    "Optional reading after edits leaves the document unchanged and does not prepare a table or discard the retained AI preferences");
+                Check(!view.DeckConfirmed && Deck.Revision == reviewRevision && view.SoloSetup == null,
+                    "Optional reading leaves the revised document unchanged and does not recreate a retired automatic pod");
                 Click("choose-ai:1", 1011); break;
             case 1011:
-                Check(view.SoloSetup?.DeckId == Deck.Id && Opponents().SequenceEqual(choices), "Preparing the edited list on demand preserves all three compatible AI preferences");
+                Check(view.SoloSetup?.DeckId == Deck.Id && Opponents()[1] == opponentId
+                        && Opponents().All(id => view.SoloSetup.Opponents.Any(opponent => opponent.Id == id)),
+                    "Preparing the edited list retains its explicit AI preference and fills automatic seats with current compatible decks");
                 Click("setup-close", 1012); break;
             case 1012: Click("friends-tab", 12); break;
             case 12:

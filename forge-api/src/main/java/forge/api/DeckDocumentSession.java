@@ -362,11 +362,12 @@ final class DeckDocumentSession {
         if (requestedId != null && (active == null || !active.id.equals(requestedId))) open(requestedId);
         return capture(requireDeck(), commanderId);
     }
-    Object setupView(PreparedDeck prepared, List<Map<String, String>> opponents) {
+    Object setupView(PreparedDeck prepared, List<Map<String, String>> opponents, List<String> defaultOpponentIds) {
         var result = new LinkedHashMap<String, Object>();
         result.put("deckId", prepared.scope().deckId()); result.put("revision", prepared.scope().revision());
         result.put("name", prepared.snapshot.name()); result.put("setup", prepared.preview());
         result.put("saveError", prepared.saveError); result.put("opponents", opponents);
+        result.put("defaultOpponentIds", List.copyOf(defaultOpponentIds));
         result.put("maxPlayers", prepared.format.equals("Commander") ? 6 : 2);
         result.put("commanderAvailable", prepared.commanderAvailable);
         return result;

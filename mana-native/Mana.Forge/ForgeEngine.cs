@@ -329,10 +329,14 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
     public async Task<SoloSetup> PrepareSoloAsync(string deckId)
     {
         var setup = await PrepareSolo(deckId);
-        return new(Text(setup, "deckId"), Text(setup, "name"), Read<ImmutableArray<AiOpponent>>(setup.GetProperty("opponents"))) {
-            MaxPlayers = setup.GetProperty("maxPlayers").GetInt32()
-        };
+        return MapSoloSetup(setup);
     }
+    internal static SoloSetup MapSoloSetup(JsonElement setup) =>
+        new(Text(setup, "deckId"), Text(setup, "name"), Read<ImmutableArray<AiOpponent>>(setup.GetProperty("opponents"))) {
+            MaxPlayers = setup.GetProperty("maxPlayers").GetInt32(),
+            DefaultOpponentIds = setup.TryGetProperty("defaultOpponentIds", out var defaults) && defaults.ValueKind != JsonValueKind.Null
+                ? Read<ImmutableArray<string>>(defaults) : []
+        };
     public async Task StartSoloAsync(string deckId, ImmutableArray<string> opponentIds)
     {
         if (opponentIds.IsDefaultOrEmpty || opponentIds.Length > 5) throw new ArgumentException("Choose between one and five AI opponents.", nameof(opponentIds));

@@ -200,8 +200,9 @@ internal static class LargeTableCapture
                     if (alliedSeat <= 3) Click("lobby-ai:" + alliedSeat, 10);
                     else stage = 11;
                     break;
-                case 10: Click("lobby-ai-deck:ai-a", 12); break;
-                case 12: if (view.SetupModal.Length == 0) { alliedSeat++; stage = 9; } break;
+                case 10: stage = 12; break;
+                case 12: if (view.SetupModal.Length == 0 && view.Lobby?.Seats.FirstOrDefault(seat => seat.Index == alliedSeat)?.Type == "AI")
+                    { alliedSeat++; stage = 9; } break;
                 case 11:
                     if (captureView is "admission" or "admission-failed") Click("ready", 14);
                     else if (CaptureView(surface, "cooperative-lobby")) stage = 13;

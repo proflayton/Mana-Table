@@ -33,6 +33,10 @@ public final class DesktopEngine implements AutoCloseable {
     private final SimulationTableFactory simulationTables;
     private final SourceReadFailureCapture sourceReadFailure = new SourceReadFailureCapture();
     private final SyncLobby.PregameSetup pregameSetup;
+    private final java.util.function.LongSupplier podSeeds;
+    private record PreparedPod(DeckDocumentSession.DocumentScope scope, String format, String content,
+                               List<String> handles, List<String> opponents) { }
+    private PreparedPod preparedPod;
     private Path resources;
     private SeatConnection match;
     private MatchSession localMatch;
@@ -55,9 +59,15 @@ public final class DesktopEngine implements AutoCloseable {
     }
 
     DesktopEngine(CardCatalog catalog, Path directory, SimulationTableFactory simulationTables, SyncLobby.PregameSetup pregameSetup) throws Exception {
+        this(catalog, directory, simulationTables, pregameSetup, () -> java.util.concurrent.ThreadLocalRandom.current().nextLong());
+    }
+
+    DesktopEngine(CardCatalog catalog, Path directory, SimulationTableFactory simulationTables, SyncLobby.PregameSetup pregameSetup,
+                  java.util.function.LongSupplier podSeeds) throws Exception {
         this.catalog = catalog;
         this.simulationTables = java.util.Objects.requireNonNull(simulationTables);
         this.pregameSetup = java.util.Objects.requireNonNull(pregameSetup);
+        this.podSeeds = java.util.Objects.requireNonNull(podSeeds);
         this.directory = directory.toAbsolutePath().normalize();
         Files.createDirectories(this.directory);
         playtests = new DeckPlaytests(this.directory);
@@ -390,7 +400,15 @@ public final class DesktopEngine implements AutoCloseable {
             case "matchOpponents" -> aiDecks.choices(documents.currentFormat());
             case "matchSetup" -> {
                 var prepared = documents.prepareSetup(string(p, "deckId", null), string(p, "commanderId", ""));
-                yield documents.setupView(prepared, aiDecks.choices(prepared.format()));
+                var choices = aiDecks.choices(prepared.format());
+                var handles = choices.stream().map(choice -> choice.get("id")).sorted().toList();
+                String content = DeckWorkshopStore.fingerprint(new DeckEditor(catalog, prepared.deck()).snapshot(), prepared.format());
+                if (preparedPod == null || !preparedPod.scope().equals(prepared.scope()) || !preparedPod.format().equals(prepared.format())
+                        || !preparedPod.content().equals(content) || !preparedPod.handles().equals(handles))
+                    preparedPod = new PreparedPod(prepared.scope(), prepared.format(), content, handles,
+                            aiDecks.selectPod(prepared.deck(), prepared.format(), prepared.format().equals("Commander") ? 5 : prepared.format().equals("Constructed") ? 1 : 0,
+                                    List.of(), podSeeds.getAsLong(), choices));
+                yield documents.setupView(prepared, choices, preparedPod.opponents());
             }
             case "matchStart" -> {
                 var prepared = documents.prepareStart(scope(p), string(p, "commanderId", ""));
@@ -482,6 +500,7 @@ public final class DesktopEngine implements AutoCloseable {
             if (testId != null) playtests.attach(testId, session);
             match = SeatConnection.local(session);
             localMatch = session;
+            preparedPod = null;
         } catch (RuntimeException error) { session.closeTable(); throw error; }
     }
     private List<MatchSession> ownedAutomatedSeats() {
