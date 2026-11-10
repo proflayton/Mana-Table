@@ -1469,6 +1469,14 @@ run through their existing normal suites; source and execution identifiers never
 replace current command handles. Full natural games and human multiplayer
 review remain separate acceptance evidence.
 
+The source-admission regression also retires a previously admitted execution
+source while its face remains readable. The retained execution must redact its
+route with its source ID. Real-engine qualification covers resolution after a
+spell leaves the stack. Java history helpers decode the serialized schema2 wire
+records before inspecting them; an incidental runtime map/record representation
+is not the protocol contract. Privacy, cursor and behavioral assertions remain
+in place across that decoding boundary.
+
 `AiBlockRepairRegression` covers the retained packaged-game failure: an invalid
 singleton with no unassigned blockers. Twenty-six policy checks exercise fresh
 scopes, accepted versus rejected repair, episode boundaries, retained and foreign

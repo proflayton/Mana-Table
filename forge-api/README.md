@@ -1432,6 +1432,8 @@ projection of actual rules execution, separate from command/decision authority:
   Present values must be nonblank, control-free strings of at most 256 characters
   and include the occurrence's disclosed source anchor. This additive source
   change requires rebuilt provider assemblies, with no persisted-data migration.
+  A readable last-known face is insufficient: the exact source identity must
+  still pass audience admission. Redacting that identity also redacts its route.
   Existing history schemas 1/2 deliberately omit this property through an explicit
   wire projection, including when serializers include nulls. Their strict older
   readers cannot accept an unrequested field. Live snapshots and private AI

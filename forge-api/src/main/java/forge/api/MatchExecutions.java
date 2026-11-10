@@ -67,7 +67,7 @@ final class MatchExecutions {
         String name = visible ? occurrence.sourceName() : null;
         admitted.put(occurrence.id(), new Occurrence(occurrence.id(), occurrence.parentId(), occurrence.budgetRootId(),
                 occurrence.kind(), occurrence.actorPlayerId(), cardId, name, occurrence.step(), occurrence.outcome(),
-                occurrence.ruleKind(), occurrence.ruleResult(), visible ? occurrence.stableRouteId() : null));
+                occurrence.ruleKind(), occurrence.ruleResult(), cardId != null ? occurrence.stableRouteId() : null));
         transitions.addLast(new Transition(transition.sequence(), occurrence.id(), occurrence.step(), occurrence.outcome(), occurrence.ruleResult()));
         retainDelivery(transitions.peekLast());
         recordHistory(admitted.get(occurrence.id()), transitions.peekLast(), publicZone && visible);

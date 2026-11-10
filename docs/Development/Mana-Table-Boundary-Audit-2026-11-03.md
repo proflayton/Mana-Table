@@ -263,3 +263,14 @@ The first renewal slice covers fully known, repeatable nonmana abilities
 whose sole cost is tapping their source. Other costs require their own explicit
 resource lifecycle before they can safely reuse this contract. Human multiplayer
 acceptance and the encounter milestones remain pending.
+
+The follow-up's first CI attempt caught two further boundary errors before
+release. Resolved spell projections could retain route metadata after their
+source ID lost admission: face readability and current identity admission are
+different facts. The native fence correctly rejected those orphaned routes.
+The producer must redact both together. Separately, Java history tests cast the
+wire result's records to internal objects; they must decode the actual serialized
+projection while retaining their privacy, cursor and behavior assertions.
+The original rejected observations and first failures remain evidence. Neither
+failure was a natural-game completion cutoff, and neither justifies relaxing
+validation or repeating an unchanged game.

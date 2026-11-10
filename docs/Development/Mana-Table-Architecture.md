@@ -1616,6 +1616,9 @@ occurrence projection omits this new live-only field even when nulls are
 serialized. Same-protocol peers are not required to share an application build,
 so adding an optional property to their strict history reader is not compatible.
 Private AI evidence can retain it without widening the public history format.
+Route disclosure follows the actual admitted source identifier. A last-known
+face can remain readable after its old view loses identity admission; that does
+not justify retaining the route or resurrecting an obsolete source identifier.
 
 The AI's attempt history owns route retry safety, separately from its diagnostic
 ring and transport acknowledgement. A successful tap activation can become
