@@ -1238,7 +1238,7 @@ and avoid source-creature printing metadata in artwork requests.
 | Request | Parameters / result |
 | --- | --- |
 | `matchOpponents` | Lists AI decks for the current deck's format, including Commander preset opponents |
-| `matchSetup` | Optional `{deckId, commanderId}`; an explicit deck ID reuses the current editor or opens the requested saved document through its save guards. Returns the actual deck ID/revision, candidate commanders, validated setup, opponents, and `commanderAvailable` for a Commander-ready list saved as Constructed |
+| `matchSetup` | Optional `{deckId, commanderId}`; an explicit deck ID reuses the current editor or opens the requested saved document through its save guards. Returns the actual deck ID/revision, candidate commanders, validated setup, opponents, optional `defaultOpponentIds`, and `commanderAvailable` for a Commander-ready list saved as Constructed |
 | `matchStart` | `{opponents: [...], commanderId?, deckId?, revision?}`; validates a detached match deck and rejects stale setup; legacy `opponent` accepts one deck ID |
 | `matchState` | Cached snapshot with session `id`, `revision`, `boardRevision`, `status`, `players`, `stack`, `prompt`, `activity`, and `result` |
 | `matchAction` | `{sessionId, promptId, ...answer}`; replies once to the current prompt |
@@ -1715,6 +1715,46 @@ spending `{C}`; the ordinary choice source remains the contributing creature.
 
 The match beta supports two-player Constructed and 2–6 player Commander games
 with one local human and AI opponents. `matchSetup.maxPlayers` reports the limit.
+
+The source candidate's `matchSetup.defaultOpponentIds` contains up to
+`maxPlayers - 1` exact opponent handles selected by the host from its committed,
+legal catalog. The optional `compositionId` on a catalog choice is a semantic
+deck-content fingerprint, independent of its saved name, printing or edit time.
+Clients compare this bounded opaque identity within the provider's catalog;
+they do not depend on Forge's current hash algorithm.
+It is a deduplication hint, not an action handle, deck-strength rating or evidence
+of strategic qualification. The existing catalog keeps its browsing order;
+default selection does not take its first rows. Saved aliases of the same content
+receive one random ticket. Seeded ties prefer unused content and commander
+diversity, avoiding the reference human's exact list when alternatives exist.
+Small catalogs reuse content evenly only after available distinct lists are
+exhausted. This is composition variety, not measured power matching.
+
+One solo preparation retains its defaults across reads while its exact human
+scope, format, semantic content and candidate handle set remain unchanged. Failed
+start admission preserves that preparation; a successful ordinary or workshop
+start consumes it. Clients keep explicit picks separate from defaults and still
+submit exact handles through the existing start request. Explicit mirrors and
+duplicate selections remain legal. Older providers may omit both additive fields;
+clients then retain their compatibility selection without inferring content or
+power from description text.
+Bundled catalog rows retain their existing manual availability behavior: a row
+whose current load fails has no composition fingerprint and is excluded from
+automatic defaults; an explicit assignment still performs the ordinary current
+load and legality checks. The default selector does not silently substitute a
+different deck for a failed explicit choice.
+
+The same host-owned selector fills a blank AI assignment or new cooperative
+opposition seats, reserving actually bound human and AI snapshots. It never
+infers an unsubmitted friend's deck. Existing assignments remain frozen across
+polls, Ready, catalog edits and unchanged setup operations; only an actual setup
+mutation selects new defaults. Catalog fingerprints remain in the host-only AI
+catalog and are not included in guests' public seat previews. No command, saved
+deck schema or synchronization migration is required.
+Changing an AI assignment in a cooperative encounter renews setup consent and
+withdraws the party's Ready state. Reassigning the same unchanged capture is
+idempotent; free-for-all AI deck changes retain their existing human-readiness
+behavior.
 `matchStart.opponents` takes 1–5 opponent deck IDs in seat order; the legacy
 singular `opponent` starts a two-player game. Invalid sizes and unknown decks
 fail before a session starts. Each AI receives a detached deck and unique name.

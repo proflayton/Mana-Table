@@ -128,10 +128,17 @@ public sealed record DeckDetails(string Id, string Name, long Revision, Immutabl
 }
 public sealed record DeckPreset(string Id, string Name, string Description);
 // Opponent IDs are opaque engine-owned handles, just like saved deck IDs.
-public sealed record AiOpponent(string Id, string Name, string Description);
+public sealed record AiOpponent(string Id, string Name, string Description)
+{
+    // Optional provider-owned semantic deck identity, never an action handle or
+    // a strength rating. Aliases/printings of one composition share this value.
+    public string CompositionId { get; init; } = "";
+}
 public sealed record SoloSetup(string DeckId, string DeckName, ImmutableArray<AiOpponent> Opponents)
 {
     public int MaxPlayers { get; init; } = 6;
+    private ImmutableArray<string> defaults = [];
+    public ImmutableArray<string> DefaultOpponentIds { get => defaults; init => defaults = value.IsDefault ? [] : value; }
 }
 public sealed record Address(string Label, string Url, string Invite);
 // An exact saved version selected for this table. An empty DeckId clears the

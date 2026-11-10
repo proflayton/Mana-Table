@@ -19,7 +19,7 @@ internal static partial class PregameFlowChecks
     {
         CheckDeckEditing(profile, check);
         CheckMissingPartner(profile, check);
-        CheckSavedAiDecks(profile, check);
+        RunAiPods(profile, check);
         CheckLobbyDeckNames(profile, check);
         var solo = new PregameEngine();
         solo.Preparing = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -35,7 +35,8 @@ internal static partial class PregameFlowChecks
             solo.Preparing.TrySetResult(solo.Setup("a"));
             run.Until(() => run.View.Match != null && !run.View.Busy, "The same Play intent completes preparation and enters the authored opening state");
             check(solo.PrepareCalls == 1 && solo.StartCalls == 1 && solo.StartDeck == "a"
-                    && solo.StartOpponents.SequenceEqual(["ai-1", "ai-2", "ai-1"])
+                    && solo.StartOpponents.Distinct().Count() == 3
+                    && solo.StartOpponents.All(id => solo.Setup("a").Opponents.Any(opponent => opponent.Id == id))
                     && run.View.LocalMatch && solo.Calls.ToArray().SequenceEqual(["open:a", "prepare:a", "start-solo:a"]),
                 "Quick Play starts exactly the selected saved deck with compatible default AI seats and no multiplayer readiness mutation");
         }
@@ -338,14 +339,17 @@ internal static partial class PregameFlowChecks
                 [new("Commander", "commander", new() { Name = id == "b" ? "Omnath, Locus of Mana" : "Rhys the Redeemed", Type = "Legendary Creature" }, 1),
                     new("Main", "forest", new() { Name = "Forest", Type = "Basic Land" }, 99)], [],
                 Invalid == "draft" ? "The saved draft is incomplete." : "", Invalid == "save" ? "The last save failed." : "") { LibraryToken = "saved:" + id + ":1" };
-        internal SoloSetup Setup(string id) => new(id, "Deck " + id,
-            [new("ai-self", "Deck " + id, ""), new("ai-1", "Other deck one", ""), new("ai-2", "Other deck two", ""), .. AdditionalAiDecks]) { MaxPlayers = 4 };
+        internal SoloSetup Setup(string id) {
+            var setup = new SoloSetup(id, "Deck " + id,
+                [new("ai-self", "Deck " + id, ""), new("ai-1", "Other deck one", ""), new("ai-2", "Other deck two", ""), .. AdditionalAiDecks]) { MaxPlayers = 4 };
+            return SetupProjection?.Invoke(id, setup) ?? setup;
+        }
         public Task<SoloSetup> PrepareSoloAsync(string id) { Calls.Enqueue("prepare:" + id); Interlocked.Increment(ref prepares); return Preparing?.Task ?? Task.FromResult(Setup(id)); }
         public Task StartSoloAsync(string id, ImmutableArray<string> opponents) {
             if (id is not ("a" or "b") || opponents.Length != 3 || opponents.Any(opponent => !Setup(id).Opponents.Any(available => available.Id == opponent)))
                 throw new InvalidOperationException("Unprepared or incompatible quick-play input.");
             Calls.Enqueue("start-solo:" + id); Interlocked.Increment(ref starts); StartDeck = id; StartOpponents = opponents.ToArray();
-            state = PresentationSmoke.Example() with { Id = "quick-play-match" }; return Task.CompletedTask;
+            state = PresentationSmoke.Example() with { Id = "quick-play-match-" + StartCalls }; return Task.CompletedTask;
         }
         public Task<GameSnapshot?> ObserveAsync() => Task.FromResult(state);
         public Task<Lobby> HostAsync(int players, bool forwarding) {

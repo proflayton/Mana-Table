@@ -15,6 +15,11 @@ if (args.Contains("--ai-combat-survival-checks")) {
     Console.WriteLine($"Passed {checks} AI combat survival checks.");
     return 0;
 }
+if (args.Contains("--solo-opponent-checks")) {
+    SoloOpponentSelectionRegression.Run(Check);
+    Console.WriteLine($"Passed {checks} solo opponent selection checks.");
+    return 0;
+}
 if (args.Contains("--current-read-checks")) {
     await CurrentReadRegression.RunAsync(Check);
     Console.WriteLine($"Passed {checks} current-read ownership checks.");
@@ -263,6 +268,7 @@ ImmutableStateChecks.Run(Check);
 CardIdentityBoundaryRegression.Run(Check);
 PublicStateDescriptorChecks.Run(Check);
 DeckExperienceChecks.Run(Check);
+SoloOpponentSelectionRegression.Run(Check);
 await PrintingArtRegression.RunAsync(Check);
 Console.WriteLine($"Passed {checks} headless checks.");
 return 0;

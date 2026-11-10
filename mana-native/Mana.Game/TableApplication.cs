@@ -66,7 +66,9 @@ internal sealed partial class TableApplication : IDisposable
     private Lobby? lobby => session.Lobby;
     private GameSnapshot? match => session.State;
     private SoloSetup? soloSetup;
-    private readonly int[] soloChoices = [0, 1, 2];
+    private SoloOpponentSelection soloSelection = SoloOpponentSelection.Empty;
+    private int soloFallbackSeed = Random.Shared.Next();
+    private int[] soloChoices => soloSetup == null ? [0, 1, 2] : soloSelection.Indices(soloSetup);
     private HomePlayMode homePlayMode = HomePlayMode.Solo;
     private bool soloTab => homePlayMode == HomePlayMode.Solo;
     private bool cooperativeTab => homePlayMode == HomePlayMode.Cooperative;

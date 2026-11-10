@@ -39,6 +39,39 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Varied default opponents: source candidate
+
+**Source candidate; automated validation, release qualification and exact-candidate
+human review pending.** The intent is to start a different, readable Commander
+pod without manually replacing the newest saved decks on every AI seat. The
+source is the engine's current legal opponent catalog; the gestures remain Play,
+the existing AI deck picker, and the host's existing seat controls. Preparation
+captures default decks once, the picker shows those actual choices, and starting
+the game submits the reviewed opaque deck handles. Refreshing a picker or lobby
+does not reroll the table. Explicit choices survive into the next preparation;
+automatic choices retire when the human deck revision or solo game changes.
+The existing Add AI gesture fills an open hosted seat immediately from the
+provider's default composition. Change deck on that enrolled AI opens the
+existing manual picker, preserving the host's ability to override that choice.
+
+Arena's [May 2026 Brawl matchmaking announcement](https://magic.wizards.com/en/news/announcements/banned-and-restricted-may-18-2026)
+describes an experimental preference for similar commander tiers to align play
+expectations. It does not publish a scoring algorithm and concerns a two-player
+queue. Wizards' [February 2026 Commander brackets update](https://magic.wizards.com/en/news/announcements/commander-brackets-beta-update-february-9-2026)
+describes pregame expectations as guidance and explicitly separates precons from
+a single bracket. Neither source establishes that our saved decks, card counts,
+mana curves or precons have equal power. No new gameplay video was viewed here.
+
+Our adaptation prefers different committed deck compositions and commander
+groups, with pseudorandom selection among equal choices. Semantic copies and
+different printings do not multiply a composition's share of the default pool.
+Small pools can repeat; an explicit duplicate remains the player's decision.
+An older provider falls back to shuffled current catalog identities without
+inventing a power estimate. Review solo, two-human/two-AI and cooperative pods,
+especially multiple copies of one precon, deliberate mirrors and a saved deck
+changing while its picker is open. Automated ownership and lifetime controls
+remain separate from whether people find the resulting games enjoyable.
+
 ## Server-owned passing and readable large queues: 6 November 2026
 
 **Implemented source candidate; release qualification and exact-candidate human

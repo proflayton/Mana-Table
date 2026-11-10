@@ -52,7 +52,7 @@ internal sealed partial class TableApplication
         if (busy || Connected || !DeckReady || selectedDeckDetails is not { } deck || seat < 0 || seat >= (CommanderDeck ? 3 : 1)) return;
         ClearExperienceInput();
         int generation = deckSelectionGeneration;
-        string[] previous = CurrentSoloOpponents();
+        var previous = soloSelection;
         Work(async () => {
             var prepared = await PrepareSoloDeck(deck.Id, previous);
             updates.Enqueue(() => {
@@ -67,7 +67,7 @@ internal sealed partial class TableApplication
         if (pickerSeat >= 0 && soloSetup is { } setup) {
             int index = setup.Opponents.IndexOf(setup.Opponents.FirstOrDefault(p => p.Id == id)!);
             if (index < 0) return;
-            soloChoices[pickerSeat] = index; CloseSetupModal();
+            soloSelection = soloSelection.Choose(setup, pickerSeat, id); CloseSetupModal();
             message = $"AI opponent {pickerSeat + 1} will play {setup.Opponents[index].Name}.";
         } else if (pickerDeleted) return;
         else if (pickerPresets) ChoosePreset(id);
