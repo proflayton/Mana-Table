@@ -81,9 +81,13 @@ public class TerminalProjectionTest {
             String commanderId = text(commander, "commanderId");
             assertFalse(commanderId.isEmpty());
             assertEquals(attack.state().getAsJsonObject("commanderCombat").get("damageLimit").getAsInt(), 21);
-            answer(table, answered, attack, Map.of("action", "attack", "attackerKey", text(commander, "key"), "defenderPlayerId", 1));
-            attack = until(table, answered, input -> input.seat() == 0
-                    && text(input.prompt(), "inputType").equals("InputAttack"));
+            var attackStage = new CombatStage("InputAttack", text(attack.state().getAsJsonObject("combat"), "declarationId"),
+                    text(commander, "combatId"), 1, "");
+            assertFalse(attackStage.matches(attack.state()), "An offered attacker is not an assigned attack");
+            attack = stage(table, attack, Map.of("action", "attack", "attackerKey", text(commander, "key"), "defenderPlayerId", 1),
+                    attackStage, evidence, "attack");
+            assertFalse(new CombatStage(attackStage.inputType(), attackStage.declarationId(), attackStage.attackerId(), 0, "")
+                    .matches(attack.state()), "A staged attack cannot certify a different defender");
             answer(table, answered, attack, Map.of("action", "ok"));
             var block = until(table, answered, input -> input.seat() == 1
                     && text(input.prompt(), "inputType").equals("InputBlock"));
@@ -91,8 +95,23 @@ public class TerminalProjectionTest {
                 var currentAttacker = zone(player(block.state(), 0), "Battlefield").getAsJsonArray("cards").asList().stream()
                         .map(value -> value.getAsJsonObject()).filter(face -> text(face, "commanderId").equals(commanderId)).findFirst().orElseThrow();
                 var blocker = card(block.state(), "Battlefield", "Grizzly Bears");
-                answer(table, answered, block, Map.of("action", "block", "attackerKey", text(currentAttacker, "key"), "blockerKey", text(blocker, "key")));
-                block = until(table, answered, input -> input.seat() == 1 && text(input.prompt(), "inputType").equals("InputBlock"));
+                assertFalse(text(blocker, "combatId").isEmpty(), "The exact current blocker has a public physical identity");
+                var blockStage = new CombatStage("InputBlock", text(block.state().getAsJsonObject("combat"), "declarationId"),
+                        text(currentAttacker, "combatId"), 1, text(blocker, "combatId"));
+                assertFalse(blockStage.matches(block.state()), "An eligible blocker without an assigned pair is incomplete");
+                block = stage(table, block, Map.of("action", "block", "attackerKey", text(currentAttacker, "key"), "blockerKey", text(blocker, "key")),
+                        blockStage, evidence, "block");
+                assertFalse(new CombatStage(blockStage.inputType(), blockStage.declarationId(), blockStage.blockerId(), 1, blockStage.attackerId())
+                        .matches(block.state()), "The opposite attacker/blocker pair is not the chosen assignment");
+                assertFalse(new CombatStage(blockStage.inputType(), blockStage.declarationId(), blockStage.attackerId(), 1,
+                        text(card(block.state(), "Battlefield", "Plains"), "combatId")).matches(block.state()),
+                        "The correct attacker with a different physical card cannot certify the block");
+                assertFalse(new CombatStage(blockStage.inputType(), attackStage.declarationId(), blockStage.attackerId(), 1, blockStage.blockerId())
+                        .matches(block.state()), "A prior attack declaration cannot certify the current block input");
+                var repeated = staged(table, block, blockStage, evidence, "already-staged-block");
+                assertEquals(text(repeated.prompt(), "id"), text(block.prompt(), "id"),
+                        "Reading the actual already-staged pair again accepts its same current input without another toggle command");
+                block = repeated;
             }
             answer(table, answered, block, Map.of("action", "ok"));
             if (blocks) {
@@ -211,6 +230,61 @@ public class TerminalProjectionTest {
         return zone(viewer(state), zoneName).getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject())
                 .filter(value -> text(value, "name").equals(name)).findFirst().orElseThrow();
     }
+
+    private record CombatStage(String inputType, String declarationId, String attackerId, int defenderId, String blockerId) {
+        boolean matches(JsonObject state) {
+            if (declarationId.isEmpty() || attackerId.isEmpty() || !state.has("combat") || !state.get("combat").isJsonObject()) return false;
+            var combat = state.getAsJsonObject("combat");
+            if (!declarationId.equals(text(combat, "declarationId"))) return false;
+            return combat.getAsJsonArray("attackers").asList().stream().map(value -> value.getAsJsonObject()).anyMatch(attacker -> {
+                if (!attackerId.equals(text(attacker, "cardId")) || !attacker.has("defender") || !attacker.get("defender").isJsonObject()) return false;
+                var defender = attacker.getAsJsonObject("defender");
+                return text(defender, "kind").equals("player") && defender.get("id").getAsInt() == defenderId
+                        && (blockerId.isEmpty() || attacker.getAsJsonArray("blockerIds").asList().stream().anyMatch(id -> id.getAsString().equals(blockerId)));
+            });
+        }
+    }
+
+    private static RulesScenario.Input stage(MatchTable table, RulesScenario.Input input, Map<String, ?> action,
+            CombatStage expected, Path evidence, String name) throws Exception {
+        Files.writeString(evidence.resolve("private-" + name + "-before.json"), JSON.toJson(Map.of("state", input.state(), "action", action, "expected", expected)));
+        // Staging is not input completion. Submit this toggle once, then witness
+        // its actual pair; an ACK alone cannot authorize another toggle or OK.
+        var accepted = table.automatedSeat(input.seat()).action(request(input, action));
+        Files.writeString(evidence.resolve("private-" + name + "-ack.json"), JSON.toJson(accepted));
+        return staged(table, input, expected, evidence, name);
+    }
+
+    private static RulesScenario.Input staged(MatchTable table, RulesScenario.Input input, CombatStage expected, Path evidence, String name) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+        List<Map<String, Object>> last = List.of();
+        try {
+            // Observe after admitted owner work without publishing, answering
+            // another actor or requiring a replacement prompt identity.
+            HeadlessPlatform.query(table, () -> null);
+            while (System.nanoTime() < deadline) {
+                last = table.automatedSeats().stream().map(MatchSession::state).toList();
+                for (var row : last) {
+                    var state = JSON.toJsonTree(row).getAsJsonObject();
+                    assertNotEquals(text(state, "status"), "error");
+                    if (!text(state, "id").equals(text(input.state(), "id")) || state.get("viewerId").getAsInt() != input.seat()
+                            || !state.has("prompt") || !state.get("prompt").isJsonObject()) continue;
+                    var prompt = state.getAsJsonObject("prompt");
+                    if (text(prompt, "inputType").equals(expected.inputType()) && prompt.get("okEnabled").getAsBoolean() && expected.matches(state)) {
+                        Files.writeString(evidence.resolve("private-" + name + "-readback.json"), state.toString());
+                        return new RulesScenario.Input(input.seat(), state, prompt);
+                    }
+                }
+                Thread.sleep(3);
+            }
+            Files.writeString(evidence.resolve("private-" + name + "-timeout.json"), JSON.toJson(Map.of("expected", expected, "views", last)));
+            throw new AssertionError("The single admitted combat stage did not publish its exact assignment: " + expected);
+        } finally {
+            // One bounded last cohort, not an unbounded poll-by-poll history.
+            Files.writeString(evidence.resolve("private-" + name + "-last.json"), JSON.toJson(last));
+        }
+    }
+
     private static RulesScenario.Input until(MatchTable table, Map<Integer, String> answered,
             java.util.function.Predicate<RulesScenario.Input> stop) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
@@ -240,6 +314,8 @@ public class TerminalProjectionTest {
         answer(table, answered, input, Map.of("action", "useSourceAction", "key", text(source, "key"), "actionId", text(action, "id")));
     }
     private static void answer(MatchTable table, Map<Integer, String> answered, RulesScenario.Input input, Map<String, ?> action) {
+        if (action.get("action").equals("attack") || action.get("action").equals("block"))
+            throw new IllegalArgumentException("Staged combat needs assignment readback, not a consumed input ID");
         table.automatedSeat(input.seat()).action(request(input, action)); answered.put(input.seat(), text(input.prompt(), "id"));
     }
     private static JsonObject request(RulesScenario.Input input, Map<String, ?> action) {
