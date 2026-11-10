@@ -156,6 +156,7 @@ internal static class CommanderCombatWireChecks
     {
         var portrait = Wire();
         portrait["prompt"]!["sourceCard"] = Card(portrait).DeepClone();
+        portrait["prompt"]!["sourceCard"]!.AsObject().Remove("key");
         portrait["prompt"]!["sourceCardId"] = "stolen-current";
         portrait["prompt"]!["sourceControllerId"] = 0; portrait["prompt"]!["sourceZone"] = "Battlefield";
         check(Decode(portrait).Decision!.Context.Source!.Card!.CommanderId == Alpha,

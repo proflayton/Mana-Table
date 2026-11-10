@@ -129,7 +129,7 @@ and ownership journey, not a full natural game or a private-choice-sharing claim
 See [the considered-play journey](Mana-Table-Experience-Review.md#seeing-a-player-consider-a-public-play-source-candidate)
 for game references, confidentiality limits and pending human review.
 
-## Shared public inspection
+## Commander combat lineage and command boundaries
 
 `CommanderCombatWireChecks` exercises the actual Forge snapshot decoder and
 command owner. Missing/null commander-combat rules are legacy unknown; a present
@@ -144,6 +144,8 @@ the only command authority, and malformed observations revoke previous grants.
 The checks run in the full headless suite and the focused `commander-combat`
 group. They verify wire and authority boundaries; Java rules journeys and AI
 combat-policy regressions establish their separate behavior guarantees.
+
+## Shared public inspection
 
 The source candidate's `TablePresenceRegression` runs in the ordinary
 graphics-free client executable. It holds an actual provider task through
