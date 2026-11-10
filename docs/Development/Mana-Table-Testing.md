@@ -2266,17 +2266,7 @@ hand, both partners, six floating mana colors and two public counter types. Actu
 pile, caption, commander backing/shadow and count paint must clear the prepared
 portrait/phase/mana/hand targets; public state and zone hits retain their owner.
 The near row is checked on the table beside its mat, closer to that mat than any
-foreign mat; opponent rows retain their reserved station in the same mat
-footprint, separated from played permanents by a shallow physical wooden tray.
-The full rectangular cloth and every card's position remain unchanged.
-Empty graveyards and exile retain labelled inspection targets without painting
-card backs or shadows. `SeatZoneChecks` additionally checks the actual painted
-tray and empty-zone hits at two, four and six seats at both window sizes.
-The test-only `--capture-large-table --capture-view opening` route captures the
-production renderer's four-seat empty battlefield with both partner commanders;
-use a fresh `--profile`, `--size 1000x740` or `1540x980`, and optionally an existing
-artwork cache through `--art-cache`. These captures do not supply human approval.
-Automatic focus includes
+foreign mat; opponent rows stay inside their cloth. Automatic focus includes
 the complete physical setup, and the wood support check consumes the prepared
 pile plan rather than rebuilding an obsolete label. Explicit table-placement
 checks also keep a public spread,

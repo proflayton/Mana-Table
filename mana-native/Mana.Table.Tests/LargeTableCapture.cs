@@ -15,19 +15,18 @@ internal static class LargeTableCapture
 {
     internal static void Run(string profile, Point? size, string? artCache, string captureView)
     {
-        if (captureView is not ("table" or "opening" or "lobby" or "access" or "admission" or "admission-failed"))
+        if (captureView is not ("table" or "lobby" or "access" or "admission" or "admission-failed"))
             throw new ArgumentOutOfRangeException(nameof(captureView));
         Directory.CreateDirectory(profile);
         new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false }.Save(profile);
-        var state = captureView == "opening" ? SeatZoneChecks.OpeningState(4)
-            : captureView == "access" ? LargeTablePlayAccessChecks.CaptureState() : LargeTableChecks.State(6, 0);
-        if (captureView != "opening") state = LargeTableChecks.WithFarMana(LargeTableChecks.WithRemoteHandCount(state, 7));
-        string fixture = Path.Combine(profile, captureView == "opening" ? "four-seat-opening-fixture.json" : "six-seat-authored-fixture.json");
+        var state = captureView == "access" ? LargeTablePlayAccessChecks.CaptureState() : LargeTableChecks.State(6, 0);
+        state = LargeTableChecks.WithFarMana(LargeTableChecks.WithRemoteHandCount(state, 7));
+        string fixture = Path.Combine(profile, "six-seat-authored-fixture.json");
         File.WriteAllText(fixture, JsonSerializer.Serialize(state));
         var engine = new InteractionScenarioEngine(); engine.Present(state);
         using var source = new MagicArtSource(artCache ?? profile);
         bool admission = captureView is "admission" or "admission-failed";
-        bool table = captureView is "table" or "access" or "opening";
+        bool table = captureView is "table" or "access";
         var services = table ? TestTableServices.For(engine) : CooperativeLobbyInteractionChecks.CreateCaptureServices(
             holdAdmission: admission, failAdmission: captureView == "admission-failed");
         using var window = new TableWindow(services, profile, null, null, size,
@@ -42,12 +41,11 @@ internal static class LargeTableCapture
         }
         var cards = state.Players.SelectMany(player => player.Zones).SelectMany(zone => zone.Cards)
             .Where(card => !card.FaceDown).ToArray();
-        window.Automation = table ? new Capture(window.TestPort, cards, state.Players.Length,
-            captureView == "opening" ? "four-seat-opening" : "six-seat-overview") : new LobbyCapture(window.TestPort, captureView);
+        window.Automation = table ? new Capture(window.TestPort, cards) : new LobbyCapture(window.TestPort, captureView);
         window.Run();
     }
 
-    private sealed class Capture(TableWindow.Probe view, Card[] required, int seats, string name) : ITableAutomation
+    private sealed class Capture(TableWindow.Probe view, Card[] required) : ITableAutomation
     {
         private readonly DateTime deadline = DateTime.UtcNow.AddSeconds(90);
         private bool captured;
@@ -59,10 +57,10 @@ internal static class LargeTableCapture
         public void Frame(Texture2D surface)
         {
             if (captured) { view.Exit(); return; }
-            if (!view.Loaded || view.Frame?.Scene?.Seats.Count != seats) return;
+            if (!view.Loaded || view.Frame?.Scene?.Seats.Count != 6) return;
             var missing = required.Where(card => view.Art(card) == null).Select(card => card.Name).Distinct().ToArray();
             if (missing.Length > 0 && DateTime.UtcNow < deadline) return;
-            string prefix = Path.Combine(view.Profile, name);
+            string prefix = Path.Combine(view.Profile, "six-seat-overview");
             using (var output = File.Create(prefix + ".png")) surface.SaveAsPng(output, surface.Width, surface.Height);
             view.CaptureWindow(prefix + "-window.png");
             File.WriteAllText(prefix + ".json", JsonSerializer.Serialize(new { completeArtwork = missing.Length == 0,

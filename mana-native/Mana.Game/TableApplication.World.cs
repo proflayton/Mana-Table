@@ -140,12 +140,9 @@ internal sealed partial class TableApplication
         var value = player.Zone(zone); var top = zone == "Library" ? value.TopCard : value.Cards.LastOrDefault();
         var canonical = PileGeometry.Create(pile, value.Count);
         var geometry = DisplayPileGeometry(pile, value.Count);
-        bool emptyPublicPile = value.Count == 0 && zone is "Graveyard" or "Exile";
-        if (!emptyPublicPile) {
-            canvas.Surface(null, geometry.Shadow, Color.Black * .4f);
-            for (int i = 0; i < geometry.Layers.Count; i++)
-                canvas.Surface(null, geometry.Layers[i], i % 2 == 0 ? new Color(154, 149, 131) : new Color(54, 58, 56));
-        }
+        canvas.Surface(null, geometry.Shadow, Color.Black * .4f);
+        for (int i = 0; i < geometry.Layers.Count; i++)
+            canvas.Surface(null, geometry.Layers[i], i % 2 == 0 ? new Color(154, 149, 131) : new Color(54, 58, 56));
         var pose = geometry.Top;
         if (pile.TableAnchored) {
             DrawStationCaption(zone, geometry.Label, Ink);
@@ -162,14 +159,14 @@ internal sealed partial class TableApplication
         // Browser members open their pile. A separately disclosed top remains
         // directly readable even when the rest of its zone is concealed.
         bool publicPile = zone is "Graveyard" or "Exile";
-        if (!emptyPublicPile && top != null && !top.FaceDown && !tableScene!.PlayAccess.Contains(player.Id, zone, top)
+        if (top != null && !top.FaceDown && !tableScene!.PlayAccess.Contains(player.Id, zone, top)
             && (!publicPile || !SpreadContains(CardIdentity(top)) && !PublicCollectionReturning(player.Id, zone, top)))
             DrawTableCard(publicPile ? CardIdentity(top) : "pile:" + player.Id + ":" + zone + ":" + CardIdentity(top), top, canonical.Top, zone, player.Id,
             "pile-card:" + player.Id + ":" + zone, new MatchIntent.OpenZone(player.Id, zone),
             (displayed, focus) => PaintCard(top, displayed, false, IsCardActionable(top), focus,
                 fallback: pile.TableAnchored && !focus ? StationCardFallback(top, displayed) : null),
             opensZone: value.Cards.Any(card => CardViews.Same(card, top)), tableAnchored: pile.TableAnchored);
-        else if (!emptyPublicPile) PaintBack(pose, value.Count == 0 ? .3f : 1);
+        else PaintBack(pose, value.Count == 0 ? .3f : 1);
         if (pile.TableAnchored) {
             // A quantity belongs to its stack, not a second caption panel.
             var count = geometry.Count;
