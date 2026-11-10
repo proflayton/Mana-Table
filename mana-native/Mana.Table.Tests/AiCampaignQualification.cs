@@ -43,7 +43,7 @@ internal static class AiCampaignQualification
         "rhys-paid-tokens", "owned-equipment-attachment", "dual-commander-casts",
         "useful-opponent-removal", "source-cost-ownership",
         "loch-mare-counter-cost-draw", "pir-toothy-draw-counters",
-        "historic-traxos-untap", "required-colorless-payment");
+        "historic-traxos-untap", "required-colorless-payment", "positive-consuming-artifact-activation");
     internal static async Task<AiCampaignDeckBinding> BindDeckAsync(IDeckWorkshop workshop, AiCampaignDeck manifest,
         DeckDetails committed, string handle)
     {
@@ -388,7 +388,7 @@ internal sealed class AiCampaignQualificationTracker
         // than letting an append-only import retain invalidated credit.
         foreach (var key in observed.Keys.Where(key => key.Witness is "source-cost-ownership"
             or "loch-mare-counter-cost-draw" or "pir-toothy-draw-counters"
-            or "historic-traxos-untap" or "required-colorless-payment").ToArray()) observed.Remove(key);
+            or "historic-traxos-untap" or "required-colorless-payment" or "positive-consuming-artifact-activation").ToArray()) observed.Remove(key);
         wrongSourceCosts.Clear();
         var records = causal.Witnesses;
         foreach (var record in records) {

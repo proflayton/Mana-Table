@@ -163,8 +163,9 @@ internal static partial class PolledMixedLobbyEngineJourney
         finally {
             // Preserve the failed/current reader and command context before
             // closing its owners withdraws their read grants and live history.
-            var stoppedPlayers = players.Select(player => new { state = player.Client.State,
-                source = player.Client.SourceActions.View, receipts = player.Receipts.ToArray() }).ToArray();
+            var stoppedAttempts = players.Select(player => player.Attempts.Capture()).ToArray();
+            var stoppedPlayers = players.Select((player, index) => new { state = player.Client.State,
+                source = player.Client.SourceActions.View, receipts = player.Receipts.ToArray(), attempts = stoppedAttempts[index] }).ToArray();
             var stoppedHistories = ai.Histories;
             var stoppedBotProcessing = botPort.CaptureProcessing();
             var reportedBotProcessing = completedBotProcessing ?? stoppedBotProcessing;
@@ -204,7 +205,7 @@ internal static partial class PolledMixedLobbyEngineJourney
                     .Select(pair => new { seat = pair.Key, accepted = pair.Value }),
                 presence = presence.Evidence,
                 choices = choices.Evidence,
-                players = players.Select(player => new { player.Index, player.ClientAdmissions, providerAcceptances = player.Port.Accepted,
+                players = players.Select((player, index) => new { player.Index, player.ClientAdmissions, attempts = stoppedAttempts[index], providerAcceptances = player.Port.Accepted,
                     scriptedInputAcceptances = player.Port.InputAccepted, receiptCounts = player.Port.ReceiptCounts,
                     ordinaryReads = player.Port.Reads, player.PollCallbacks, player.Publications, player.HeldPublications,
                     player.Port.Failures, commandLatencies = player.Port.CommandLatencies.ToArray(),
@@ -225,15 +226,18 @@ internal static partial class PolledMixedLobbyEngineJourney
         internal readonly PolledLobbyPorts.PresencePort InspectionPort;
         internal readonly TablePresenceSession Inspection;
         internal readonly List<object> Receipts = [];
-        internal int ClientAdmissions, PollCallbacks, Publications, HeldPublications;
-        internal bool InputReceiptsReconciled => ClientAdmissions == Port.InputAccepted;
+        internal readonly PolledPlayerAttemptLedger Attempts = new();
+        internal int ClientAdmissions => Attempts.AdmittedCount;
+        internal int PollCallbacks, Publications, HeldPublications;
+        internal bool InputReceiptsReconciled => Attempts.Reconciled(Port.InputAccepted);
         private GameSnapshot? prior;
         private (string Game, long Revision, string Decision)? handed;
         private long nextPoll;
         private bool armed;
         internal PlayerOwner(ForgeEngine engine, int index)
         {
-            Index = index; Engine = engine; Port = new(engine); Client = new(Port, engine, sourceActions: engine);
+            Index = index; Engine = engine; Port = new(engine) { Acknowledged = Attempts.Acknowledged };
+            Client = new(Port, engine, sourceActions: engine); Attempts.Attach(Client);
             InspectionPort = new(engine); Inspection = new(InspectionPort, callback => InspectionPort.Post(Client.Post, callback));
             Client.Changed += (_, state) => {
                 if (state == null) { if (prior != null) throw new InvalidDataException("A polled player lost its bound match."); return; }
@@ -248,6 +252,7 @@ internal static partial class PolledMixedLobbyEngineJourney
         }
         internal void RequireHealthy()
         {
+            Attempts.RequireHealthy();
             if ((Client.RecoveryOrigin ?? Client.LastFailure) is { } failure) throw new ClientOperationFailureException(failure);
             if (Client.UncertainCommand || Client.NeedsRecovery) throw new InvalidDataException("A healthy polled player entered command uncertainty or recovery.");
         }
@@ -299,9 +304,8 @@ internal static partial class PolledMixedLobbyEngineJourney
                         ? state.ViewerId : recipients[0].Id);
             }
             if (command == null) throw new InvalidDataException("The bounded ordinary player script has no current reply for " + decision.Payload.GetType().Name);
-            if (!Client.Submit(command)) throw new InvalidDataException("The ordinary client declined its current scripted command.");
+            if (!Attempts.Submit(state, command)) throw new InvalidDataException("The ordinary client declined its current scripted command.");
             handed = (state.Id, state.Revision, decision.Id);
-            ClientAdmissions++;
             Receipts.Add(new { state.Revision, state.BoardRevision, decision = decision.Id, command = command.GetType().Name });
         }
     }

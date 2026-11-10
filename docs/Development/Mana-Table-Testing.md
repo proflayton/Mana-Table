@@ -126,6 +126,21 @@ same presence owner. Both intervals retain the single-task/four-Hz checks and
 the prefix's existing 45-second deadline. A green prefix is a bounded transport
 and ownership journey, not a full natural game or a private-choice-sharing claim.
 
+The prefix's single foreground owner conserves each locally admitted command as
+an exact provider ACK, an explicitly typed retirement before dispatch, or one
+still-live attempt. `Submit(true)` can queue a gesture behind the quiet observer
+ACK; revalidation can safely retire that original source offer without sending
+it to Forge. Reconciliation requires no live attempts, every admission accounted
+for, and exact equality between acknowledged inputs and real provider receipts.
+Its private evidence retains the original sequence, game/viewer/decision stamp,
+dispatch identity or retirement diagnostic/reason. Failed or unknown outcomes
+remain fatal. `PolledPlayerAttemptChecks` exercises actual quiet-ACK retirement
+then a fresh command, unrelated declines, unmatched command instances and double
+accounting through the existing client hooks. These controls run in the full
+native suite and the focused `polled-receipt-processing` group; no deadline or
+rules gate is relaxed. Historical failures without those terminal diagnostics
+cannot establish which retirement reason occurred.
+
 See [the considered-play journey](Mana-Table-Experience-Review.md#seeing-a-player-consider-a-public-play-source-candidate)
 for game references, confidentiality limits and pending human review.
 
@@ -310,6 +325,13 @@ exercise actual team winners, an earlier eliminated ally, rules draws, ordinary
 free-for-all completion and failures; they do not establish a cooperative lobby.
 Include `EliminationRegressionTest` for natural elimination and concession of a
 lone human: both retain Defeat while cleanup keeps the global outcome absent.
+`TerminalProjectionTest` also manifests a real library card in controlled setup,
+then causes an actual commander-damage loss and pauses at the surviving player's
+required face-down disclosure before the final outcome. Historical battlefield
+portraits remain readable but have no current action/payment authority; the
+original revealed face, unrelated living handles and exact final-board identities
+remain intact. This deterministic control reproduced the stale-handle publication
+failure without changing the strict native public-projection guard.
 The packaged `AiFrameworkEngineCheck` exercises that same concession through the
 native adapter before allowing its next match to start.
 
@@ -1275,11 +1297,21 @@ stale Surefire files do not belong to a later focused run.
 `AiResourceQualificationJourney` reuses the initialized fixture engine in the
 normal source-bound headless engine smoke, with an optional local
 `--smoke-ai-resources` route. Its declared pregame fixture supplies eight Wastes
-and an eight-card runtime library. Scripted ordinary commands cast Traxos using
+and a nine-card runtime library with duplicate Mind Stone and Spatial Contortion
+copies, guaranteeing both in the initial eight draws and leaving one real card
+to draw. Scripted ordinary commands cast Traxos using
 generic mana, then Mind Stone to trigger its actual untap, then Spatial Contortion
 with an explicit colorless requirement. Archived receipts must distinguish the
-generic negative control from actual `C` consumption. The saved Commander list
-is legal; the deliberately shortened runtime is a test fixture. This does not
+generic negative control from actual `C` consumption. After the original three
+casts and eight paid Wastes are verified, the driver plays a genuine hand Wastes.
+The unfiltered production policy then chooses and pays for Mind Stone's sacrifice
+activation. The shared causal reader requires its exact source sacrifice,
+resolved activation, attributed one-card draw and public hand/library change.
+`AiConsumingArtifactEvidenceChecks` and the campaign tracker checks protect wrong
+actors, sources, stages, unrelated draws, cancellation, retention loss and credit
+to another deck. This is the first supported consuming-artifact witness, scoped
+to a positive draw; other consuming outcomes remain unproven.
+The saved Commander list is legal; the deliberately shortened runtime is a test fixture. This does not
 qualify a campaign deck, prove AI strategy, or replace mixed human play review.
 External resources alone remain unbound; exact-source CI establishes package
 identity separately. No test cutoff becomes a draw or a reason to extend budgets.

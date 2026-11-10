@@ -1,5 +1,30 @@
 # Multiplayer AI framework and investigation
 
+## Mechanic qualification and internal choices: source candidate
+
+The campaign still has no fully qualified deck lists. Five defining witnesses
+previously had no verifier, independently of whether a sampled game finished.
+The consuming-artifact slice adds one: an accepted activation of an owned
+artifact sacrifices that exact source, resolves, and produces an attributed
+one-card draw with public source and hand/library confirmation. It uses the
+same bounded causal reader as the campaign, without a card-name strategy.
+A controlled real-engine opportunity delegates the activation and payment to
+the production policy; it does not establish natural deck execution or general
+strategic timing. Equipment remains a separate gap: attaching is not a modeled
+effect, and treating every attachment as beneficial would be unsafe for cards
+with harmful or triggered consequences. Missing or truncated evidence must not
+be reported as a poor decision.
+
+An already-announced stack occurrence can move between resolution, choice and
+cost without announcing another action. The cadence comparison now preserves
+its original reading beat through those internal steps only when the exact
+queue, targets, known execution identity and public events agree. Terminal
+outcomes, new public effects or abilities, identity changes and unknown evidence
+keep their ordinary reading beats. Every answer still uses fresh decision
+authority. `AiRepeatedCadenceRegression` exercises this through the actual host
+with a fake clock, including conservative boundary controls; it does not measure
+backend or policy compute time.
+
 ## Automated waits and payment cadence: source candidate
 
 A friend reported that AI players were stalling games, without a version or

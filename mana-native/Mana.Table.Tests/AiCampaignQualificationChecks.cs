@@ -21,6 +21,7 @@ internal static class AiCampaignQualificationChecks
         var start = decoded with { Setup = decoded.Setup with { Decks = decks.Select(deck => deck.Handle).ToImmutableArray() } };
         string hash = AiCampaignQualification.DefinitionHash("case", start.Setup.Specification, decks, "smoke");
         AiCampaignQualificationTracker Tracker() => new(decks, start, "case", hash);
+        CheckConsumingArtifactAttribution(Tracker, check);
         bool Reject(Action action) { try { action(); return false; } catch (InvalidDataException) { return true; } }
         check(hash != AiCampaignQualification.DefinitionHash("case", start.Setup.Specification,
                 decks.SetItem(0, decks[0] with { SemanticVersionId = new('f', 64) }), "smoke")
@@ -175,6 +176,32 @@ internal static class AiCampaignQualificationChecks
             check(blocked && policy.Evaluations == 0 && inner.Executions == 0,
                 "An unauthorized ally-hand disclosure is rejected before any policy evaluation or command in " + (configured ? "configured" : "legacy") + " campaigns");
         }
+    }
+
+    private static void CheckConsumingArtifactAttribution(Func<AiCampaignQualificationTracker> create, Action<bool, string> check)
+    {
+        const string witnessId = "positive-consuming-artifact-activation";
+        AiCampaignQualificationTracker Collect(int playerId)
+        {
+            var fixture = new AiConsumingArtifactEvidenceChecks.Fixture(playerId);
+            var tracker = create();
+            tracker.Receipt(fixture.Before, new UseOfferedAction(fixture.Before.State.Id, "init", fixture.Source.Key, "draw"), true, null);
+            tracker.ObserveOwned(fixture.Before with { State = fixture.After, Domain = DecisionActionDomain.None });
+            tracker.ObservePublic(fixture.After with { ViewerId = -1, Activity = [], Players = fixture.After.Players.Select(player => player with {
+                Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Select(card => card with { Key = "" }).ToImmutableArray() }).ToImmutableArray()
+            }).ToImmutableArray() });
+            return tracker;
+        }
+        var own = Collect(11);
+        var summary = own.Summary("turn-budget", false, null);
+        var proof = summary.Single(deck => deck.SlotIndex == 3).RequiredWitnesses.Single(witness => witness.Id == witnessId);
+        var otherPlayer = Collect(47);
+        check(proof.Status == "observed" && proof.Evidence is [{ PlayerId: 11, SlotIndex: 3, ExecutionId: "activation" }]
+                && proof.Evidence[0].ActivityIds.SequenceEqual([11L, 12L])
+                && summary.Where(deck => deck.SlotIndex != 3).All(deck => deck.RequiredWitnesses.All(witness => witness.Status != "observed"))
+                && otherPlayer.CausalEvidence.Witnesses.Any(witness => witness.WitnessId == witnessId && witness.Before.SeatId == 47)
+                && otherPlayer.Summary("turn-budget", false, null)[3].RequiredWitnesses.Single(witness => witness.Id == witnessId).Status == "not-observed",
+            "The campaign imports a genuine consuming artifact witness only into its bound Traxos slot/player; another participant's identical accepted cost and draw cannot lend that deck mechanic credit");
     }
 
     private static void CheckOwnedLookupCompatibility(Func<AiCampaignQualificationTracker> create,

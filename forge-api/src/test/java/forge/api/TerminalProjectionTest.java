@@ -24,15 +24,20 @@ public class TerminalProjectionTest {
 
     @Test(timeOut = 90000)
     public void theLastCommanderDamageLossRetainsOnlyExactRegisteredFinalCardViews() throws Exception {
-        commanderCombat(false);
+        commanderCombat(false, false);
     }
 
     @Test(timeOut = 90000)
     public void aRealLosingBlockPreventsAnOtherwiseFatalCommanderHit() throws Exception {
-        commanderCombat(true);
+        commanderCombat(true, false);
     }
 
-    private static void commanderCombat(boolean blocks) throws Exception {
+    @Test(timeOut = 90000)
+    public void theLastLossRevealCannotReauthorizeEliminatedBattlefieldPortraits() throws Exception {
+        commanderCombat(false, true);
+    }
+
+    private static void commanderCombat(boolean blocks, boolean withManifest) throws Exception {
         var resources = Path.of("../forge-gui/res");
         if (StaticData.instance() == null) EngineResources.load(resources);
         var deck = new Deck("Terminal commander damage");
@@ -44,11 +49,27 @@ public class TerminalProjectionTest {
                 "Concordant Crossroads", "Forest").stream().<forge.item.IPaperCard>map(name -> StaticData.instance().getCommonCards().getCard(name)).toList());
         players.get(1).addExtraCardsOnBattlefield(List.of("Grizzly Bears", "Plains").stream()
                 .<forge.item.IPaperCard>map(name -> StaticData.instance().getCommonCards().getCard(name)).toList());
-        Path evidence = ApiTestWorkspace.evidence(blocks ? "blocked-commander-damage" : "terminal-commander-damage");
+        Path evidence = ApiTestWorkspace.evidence(blocks ? "blocked-commander-damage"
+                : withManifest ? "terminal-loss-reveal" : "terminal-commander-damage");
         try (var table = new MatchTable("Commander", players, resources, evidence, true)) {
             table.start(); var answered = new HashMap<Integer, String>();
             var main = until(table, answered, input -> input.seat() == 0
                     && text(input.prompt(), "inputType").equals("InputPassPriority") && text(input.state(), "phaseKey").equals("MAIN1"));
+            if (withManifest) {
+                HeadlessPlatform.query(table, () -> {
+                    // Controlled setup uses Reality Shift's real manifest operation;
+                    // the loss, cleanup, historical disclosure and acknowledgement
+                    // below all run through ordinary commander damage and the API.
+                    var owner = table.game.getRegisteredPlayers().get(1);
+                    var cause = forge.game.ability.AbilityFactory.getAbility("DB$ Manifest | DefinedPlayer$ You", owner.getCommanders().get(0));
+                    cause.setActivatingPlayer(owner);
+                    var manifested = owner.getCardsIn(ZoneType.Library).get(0).manifest(owner, cause, forge.game.ability.AbilityKey.newMap());
+                    assertTrue(manifested.isManifested()); assertTrue(manifested.isFaceDown());
+                    table.publish(); return null;
+                });
+                main = until(table, answered, input -> input.seat() == 0
+                        && text(input.prompt(), "inputType").equals("InputPassPriority") && text(input.state(), "phaseKey").equals("MAIN1"));
+            }
             use(table, answered, main, card(main.state(), "Command", "Rhys the Redeemed"));
             var payment = until(table, answered, input -> input.seat() == 0
                     && text(input.prompt(), "inputType").startsWith("InputPayMana"));
@@ -87,6 +108,7 @@ public class TerminalProjectionTest {
                 assertFalse(table.game.isGameOver(), "The otherwise fatal22 commander damage was prevented by the actual block");
                 return;
             }
+            boolean sawLossReveal = false;
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
             while (System.nanoTime() < deadline && !table.game.isGameOver()) {
                 for (var seat : table.automatedSeats()) {
@@ -94,18 +116,45 @@ public class TerminalProjectionTest {
                     if (!state.has("prompt") || !state.get("prompt").isJsonObject()) continue;
                     var prompt = state.getAsJsonObject("prompt"); int owner = state.get("viewerId").getAsInt();
                     if (text(prompt, "id").equals(answered.get(owner))) continue;
+                    if (text(prompt, "kind").equals("reveal")) {
+                        assertTrue(withManifest); assertEquals(owner, 0);
+                        assertFalse(table.game.isGameOver(), "The last-loss disclosure precedes the final outcome");
+                        assertTrue(player(state, 1).get("eliminated").getAsBoolean());
+                        assertFalse(table.game.getPlayers().contains(table.game.getRegisteredPlayers().get(1)));
+                        Files.writeString(evidence.resolve("private-loss-reveal-first.json"), state.toString());
+                        var historical = zone(player(state, 1), "Battlefield").getAsJsonArray("cards");
+                        assertEquals(historical.size(), 3, "Registered historical portraits remain readable during the disclosure");
+                        for (var value : historical) {
+                            var face = value.getAsJsonObject();
+                            assertEquals(text(face, "key"), "", "An eliminated historical portrait cannot acquire a current prompt handle");
+                            assertFalse(face.get("selectable").getAsBoolean()); assertFalse(face.get("highlighted").getAsBoolean());
+                            assertEquals(text(face, "playAffordability"), "Unknown");
+                            assertEquals(text(face, "visualId"), ""); assertEquals(text(face, "combatId"), "");
+                        }
+                        assertTrue(prompt.getAsJsonArray("choices").asList().stream().anyMatch(value -> {
+                            var face = value.getAsJsonObject().getAsJsonObject("card");
+                            return face != null && text(face, "name").equals("Forest") && text(face, "key").isEmpty();
+                        }), "The rules-required original face is still readable without an action handle");
+                        var living = zone(player(state, 0), "Battlefield").getAsJsonArray("cards");
+                        assertTrue(living.asList().stream().anyMatch(value -> !text(value.getAsJsonObject(), "key").isEmpty()),
+                                "The unrelated current battlefield keeps its own current handles");
+                        sawLossReveal = true;
+                        answer(table, answered, new RulesScenario.Input(owner, state, prompt), Map.of("action", "ok"));
+                        continue;
+                    }
                     assertEquals(text(prompt, "inputType"), "InputPassPriority", "Only normal combat priority remains");
                     answer(table, answered, new RulesScenario.Input(owner, state, prompt), Map.of("action", "ok"));
                 }
                 Thread.sleep(3);
             }
             assertTrue(table.game.isGameOver(), "Actual commander damage must finish the two-player game");
+            assertEquals(sawLossReveal, withManifest, "The regression must inspect the real pending loss-disclosure window");
             HeadlessPlatform.query(table, () -> null);
             table.publish();
             var loser = table.game.getRegisteredPlayers().get(1);
             assertTrue(loser.hasLost()); assertEquals(loser.getLife(), 18, "This is commander damage, not a life-zero loss");
             assertFalse(table.game.getPlayers().contains(loser), "The last loser has left the active rules-player set");
-            assertEquals(loser.getCardsIn(ZoneType.Battlefield).size(), 2,
+            assertEquals(loser.getCardsIn(ZoneType.Battlefield).size(), withManifest ? 3 : 2,
                     "The last two-player loss deliberately retains the registered player's actual board");
             assertTrue(table.commanderCombat.damage(loser).stream().anyMatch(row -> commanderId.equals(row.get("commanderId"))
                     && Integer.valueOf(22).equals(row.get("damage"))), "The actual fatal hit retains its exact commander lineage and22 damage");
@@ -139,7 +188,7 @@ public class TerminalProjectionTest {
                     }
                 }
                 var finalCards = zone(player(state, 1), "Battlefield").getAsJsonArray("cards");
-                assertEquals(finalCards.size(), 2);
+                assertEquals(finalCards.size(), withManifest ? 3 : 2);
                 for (var value : finalCards) {
                     var face = value.getAsJsonObject();
                     assertFalse(text(face, "visualId").isEmpty(), "An exact retained final-zone card remains identifiable for display");

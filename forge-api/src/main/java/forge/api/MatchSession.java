@@ -3024,22 +3024,25 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
     private Map<String, Object> cardState(CardView card, Pending prompt, DecisionHandles handles) {
         boolean hidden = card.isFaceDown();
+        boolean current = currentCardView(card);
         // Refreshes can remove or reorder visible cards without consuming the
         // input. Retain opaque identities separately from the current allowed
         // cards, so a removed card's handle can never select another card.
-        String key = prompt == null ? "" : cardKey(card, prompt, handles);
-        if (prompt != null) handles.cards.put(key, card);
+        // Registered-player views may retain readable historical faces while a
+        // last-loss reveal waits. They cannot enter this input's response domain.
+        String key = prompt == null || !current ? "" : cardKey(card, prompt, handles);
+        if (!key.isEmpty()) handles.cards.put(key, card);
         boolean publicFace = !hidden || card.getZone() == ZoneType.Battlefield;
         var result = new LinkedHashMap<>(PublicCardCharacteristics.capture(card, viewer, game.getView().getCombat(), hidden, publicFace));
         table.commanderCombat.bindPublicCard(result, card);
         result.put("key", key); result.put("visualId", Objects.toString(activity.visualId(card), ""));
         result.put("combatId", Objects.toString(combatIds.id(card), ""));
-        result.put("selectable", selectable.contains(card) || actionable.contains(card) || linkedSourceActionable(card, prompt)
-                || prompt != null && prompt.input instanceof InputLondonMulligan && card.getController().equals(viewer) && card.getZone() == ZoneType.Hand);
-        result.put("highlighted", highlighted.contains(card));
+        result.put("selectable", current && (selectable.contains(card) || actionable.contains(card) || linkedSourceActionable(card, prompt)
+                || prompt != null && prompt.input instanceof InputLondonMulligan && card.getController().equals(viewer) && card.getZone() == ZoneType.Hand));
+        result.put("highlighted", current && highlighted.contains(card));
         // This is this audience's current cached payment evidence. Legal source
         // offers and conservative highlights do not certify affordability.
-        result.put("playAffordability", prompt != null && prompt.input instanceof InputPassPriority priority
+        result.put("playAffordability", current && prompt != null && prompt.input instanceof InputPassPriority priority
                 && viewer.equals(priority.getOwner()) && card.canBeShownTo(viewer)
                 && priority.hasVerifiedFundingFor(card) ? "Payable" : "Unknown");
         AttachmentProjection.add(result, card, viewer, combatIds);
