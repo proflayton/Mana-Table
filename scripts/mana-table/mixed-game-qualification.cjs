@@ -79,13 +79,18 @@ function assessNatural({ engineHash, harnessHash, policyHash, manifest, summary,
     'Both actual AI participants need their own source-bound continuation evidence and a matching retired-owner snapshot.');
     for (const value of automated) {
       const final = retired.find(row => row.SeatId === value.SeatId);
-      requireThat(exactly(Object.keys(value), AUTOMATED_PRIORITY_FIELDS) && exactly(Object.keys(final), AUTOMATED_PRIORITY_FIELDS)
-        && value.GameId === result.Outcome.GameId && positive(value.Epoch) && nonnegative(value.SeatId)
-        && positive(value.AcceptedAcknowledgements) && positive(value.AcceptedGrants) && positive(value.CertifiedAutomaticPasses)
-        && nonnegative(value.AcceptedWithdrawals) && positive(value.LastSequence)
-        && nonnegative(value.LastAcknowledgedBoardRevision) && nonnegative(value.LastAcknowledgedPublicActivitySequence)
-        && value.Retired === true && AUTOMATED_PRIORITY_FIELDS.every(field => final[field] === value[field]),
-      'AI NoResponse controls need closed typed receipt/certificate counters, an actual game/epoch and exact post-disposal retirement evidence.');
+      const failedFields = [
+        ['receiptFields', exactly(Object.keys(value), AUTOMATED_PRIORITY_FIELDS)],
+        ['retirementFields', exactly(Object.keys(final), AUTOMATED_PRIORITY_FIELDS)],
+        ['GameId', value.GameId === result.Outcome.GameId], ['Epoch', positive(value.Epoch)], ['SeatId', nonnegative(value.SeatId)],
+        ['AcceptedAcknowledgements', positive(value.AcceptedAcknowledgements)], ['AcceptedGrants', positive(value.AcceptedGrants)],
+        ['CertifiedAutomaticPasses', positive(value.CertifiedAutomaticPasses)], ['AcceptedWithdrawals', nonnegative(value.AcceptedWithdrawals)],
+        ['LastSequence', positive(value.LastSequence)], ['LastAcknowledgedBoardRevision', nonnegative(value.LastAcknowledgedBoardRevision)],
+        ['LastAcknowledgedPublicActivitySequence', nonnegative(value.LastAcknowledgedPublicActivitySequence)],
+        ['Retired', value.Retired === true], ['retirementMatch', AUTOMATED_PRIORITY_FIELDS.every(field => final[field] === value[field])]
+      ].filter(([, valid]) => !valid).map(([field]) => field);
+      requireThat(failedFields.length === 0,
+        `AI NoResponse controls need closed typed receipt/certificate counters, an actual game/epoch and exact post-disposal retirement evidence. Rotation ${index}, seat ${value.SeatId}; failed fields: ${failedFields.join(', ')}.`);
       observedAutomatedNoResponseGrants += value.AcceptedGrants;
       observedAutomatedNoResponsePasses += value.CertifiedAutomaticPasses;
     }

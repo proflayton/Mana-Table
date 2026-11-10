@@ -79,6 +79,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private volatile Pending pending;
     private boolean inputActionQueued;
     private final AtomicLong sourceActionVersion = new AtomicLong();
+    private record PriorityResponseAttempt(InputPassPriority input, long sequence, long sourceVersion, long activity) { }
+    private PriorityResponseAttempt priorityResponseAttempt;
     private final SourceReadFailureCapture sourceReadFailure = new SourceReadFailureCapture();
     private long publishedSourceActionVersion = -1;
     private final Map<Input, String> inputEpisodes = new WeakHashMap<>();
@@ -771,6 +773,64 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (human.isExternallyAutomated()) human.setExternalPriorityAvailabilityRequested(priorityContinuation.accepted()
                 && priorityContinuation.instruction().mode() == PriorityContinuation.Mode.NO_RESPONSE
                 && !closed && error == null && !conceded && !human.getPlayer().hasLost() && !game.isGameOver());
+    }
+
+    /** Explicit derived-fact demand is separate from both delivered reading
+     * credit and consent to advance the rules input. Snapshot reads never scan. */
+    AutomatedPriorityResponsesPrepared preparePriorityResponses(JsonObject request) {
+        String gameId = responsePreparationId(request, "sessionId"), decisionId = responsePreparationId(request, "promptId");
+        if (!"preparePriorityResponses".equals(responsePreparationId(request, "action"))
+                || !request.keySet().stream().allMatch(Set.of("sessionId", "seatId", "action", "promptId", "expectedTask")::contains)
+                || request.has("expectedTask") && !"priority".equals(responsePreparationId(request, "expectedTask")))
+            throw new IllegalArgumentException("Response preparation requires only its current priority scope");
+        return game.getAction().readState(() -> { synchronized (gate) {
+            if (!human.isExternallyAutomated()) throw new IllegalArgumentException("Only an owned automated seat prepares responses");
+            if (error != null) throw new IllegalStateException(error);
+            if (!id.equals(gameId) || closed || conceded || human.getPlayer().hasLost() || game.isGameOver())
+                throw new AutomatedPriorityControlRetired();
+            Pending current = pending;
+            if (current == null || !current.id.equals(decisionId) || !(current.input instanceof InputPassPriority input)
+                    || !sourceInputCurrent(current) || !okEnabled || !decisionCaptureCurrent(current, current.publishedDecision)
+                    || priorityContinuation.accepted() || finiteStackYield.active()) throw new AutomatedPriorityControlRetired();
+            if (!priorityObservation.registered() || priorityObserverOverflowed())
+                throw new IllegalArgumentException("Observe this table before preparing priority responses");
+            long sequence = human.getInputProxy().getInputSequence(), sourceVersion = sourceActionVersion.get(), activityVersion = activity.sequence();
+            var attempt = new PriorityResponseAttempt(input, sequence, sourceVersion, activityVersion);
+            if (responseAvailability(input) == InputPassPriority.ResponseAvailability.Unknown && !attempt.equals(priorityResponseAttempt)) {
+                priorityResponseAttempt = attempt;
+                try { human.prepareExternalPriorityAvailability(input); }
+                finally {
+                    // A callback-capable scan must not make its own post-scan
+                    // generation look like permission for an unbounded retry.
+                    priorityResponseAttempt = new PriorityResponseAttempt(input, sequence, sourceActionVersion.get(), activity.sequence());
+                }
+                if (error != null) throw new IllegalStateException(error);
+                if (pending != current || !sourceInputCurrent(current) || priorityContinuation.accepted() || finiteStackYield.active()
+                        || human.getInputProxy().getInputSequence() != sequence
+                        || sourceActionVersion.get() != sourceVersion || activity.sequence() != activityVersion
+                        || !decisionCaptureCurrent(current, current.publishedDecision)) throw new AutomatedPriorityControlRetired();
+                publishInputInState(true);
+            }
+            if (error != null) throw new IllegalStateException(error);
+            if (pending != current || !sourceInputCurrent(current) || priorityContinuation.accepted() || finiteStackYield.active()
+                    || human.getInputProxy().getInputSequence() != sequence
+                    || sourceActionVersion.get() != sourceVersion || activity.sequence() != activityVersion
+                    || !decisionCaptureCurrent(current, current.publishedDecision)
+                    || !(latest.get("prompt") instanceof Map<?, ?> prompt) || !decisionId.equals(prompt.get("id")))
+                throw new AutomatedPriorityControlRetired();
+            return new AutomatedPriorityResponsesPrepared(1, "prepared", id, viewer.getId(), decisionId,
+                    ((Number)latest.get("boardRevision")).longValue(), activity.sequence(), responseAvailability(input).name());
+        } });
+    }
+
+    private static String responsePreparationId(JsonObject request, String key) {
+        var value = request.get(key);
+        if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString())
+            throw new IllegalArgumentException("Response preparation requires an exact " + key);
+        String text = value.getAsString();
+        if (text.isBlank() || text.length() > 256 || text.chars().anyMatch(Character::isISOControl))
+            throw new IllegalArgumentException("Response preparation requires an exact " + key);
+        return text;
     }
 
     /** Bots have no native presentation owner. Their explicit continuation

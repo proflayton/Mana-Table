@@ -1025,6 +1025,8 @@ control counts, and retired ownership after disposal; the result and teardown
 must agree. These records never count as gameplay acceptances or invent policy
 decisions. The controlled fanout's bot port does not expose this optional
 capability, so its 220 explicit bot queue passes retain their original meaning.
+Failed bot receipt admission identifies the exact rotation, physical seat and
+failed fields; valid retirement cannot substitute for missing grants or passes.
 Missing rare required-mechanic witnesses remain explicitly Inconclusive; absent
 causal integrity/role evidence, any mechanical failure, or any incomplete natural
 rotation fails this gate. This never substitutes `natural` for the stricter
@@ -1048,6 +1050,30 @@ derive the receipt from the exact captured action result rather than a later
 publication, and prove that no private card/action graph enters the receipt.
 Unknown or lost current-world replies remain uncertain failures; they cannot
 cause an automatic full-action fallback or replay of positive consent.
+
+Bot response preparation must cover the production Java controller and wire
+decoder, not merely an authored `PriorityPayload` containing `Absent`. Initial
+external `Unknown` becomes an actual completed `Absent` or `Available` scan
+through the separately negotiated, current-input preparation control while
+continuation remains Idle, sequence stays zero and the actual priority input
+remains active. A distinct Prepared receipt cannot become a policy observation:
+the host obtains a fresh owned rich frame before granting or proposing an action.
+Duplicate attempts and metadata-only revisions do not repeat expensive scans;
+changed input/source/activity, stale or foreign scopes, retirement, pacing,
+capability absence and lost replies need their own controls. Ordinary human
+initial scans and legacy external FullControl remain separate cases. The
+natural campaign must still witness actual positive bot grants and certified
+passes; completing games through ordinary policy passes does not qualify Auto.
+The native `priority-responses` group exercises the actual child-process codec
+and host using authored wire frames. The headless engine journey separately
+reuses its warm production JVM for a four-bot, basic-land opportunity with a
+45-second active watchdog. Ordinary policies must observe initial `Unknown`,
+prepare actual facts, obtain a fresh `Absent` read and receive a real certified
+pass; preparation's before/after consent fields must remain unchanged. This
+small controlled opportunity does not replace varied natural games or certify
+strategy. `--smoke-priority-responses` exposes the same journey for diagnosis
+with matching harness, production engine and resources; retain its runtime
+provenance and result files in a fresh disposable profile.
 
 The campaign's `PublicProjectionPreparation` owns bounded derived evidence for
 the actual bound audiences. Batch validation, pair comparisons, cohort tracking

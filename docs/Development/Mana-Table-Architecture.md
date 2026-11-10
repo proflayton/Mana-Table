@@ -640,7 +640,7 @@ its funding. The shared work limit remains unchanged. This pruning improves
 coverage within that limit, without claiming an exhaustive or optimal search.
 
 The optional host-only `IAutomatedPriorityContinuation` port represents only
-observation acknowledgement, `NoResponse` consent and withdrawal. It cannot
+observation acknowledgement, scoped response preparation, `NoResponse` consent and withdrawal. It cannot
 carry gameplay, Quiet or finite-yield commands. The policy descriptor explicitly
 opts into `NoResponse`; custom policies default to full control. `AiTableHost`
 owns sequence fences and observed certificates per game, seat and provider epoch,
@@ -659,9 +659,24 @@ seat cycle. Each control rechecks pacing. These receipts cannot enter gameplay
 scopes or policy observations; gameplay always needs a fresh owned rich read.
 The adapter keeps a separate metadata cursor anchored to that rich observation;
 late replies cannot replace a newer cursor or revive an advanced input.
+Response preparation has a distinct `Prepared` receipt and the separate optional
+`automated-priority-responses-v1` capability. An external controller initially
+reports `Unknown`; requiring `Absent` before the operation which requests its
+first scan would deadlock discovery. A paced owner therefore acknowledges its
+observed delivery prefix, requests preparation for the exact current priority
+input, then obtains a new owned rich observation. Preparation does not grant
+passing, advance a sequence, queue a rules input or install a gameplay scope.
+The host bounds attempts by the current decision/domain and public activity;
+metadata-only revision changes do not request another expensive scan. Java
+separately binds the actual input instance, sequence and source generation.
+Only a later rich frame's authoritative `Absent` permits a new grant.
+`Available`, incomplete/invalidated `Unknown` and unsupported providers retain
+ordinary policy work. Reading a snapshot never requests preparation, and
+ordinary human response scans remain independent of bot preparation.
 The optional `automated-priority-metadata-v1` capability makes that separation
 explicit on the private process wire. `automatedPriorityControl` accepts only
-the three closed continuation controls and returns a versioned metadata receipt
+the three closed continuation controls and, when separately negotiated, scoped
+response preparation. Continuation controls return a versioned metadata receipt
 from that action's exact committed audience publication. It carries no cards,
 action domain, timer or provider epoch. Native code supplies its captured process
 epoch and validates the closed receipt before reconciling consent. An unchanged

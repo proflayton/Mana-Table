@@ -75,6 +75,31 @@ There is no card graph, action domain, timer or wire-supplied provider epoch.
 The native host validates this closed metadata independently; every policy or
 gameplay action still requires a fresh owned rich observation. Engines without
 the extra capability retain the full `automatedAction` response and decoder.
+
+The separate optional `automated-priority-responses-v1` capability adds one
+closed `automatedPriorityControl` action, `preparePriorityResponses`, with
+`sessionId`, `seatId`, `promptId` and optional `expectedTask: "priority"`.
+It requires that bot's exact current living `InputPassPriority`, an acknowledged
+observation, no accepted standing consent and no active finite yield. It prepares
+the ordinary controller's current response facts without granting consent,
+acknowledging another cohort, consuming an input or queuing a priority pass.
+Human controllers already run their ordinary scan; this operation is bot-only.
+
+Its distinct eight-field response is `{schemaVersion:1, status:"prepared",
+gameId, seatId, decisionId, boardRevision, publicActivitySequence,
+responseAvailability}`, where availability is `Absent`, `Available` or `Unknown`.
+There is no grant ID, consent sequence, automatic-pass count or action graph.
+The host must obtain another owned rich observation before using these facts;
+the compact receipt itself cannot authorize gameplay or a passing grant.
+
+Preparation attempts are bounded by actual input identity/sequence and rules
+generation/public activity, not metadata revisions or repeated polls. A current
+completed scan is reused; an incomplete attempt remains unknown until a genuine
+input or rules/activity change. The controller's persistent external-scan flag
+is unchanged. Ordinary snapshots never request a scan. Malformed requests remain
+errors, and a provably expired/foreign/conceded input uses the existing typed
+automated-priority retirement code; an uncertain transport failure is not retirement.
+
 Action semantics may include `phaseRestricted`: true reports declared phase/turn,
 sorcery-speed or combat-step restrictions; false reports their absence on the
 live route. This descriptive fact does not predict future legality, resource

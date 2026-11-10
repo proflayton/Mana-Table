@@ -1589,7 +1589,14 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     /** Admit the first opt-in against the actual still-owned priority input.
      * Subsequent priority windows use the same ordinary controller scan. */
     public boolean refreshExternalPriorityAvailability(InputPassPriority input) {
-        return isExternallyAutomated() && externalPriorityAvailabilityRequested && refreshPriorityAvailability(input);
+        return isExternallyAutomated() && externalPriorityAvailabilityRequested && prepareExternalPriorityAvailability(input);
+    }
+
+    /** One explicit current-input fact request. It does not enable future scans,
+     * human yields or external passing consent. */
+    public boolean prepareExternalPriorityAvailability(InputPassPriority input) {
+        return isExternallyAutomated() && (input.getResponseAvailability() != InputPassPriority.ResponseAvailability.Unknown
+                || refreshPriorityAvailability(input));
     }
 
     /** Cached legal abilities for the exact current priority window; no graph scan. */

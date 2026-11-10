@@ -1,5 +1,31 @@
 # Multiplayer AI framework and investigation
 
+## Response preparation is independent of pass consent
+
+An external controller previously requested its availability scan only after a
+NoResponse grant. Requiring an authoritative Absent frame before that grant
+exposed a bootstrap cycle: ordinary bot frames stayed Unknown and no consent
+could start. Unknown remains ineligible; neither an empty action catalog nor
+the preparation receipt can substitute for the controller's completed scan.
+
+The optional `automated-priority-responses-v1` host port prepares one exact
+current priority input after pacing and observer acknowledgement. Its closed
+Prepared receipt confirms only the owned attempt, with no grant sequence, pass
+or gameplay receipt. The native adapter retires the preceding rich action scope
+and ACK cursor. The host must obtain another owned rich observation before
+granting or evaluating a policy. Available and bounded Unknown results preserve
+ordinary policy control; older providers keep that fallback without a new RPC.
+The attempt latch follows the exact input, source generation and public prefix,
+not metadata revisions. Lost current-world receipts remain uncertain; late
+epochs and known retired inputs cannot become fresh authority.
+
+Client host regressions and the native `priority-responses` headless group cover
+this lifecycle, including malformed wire receipts and misleading Absent metadata.
+The real-engine controlled opportunity also requires an actual Unknown input,
+independent preparation, a freshly decoded Absent frame, a certified rules pass
+and acknowledged retirement. Its basic-land simulation is a transport check;
+the varied four-game natural campaign and human UX review remain separate gates.
+
 ## Mechanic qualification and internal choices: source candidate
 
 The campaign still has no fully qualified deck lists. Five defining witnesses
