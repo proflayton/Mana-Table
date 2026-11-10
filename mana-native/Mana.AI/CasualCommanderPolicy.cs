@@ -53,7 +53,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         bool limited = false, waitingForDevelopment = false;
         foreach (var offer in offers.Where(offer => !offer.Semantics.ManaAbility && offer.Semantics.Affordability != ActionAffordability.Unavailable
                 && offer.Semantics.TargetsAvailable != false
-                && !request.History.HasAttemptedRoute(state.Turn, offer.Set.SourceCardId, offer.Semantics.StableId))
+                && !request.History.HasAttemptedRoute(state, offer.Set.SourceCardId, offer.Semantics))
             .OrderBy(offer => offer.Semantics.Effect == ActionEffectKind.Land || offer.Action.Kind == "play" ? 0 : 1)
             .ThenBy(offer => offer.Semantics.StableId, StringComparer.Ordinal).ThenBy(offer => offer.Source.VisualId, StringComparer.Ordinal)) {
             if (request.Work.Remaining <= 4) { limited = true; break; }
@@ -77,9 +77,9 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             string reason = AttemptReason(state.Turn, offer.Semantics.StableId.Length > 0 ? offer.Semantics.StableId
                 : offer.Source.VisualId + ":" + offer.Action.Kind + ":" + offer.Semantics.Effect);
             // A cast which reaches payment and is cancelled must not be tried
-            // forever. Activated routes receive the same conservative guard;
-            // repetitive combo planning needs an explicit bounded plan later.
-            if (request.History.HasAttemptedRoute(state.Turn, offer.Set.SourceCardId, offer.Semantics.StableId)) continue;
+            // forever. A supported repeatable activation needs its own actual
+            // resolved effect and renewed resource before reconsideration.
+            if (request.History.HasAttemptedRoute(state, offer.Set.SourceCardId, offer.Semantics)) continue;
             bool response = reservation != null && AiTurnPlanner.Matches(reservation, offer.Set.SourceCardId, offer.Semantics);
             var nextReservation = candidate.Preserve ? reservation : null;
             if (reservation == null && offer.Action.Kind == "cast") {

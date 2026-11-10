@@ -31,11 +31,17 @@ public class ExecutionDisclosureTest {
             var activity = new MatchActivity(observer.getView());
             var projection = new MatchExecutions(table.game.getExecutions(), observer.getView(), activity);
             table.game.subscribeToEvents(projection);
+            var own = new MatchExecutions(table.game.getExecutions(), owner.getView(), new MatchActivity(owner.getView()));
+            table.game.subscribeToEvents(own);
+            var history = new MatchHistory("route-history", owner.getView(), table.game, new MatchActivity(owner.getView()));
+            own.history(history::execution);
             var rules = table.game.getExecutions();
             rules.complete(null, RESOLVED);
             rules.recordOutcome(null, DECLINED);
             String hidden = rules.prepare(ability);
+            String hiddenRoute = (String) ActionSemantics.describeAbility(ability).get("stableId");
             rules.step(ability, CHOICE);
+            assertEquals(own.frame().occurrences().get(0).stableRouteId(), hiddenRoute);
             assertTrue(projection.frame().occurrences().isEmpty());
             assertTrue(projection.frame().transitions().isEmpty());
             assertEquals(projection.frame().lastSequence(), 2L, "A global cursor can contain audience-filtered holes");
@@ -54,9 +60,30 @@ public class ExecutionDisclosureTest {
             assertNull(visible.parentId());
             assertEquals(visible.budgetRootId(), child);
             assertEquals(visible.sourceName(), "Island");
+            assertEquals(visible.stableRouteId(), ActionSemantics.describeAbility(mana).get("stableId"));
             assertFalse(frame.toString().contains(hidden));
+            assertFalse(frame.toString().contains(hiddenRoute));
             assertFalse(frame.toString().contains("Loch Mare"));
             assertEquals(frame.transitions().get(0).sequence(), 3L);
+            assertTrue(island.turnFaceDown(true));
+            assertTrue(island.getView().isFaceDown());
+            var concealed = new SpellAbility.EmptySa(island, owner);
+            String concealedId = rules.prepare(concealed);
+            var concealedRow = projection.frame().occurrences().stream().filter(value -> value.id().equals(concealedId)).findFirst().orElseThrow();
+            assertNull(concealedRow.sourceCardId()); assertNull(concealedRow.stableRouteId(),
+                    "A public-zone or owned face-down occurrence cannot expose its hidden route fingerprint");
+            assertNull(own.frame().occurrences().stream().filter(value -> value.id().equals(concealedId)).findFirst().orElseThrow().stableRouteId());
+            var json = new com.google.gson.GsonBuilder().serializeNulls().create();
+            for (int schema : List.of(1, 2)) {
+                var query = new com.google.gson.JsonObject(); query.addProperty("gameId", "route-history");
+                query.addProperty("afterSequence", 0); query.addProperty("limit", 128); query.addProperty("historySchemaVersion", schema);
+                var wire = json.toJsonTree(history.read(query)).getAsJsonObject();
+                assertEquals(wire.get("schemaVersion").getAsInt(), schema);
+                assertTrue(wire.getAsJsonArray("records").asList().stream().map(value -> value.getAsJsonObject())
+                        .anyMatch(value -> value.has("execution") && !value.get("execution").isJsonNull()));
+                assertFalse(wire.toString().contains("stableRouteId"),
+                        "History schema" + schema + " omits the live-only property even with serializeNulls enabled");
+            }
         }
     }
 

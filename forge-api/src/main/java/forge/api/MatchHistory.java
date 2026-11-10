@@ -23,6 +23,11 @@ final class MatchHistory {
     private static final int MAXIMUM_CHUNK_BYTES = 512 * 1024;
     private static final Gson JSON = new GsonBuilder().serializeNulls().create();
     record Execution(MatchExecutions.Occurrence occurrence, MatchExecutions.Transition transition) { }
+    // Schemas1/2 predate live route correlation. A separate wire value omits
+    // that property even when the engine serializer includes null fields.
+    private record LegacyOccurrence(String id, String parentId, String budgetRootId, String kind, Integer actorPlayerId,
+                                    String sourceCardId, String sourceName, String step, String outcome, String ruleKind, String ruleResult) { }
+    private record LegacyExecution(LegacyOccurrence occurrence, MatchExecutions.Transition transition) { }
     record Payment(String kind, int payerId, String origin, String producerExecutionId, String producerMode,
                    List<ManaPaymentReceipt.BillPart> billBefore, List<ManaPaymentReceipt.BillPart> billAfter,
                    Map<String, Integer> produced, Map<String, Integer> spent, Map<String, Integer> poolAfter,
@@ -82,7 +87,7 @@ final class MatchHistory {
             safe = new MatchExecutions.Occurrence(occurrence.id(), publicReference(occurrence.parentId()),
                     publicExecutions.contains(occurrence.budgetRootId()) ? occurrence.budgetRootId() : occurrence.id(),
                     occurrence.kind(), occurrence.actorPlayerId(), occurrence.sourceCardId(), occurrence.sourceName(), occurrence.step(),
-                    occurrence.outcome(), occurrence.ruleKind(), occurrence.ruleResult());
+                    occurrence.outcome(), occurrence.ruleKind(), occurrence.ruleResult(), occurrence.stableRouteId());
         }
         append(new Record(++sequence, turn(), phase(), publicFact ? "public" : "seatPrivate", safe.id(), safe.parentId(),
                 safe.sourceCardId(), safe.sourceName(), null, new Execution(safe, transition), null));
@@ -160,7 +165,7 @@ final class MatchHistory {
         var chunk = new Chunk(schema, gameId, viewer.getId(), firstSequence(), sequence, next, next < sequence, List.copyOf(result));
         return Map.of("schemaVersion", chunk.schemaVersion(), "gameId", chunk.gameId(), "viewerId", chunk.viewerId(),
                 "firstSequence", chunk.firstSequence(), "lastSequence", chunk.lastSequence(), "nextSequence", chunk.nextSequence(),
-                "hasMore", chunk.hasMore(), "records", schema == 2 ? chunk.records() : chunk.records().stream().map(MatchHistory::legacyRecord).toList());
+                "hasMore", chunk.hasMore(), "records", chunk.records().stream().map(record -> wireRecord(record, schema)).toList());
     }
 
     static int requestedSchema(JsonObject request) {
@@ -169,9 +174,9 @@ final class MatchHistory {
         return (int) schema;
     }
 
-    private static Map<String, Object> legacyRecord(Record record) {
+    private static Map<String, Object> wireRecord(Record record, int schema) {
         var activity = record.activity();
-        if (record.announcement() != null) {
+        if (schema == 1 && record.announcement() != null) {
             var announced = record.announcement();
             // Compatibility facts use this ledger ordinal as their own event
             // identity. No unrelated live Activity entry is borrowed or edited.
@@ -184,8 +189,17 @@ final class MatchHistory {
         value.put("sequence", record.sequence()); value.put("turn", record.turn()); value.put("phaseKey", record.phaseKey());
         value.put("exposure", record.exposure()); value.put("executionId", record.executionId()); value.put("parentId", record.parentId());
         value.put("sourceCardId", record.sourceCardId()); value.put("sourceName", record.sourceName());
-        value.put("activity", activity); value.put("execution", record.execution()); value.put("payment", record.payment());
+        value.put("activity", activity); value.put("execution", legacyExecution(record.execution())); value.put("payment", record.payment());
+        if (schema == 2) value.put("announcement", record.announcement());
         return Collections.unmodifiableMap(value);
+    }
+
+    private static LegacyExecution legacyExecution(Execution execution) {
+        if (execution == null) return null;
+        var occurrence = execution.occurrence();
+        return new LegacyExecution(new LegacyOccurrence(occurrence.id(), occurrence.parentId(), occurrence.budgetRootId(),
+                occurrence.kind(), occurrence.actorPlayerId(), occurrence.sourceCardId(), occurrence.sourceName(), occurrence.step(),
+                occurrence.outcome(), occurrence.ruleKind(), occurrence.ruleResult()), execution.transition());
     }
 
     private static long number(JsonObject request, String key, long fallback) {
@@ -208,7 +222,7 @@ final class MatchHistory {
         return activity.historyPublic(card);
     }
     private void append(Record record) {
-        int size = JSON.toJson(record).getBytes(StandardCharsets.UTF_8).length;
+        int size = JSON.toJson(wireRecord(record, 2)).getBytes(StandardCharsets.UTF_8).length;
         if (size > MAXIMUM_RECORD_BYTES) { records.clear(); bytes = 0; return; }
         records.addLast(new Stored(record, size)); bytes += size;
         while (records.size() > MAXIMUM_RECORDS || bytes > MAXIMUM_BYTES) bytes -= records.removeFirst().bytes();

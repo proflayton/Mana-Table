@@ -1,17 +1,16 @@
 package forge.api;
 
 import forge.game.ability.ApiType;
-import forge.game.card.Card;
 import forge.game.card.CardView;
 import forge.game.player.Player;
 import forge.game.player.LibrarySearchOffer;
 import forge.game.cost.*;
 import forge.game.spellability.SpellAbility;
+import forge.game.spellability.SpellAbilityRouteIdentity;
 import forge.game.zone.ZoneType;
 import forge.gamemodes.match.input.Input;
 import forge.gamemodes.match.input.InputPayMana;
 
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.Function;
 
@@ -75,7 +74,7 @@ final class ActionSemantics {
         result.put("effects", List.copyOf(effects));
         result.put("costs", List.copyOf(costs));
         result.put("affordability", affordability);
-        result.put("stableId", stableId(ability));
+        result.put("stableId", SpellAbilityRouteIdentity.stableId(ability));
         result.put("manaAbility", ability.isManaAbility());
         result.put("manaValue", ability.getPayCosts() == null ? 0 : ability.getPayCosts().getTotalMana().getCMC());
         result.put("manaColors", List.copyOf(colors));
@@ -192,37 +191,7 @@ final class ActionSemantics {
     }
 
     static Map<String, Object> cost(CostPart part) {
-        var result = new LinkedHashMap<String, Object>();
-        String kind = part instanceof CostPartMana ? "Mana"
-                : part instanceof CostTap || part instanceof CostTapType ? "Tap"
-                : part instanceof CostUntap || part instanceof CostUntapType ? "Untap"
-                : part instanceof CostPayLife ? "Life"
-                : part instanceof CostSacrifice ? "Sacrifice"
-                : part instanceof CostDiscard ? "Discard"
-                : part instanceof CostExile || part instanceof CostExileFromStack ? "Exile"
-                : part instanceof CostRemoveCounter || part instanceof CostRemoveAnyCounter ? "RemoveCounters"
-                : part instanceof CostPutCounter || part instanceof CostPutCounterYou ? "AddCounters" : "Other";
-        result.put("kind", kind);
-        result.put("amount", part instanceof CostPartMana mana ? mana.getMana().getGenericCost() : integer(part.getAmount()));
-        result.put("fromSource", part instanceof CostTap || part instanceof CostUntap || part.payCostFromSource());
-        result.put("counterType", part instanceof CostRemoveCounter remove && remove.counter != null ? remove.counter.toString()
-                : part instanceof CostRemoveAnyCounter remove && remove.counter != null ? remove.counter.toString()
-                : part instanceof CostPutCounter put && put.getCounter() != null ? put.getCounter().toString() : "");
-        var symbols = new ArrayList<String>();
-        if (part instanceof CostPartMana mana) mana.getMana().forEach(shard -> symbols.add(shard.toString()));
-        result.put("manaSymbols", List.copyOf(symbols));
-        return result;
-    }
-
-    private static String stableId(SpellAbility ability) {
-        Card host = ability.getHostCard();
-        var params = new TreeMap<>(ability.getMapParams());
-        // Display strings do not define a strategic route. Identical routes may
-        // intentionally share a retry guard; opaque action IDs remain distinct.
-        params.keySet().removeIf(key -> key.contains("Desc") || key.equals("AILogic"));
-        String shape = host.getId() + ":" + host.getGameTimestamp() + ":" + ability.getClass().getName()
-                + ":" + params + ":" + (ability.getPayCosts() == null ? "" : ability.getPayCosts().getCostParts().stream().map(ActionSemantics::cost).toList());
-        return UUID.nameUUIDFromBytes(shape.getBytes(StandardCharsets.UTF_8)).toString();
+        return SpellAbilityRouteIdentity.cost(part);
     }
 
     private static Integer integer(String text) {

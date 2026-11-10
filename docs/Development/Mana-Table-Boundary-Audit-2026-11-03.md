@@ -222,3 +222,44 @@ reroll randomness, expand deadlines, or add broad scaffolding around the failure
 Use supported test/package entrypoints and the already reviewed orchestration;
 do not add a new proof wrapper for each result. Consolidating that tooling is a
 separate follow-up after this product boundary is stable.
+
+### Follow-up from the actual merged candidate
+
+PR #130 passed its own checks and merged, but the merged master's first natural
+campaign stopped one game at its unchanged 180-second limit. Three games ended
+naturally; the fourth was still progressing on turn 51. Its retained evidence
+reported no engine fault, bare-read supersession or expired command-authority
+wait. The release remained blocked. A passing PR does not qualify a later master
+run, and a completion cutoff alone does not identify slow strategy or an engine
+stall.
+
+The bounded follow-up addresses two independently demonstrated contracts:
+
+| Contract | Defect and required correction | Verification |
+| --- | --- | --- |
+| Independent observation work | A quiet acknowledgement can defer rich discovery while an ordinary poll is already due. Returning without servicing that poll leaves a zero owner-wait deadline and repeatedly runs the observation loop. Deferred discovery must still service eligible ordinary polling through its existing owner. | The new deterministic control fails the original driver at the due-poll assertion. The one-line correction passes all four new checks and the prior 71 owner-read checks, without sleeps or timer changes. |
+| Logical route versus execution | A turn-wide attempted-route guard also suppresses a previously successful tap ability after it untaps and becomes legal again. A submitted or accepted command is insufficient evidence to reopen it. The provider must explicitly correlate the offered stable route with its actual execution; the AI owns the bounded attempt lifecycle. | Require the exact accepted route's committed tap cost, resolved execution with a typed committed effect, subsequent source renewal and a current legal offer. Cancellation, unknown acknowledgement, missing correlation, restoration and incomplete evidence retain the guard. |
+
+The retained game supplies a concrete strategy witness: a legal, payable,
+untapped Thermo-Alchemist route was filtered as already attempted in that turn.
+Its earlier activation and later untap were present in actual rules history.
+That establishes a route-lifetime defect; it does not establish an unanswerable
+winning play or explain the entire campaign cutoff. Production behavior must
+use typed route/cost/execution facts rather than this card's name.
+
+Pod 2 owns provider correlation and its audience/compatibility checks. Pod 3 owns
+native AI history, submission and progress consumption, with regression coverage.
+Pod 1 independently reviews both contracts and their evidence. Root integrates
+the accepted scope and runs the combined checks before uploading a new candidate.
+The existing 4096 logical-route bound, command authority, unknown-execution
+recovery, natural-game limits and release gates remain intact.
+
+Route correlation is optional historical metadata, never a command handle.
+An older provider or replay without the new evidence preserves the conservative
+guard. The existing history schemas 1/2 omit the new live-only route field through
+an explicit wire projection; a null value would still break strict older readers.
+No matching-application-build policy can be assumed for multiplayer peers.
+The first renewal slice covers fully known, repeatable nonmana abilities
+whose sole cost is tapping their source. Other costs require their own explicit
+resource lifecycle before they can safely reuse this contract. Human multiplayer
+acceptance and the encounter milestones remain pending.

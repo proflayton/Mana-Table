@@ -47,6 +47,8 @@ public sealed record ExecutionOccurrence([property: JsonRequired] string Id, [pr
     public int? ActorPlayerId { get; init; }
     public string? SourceCardId { get; init; }
     public string? SourceName { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? StableRouteId { get; init; }
     public ExecutionOutcome? Outcome { get; init; }
     public ExecutionRuleKind? RuleKind { get; init; }
     public ExecutionRuleResult? RuleResult { get; init; }
@@ -93,7 +95,8 @@ public static class ExecutionFrames
                 || item.RuleKind is { } rule && (item.Kind != ExecutionKind.Rules || !Enum.IsDefined(rule))
                 || !RuleResult(item.RuleKind, item.Step, item.RuleResult)
                 || item.ActorPlayerId is { } actor && !state.Players.Any(player => player.Id == actor)
-                || item.SourceCardId != null && !Id(item.SourceCardId) || item.SourceName != null && string.IsNullOrWhiteSpace(item.SourceName))
+                || item.SourceCardId != null && !Id(item.SourceCardId) || item.SourceName != null && string.IsNullOrWhiteSpace(item.SourceName)
+                || item.StableRouteId != null && (!Id(item.StableRouteId) || item.SourceCardId == null))
             || frame.Occurrences.Select(item => item.Id).Distinct(StringComparer.Ordinal).Count() != frame.Occurrences.Length)
             throw Invalid();
         var occurrences = frame.Occurrences.ToDictionary(item => item.Id, StringComparer.Ordinal);

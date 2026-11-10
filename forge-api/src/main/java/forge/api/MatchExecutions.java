@@ -12,7 +12,13 @@ import java.util.*;
  * views and private execution identities never cross this boundary. */
 final class MatchExecutions {
     record Occurrence(String id, String parentId, String budgetRootId, String kind, Integer actorPlayerId,
-                      String sourceCardId, String sourceName, String step, String outcome, String ruleKind, String ruleResult) { }
+                      String sourceCardId, String sourceName, String step, String outcome, String ruleKind, String ruleResult,
+                      String stableRouteId) {
+        Occurrence(String id, String parentId, String budgetRootId, String kind, Integer actorPlayerId,
+                   String sourceCardId, String sourceName, String step, String outcome, String ruleKind, String ruleResult) {
+            this(id, parentId, budgetRootId, kind, actorPlayerId, sourceCardId, sourceName, step, outcome, ruleKind, ruleResult, null);
+        }
+    }
     record Transition(long sequence, String executionId, String step, String outcome, String ruleResult) { }
     record Frame(long firstSequence, long lastSequence, List<Occurrence> occurrences, List<Transition> transitions) { }
     private final ExecutionTracker rules;
@@ -61,7 +67,7 @@ final class MatchExecutions {
         String name = visible ? occurrence.sourceName() : null;
         admitted.put(occurrence.id(), new Occurrence(occurrence.id(), occurrence.parentId(), occurrence.budgetRootId(),
                 occurrence.kind(), occurrence.actorPlayerId(), cardId, name, occurrence.step(), occurrence.outcome(),
-                occurrence.ruleKind(), occurrence.ruleResult()));
+                occurrence.ruleKind(), occurrence.ruleResult(), visible ? occurrence.stableRouteId() : null));
         transitions.addLast(new Transition(transition.sequence(), occurrence.id(), occurrence.step(), occurrence.outcome(), occurrence.ruleResult()));
         retainDelivery(transitions.peekLast());
         recordHistory(admitted.get(occurrence.id()), transitions.peekLast(), publicZone && visible);
@@ -117,7 +123,7 @@ final class MatchExecutions {
             if (occurrence == null || !"rules".equals(occurrence.kind()) || !"stateBased".equals(occurrence.ruleKind())
                     || occurrence.source() != null || occurrence.actorPlayerId() != null || !activity.publicCommitted(event)) return null;
             admitted.put(occurrence.id(), new Occurrence(occurrence.id(), occurrence.parentId(), occurrence.budgetRootId(),
-                    occurrence.kind(), null, null, null, occurrence.step(), occurrence.outcome(), occurrence.ruleKind(), occurrence.ruleResult()));
+                    occurrence.kind(), null, null, null, occurrence.step(), occurrence.outcome(), occurrence.ruleKind(), occurrence.ruleResult(), null));
             recordHistory(admitted.get(occurrence.id()), null, true);
             retainFinite(occurrence.id());
             copyFrame();
@@ -134,7 +140,7 @@ final class MatchExecutions {
             if (occurrence == null || !"rules".equals(occurrence.kind()) || !"stateBased".equals(occurrence.ruleKind())
                     || occurrence.source() != null || occurrence.actorPlayerId() != null || occurrence.step().equals("complete")) return null;
             admitted.put(occurrence.id(), new Occurrence(occurrence.id(), occurrence.parentId(), occurrence.budgetRootId(),
-                    occurrence.kind(), null, null, null, occurrence.step(), occurrence.outcome(), occurrence.ruleKind(), occurrence.ruleResult()));
+                    occurrence.kind(), null, null, null, occurrence.step(), occurrence.outcome(), occurrence.ruleKind(), occurrence.ruleResult(), null));
             retainFinite(occurrence.id());
             copyFrame();
         }
@@ -211,7 +217,7 @@ final class MatchExecutions {
             String root = admitted.containsKey(occurrence.budgetRootId()) ? occurrence.budgetRootId() : occurrence.id();
             occurrences.add(new Occurrence(occurrence.id(), parent, root, occurrence.kind(), occurrence.actorPlayerId(),
                     occurrence.sourceCardId(), occurrence.sourceName(), occurrence.step(), occurrence.outcome(),
-                    occurrence.ruleKind(), occurrence.ruleResult()));
+                    occurrence.ruleKind(), occurrence.ruleResult(), occurrence.stableRouteId()));
         }
         var delivered = new TreeMap<Long, Transition>(deliveryTransitions);
         for (var transition : transitions) delivered.put(transition.sequence(), transition);
@@ -229,6 +235,6 @@ final class MatchExecutions {
         String root = admitted.containsKey(occurrence.budgetRootId()) ? occurrence.budgetRootId() : occurrence.id();
         history.accept(new Occurrence(occurrence.id(), parent, root, occurrence.kind(), occurrence.actorPlayerId(),
                 occurrence.sourceCardId(), occurrence.sourceName(), occurrence.step(), occurrence.outcome(),
-                occurrence.ruleKind(), occurrence.ruleResult()), transition, publicSource);
+                occurrence.ruleKind(), occurrence.ruleResult(), occurrence.stableRouteId()), transition, publicSource);
     }
 }

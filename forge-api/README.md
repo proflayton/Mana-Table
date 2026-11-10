@@ -1422,6 +1422,21 @@ projection of actual rules execution, separate from command/decision authority:
   authorized source anchors, current `step`, and a terminal `outcome` when known.
   A copied trigger or repeated activation has a distinct ID. Nested mana payment
   keeps the initiating action's budget root; a triggered action has its own root.
+- An occurrence may carry `stableRouteId`, captured at preparation using the
+  same rules-occurrence/equivalent-route identity as offered action semantics.
+  Repeated activations have different execution IDs but can share this route ID.
+  The field follows event-time source disclosure and is absent when that source
+  is not disclosed. It is historical correlation, never an `actionId`, selection
+  key or permission to replay a command. Absent/null values from older providers
+  remain unknown; clients must not reconstruct them from names or nearby events.
+  Present values must be nonblank, control-free strings of at most 256 characters
+  and include the occurrence's disclosed source anchor. This additive source
+  change requires rebuilt provider assemblies, with no persisted-data migration.
+  Existing history schemas 1/2 deliberately omit this property through an explicit
+  wire projection, including when serializers include nulls. Their strict older
+  readers cannot accept an unrequested field. Live snapshots and private AI
+  evidence retain the correlation; history enrichment needs a separately
+  negotiated format before it can expose the field.
 - `transitions` carry ordered `sequence`, `executionId`, `step` and optional
   terminal `outcome`. Steps are `preparation`, `choice`, `cost`, `stack`,
   `resolution`, `complete`; kinds are `spell`, `activation`, `trigger`, `mana`,

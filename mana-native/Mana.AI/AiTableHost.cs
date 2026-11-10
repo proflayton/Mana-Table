@@ -114,7 +114,9 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
                     backoffRequired = true;
                     continue;
                 }
-                if (!session.ObserveRestoration(state)) {
+                // Execution/resource facts matter even between owned inputs;
+                // their validation precedes observation-owner mutation.
+                if (!session.ObserveAutomaticProgress(state)) {
                     if (await CheckObservationProgress(key, token).ConfigureAwait(false)) backoffRequired = true;
                     continue;
                 }
@@ -128,7 +130,7 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
                 }
                 acceptedControl |= priorityWork == PriorityWork.Refreshed;
                 if (priorityWork != PriorityWork.Policy) {
-                    session.ObserveAutomaticProgress(state); session.Observe(null); continue;
+                    session.Observe(null); continue;
                 }
                 if (state.Status != "playing" || state.Decision == null || state.Viewer?.Eliminated != false) {
                     awaitingObservation.Remove(key);

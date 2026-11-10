@@ -7,6 +7,7 @@ internal static partial class PolledFullGameContractChecks
 {
     internal static async Task RunOwnerReadAdmissionControlsAsync(string profile, Action<bool, string> check)
     {
+        await DeferredReadServicesDueOrdinaryPoll(profile, check);
         var initial = Priority() with { PriorityContinuation = new(0, "", null, PriorityContinuationStatus.Idle, "", 0, []),
             PriorityObservation = new(1, 0, 0, 0, false, false), BoardRevision = 1 };
         using var run = new DriverCase(profile, "quiet-owner-read-admission", initial, initial,
@@ -43,6 +44,57 @@ internal static partial class PolledFullGameContractChecks
         await ManualReadBootstrap(profile, check);
         await RunOwnerReadLineageControlAsync(profile, check);
         await RunManualSourceLineageControlAsync(profile, check);
+    }
+
+    private static async Task DeferredReadServicesDueOrdinaryPoll(string profile, Action<bool, string> check)
+    {
+        var initial = Priority() with { PriorityContinuation = new(0, "", null, PriorityContinuationStatus.Idle, "", 0, []),
+            PriorityObservation = new(1, 0, 0, 0, false, false), BoardRevision = 1 };
+        using var run = new DriverCase(profile, "deferred-read-due-ordinary-poll", initial, initial,
+            passing: ConnectedPlayerPassingMode.FullControl);
+        var client = run.Driver.Client;
+        client.SetPriorityObservationReady(false); run.Port.PriorityContinuationAvailable = true;
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        run.Port.ExecuteGate = async _ => { entered.TrySetResult(); await release.Task; };
+        run.Port.AfterCommand = command => command is AcknowledgePriorityObservation ack
+            ? run.Port.RichState = run.Port.State with { PriorityObservation = new(ack.BoardRevision,
+                ack.PublicActivitySequence, ack.BoardRevision, ack.PublicActivitySequence, true, false) } : null;
+        try {
+            await run.Prime(); run.Ticks = 1000; run.Port.HoldNextRead = true;
+            client.SetPriorityObservationReady(true);
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            check(client.PriorityObservationInFlight && !client.Busy && !client.Polling
+                    && run.Driver.TimeUntilNextPoll == TimeSpan.Zero,
+                "The deferred-read control holds a quiet owner while an ordinary poll is already due");
+            bool complete = await run.Driver.ObserveAsync();
+            check(!complete && client.Polling && run.Driver.TimeUntilNextPoll == null
+                    && run.Port.OwnedReads == 0 && run.Policy.Evaluations == 0
+                    && run.Driver.ClientAdmissions == 0 && run.Driver.ProviderAcceptances == 0
+                    && run.Port.Commands is [AcknowledgePriorityObservation],
+                "A deferred rich discovery services a due ordinary poll before the owner can enter a passive wait");
+            await run.Port.NextReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            bool repeated = await run.Driver.ObserveAsync();
+            await run.Driver.StepAsync();
+            check(!repeated && client.Polling && run.Driver.TimeUntilNextPoll == null && run.Port.Reads == 2
+                    && run.Port.OwnedReads == 0 && run.Policy.Evaluations == 0
+                    && run.Port.Commands is [AcknowledgePriorityObservation],
+                "Repeated deferred observation retains one held ordinary poll without rich discovery, policy evaluation or gameplay dispatch");
+            run.Port.ReleaseNextRead.TrySetResult(initial);
+            await client.WaitForQueuedWorkAsync().WaitAsync(TimeSpan.FromSeconds(5)); await Drain(client);
+            release.TrySetResult();
+            await client.WaitForQueuedWorkAsync().WaitAsync(TimeSpan.FromSeconds(5)); client.Pump();
+            bool fresh = await run.Driver.ObserveAsync();
+            bool reused = await run.Driver.ObserveAsync();
+            check(fresh && reused && !client.Polling && !client.PriorityObservationInFlight
+                    && run.Port.Reads == 3 && run.Port.OwnedReads == 1 && run.Policy.Evaluations == 0
+                    && run.Driver.ClientAdmissions == 0 && run.Driver.ProviderAcceptances == 0
+                    && run.Port.Commands is [AcknowledgePriorityObservation],
+                "Settled quiet and ordinary owners admit one fresh enrichment without replaying metadata or a policy command");
+        } finally {
+            run.Port.ReleaseNextRead.TrySetResult(run.Port.State); release.TrySetResult();
+            client.SetPriorityObservationReady(false);
+        }
     }
 
     internal static async Task RunManualSourceLineageControlAsync(string profile, Action<bool, string> check)

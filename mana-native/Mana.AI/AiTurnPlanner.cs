@@ -100,7 +100,7 @@ internal static class AiTurnPlanner
                 if (request.Work.Remaining <= 12 || inspected++ >= 16) return null;
                 if (!metadata.TryGetValue(route.Id, out var action) || action.StableId.Length == 0
                     || action.ManaAbility || action.Affordability == ActionAffordability.Unavailable
-                    || request.History.HasAttemptedRoute(request.Frame.State.Turn, set.SourceCardId, action.StableId)
+                    || request.History.HasAttemptedRoute(request.Frame.State, set.SourceCardId, action)
                     || action.OperationGraph.Knowledge != SemanticKnowledge.Known
                     || !action.OperationGraph.Operations.Any(node => node.Effect is ActionEffectKind.CounterSpell
                         or ActionEffectKind.Destroy or ActionEffectKind.Exile or ActionEffectKind.Damage or ActionEffectKind.Bounce)

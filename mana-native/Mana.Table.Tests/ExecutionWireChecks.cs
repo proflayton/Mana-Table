@@ -30,6 +30,26 @@ internal static class ExecutionWireChecks
         GameSnapshot Decode(JsonNode node, bool spectator = false) => ForgeSnapshotDecoder.Decode(JsonSerializer.SerializeToElement(node), spectator)!;
         bool Reject(JsonNode node, bool spectator = false) { try { Decode(node, spectator); return false; } catch (IOException) { return true; } }
         var state = Decode(wire);
+        check(state.Executions!.Occurrences[0].StableRouteId == null,
+            "A legacy execution with no provider route identity remains unknown rather than being inferred from its source");
+        var routedWire = wire.DeepClone();
+        routedWire["executions"]!["occurrences"]![0]!["stableRouteId"] = "stable-route";
+        var routed = Decode(routedWire);
+        var nativeRoundtrip = JsonSerializer.Deserialize<GameSnapshot>(JsonSerializer.Serialize(routed))!;
+        check(routed.Executions!.Occurrences[0].StableRouteId == "stable-route"
+                && nativeRoundtrip.Executions!.Occurrences[0].StableRouteId == "stable-route"
+                && !GameCommandPermissions.Allows(routed, new UseOfferedAction(routed.Id, routed.Decision!.Id, "historical-source", "stable-route")),
+            "A disclosed historical route survives provider/native JSON without becoming an executable action handle");
+        var nullRoute = routedWire.DeepClone(); nullRoute["executions"]!["occurrences"]![0]!["stableRouteId"] = null;
+        check(Decode(nullRoute).Executions!.Occurrences[0].StableRouteId == null,
+            "An explicit null execution route retains the legacy unknown contract");
+        foreach (var invalid in new JsonNode?[] { JsonValue.Create(""), JsonValue.Create(" "), JsonValue.Create("bad\u0001route"),
+                JsonValue.Create(new string('r', 257)), JsonValue.Create(3), JsonValue.Create(true), new JsonArray(), new JsonObject() }) {
+            var malformed = routedWire.DeepClone(); malformed["executions"]!["occurrences"]![0]!["stableRouteId"] = invalid;
+            check(Reject(malformed), "Execution route identity rejects malformed or unbounded optional metadata");
+        }
+        var hiddenRoute = routedWire.DeepClone(); ((JsonObject)hiddenRoute["executions"]!["occurrences"]![0]!).Remove("sourceCardId");
+        check(Reject(hiddenRoute), "A route fingerprint cannot be disclosed without its historical source identity");
         check(state.Executions is { FirstSequence: 1, LastSequence: 9, Occurrences.Length: 2, Transitions.Length: 4 }
                 && state.Decision is { ExecutionId: "activation-1", ExecutionStep: ExecutionStep.Cost }
                 && state.Stack[0].ExecutionId == "activation-1" && state.Activity[0].ExecutionId == "activation-1"
