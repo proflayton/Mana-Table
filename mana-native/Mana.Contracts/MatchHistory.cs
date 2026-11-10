@@ -163,6 +163,7 @@ public static class HistoryFacts
             || occurrence.RuleKind is { } rule && (!Enum.IsDefined(rule) || occurrence.Kind != ExecutionKind.Rules)
             || occurrence.RuleResult is { } result && !Enum.IsDefined(result)
             || !OptionalKey(occurrence.SourceCardId) || occurrence.SourceName != null && !Text(occurrence.SourceName, 1024)
+            || occurrence.StableRouteId != null
             || record.ExecutionId != null && record.ExecutionId != occurrence.Id
             || record.ParentId != null && record.ParentId != occurrence.ParentId) throw Invalid();
         if (execution.Transition is { } transition && (transition.Sequence < 1 || transition.ExecutionId != occurrence.Id

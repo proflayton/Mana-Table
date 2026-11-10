@@ -23,6 +23,28 @@ internal static class HistoryWireChecks
                 "billAfter":[],"spent":{"U":3},"poolAfter":{"U":29}}}]}
             """)!;
         var decoded = ForgeHistoryDecoder.Decode(Element(wire));
+        check(decoded.Records[0].Execution!.Occurrence.StableRouteId == null,
+            "Legacy typed history retains absent route identity as unknown");
+        var routedWire = wire.DeepClone();
+        var routedOccurrence = routedWire["records"]![0]!["execution"]!["occurrence"]!;
+        routedOccurrence["sourceCardId"] = "historical-source"; routedOccurrence["stableRouteId"] = "stable-route";
+        check(Reject(routedWire), "History schema one cannot silently acquire live-only execution route metadata");
+        var routedSchemaTwo = routedWire.DeepClone(); routedSchemaTwo["schemaVersion"] = 2;
+        check(Reject(routedSchemaTwo), "History schema two preserves the same legacy occurrence contract without route metadata");
+        var nativeArchive = JsonSerializer.SerializeToElement(decoded);
+        check(!nativeArchive.GetProperty("Records")[0].GetProperty("Execution").GetProperty("Occurrence").TryGetProperty("StableRouteId", out _)
+                && ForgeHistoryDecoder.Decode(nativeArchive).Records[0].Execution!.Occurrence.StableRouteId == null,
+            "Serializing legacy native history omits the absent live-only route property for strict existing readers");
+        var nullRoute = routedWire.DeepClone(); nullRoute["records"]![0]!["execution"]!["occurrence"]!["stableRouteId"] = null;
+        check(ForgeHistoryDecoder.Decode(Element(nullRoute)).Records[0].Execution!.Occurrence.StableRouteId == null,
+            "Explicit null historical route identity remains an unknown legacy fact");
+        foreach (var invalid in new JsonNode?[] { JsonValue.Create(""), JsonValue.Create(" "), JsonValue.Create("bad\u0001route"),
+                JsonValue.Create(new string('r', 257)), JsonValue.Create(3), JsonValue.Create(true), new JsonArray(), new JsonObject() }) {
+            var malformed = routedWire.DeepClone(); malformed["records"]![0]!["execution"]!["occurrence"]!["stableRouteId"] = invalid;
+            check(Reject(malformed), "Typed history rejects malformed optional execution route metadata");
+        }
+        var hiddenRoute = routedWire.DeepClone(); ((JsonObject)hiddenRoute["records"]![0]!["execution"]!["occurrence"]!).Remove("sourceCardId");
+        check(Reject(hiddenRoute), "Typed history cannot smuggle a route fingerprint without its disclosed source");
         check(decoded.Records[1].Payment?.Produced?["U"] == 32 && decoded.Records[2].Payment?.PoolAfter?["U"] == 29
             && decoded.Records[2].Exposure == "seatPrivate" && decoded.Records[0].Execution?.Occurrence.Id == "paid",
             "The shipping history decoder preserves typed payment quantities, causal identities and exact disclosure without minting card authority");

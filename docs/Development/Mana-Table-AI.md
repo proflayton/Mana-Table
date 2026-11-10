@@ -270,6 +270,25 @@ original source identity remains in evidence and planning; missing stable route
 identity retains only the prior exact-source fallback. Evicting diagnostic
 records cannot reopen a guarded route.
 
+The source follow-up separates that failed-attempt guard from the lifecycle of
+a successful repeatable ability. The first slice covers nonmana abilities whose
+only known cost is one source tap, with a committed damage, draw or life-gain
+effect. It binds the submitted stable route to the provider's explicit execution
+route identity, rather than inferring an invocation from its source or polling
+time. Accepted submission, exact committed cost/effect facts, resolved completion,
+later untap and a currently payable offer are all required. Untap can arrive
+before the execution's terminal observation. Normal policy evaluation still
+decides whether using the refreshed route is worthwhile.
+
+Each complete lifecycle permits one new consideration and is consumed when the
+next command is taken. The same logical route occupies one bounded history entry
+through repeated cycles; diagnostic eviction cannot reset its guard. Other costs,
+missing/ambiguous correlation, cancelled or ineffective executions, unknown
+acknowledgement, incomplete retained evidence and restoration stay conservative.
+Format1 private decision replays can omit the optional witness and keep the old
+guard; historical evidence supplies no live action authority. These focused
+guarantees do not establish optimal combo planning or a full-game winning line.
+
 Optional staged damage additions require a complete nominal recipient estimate.
 Partial local damage and unknown/divided amounts can still compare an initial
 recipient, and required next recipients remain legal, but those estimates cannot

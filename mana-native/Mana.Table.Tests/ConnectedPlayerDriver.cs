@@ -263,7 +263,7 @@ internal sealed class ConnectedPlayerDriver : IDisposable
         proposal = null;
         var attempt = await client.ReadCurrentDecisionAsync(owned);
         evidence.DrainPending(); RequireHealthy();
-        if (attempt is ClientSession.CurrentReadResult.Deferred) return false;
+        if (attempt is ClientSession.CurrentReadResult.Deferred) { PollWhenDue(); return false; }
         if (attempt is ClientSession.CurrentReadResult.Retired { Superseded: { } error } superseded) {
             enrichmentRefresh = new(superseded.Read, null); PollWhenDue(); ExceptionDispatchInfo.Throw(error);
         }

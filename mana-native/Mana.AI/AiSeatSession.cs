@@ -89,12 +89,16 @@ public sealed class AiSeatSession : IDisposable
 
     // Continuation observations contribute actual filtered event memory without
     // fabricating policy episodes, commands or accepted-input records.
-    public void ObserveAutomaticProgress(GameSnapshot state)
+    public bool ObserveAutomaticProgress(GameSnapshot state)
     {
-        if (!ObserveRestoration(state)) return;
+        // Reject malformed facts before advancing any observation/restoration
+        // watermark, including when the seat has no current input.
+        ExecutionFrames.Validate(state); PublicActivityFacts.Validate(state);
+        if (!ObserveRestoration(state)) return false;
         lock (gate) {
-            if (closed) return;
-            history.ObserveTurn(state.Turn); history.Observe(state.Activity);
+            if (closed) return false;
+            history.ObserveTurn(state.Turn); history.Observe(state.Activity); history.ObserveProgress(state);
+            return true;
         }
     }
 
@@ -133,6 +137,7 @@ public sealed class AiSeatSession : IDisposable
                 watermark = next.Stamp;
                 history.ObserveTurn(next.State.Turn);
                 history.Observe(next.State.Activity);
+                history.ObserveProgress(next.State);
                 if (episode != next.EpisodeId) {
                     episode = next.EpisodeId;
                     if (preserveAllowance && allowance != null) {
@@ -289,7 +294,10 @@ public sealed class AiSeatSession : IDisposable
             if (ready.Command is UseOfferedAction offered) {
                 var source = frame.SourceActions.First(set => set.SourceCardKey == offered.Card);
                 var semantic = frame.Domain.Actions.FirstOrDefault(action => action.ActionId == offered.ActionId);
-                if (semantic is { StableId.Length: > 0 }) route = new(frame.State.Turn, source.SourceCardId, semantic.StableId);
+                if (semantic is { StableId.Length: > 0 }) {
+                    route = new(frame.State.Turn, source.SourceCardId, semantic.StableId);
+                    history.BeginRoute(route, frame, semantic);
+                }
             }
             submitted = new(frame.Stamp, frame.Task, ready.Command, ready.ReasonCode,
                 episodeSeed, work.Remaining, Elapsed, route, frame.EpisodeId, ready.PlanTransition); ready = null;
@@ -308,6 +316,7 @@ public sealed class AiSeatSession : IDisposable
             if (closed || !ReferenceEquals(submitted, submission)) return false;
             var outcome = receipt switch { AiExecutionReceipt.Accepted => AiDecisionOutcome.Accepted,
                 AiExecutionReceipt.Rejected => AiDecisionOutcome.Rejected, _ => AiDecisionOutcome.ExecutionUnknown };
+            history.Receipt(submission.Route, receipt);
             bool applied = false;
             if (receipt == AiExecutionReceipt.Accepted && !submittedPlanRevoked && frame != null
                 && planVersion < long.MaxValue && submission.PlanTransition is { } change && change.ExpectedVersion == planVersion
@@ -368,7 +377,8 @@ public sealed class AiSeatSession : IDisposable
             if (submitted is { } handoff)
                 history.Record(new(handoff.Stamp, handoff.Task, policyId, AiDecisionOutcome.ExecutionUnknown,
                     handoff.Command, handoff.ReasonCode, handoff.Seed, handoff.RemainingWork, handoff.Elapsed) {
-                        EpisodeId = handoff.EpisodeId, RetainedPlan = plan, PlanVersion = planVersion, ProposedPlanTransition = handoff.PlanTransition });
+                        Route = handoff.Route, EpisodeId = handoff.EpisodeId, RetainedPlan = plan, PlanVersion = planVersion, ProposedPlanTransition = handoff.PlanTransition });
+            if (submitted != null) history.Receipt(submitted.Route, AiExecutionReceipt.Unknown);
             ready = null; frame = null; submitted = null;
             plan = null;
             executionAllowances.Clear();

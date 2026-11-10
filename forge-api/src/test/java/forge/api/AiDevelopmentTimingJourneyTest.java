@@ -191,8 +191,9 @@ public class AiDevelopmentTimingJourneyTest {
             request.addProperty("gameId", game.table.id); request.addProperty("afterSequence", after); request.addProperty("limit", 128);
             request.addProperty("historySchemaVersion", 2);
             var chunk = game.session(0).history(request);
-            @SuppressWarnings("unchecked") var records = (List<MatchHistory.Record>) chunk.get("records");
-            result.addAll(records); after = ((Number) chunk.get("nextSequence")).longValue();
+            // Decode the wire projection instead of depending on in-process record objects.
+            var records = JSON.fromJson(JSON.toJson(chunk.get("records")), MatchHistory.Record[].class);
+            java.util.Collections.addAll(result, records); after = ((Number) chunk.get("nextSequence")).longValue();
             if (!Boolean.TRUE.equals(chunk.get("hasMore"))) return List.copyOf(result);
         }
         throw new AssertionError("The small timing experiment exceeded its bounded history read");

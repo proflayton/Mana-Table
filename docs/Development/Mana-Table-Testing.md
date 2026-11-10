@@ -1450,6 +1450,33 @@ eviction and absent stable identity. Both run in the same graphics-free suite.
 These guard the retained first integrated Fireball loop; they do not claim to
 price additional-target costs or replace the packaged whole-seat game gate.
 
+The repeated-activation follow-up extends those same checks through actual
+session submission and typed execution observations. A completed source-tap
+cycle must reopen its exact currently offered route once, while cancellation,
+other-route events, missing correlation, metadata changes and restoration must
+not. Controls cover observations before acknowledgement, untap before terminal
+completion, repeated full cycles and retention/diagnostic-eviction boundaries.
+The host control must observe progress that arrives between owned decisions.
+Format1 compatibility retains the conservative guard without a witness.
+
+Java's existing source-domain, execution-journey, disclosure and ancestry checks
+cover the shared stable identity calculation and its actual preparation-to-result
+projection. Native `ExecutionWireChecks` covers additive live metadata, older
+frames, disclosure constraints and malformed values. `HistoryWireChecks` and
+Java serialized-history controls preserve the existing schemas 1/2 without the
+new field, including under serializers that emit nulls. These tests
+run through their existing normal suites; source and execution identifiers never
+replace current command handles. Full natural games and human multiplayer
+review remain separate acceptance evidence.
+
+The source-admission regression also retires a previously admitted execution
+source while its face remains readable. The retained execution must redact its
+route with its source ID. Real-engine qualification covers resolution after a
+spell leaves the stack. Java history helpers decode the serialized schema2 wire
+records before inspecting them; an incidental runtime map/record representation
+is not the protocol contract. Privacy, cursor and behavioral assertions remain
+in place across that decoding boundary.
+
 `AiBlockRepairRegression` covers the retained packaged-game failure: an invalid
 singleton with no unassigned blockers. Twenty-six policy checks exercise fresh
 scopes, accepted versus rejected repair, episode boundaries, retained and foreign

@@ -53,9 +53,14 @@ public static class AiDecisionReplay
                 || entry.ProposedPlanTransition?.Next is { } proposed && (proposed.GameId != frame.State.Id || proposed.SeatId != frame.State.ViewerId))
             || history.Events.Any(entry => entry == null || entry.Turn > frame.State.Turn || entry.ExecutionId == null
                 || entry.ExecutionId.Length > 0 && !UndoFacts.Identifier(entry.ExecutionId))
-            || history.AttemptedRoutes.Any(route => route == null || route.Turn != frame.State.Turn))
+            || history.AttemptedRoutes.Any(route => route == null || route.Turn != frame.State.Turn
+                || !UndoFacts.Identifier(route.SourceCardId) || route.StableRouteId == null
+                || route.StableRouteId.Length > 0 && !UndoFacts.Identifier(route.StableRouteId)))
             throw new ArgumentException("A replay cannot mix another seat, future event or turn's private history.", nameof(recorded));
+        if (history.AttemptedRoutes.Select(AiRouteProgress.Key).Distinct(StringComparer.Ordinal).Count() != history.AttemptedRoutes.Count)
+            throw new ArgumentException("A retry guard retains one entry per logical route, independently of disclosure handles.", nameof(recorded));
         if (history.ImpactEvents is { } impacts) AiImpactHistory.ValidateRecorded(impacts, frame.State);
+        AiRouteProgress.ValidateRecorded(history.RouteProgress, history, frame.State);
         if (history.RouteLimitReached)
             return new(recorded.Id, policy.Descriptor.Id, AiSeatStatus.BudgetExceeded, null, null);
         // Reverse the documented first-episode derivation so the existing seat

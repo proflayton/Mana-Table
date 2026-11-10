@@ -1604,6 +1604,30 @@ application's result. This does not claim coverage of all indirect rules paths.
 Extend the common hooks with observed rules journeys,
 never joins based on names, prompt prose, nearby events or final totals.
 
+The source candidate adds optional `ExecutionOccurrence.StableRouteId` to link
+an actual execution to the equivalent route published in action semantics.
+`SpellAbilityRouteIdentity` owns the unchanged identity calculation in the rules
+module; action discovery and execution preparation share that calculation.
+Preparation captures it once, and audience projection applies the existing
+event-time source-disclosure rule. Historical correlation does not authorize a
+new input. Missing metadata remains unknown, including in older history frames.
+The current history schemas 1/2 keep their original wire shape: an explicit
+occurrence projection omits this new live-only field even when nulls are
+serialized. Same-protocol peers are not required to share an application build,
+so adding an optional property to their strict history reader is not compatible.
+Private AI evidence can retain it without widening the public history format.
+Route disclosure follows the actual admitted source identifier. A last-known
+face can remain readable after its old view loses identity admission; that does
+not justify retaining the route or resurrecting an obsolete source identifier.
+
+The AI's attempt history owns route retry safety, separately from its diagnostic
+ring and transport acknowledgement. A successful tap activation can become
+eligible for reconsideration only after the accepted route's exact execution
+commits its cost and effect, resolves, and its source subsequently untaps with a
+current legal offer. Cancellation, uncertain acknowledgement, restoration and
+incomplete evidence preserve the guard. A renewal is consumed at submission;
+it is not a standing permission or a cached action handle.
+
 Source-less state-based checks remain lazy. `MatchExecutions` admits an exact
 occurrence after an audience-visible committed mutation, or privately when that
 session publishes its validated owned required input. Empty/private-only checks

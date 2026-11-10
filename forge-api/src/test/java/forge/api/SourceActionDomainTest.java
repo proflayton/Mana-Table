@@ -12,6 +12,28 @@ import static org.testng.Assert.*;
 
 /** Complete timing domains and payment certainty are separate engine facts. */
 public class SourceActionDomainTest {
+    @Test public void stableRouteIdentityKeepsTheExistingCostShapeAndEquivalentRouteHash() {
+        var card = new forge.game.card.Card(42, null); card.setGameTimestamp(123);
+        var ability = new forge.game.spellability.SpellAbility.EmptySa(card, null);
+        ability.putParam("Mode", "Test"); ability.setPayCosts(new forge.game.cost.Cost("T", true));
+        String expected = "fdceb9ed-8a6a-3ab7-8581-000d5b80ce4e";
+        assertEquals(forge.game.spellability.SpellAbilityRouteIdentity.stableId(ability), expected,
+                "The pre-existing canonical route shape retains its exact name-based UUID");
+        var tap = ActionSemantics.cost(ability.getPayCosts().getCostParts().get(0));
+        assertEquals(new java.util.ArrayList<>(tap.keySet()), List.of("kind", "amount", "fromSource", "counterType", "manaSymbols"));
+        assertEquals(tap.toString(), "{kind=Tap, amount=1, fromSource=true, counterType=, manaSymbols=[]}");
+        ability.putParam("SpellDescription", "Different displayed words"); ability.putParam("AILogic", "DifferentPolicy");
+        ability.setPayCosts(ability.getPayCosts().copy());
+        assertEquals(forge.game.spellability.SpellAbilityRouteIdentity.stableId(ability), expected,
+                "Equivalent copied costs and excluded display/policy prose do not create a different route");
+        ability.setPayCosts(new forge.game.cost.Cost("Q", true));
+        assertNotEquals(forge.game.spellability.SpellAbilityRouteIdentity.stableId(ability), expected,
+                "A different actual payment shape remains a different route");
+        ability.setPayCosts(new forge.game.cost.Cost("T", true)); card.setGameTimestamp(124);
+        assertNotEquals(forge.game.spellability.SpellAbilityRouteIdentity.stableId(ability), expected,
+                "A new physical source occurrence cannot revive the previous route identity");
+    }
+
     @Test(groups = "canonical-interaction", timeOut = 90000)
     public void anOrdinaryManifestedCreatureCanBeReadQueriedAndActuallyTurnedFaceUpWithoutPublicDisclosure() throws Exception {
         try (var scenario = new RulesScenario("ordinary-manifested-creature", Map.of(0, List.of("Island", "Island", "Mogg Fanatic")), "Merfolk Looter", "Rhys the Redeemed")) {

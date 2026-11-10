@@ -31,11 +31,17 @@ public class ExecutionDisclosureTest {
             var activity = new MatchActivity(observer.getView());
             var projection = new MatchExecutions(table.game.getExecutions(), observer.getView(), activity);
             table.game.subscribeToEvents(projection);
+            var own = new MatchExecutions(table.game.getExecutions(), owner.getView(), new MatchActivity(owner.getView()));
+            table.game.subscribeToEvents(own);
+            var history = new MatchHistory("route-history", owner.getView(), table.game, new MatchActivity(owner.getView()));
+            own.history(history::execution);
             var rules = table.game.getExecutions();
             rules.complete(null, RESOLVED);
             rules.recordOutcome(null, DECLINED);
             String hidden = rules.prepare(ability);
+            String hiddenRoute = (String) ActionSemantics.describeAbility(ability).get("stableId");
             rules.step(ability, CHOICE);
+            assertEquals(own.frame().occurrences().get(0).stableRouteId(), hiddenRoute);
             assertTrue(projection.frame().occurrences().isEmpty());
             assertTrue(projection.frame().transitions().isEmpty());
             assertEquals(projection.frame().lastSequence(), 2L, "A global cursor can contain audience-filtered holes");
@@ -54,9 +60,75 @@ public class ExecutionDisclosureTest {
             assertNull(visible.parentId());
             assertEquals(visible.budgetRootId(), child);
             assertEquals(visible.sourceName(), "Island");
+            assertEquals(visible.stableRouteId(), ActionSemantics.describeAbility(mana).get("stableId"));
             assertFalse(frame.toString().contains(hidden));
+            assertFalse(frame.toString().contains(hiddenRoute));
             assertFalse(frame.toString().contains("Loch Mare"));
             assertEquals(frame.transitions().get(0).sequence(), 3L);
+            assertTrue(island.turnFaceDown(true));
+            assertTrue(island.getView().isFaceDown());
+            var concealed = new SpellAbility.EmptySa(island, owner);
+            String concealedId = rules.prepare(concealed);
+            var concealedRow = projection.frame().occurrences().stream().filter(value -> value.id().equals(concealedId)).findFirst().orElseThrow();
+            assertNull(concealedRow.sourceCardId()); assertNull(concealedRow.stableRouteId(),
+                    "A public-zone or owned face-down occurrence cannot expose its hidden route fingerprint");
+            assertNull(own.frame().occurrences().stream().filter(value -> value.id().equals(concealedId)).findFirst().orElseThrow().stableRouteId());
+            var json = new com.google.gson.GsonBuilder().serializeNulls().create();
+            for (int schema : List.of(1, 2)) {
+                var query = new com.google.gson.JsonObject(); query.addProperty("gameId", "route-history");
+                query.addProperty("afterSequence", 0); query.addProperty("limit", 128); query.addProperty("historySchemaVersion", schema);
+                var wire = json.toJsonTree(history.read(query)).getAsJsonObject();
+                assertEquals(wire.get("schemaVersion").getAsInt(), schema);
+                assertTrue(wire.getAsJsonArray("records").asList().stream().map(value -> value.getAsJsonObject())
+                        .anyMatch(value -> value.has("execution") && !value.get("execution").isJsonNull()));
+                assertFalse(wire.toString().contains("stableRouteId"),
+                        "History schema" + schema + " omits the live-only property even with serializeNulls enabled");
+            }
+        }
+    }
+
+    @Test public void aVisibleExecutionLosesItsRouteWhenCurrentSourceIdentityAdmissionEnds() throws Exception {
+        try (var table = table()) {
+            var owner = table.game.getPlayers().get(0); var observer = table.game.getPlayers().get(1);
+            var source = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Opt"), owner);
+            table.game.getStackZone().add(source, null, null);
+            var sourceView = source.getView();
+            var current = new java.util.concurrent.atomic.AtomicReference<>(sourceView);
+            var rules = table.game.getExecutions();
+            var viewers = List.of(owner.getView(), observer.getView());
+            var activities = viewers.stream().map(viewer -> new MatchActivity(viewer, new MatchIdentities(),
+                    view -> view == current.get())).toList();
+            var projections = java.util.stream.IntStream.range(0, viewers.size())
+                    .mapToObj(index -> new MatchExecutions(rules, viewers.get(index), activities.get(index))).toList();
+            projections.forEach(table.game::subscribeToEvents);
+            var ability = source.getFirstSpellAbility(); ability.setActivatingPlayer(owner);
+            String id = rules.prepare(ability); rules.step(ability, STACK);
+            String route = (String) ActionSemantics.describeAbility(ability).get("stableId");
+            var before = projections.stream().map(MatchExecutions::frame).toList();
+            for (var frame : before) {
+                var admitted = frame.occurrences().stream().filter(row -> row.id().equals(id)).findFirst().orElseThrow();
+                assertNotNull(admitted.sourceCardId()); assertEquals(admitted.stableRouteId(), route);
+                assertEquals(admitted.step(), "stack");
+            }
+            // Control the same current-view admission boundary used for departing/LKI
+            // views. Their face can remain public after their live identity is gone.
+            current.set(null);
+            assertFalse(sourceView.isFaceDown());
+            for (int index = 0; index < viewers.size(); index++) {
+                assertTrue(sourceView.canBeShownTo(viewers.get(index)));
+                assertNull(activities.get(index).visualId(sourceView), "A readable historical face has no current occurrence identity");
+            }
+            rules.step(ability, RESOLUTION); rules.complete(ability, RESOLVED);
+            for (int index = 0; index < projections.size(); index++) {
+                var retained = projections.get(index).frame().occurrences().stream()
+                        .filter(row -> row.id().equals(id)).findFirst().orElseThrow();
+                assertEquals(retained.sourceName(), "Opt"); assertEquals(retained.step(), "complete");
+                assertEquals(retained.outcome(), "resolved"); assertNull(retained.sourceCardId());
+                assertNull(retained.stableRouteId(),
+                        "A visible execution without an admitted current source identity must redact its route for owner and observer");
+                assertEquals(before.get(index).occurrences().get(0).stableRouteId(), route,
+                        "The already-published stack frame remains an immutable event-time disclosure");
+            }
         }
     }
 

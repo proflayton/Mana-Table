@@ -7,6 +7,7 @@ import forge.game.event.GameEvent;
 import forge.game.mana.Mana;
 import forge.game.mana.ManaPool;
 import forge.game.spellability.SpellAbility;
+import forge.game.spellability.SpellAbilityRouteIdentity;
 import forge.game.trigger.WrappedAbility;
 
 import java.util.*;
@@ -38,7 +39,12 @@ public final class ExecutionTracker {
     public record Reference(String id, String step) { }
     public record Occurrence(String id, String parentId, String budgetRootId, String kind,
                              Integer actorPlayerId, CardView source, String sourceName,
-                             String step, String outcome, String ruleKind, String ruleResult) {
+                             String step, String outcome, String ruleKind, String ruleResult, String stableRouteId) {
+        public Occurrence(String id, String parentId, String budgetRootId, String kind,
+                          Integer actorPlayerId, CardView source, String sourceName, String step, String outcome,
+                          String ruleKind, String ruleResult) {
+            this(id, parentId, budgetRootId, kind, actorPlayerId, source, sourceName, step, outcome, ruleKind, ruleResult, null);
+        }
         public Occurrence(String id, String parentId, String budgetRootId, String kind,
                           Integer actorPlayerId, CardView source, String sourceName, String step, String outcome) {
             this(id, parentId, budgetRootId, kind, actorPlayerId, source, sourceName, step, outcome, null, null);
@@ -126,7 +132,8 @@ public final class ExecutionTracker {
         var source = ability.getHostCard();
         Occurrence occurrence = new Occurrence(id, parent == null ? null : parent.id(),
                 parent == null || kind.equals("trigger") ? id : parent.budgetRootId(), kind, actor == null ? null : actor.getId(),
-                CardView.get(source), source == null ? null : source.getName(), "preparation", null);
+                CardView.get(source), source == null ? null : source.getName(), "preparation", null, null, null,
+                source == null ? null : SpellAbilityRouteIdentity.stableId(ability));
         bind(ability, id);
         publish(occurrence);
         return id;
@@ -233,7 +240,7 @@ public final class ExecutionTracker {
             if (prior == null || completed) return;
             if (prior.step().equals(step.wire)) return;
             var next = new Occurrence(prior.id(), prior.parentId(), prior.budgetRootId(), prior.kind(),
-                    prior.actorPlayerId(), prior.source(), prior.sourceName(), step.wire, null, prior.ruleKind(), null);
+                    prior.actorPlayerId(), prior.source(), prior.sourceName(), step.wire, null, prior.ruleKind(), null, prior.stableRouteId());
             if (pendingRules.containsKey(id)) pendingRules.put(id, next); else publish(next);
         }
         public void complete(Outcome outcome, RuleResult result) {
@@ -247,7 +254,7 @@ public final class ExecutionTracker {
             if (prior == null || prior.step().equals("complete")) return;
             publish(new Occurrence(prior.id(), prior.parentId(), prior.budgetRootId(), prior.kind(),
                     prior.actorPlayerId(), prior.source(), prior.sourceName(), "complete", outcome.wire,
-                    prior.ruleKind(), result == null ? null : result.wire));
+                    prior.ruleKind(), result == null ? null : result.wire, prior.stableRouteId()));
         }
         @Override public void close() {
             if (closed) return;
@@ -276,7 +283,7 @@ public final class ExecutionTracker {
         var source = ability.getHostCard();
         publish(new Occurrence(prior.id(), prior.parentId(), prior.budgetRootId(), prior.kind(),
                 prior.actorPlayerId(), CardView.get(source), source == null ? prior.sourceName() : source.getName(), step, outcome,
-                prior.ruleKind(), prior.ruleResult()));
+                prior.ruleKind(), prior.ruleResult(), prior.stableRouteId()));
     }
 
     private void publish(Occurrence occurrence) {

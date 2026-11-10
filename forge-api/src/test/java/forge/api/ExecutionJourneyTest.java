@@ -240,6 +240,16 @@ public class ExecutionJourneyTest {
                 "Island", "Rhys the Redeemed", true)) {
             var main = main(game);
             int hand = count(viewer(main.state()), "Hand");
+            var offered = JSON.toJsonTree(game.table.seat(0).decisionObservation()).getAsJsonObject();
+            var mareSource = offered.getAsJsonObject("domain").getAsJsonArray("sources").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(value -> text(value, "sourceCardId")
+                            .equals(text(permanent(main.state(), MARE), "visualId"))).findFirst().orElseThrow();
+            var drawAction = mareSource.getAsJsonArray("actions").asList().stream().map(value -> value.getAsJsonObject())
+                    .filter(value -> text(value, "text").contains("Draw a card")).findFirst().orElseThrow();
+            String route = offered.getAsJsonObject("domain").getAsJsonArray("actions").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(value -> text(value, "actionId").equals(text(drawAction, "id")))
+                    .map(value -> text(value, "stableId")).findFirst().orElseThrow();
+            assertFalse(route.isBlank());
             start(game, main, permanent(main.state(), MARE), "Draw a card");
             var payment = payment(game);
             String original = execution(payment);
@@ -250,6 +260,8 @@ public class ExecutionJourneyTest {
             assertEquals(text(parent, "sourceName"), MARE);
             assertEquals(text(parent, "sourceCardId"), text(permanent(payment.state(), MARE), "visualId"));
             assertEquals(parent.get("actorPlayerId"), payment.state().get("viewerId"));
+            assertEquals(text(parent, "stableRouteId"), route,
+                    "The actual current offered route is captured when its independent rules occurrence prepares");
             assertNotEquals(original, text(payment.prompt(), "id"));
             start(game, payment, untappedIsland(payment.state()), "Add {U}");
             payment = game.until(i -> i.seat() == 0 && mana(i) && i.prompt().get("okEnabled").getAsBoolean()
@@ -260,6 +272,7 @@ public class ExecutionJourneyTest {
             // there is no fabricated extra confirmation after payment.
             var stacked = game.until(i -> i.seat() == 0 && priority(i) && i.state().getAsJsonArray("stack").size() == 1);
             assertEquals(text(stacked.state().getAsJsonArray("stack").get(0).getAsJsonObject(), "executionId"), original);
+            assertEquals(text(occurrence(stacked.state(), original), "stableRouteId"), route);
             assertEquals(counter(stacked.state(), MARE, "-1/-1"), 2);
             var manaChildren = occurrences(stacked.state()).stream().filter(value -> text(value, "parentId").equals(original)).toList();
             assertEquals(manaChildren.size(), 2);
@@ -281,6 +294,8 @@ public class ExecutionJourneyTest {
             payment = payment(game);
             String response = execution(payment);
             assertNotEquals(response, original);
+            assertEquals(text(occurrence(payment.state(), response), "stableRouteId"), route,
+                    "Repeated activations have distinct occurrences while retaining the same provider-owned route");
             assertEquals(text(occurrence(payment.state(), response), "parentId"), "");
             assertTrue(game.answer(payment, Map.of("action", "ok")));
             var two = game.until(i -> i.seat() == 0 && priority(i) && i.state().getAsJsonArray("stack").size() == 2);
@@ -291,6 +306,7 @@ public class ExecutionJourneyTest {
             assertEquals(counter(resolved.state(), MARE, "-1/-1"), 1);
             for (String id : List.of(original, response)) {
                 assertEquals(text(occurrence(resolved.state(), id), "outcome"), "resolved");
+                assertEquals(text(occurrence(resolved.state(), id), "stableRouteId"), route);
                 assertTrue(activities(resolved.state(), id).stream().anyMatch(value -> text(value, "kind").equals("draw")
                         && text(value, "executionStep").equals("resolution")));
                 assertOrdered(resolved.state(), id, List.of("preparation", "choice", "cost", "stack", "resolution", "complete"));
@@ -307,6 +323,7 @@ public class ExecutionJourneyTest {
             assertTrue(game.answer(payment, Map.of("action", "cancel")));
             var afterCancel = game.until(i -> i.seat() == 0 && priority(i));
             assertEquals(text(occurrence(afterCancel.state(), cancelled), "outcome"), "cancelled");
+            assertEquals(text(occurrence(afterCancel.state(), cancelled), "stableRouteId"), route);
             assertEquals(counter(afterCancel.state(), MARE, "-1/-1"), 1);
             assertEquals(count(viewer(afterCancel.state()), "Hand"), hand + 2);
             assertTrue(afterCancel.state().getAsJsonArray("stack").isEmpty());

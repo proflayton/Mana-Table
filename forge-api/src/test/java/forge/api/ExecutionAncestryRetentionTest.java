@@ -32,6 +32,8 @@ public class ExecutionAncestryRetentionTest {
             var projections = List.of(projection(table, owner.getView()), projection(table, other.getView()), projection(table, new PlayerView(-1, null)));
             var parent = spell.getFirstSpellAbility(); parent.setActivatingPlayer(owner);
             String parentId = rules.prepare(parent); rules.step(parent, STACK);
+            String route = (String) ActionSemantics.describeAbility(parent).get("stableId");
+            assertEquals(rules.occurrence(parent).stableRouteId(), route);
             var children = new ArrayList<SpellAbility>();
             for (int count = 0; count < 110; count++) {
                 var child = trigger(count % 2 == 0 ? toothy : eye, count % 2 == 0 ? owner : other);
@@ -53,6 +55,8 @@ public class ExecutionAncestryRetentionTest {
                     assertEquals(occurrence(frame, childId).budgetRootId(), childId);
                 }
                 assertEquals(occurrence(frame, parentId), occurrence(before.get(audience), parentId));
+                assertEquals(occurrence(frame, parentId).stableRouteId(), route,
+                        "Audience-retained ancestry keeps the original disclosed route after core history eviction");
                 assertFalse(projections.get(audience).finiteOverflow());
             }
             children.forEach(child -> rules.complete(child, RESOLVED)); prune(rules, toothy, owner);
