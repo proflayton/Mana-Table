@@ -128,6 +128,12 @@ public class GameRules {
                 || appliedVariants.contains(GameType.Brawl);
     }
 
+    /** The existing commander-combat state-based loss rule, not commander presence.
+     * Other commander formats may designate leaders without this loss condition. */
+    public Integer getCommanderCombatDamageLimit() {
+        return hasAppliedVariant(GameType.Commander) ? 21 : null;
+    }
+
     public boolean useGrayText() {
         return useGrayText;
     }

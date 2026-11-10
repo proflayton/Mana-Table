@@ -28,6 +28,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     final Game game;
     final String format;
     final MatchIdentities identities = new MatchIdentities();
+    final CommanderCombatProjection commanderCombat;
     final MatchPresence presence;
     final StackInterruption stackInterruption = new StackInterruption();
     private final Match match;
@@ -112,6 +113,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         rules.setWarnAboutAICards(false);
         match = new Match(rules, players, "Mana Table");
         game = match.createGame();
+        commanderCombat = new CommanderCombatProjection(game);
         if (encounter != null) for (var participant : encounter.participants()) {
             var registered = players.get(participant.index());
             var actual = game.getRegisteredPlayers().stream().filter(player -> player.getRegisteredPlayer() == registered).findFirst().orElseThrow();

@@ -2621,12 +2621,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 zones.add(zoneState);
             }
             var mana = publicMana(player);
-            var commanderDamage = new ArrayList<Object>();
-            if (format.equals("Commander")) for (PlayerView owner : allPlayers) {
-                if (owner.getCommanders() == null) continue;
-                for (CardView commander : owner.getCommanders()) commanderDamage.add(map("name", commander.isFaceDown() ? "Face-down commander" : commander.getCurrentState().getName(),
-                        "ownerId", owner.getId(), "owner", owner.getName(), "damage", player.getCommanderDamage(commander)));
-            }
+            var actual = registeredPlayers.stream().filter(registered -> registered.getId() == player.getId()).findFirst().orElseThrow();
+            var commanderDamage = table.commanderCombat.damage(actual);
             players.add(map("id", player.getId(), "name", player.equals(viewer) ? "You" : player.getName(), "human", player.equals(viewer),
                     "participantId", table.participantId(player.getId()),
                     "seat", allPlayers.indexOf(player) + 1, "teamId", teamsByPlayer.get(player.getId()), "eliminated", player.getHasLost(),
@@ -2711,6 +2707,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         refreshFiniteStackYield(projectedPrompt);
         var snapshot = map("id", id, "revision", publicationRevision, "boardRevision", boardRevision, "format", format, "status", error != null ? "error" : game.isGameOver() ? "finished" : "playing",
+                "commanderCombat", table.commanderCombat.rules(),
                 "partyId", table.partyId(), "encounterId", table.encounterId(),
                 "stackInterruptionVersion", table.stackInterruption.version(),
                 "stackActionVersion", table.stackInterruption.actionVersion(), "resolutionChoiceVersion", resolutionChoiceVersion,
@@ -3034,6 +3031,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (prompt != null) handles.cards.put(key, card);
         boolean publicFace = !hidden || card.getZone() == ZoneType.Battlefield;
         var result = new LinkedHashMap<>(PublicCardCharacteristics.capture(card, viewer, game.getView().getCombat(), hidden, publicFace));
+        table.commanderCombat.bindPublicCard(result, card);
         result.put("key", key); result.put("visualId", Objects.toString(activity.visualId(card), ""));
         result.put("combatId", Objects.toString(combatIds.id(card), ""));
         result.put("selectable", selectable.contains(card) || actionable.contains(card) || linkedSourceActionable(card, prompt)

@@ -43,13 +43,7 @@ final class SpectatorObservation {
             var counters = new LinkedHashMap<String, Integer>();
             if (publicPlayer.getCounters() != null)
                 for (var count : publicPlayer.getCounters().entrySet()) counters.put(count.getElement().getName(), count.getCount());
-            var commanderDamage = new ArrayList<Object>();
-            if (table.format.equals("Commander")) for (Player owner : game.getRegisteredPlayers()) {
-                var commanders = owner.getView().getCommanders();
-                if (commanders == null) continue;
-                for (CardView commander : commanders) commanderDamage.add(map("name", commander.isFaceDown() ? "Face-down commander" : commander.getCurrentState().getName(),
-                        "ownerId", owner.getId(), "owner", owner.getName(), "damage", publicPlayer.getCommanderDamage(commander)));
-            }
+            var commanderDamage = table.commanderCombat.damage(player);
             players.add(map("id", player.getId(), "name", player.getName(), "human", false, "seat", players.size() + 1,
                     "participantId", table.participantId(player.getId()),
                     "teamId", player.getTeam(), "eliminated", publicPlayer.getHasLost(), "life", publicPlayer.getLife(), "priority", publicPlayer.getHasPriority(),
@@ -83,6 +77,7 @@ final class SpectatorObservation {
         var outcome = MatchOutcomeProjection.of(table, error);
         String result = MatchOutcomeProjection.forSpectator(outcome, table);
         return Collections.unmodifiableMap(map("id", table.id, "revision", revision, "boardRevision", revision,
+                "commanderCombat", table.commanderCombat.rules(),
                 "partyId", table.partyId(), "encounterId", table.encounterId(),
                 "stackInterruptionVersion", table.stackInterruption.version(),
                 "format", table.format, "status", error != null ? "error" : revision == 0 ? "starting" : game.isGameOver() ? "finished" : "playing",
@@ -110,6 +105,7 @@ final class SpectatorObservation {
         boolean hidden = card.isFaceDown();
         boolean publicStats = !hidden || card.getZone() == ZoneType.Battlefield;
         var result = new LinkedHashMap<>(PublicCardCharacteristics.capture(card, AUDIENCE, table.game.getView().getCombat(), hidden, publicStats));
+        table.commanderCombat.bindPublicCard(result, card);
         result.put("key", ""); result.put("visualId", id(table, card)); result.put("combatId", id(table, card));
         result.put("selectable", false); result.put("highlighted", false);
         result.put("attachedTo", attachment(table, card.getAttachedTo()));

@@ -101,6 +101,20 @@ for game references, confidentiality limits and pending human review.
 
 ## Shared public inspection
 
+`CommanderCombatWireChecks` exercises the actual Forge snapshot decoder and
+command owner. Missing/null commander-combat rules are legacy unknown; a present
+`damageLimit: null` explicitly disables that loss rule, while a rules object
+missing its required limit is malformed. Public lineage IDs preserve separate
+partners and defender totals through name/control changes. Partial old rows stay
+unknown rather than becoming inferred zero damage. Tests reject malformed or
+unbounded IDs/rows, contradictory owners, private/noncurrent bindings and source
+portraits without the exact current public zoned visual. Same-named copies and
+commander tax cannot establish lineage. Existing selection/action handles remain
+the only command authority, and malformed observations revoke previous grants.
+The checks run in the full headless suite and the focused `commander-combat`
+group. They verify wire and authority boundaries; Java rules journeys and AI
+combat-policy regressions establish their separate behavior guarantees.
+
 The source candidate's `TablePresenceRegression` runs in the ordinary
 graphics-free client executable. It holds an actual provider task through
 pointer churn, checks the four-per-second dispatch ceiling and latest-only

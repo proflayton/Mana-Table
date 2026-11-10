@@ -36,6 +36,7 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "capture-png") CapturePngChecks.Run(Check);
                 else if (group == "mana-pool") CheckManaPoolPaymentClarity(profile, Check, trace, performance);
                 else if (group == "keyword-help") CheckKeywordHelp(profile, Check, trace, performance);
+                else if (group == "commander-combat") CommanderCombatWireChecks.Run(Check);
                 else if (group == "target-restrictions") {
                     TargetRestrictionWireChecks.Run(Check);
                     TargetRestrictionPresentationChecks.Run(profile, Check);
@@ -123,6 +124,7 @@ internal static partial class HeadlessPresentationSmoke
             AutomatedPriorityProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             CostOrderingWireChecks.Run(Check);
             ExecutionWireChecks.Run(Check);
+            CommanderCombatWireChecks.Run(Check);
             TargetRestrictionWireChecks.Run(Check);
             MatchOutcomeWireChecks.Run(Check);
             MatchSetupWireChecks.Run(Check);

@@ -1055,8 +1055,31 @@ one of several opponents does not waive self-preservation; winning against the
 last opponent can. Estimates are cached per attacker, bounded independently of
 required declarations, and incomplete comparisons do not manufacture lethal
 certainty. Engine-required assignments and repair witnesses remain authoritative.
-Hidden pumps, future removal, multi-block optimization, commander damage and
-political promises are outside this estimate.
+Ordinary blocking and retaining a possible defender share a bounded nominal
+survival assessment. It preserves each attacking source instead of collapsing
+all incoming damage into life loss. The rules provider supplies the applicable
+commander-damage limit and an opaque registered-commander lineage shared by
+the visible card and cumulative damage rows. Previous damage is joined only by
+that lineage: partners stay separate, control/name changes preserve the actual
+commander, and a same-name copy gains no commander status. Missing legacy rules
+or cumulative rows remain unknown; commander tax and printed names are never
+substitutes. A provider-declared absent limit means the rule does not apply.
+
+Reducing known nominal defeat ranks before material value. A necessary offered
+chump block cannot lose to an arbitrarily valuable body merely because the old
+finite survival bonus was smaller. A block that clears the currently known
+nominal defeat ranks ahead of one that only reduces a still-lethal modeled
+exposure; neither rank certifies actual survival. Single-block
+trample and strike timing reuse the existing exchange estimate; current staged
+blocks are included before the next assignment is valued.
+
+This is not complete combat simulation or proof of actual survival. Unknown
+prevention/replacements and poison channels remain explicitly unknown. Infect
+is not treated as ordinary life loss, but a separately known commander threat
+can still justify a block. Unsupported multi-block trample, hidden pumps, future
+removal, multi-block optimization and political promises remain outside the
+estimate. Current engine offers, joint repair witnesses and work reserves keep
+their existing authority.
 Plain menace requires two available blockers; a mixed menace/trample forecast
 stays incomplete instead of pretending a single-block exchange applies.
 Final duels also have a bounded group forecast. It uses currently offered

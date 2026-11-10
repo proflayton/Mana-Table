@@ -37,6 +37,17 @@ preserving every enclosing freeze. Incidental refreshes retain the previous
 coherent cohort while frozen. Speculative queries cannot request that cut, and
 historical portraits never acquire new current occurrence identities.
 
+Public rules lineage has a different lifetime again. The source candidate's
+`CommanderCombat` fact carries the rules engine's applicable loss threshold;
+`Card.CommanderId` joins a current public commander to each recipient's separate
+damage record. The table owns that lineage across zone and control changes,
+while current visual IDs and input handles retain their existing revocation.
+Names, controller IDs and commander tax cannot substitute for the lineage.
+Private or concealed faces receive no binding. Missing legacy rules or damage
+bindings remain unknown. The AI shares one bounded nominal combat assessment
+between blocking and reserving defenders; it does not turn this forecast into
+rules authority or claim to simulate every prevention/replacement effect.
+
 Java CI isolates API tests in two process-owned workspaces while keeping methods
 and upstream modules serial. Its opt-in Maven profile and shared accounting
 checker bind current compiled inputs, process owners, reports and invocation

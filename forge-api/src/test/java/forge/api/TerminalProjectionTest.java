@@ -24,6 +24,15 @@ public class TerminalProjectionTest {
 
     @Test(timeOut = 90000)
     public void theLastCommanderDamageLossRetainsOnlyExactRegisteredFinalCardViews() throws Exception {
+        commanderCombat(false);
+    }
+
+    @Test(timeOut = 90000)
+    public void aRealLosingBlockPreventsAnOtherwiseFatalCommanderHit() throws Exception {
+        commanderCombat(true);
+    }
+
+    private static void commanderCombat(boolean blocks) throws Exception {
         var resources = Path.of("../forge-gui/res");
         if (StaticData.instance() == null) EngineResources.load(resources);
         var deck = new Deck("Terminal commander damage");
@@ -35,7 +44,7 @@ public class TerminalProjectionTest {
                 "Concordant Crossroads", "Forest").stream().<forge.item.IPaperCard>map(name -> StaticData.instance().getCommonCards().getCard(name)).toList());
         players.get(1).addExtraCardsOnBattlefield(List.of("Grizzly Bears", "Plains").stream()
                 .<forge.item.IPaperCard>map(name -> StaticData.instance().getCommonCards().getCard(name)).toList());
-        Path evidence = ApiTestWorkspace.evidence("terminal-commander-damage");
+        Path evidence = ApiTestWorkspace.evidence(blocks ? "blocked-commander-damage" : "terminal-commander-damage");
         try (var table = new MatchTable("Commander", players, resources, evidence, true)) {
             table.start(); var answered = new HashMap<Integer, String>();
             var main = until(table, answered, input -> input.seat() == 0
@@ -48,13 +57,36 @@ public class TerminalProjectionTest {
                     && text(input.prompt(), "inputType").equals("InputAttack"));
             var commander = card(attack.state(), "Battlefield", "Rhys the Redeemed");
             assertEquals(commander.get("power").getAsInt(), 11);
+            String commanderId = text(commander, "commanderId");
+            assertFalse(commanderId.isEmpty());
+            assertEquals(attack.state().getAsJsonObject("commanderCombat").get("damageLimit").getAsInt(), 21);
             answer(table, answered, attack, Map.of("action", "attack", "attackerKey", text(commander, "key"), "defenderPlayerId", 1));
             attack = until(table, answered, input -> input.seat() == 0
                     && text(input.prompt(), "inputType").equals("InputAttack"));
             answer(table, answered, attack, Map.of("action", "ok"));
             var block = until(table, answered, input -> input.seat() == 1
                     && text(input.prompt(), "inputType").equals("InputBlock"));
+            if (blocks) {
+                var currentAttacker = zone(player(block.state(), 0), "Battlefield").getAsJsonArray("cards").asList().stream()
+                        .map(value -> value.getAsJsonObject()).filter(face -> text(face, "commanderId").equals(commanderId)).findFirst().orElseThrow();
+                var blocker = card(block.state(), "Battlefield", "Grizzly Bears");
+                answer(table, answered, block, Map.of("action", "block", "attackerKey", text(currentAttacker, "key"), "blockerKey", text(blocker, "key")));
+                block = until(table, answered, input -> input.seat() == 1 && text(input.prompt(), "inputType").equals("InputBlock"));
+            }
             answer(table, answered, block, Map.of("action", "ok"));
+            if (blocks) {
+                var next = until(table, answered, input -> input.seat() == 1 && input.state().get("turn").getAsInt() >= 2
+                        && text(input.prompt(), "inputType").equals("InputPassPriority") && text(input.state(), "phaseKey").equals("MAIN1"));
+                var defender = table.game.getRegisteredPlayers().get(1);
+                assertFalse(defender.hasLost()); assertEquals(defender.getLife(), 40);
+                assertTrue(defender.getCardsIn(ZoneType.Graveyard).stream().anyMatch(card -> card.getName().equals("Grizzly Bears")),
+                        "The actual legal block sacrifices its body rather than faking prevention");
+                var damage = player(next.state(), 1).getAsJsonArray("commanderDamage").asList().stream().map(value -> value.getAsJsonObject())
+                        .filter(row -> text(row, "commanderId").equals(commanderId)).findFirst().orElseThrow();
+                assertEquals(damage.get("damage").getAsInt(), 0);
+                assertFalse(table.game.isGameOver(), "The otherwise fatal22 commander damage was prevented by the actual block");
+                return;
+            }
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
             while (System.nanoTime() < deadline && !table.game.isGameOver()) {
                 for (var seat : table.automatedSeats()) {
@@ -75,6 +107,8 @@ public class TerminalProjectionTest {
             assertFalse(table.game.getPlayers().contains(loser), "The last loser has left the active rules-player set");
             assertEquals(loser.getCardsIn(ZoneType.Battlefield).size(), 2,
                     "The last two-player loss deliberately retains the registered player's actual board");
+            assertTrue(table.commanderCombat.damage(loser).stream().anyMatch(row -> commanderId.equals(row.get("commanderId"))
+                    && Integer.valueOf(22).equals(row.get("damage"))), "The actual fatal hit retains its exact commander lineage and22 damage");
             var batch = table.automatedSeats().stream().map(MatchSession::automatedObservation).toList();
             var spectator = JSON.toJsonTree(table.spectatorState()).getAsJsonObject();
             var completion = spectator.getAsJsonObject("outcome");

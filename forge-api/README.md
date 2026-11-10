@@ -1776,6 +1776,27 @@ can be supplied from the main deck for that game without changing the saved list
 Existing commanders, including legal partner pairs, remain intact. Color identity
 and deck conformance are checked before launching.
 
+**Source candidate:** match and independent public snapshots add
+`commanderCombat: { damageLimit: 21 }` when the rules engine's commander-combat
+state-based loss condition applies. A present `{ damageLimit: null }` confirms
+that condition is disabled; a missing object is an older provider with unknown
+support. This value comes from the same read-only rules accessor used by the
+existing state-based loss check, without changing damage accrual or game rules.
+
+Every `players[].commanderDamage[]` row adds `commanderId`, an opaque UUID for the
+actual registered commander lineage; existing `name`, `ownerId`, `owner` and
+`damage` remain. The same table-owned ID appears on an entitled face-up current
+Battlefield or Command card as optional `commanderId`. Partners have distinct
+IDs, including when other players use the same names. Actual control/name and
+zone changes preserve the lineage; copying the card does not copy commander
+designation. Merged commander sources use Forge's real commander component.
+Hidden, private-zone and historical portraits omit the binding. The damage rows
+retain public designation, but cannot be used to discover a concealed occurrence.
+Neither this lineage nor the threshold grants a card action, certifies damage
+through prevention/replacement effects, or promises that a player can lose.
+Occurrence IDs, command keys and the engine's current combat legality remain
+separate authorities. Older clients can ignore these additive facts.
+
 Visible card snapshots include `commanderTax`: the extra generic mana for that
 commander's next cast from the command zone, based on its owner's engine cast
 count. It is separate from the printed `manaCost` and is not a quote of the final

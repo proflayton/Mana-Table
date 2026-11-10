@@ -10,6 +10,11 @@ if (args.Contains("--verify-failure-reporting"))
     throw new InvalidOperationException("Controlled test-runner failure reporting check.");
 int checks = 0;
 void Check(bool value, string description) { if (!value) throw new Exception(description); checks++; Console.WriteLine(description); }
+if (args.Contains("--ai-combat-survival-checks")) {
+    await AiCombatSurvivalRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} AI combat survival checks.");
+    return 0;
+}
 if (args.Contains("--current-read-checks")) {
     await CurrentReadRegression.RunAsync(Check);
     Console.WriteLine($"Passed {checks} current-read ownership checks.");
@@ -217,6 +222,7 @@ await AiRouteRetryRegression.RunAsync(Check);
 await AiDecisionQualityRegression.RunAsync(Check);
 await AiActionOutcomeRegression.RunAsync(Check);
 await AiCombatContextRegression.RunAsync(Check);
+await AiCombatSurvivalRegression.RunAsync(Check);
 await AiBlockRepairRegression.RunAsync(Check);
 await AiTargetContinuationRegression.RunAsync(Check);
 AiManaPlannerRegression.Run(Check);

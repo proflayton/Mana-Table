@@ -211,19 +211,24 @@ internal static class AiTurnPlanner
             // exposure over the next turn, not a current blocking domain.
             var incoming = enemy.Zone("Battlefield").Cards.Where(card => !card.PhasedOut && CasualTableAssessment.IsCreature(card))
                 .OrderByDescending(CasualTableAssessment.UnblockedDamage).ToArray();
-            if (incoming.Sum(card => (long)CasualTableAssessment.UnblockedDamage(card)) < state.Viewer.Life) continue;
-            long? without = Damage(incoming, blockers);
+            // The unblocked upper exposure is cheap and preserves optional
+            // comparison work when neither ordinary nor commander damage can
+            // establish a modeled defeat even without any own defenders.
+            if (new AiCombatSurvival(state, state.Viewer,
+                incoming.Select(card => new AiCombatDamage(card, CasualTableAssessment.UnblockedDamage(card))).ToArray()).Risk.KnownDefeats == 0) continue;
+            var without = Damage(incoming, blockers);
             if (without == null) return request.Plan?.RetainedBlockerIds.Contains(CardViews.Identity(proposed)) == true;
-            if (without < state.Viewer.Life) continue;
-            long? with = Damage(incoming, blockers.Append(proposed).ToArray());
+            var risk = new AiCombatSurvival(state, state.Viewer, without).Risk;
+            if (risk.KnownDefeats == 0) continue;
+            var with = Damage(incoming, blockers.Append(proposed).ToArray());
             if (with == null) return request.Plan?.RetainedBlockerIds.Contains(CardViews.Identity(proposed)) == true;
-            if (with < without) return true;
+            if (AiCombatSurvival.Improvement(risk, new AiCombatSurvival(state, state.Viewer, with).Risk) != AiCombatSurvivalRank.None) return true;
         }
         return false;
 
-        long? Damage(Card[] incoming, Card[] available)
+        List<AiCombatDamage>? Damage(Card[] incoming, Card[] available)
         {
-            long damage = 0;
+            var damage = new List<AiCombatDamage>();
             var used = new HashSet<string>(StringComparer.Ordinal);
             foreach (var attacker in incoming) {
                 if (!work.TrySpend()) return null;
@@ -236,12 +241,13 @@ internal static class AiTurnPlanner
                         if (first == null) first = blocker;
                         else { second = blocker; break; }
                     }
-                    if (first == null || second == null) { damage += hit; continue; }
+                    if (first == null || second == null) { damage.Add(new(attacker, hit)); continue; }
                     // The ordinary exchange model is one blocker only. A
                     // menace pair stops nontrampling damage; assigning trample
                     // across that pair needs a separate, richer forecast.
                     if (CasualTableAssessment.HasKeyword(attacker, "trample")) return null;
                     used.Add(CardViews.Identity(first)); used.Add(CardViews.Identity(second));
+                    damage.Add(new(attacker, 0));
                     continue;
                 }
                 Card? best = null;
@@ -253,7 +259,7 @@ internal static class AiTurnPlanner
                     if (stops > prevented) { best = blocker; prevented = stops; }
                 }
                 if (best != null) used.Add(CardViews.Identity(best));
-                damage += Math.Max(0, hit - prevented);
+                damage.Add(new(attacker, Math.Max(0, hit - prevented)));
             }
             return damage;
         }

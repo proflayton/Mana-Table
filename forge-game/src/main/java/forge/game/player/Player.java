@@ -2081,9 +2081,10 @@ public class Player extends GameEntity implements Comparable<Player> {
             return true;
         }
 
-        if (game.getRules().hasAppliedVariant(GameType.Commander)) {
+        final Integer commanderCombatDamageLimit = game.getRules().getCommanderCombatDamageLimit();
+        if (commanderCombatDamageLimit != null) {
             for (Entry<Card, Integer> entry : getCommanderDamage()) {
-                if (entry.getValue() >= 21 && loseConditionMet(GameLossReason.CommanderDamage, null)) {
+                if (entry.getValue() >= commanderCombatDamageLimit && loseConditionMet(GameLossReason.CommanderDamage, null)) {
                     return true;
                 }
             }
