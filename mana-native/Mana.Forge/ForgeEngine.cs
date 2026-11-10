@@ -136,6 +136,8 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         owner.Failure = ex;
         owner.Ready.TrySetException(ex);
         if (current != owner) return;
+        lock (worldScopeGate)
+            if (current == owner) automatedAudiences.Clear();
         foreach (var item in pending) if (pending.TryRemove(item.Key, out var reply)) reply.Completion.TrySetException(ex);
     }
     private async Task<JsonElement> Request(string method, object? arguments = null, CancellationToken cancellation = default,

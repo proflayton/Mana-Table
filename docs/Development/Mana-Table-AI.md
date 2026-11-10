@@ -19,11 +19,21 @@ The attempt latch follows the exact input, source generation and public prefix,
 not metadata revisions. Lost current-world receipts remain uncertain; late
 epochs and known retired inputs cannot become fresh authority.
 
+That decision scope is separate from the passive audience's lifetime. A stable
+process/world-bound audience lease permits owned history before the next rich
+read, including immediately after preparation. Valid same-audience refreshes,
+concession and a rejected table replacement preserve it. Actual world/process
+retirement, authoritative removal or malformed discovery retires the lease;
+reappearing identifiers receive a different lease. History checks that exact
+lease before dispatch and after the reply, so an old in-flight read cannot
+cross removal and re-admission. This never restores stale action offers.
+
 Client host regressions and the native `priority-responses` headless group cover
 this lifecycle, including malformed wire receipts and misleading Absent metadata.
 The real-engine controlled opportunity also requires an actual Unknown input,
 independent preparation, a freshly decoded Absent frame, a certified rules pass
-and acknowledged retirement. Its basic-land simulation is a transport check;
+and acknowledged retirement. It reads actual history immediately after Prepared
+without first refreshing decision authority. Its basic-land simulation is a transport check;
 the varied four-game natural campaign and human UX review remain separate gates.
 
 ## Mechanic qualification and internal choices: source candidate

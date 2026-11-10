@@ -1074,6 +1074,14 @@ small controlled opportunity does not replace varied natural games or certify
 strategy. `--smoke-priority-responses` exposes the same journey for diagnosis
 with matching harness, production engine and resources; retain its runtime
 provenance and result files in a fresh disposable profile.
+The same controlled engine journey must read the bot's real history immediately
+after Prepared, before another rich observation, while old gameplay/grant scopes
+remain retired. Separate process tests hold history replies across same-audience
+refresh, audience removal and reappearance, malformed batches and world/process
+replacement. Continuous ownership survives an ordinary refresh; an old in-flight
+read cannot borrow a new lease after retirement. Foreign audiences and changed
+history game/viewer/cursors remain rejected. This distinguishes a journal's
+reading lifetime from permission to answer the current decision.
 
 The campaign's `PublicProjectionPreparation` owns bounded derived evidence for
 the actual bound audiences. Batch validation, pair comparisons, cohort tracking

@@ -55,6 +55,8 @@ internal static class PriorityResponsesEngineJourney
             check(host.PriorityContinuations.Any(item => item.AcceptedAcknowledgements > 0 && item.AcceptedGrants > 0
                     && item.CertifiedAutomaticPasses > 0) && provider.NoPreparationConsentMutation,
                 "Actual bot Auto certifies a rules pass after independent preparation while preparation itself adds no grant or sequence");
+            check(provider.HistoryAfterPrepared == provider.Prepared && provider.HistoryAudienceMatched,
+                "Actual owned history remains readable immediately after Prepared, before another rich decision read restores action offers");
             await host.DisposeAsync(); disposed = true;
             check(host.PriorityContinuations.All(item => item.Retired)
                     && host.PriorityContinuations.Where(item => item.AcceptedGrants > 0).All(item => item.AcceptedWithdrawals > 0),
@@ -66,7 +68,8 @@ internal static class PriorityResponsesEngineJourney
                 File.WriteAllText(Path.Combine(directory, "result.json"), JsonSerializer.Serialize(new {
                     passed = failure == null, failure, elapsedMilliseconds = watch.Elapsed.TotalMilliseconds,
                     provider.Prepared, provider.UnknownPreparations, provider.Grants, provider.AllGrantsFreshAbsent,
-                    provider.NoPreparationConsentMutation, events = provider.Events, owners = host.PriorityContinuations,
+                    provider.NoPreparationConsentMutation, provider.HistoryAfterPrepared, provider.HistoryAudienceMatched,
+                    events = provider.Events, owners = host.PriorityContinuations,
                     scope = "Controlled four-bot basic-land opportunity using ordinary policy and production process/codec/host; no forced availability or fabricated pass."
                 }, new JsonSerializerOptions { WriteIndented = true }));
                 await engine.StopSimulationAsync(started.Id);
@@ -80,8 +83,8 @@ internal static class PriorityResponsesEngineJourney
         private readonly Dictionary<int, long> preparedAt = [];
         private readonly Dictionary<int, PriorityContinuationState> preparedConsent = [];
         private long reads;
-        internal int Prepared, UnknownPreparations, Grants;
-        internal bool AllGrantsFreshAbsent = true, NoPreparationConsentMutation = true;
+        internal int Prepared, UnknownPreparations, Grants, HistoryAfterPrepared;
+        internal bool AllGrantsFreshAbsent = true, NoPreparationConsentMutation = true, HistoryAudienceMatched = true;
         internal List<object> Events = [];
         public bool SupportsAutomatedPriorityContinuation => engine.SupportsAutomatedPriorityContinuation;
         public bool SupportsAutomatedPriorityResponses => engine.SupportsAutomatedPriorityResponses;
@@ -122,6 +125,11 @@ internal static class PriorityResponsesEngineJourney
             var result = await engine.ExecuteAutomatedPriorityControlAsync(epoch, seatId, control, cancellation);
             if (result is AutomatedPriorityControlResult.Prepared prepared) {
                 Prepared++;
+                // Preparation retired this input's action scope. Its passive
+                // audience still owns history, without a gratuitous rich read.
+                var history = await engine.AutomatedHistoryAsync(prepared.Receipt.GameId, seatId, 0);
+                HistoryAfterPrepared++;
+                HistoryAudienceMatched &= history.GameId == prepared.Receipt.GameId && history.ViewerId == seatId;
                 Events.Add(new { seatId, before.Read, decision = prepared.Receipt.DecisionId, availability = prepared.Receipt.ResponseAvailability.ToString(),
                     sequence = before.State.PriorityContinuation?.Sequence, automaticPasses = before.State.PriorityContinuation?.AutomaticPasses });
                 if (before.State.PriorityContinuation is { } consent) preparedConsent[seatId] = consent;

@@ -673,6 +673,21 @@ Only a later rich frame's authoritative `Absent` permits a new grant.
 `Available`, incomplete/invalidated `Unknown` and unsupported providers retain
 ordinary policy work. Reading a snapshot never requests preparation, and
 ordinary human response scans remain independent of bot preparation.
+Automated history reads have a separate registered audience lifetime, bound to
+the actual process, table world, game and seat. A complete validated owned batch
+reconciles those private leases atomically. A continuously present audience
+keeps its lease through preparation, ACKs, consent changes and ordinary refreshes;
+retiring a decision scope cannot remove permission to read its journal. History
+captures that exact lease before its RPC and requires the same live lease after
+the reply. Removing and later reintroducing the same game/seat cannot revive an
+in-flight read from the retired audience. This read lease carries no action
+domain, card handles or permission to answer a decision.
+Actual world/process retirement, stop/leave, authoritative audience removal and
+malformed or uncertain ownership retire read leases. A failed rejected table
+replacement or concession does not itself retire the table. A superseded
+decision read in the same healthy world can retire current command scopes while
+preserving established audience ownership. Unknown audiences are never minted
+from metadata receipts or unvalidated observations.
 The optional `automated-priority-metadata-v1` capability makes that separation
 explicit on the private process wire. `automatedPriorityControl` accepts only
 the three closed continuation controls and, when separately negotiated, scoped
