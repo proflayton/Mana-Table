@@ -566,6 +566,11 @@ actionable or accepting a historical graph entity.
 Finished tables may retain the last loser's actual registered-player rules zones.
 Those exact final views remain readable display state, with no pending input or
 action scope. They are distinct from a historical copy and from an active seat.
+Before the outcome exists, a rules-required loss disclosure can also retain
+eliminated-player portraits while a surviving viewer acknowledges the reveal.
+Every card-state authority field uses the same exact current-occurrence boundary:
+historical faces receive no prompt handle, selectable/highlighted flag or payment
+certificate. Reading the original face does not reauthorize the departed card.
 Absent card identities use empty strings; decoding never invents identifiers.
 Operation entities canonicalize a rules card only when its game timestamp
 matches the current incarnation, and semantic references reject historical view

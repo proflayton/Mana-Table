@@ -241,6 +241,13 @@ exercise actual team winners, an earlier eliminated ally, rules draws, ordinary
 free-for-all completion and failures; they do not establish a cooperative lobby.
 Include `EliminationRegressionTest` for natural elimination and concession of a
 lone human: both retain Defeat while cleanup keeps the global outcome absent.
+`TerminalProjectionTest` also manifests a real library card in controlled setup,
+then causes an actual commander-damage loss and pauses at the surviving player's
+required face-down disclosure before the final outcome. Historical battlefield
+portraits remain readable but have no current action/payment authority; the
+original revealed face, unrelated living handles and exact final-board identities
+remain intact. This deterministic control reproduced the stale-handle publication
+failure without changing the strict native public-projection guard.
 The packaged `AiFrameworkEngineCheck` exercises that same concession through the
 native adapter before allowing its next match to start.
 
