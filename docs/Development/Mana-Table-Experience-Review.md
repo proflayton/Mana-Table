@@ -967,6 +967,11 @@ Each row has a separate visible **Skip until next turn** or **Stop for this
 ability** button. These buttons do not overlap the reading target, so changing a
 preference does not require opening a full reader. Two abilities on the same
 source retain independent buttons and exact engine IDs.
+Changing a preference keeps the open list or reader in place, so the player can
+change several activations without reopening it. Each next click uses the fresh
+engine-issued controls after the preceding change; retaining the view does not
+retain an old decision's action permission. This is a direct response to the
+player's repeated-reopening report, within the existing adaptation above.
 **Back to list** returns to the same list. **Back to table**, Escape or
 clicking outside dismisses the expanded surface without changing Auto, Hold or
 any saved rule. The small list expands into a wider measured, multi-column

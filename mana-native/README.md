@@ -219,9 +219,10 @@ The list counts skipped activations separately and
 keeps complete measured source names, readable rules previews and stop/skip
 status. Each row has a direct **Skip until next turn** or **Stop for this ability**
 button; the separate name/rules target only reads the ability. Same-source
-abilities retain separate entries and exact IDs. A long preview offers
-**Read complete ability**. Selecting the reading area opens that exact
-ability's complete rules under
+abilities retain separate entries and exact IDs. Changing Skip or Stop keeps the
+list open so several preferences can be changed in succession using their updated
+controls. A long preview offers **Read complete ability**. Selecting the reading
+area opens that exact ability's complete rules under
 **Auto · This activation**. **Back to list** returns to the entries; **Back to
 table**, Escape or an outside click collapses the view without changing Auto,
 Hold or saved stop rules. Larger lists first expand into measured columns before

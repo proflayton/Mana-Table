@@ -39,6 +39,7 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "keyword-help") CheckKeywordHelp(profile, Check, trace, performance);
                 else if (group == "commander-combat") CommanderCombatWireChecks.Run(Check);
                 else if (group == "priority-notifications") PriorityNotificationChecks.Run(profile, Check);
+                else if (group == "priority-abilities") CheckPriorityAbilityPreferences(profile, Check, trace, performance);
                 else if (group == "target-restrictions") {
                     TargetRestrictionWireChecks.Run(Check);
                     TargetRestrictionPresentationChecks.Run(profile, Check);
@@ -207,6 +208,7 @@ internal static partial class HeadlessPresentationSmoke
             QuietPriorityPresentationChecks.Run(profile, Check);
             VisibleAutoPriorityChecks.Run(profile, Check);
             PriorityContinuationChecks.Run(profile, Check);
+            CheckPriorityAbilityPreferences(profile, Check, trace, performance);
             MatchHeaderInteractionChecks.Run(profile, Check);
             TableSurfaceProjectionChecks.Run(Check);
             SeatZoneChecks.Run(profile, Check);
