@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Mana.Client;
 using Mana.Contracts;
 using Microsoft.Xna.Framework.Input;
 using Keys = Microsoft.Xna.Framework.Input.Keys;
@@ -124,26 +125,25 @@ internal sealed partial class TableApplication
     }
     private void ChoosePreset(string id) => ImportDeck(() => catalog.ImportPresetAsync(id), false,
         "Preparing " + (presets.FirstOrDefault(p => p.Id == id)?.Name ?? "your precon"), "Making a saved copy for you to review and play.");
-    private sealed record SoloPreparation(SoloSetup Setup, int[] Choices);
-    private string[] CurrentSoloOpponents() => soloSetup is not { } setup ? []
-        : soloChoices.Select(index => index >= 0 && index < setup.Opponents.Length ? setup.Opponents[index].Id : "").ToArray();
-    private async Task<SoloPreparation> PrepareSoloDeck(string deckId, string[] previous)
+    private sealed record SoloPreparation(SoloSetup Setup, SoloOpponentSelection Selection)
+    {
+        public int[] Choices => Selection.Indices(Setup);
+        public SoloPreparation(SoloSetup setup, int[] indices) : this(setup,
+            SoloOpponentSelection.ExplicitIds(indices.Select(index => setup.Opponents[index].Id))) { }
+    }
+    private Task<SoloPreparation> PrepareSoloDeck(string deckId, string[] previous) =>
+        PrepareSoloDeck(deckId, SoloOpponentSelection.ExplicitIds(previous));
+    private async Task<SoloPreparation> PrepareSoloDeck(string deckId, SoloOpponentSelection previous)
     {
         var setup = await tables.PrepareSoloAsync(deckId);
         if (setup.DeckId != deckId) throw new InvalidOperationException("The prepared table belongs to another deck. Try Play again.");
         if (setup.Opponents.Length == 0 || setup.MaxPlayers < 2) throw new InvalidOperationException("This engine has no compatible AI opponents available.");
-        var defaults = setup.Opponents.Select((opponent, index) => (opponent, index))
-            .Where(option => option.opponent.Name != setup.DeckName).Select(option => option.index).ToArray();
-        int[] choices = Enumerable.Range(0, soloChoices.Length).Select(index => {
-            int kept = index < previous.Length ? setup.Opponents.IndexOf(setup.Opponents.FirstOrDefault(opponent => opponent.Id == previous[index])!) : -1;
-            return kept >= 0 ? kept : defaults.Length > 0 ? defaults[index % defaults.Length] : 0;
-        }).ToArray();
-        return new(setup, choices);
+        return new(setup, SoloOpponentSelection.Prepare(setup, previous, soloFallbackSeed));
     }
     private void ApplySoloPreparation(SoloPreparation prepared)
     {
         soloSetup = prepared.Setup;
-        Array.Copy(prepared.Choices, soloChoices, soloChoices.Length);
+        soloSelection = prepared.Selection;
     }
     private void SetLobbyReady(bool ready)
     {
@@ -180,8 +180,8 @@ internal sealed partial class TableApplication
         if (Connected || match != null || !DeckReady || selectedDeckDetails is not { } deck || selectedDeck?.Id != deck.Id) return;
         int generation = deckSelectionGeneration;
         var existing = DeckConfirmed && soloSetup is { } setup && setup.DeckId == deck.Id
-            ? new SoloPreparation(setup, soloChoices.ToArray()) : null;
-        string[] previous = CurrentSoloOpponents();
+            ? new SoloPreparation(setup, soloSelection) : null;
+        var previous = soloSelection;
         Work(async () => {
             var prepared = existing ?? await PrepareSoloDeck(deck.Id, previous);
             if (generation != Volatile.Read(ref deckSelectionGeneration))

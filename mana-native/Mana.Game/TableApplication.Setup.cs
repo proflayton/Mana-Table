@@ -48,7 +48,14 @@ internal sealed partial class TableApplication
     // another Work from its completion callback would be rejected as busy.
     private void FinishLocalMatchReturn()
     {
+        RetireSoloPreparation();
         localMatch = false; session.Reset(); ResetTableView(); message = "Choose your next Commander game.";
+    }
+    private void RetireSoloPreparation()
+    {
+        soloSelection = soloSelection.ClearAutomatic();
+        soloSetup = null; soloFallbackSeed = Random.Shared.Next();
+        InvalidateDeckConfirmation();
     }
     private void ImportFile()
     {

@@ -63,9 +63,17 @@ internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
         Click("review-deck"); Click("confirm-deck"); Click("ready");
         Step(.1, () => Check(HostReady(), "The host explicitly confirms and readies the saved human deck"));
         Click("lobby-ai:1");
-        Step(.1, () => {
+        Wait(() => Seat(1)?.Type == "AI" && view.SetupModal.Length == 0, 20, () => {
+            var seat = Seat(1)!;
+            Check(seat.Ready && view.Lobby!.AiOpponents.Any(opponent => opponent.Id == seat.OpponentId && opponent.Name == seat.Deck),
+                "Add AI automatically assigns an advertised compatible deck to the exact seat");
+            Check(HostReady() && view.DeckConfirmed && view.DeckDetails!.Id == deckId,
+                "Automatic AI assignment preserves the host's selected deck, confirmation and readiness");
+            Capture("03-ai-ready");
+        });
+        Click("lobby-ai:1"); Step(.1, () => {
             Check(view.SetupModal == "lobby-ai" && view.Hits.Any(h => h.Id == "lobby-ai-deck:" + firstAi),
-                "Add AI opens a compatible-deck picker isolated from the table underneath");
+                "Change deck opens the existing compatible-deck picker for an assigned AI");
             Capture("02-compatible-ai-decks");
         });
         ClickAi(() => firstAi);
@@ -85,6 +93,8 @@ internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
             Check(Seat(1) is { Ready: false, Deck: null } && HostReady(), "Removing AI opens its seat while preserving the human ready seat");
             Capture("04-ai-removed");
         });
+        Click("lobby-ai:1");
+        Wait(() => Seat(1)?.Type == "AI" && !view.Busy && !view.ActivityOpen, 20, () => { });
         Click("lobby-ai:1"); ClickAi(() => firstAi);
         Wait(() => Seat(1)?.Type == "AI" && !view.Busy && !view.ActivityOpen, 20, () => background = JoinGuests());
         Step(.1, () => {

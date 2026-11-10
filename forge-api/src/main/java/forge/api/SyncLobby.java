@@ -585,13 +585,23 @@ final class SyncLobby {
         if (next.equals(matchSetup)) return;
         for (int i = next.seats().size(); i < slots.size(); i++) if (slots.get(i).occupied)
             throw new IllegalStateException("A connected player occupies a seat you are trying to remove");
+        var newOpposition = new java.util.HashSet<Integer>();
+        for (var assignment : next.seats()) if (assignment.role().equals("opposition")) {
+            var existing = assignment.index() < slots.size() ? slots.get(assignment.index()) : null;
+            if (existing != null && existing.occupied) throw new IllegalStateException("Connected players must remain on the party side");
+            if (existing == null || !existing.ai || existing.opponentId == null) newOpposition.add(assignment.index());
+        }
+        var reference = podReference(newOpposition, next.seats().size());
+        var defaults = newOpposition.isEmpty() ? List.<String>of() : aiDecks.selectPod(reference, format, newOpposition.size(),
+                podReservations(newOpposition, next.seats().size(), reference), java.util.concurrent.ThreadLocalRandom.current().nextLong());
+        var defaultsIterator = defaults.iterator();
         var opponents = new HashMap<Integer, LobbyDeckSelection>(); var opponentIds = new HashMap<Integer, String>();
         for (var assignment : next.seats()) if (assignment.role().equals("opposition")) {
             var existing = assignment.index() < slots.size() ? slots.get(assignment.index()) : null;
             if (existing != null && existing.occupied) throw new IllegalStateException("Connected players must remain on the party side");
-            String opponent = existing != null && existing.ai && existing.opponentId != null ? existing.opponentId : aiDecks.choices(format).get(0).get("id");
+            String opponent = newOpposition.contains(assignment.index()) ? defaultsIterator.next() : existing.opponentId;
             LobbyDeckSelection selected;
-            try { selected = existing != null && existing.ai && existing.selection != null ? existing.selection
+            try { selected = !newOpposition.contains(assignment.index()) && existing != null && existing.ai && existing.selection != null ? existing.selection
                     : LobbyDeckSelection.capture(aiDecks.load(opponent, format), format, catalog); }
             catch (Exception error) { throw new IllegalArgumentException("Choose an available legal opposition deck", error); }
             if (selected.problem() != null) throw new IllegalArgumentException("Choose a legal opposition deck");
@@ -677,18 +687,43 @@ final class SyncLobby {
                 && (!p.get("opponentId").isJsonPrimitive() || !p.getAsJsonPrimitive("opponentId").isString()))
             throw new IllegalArgumentException("Choose an available AI deck");
         String opponent = p.has("opponentId") && !p.get("opponentId").isJsonNull() ? p.get("opponentId").getAsString() : "";
-        if (opponent.isBlank()) opponent = aiDecks.choices(format).get(0).get("id");
+        if (opponent.isBlank()) {
+            var excluded = java.util.Set.of(index);
+            var reference = podReference(excluded, slots.size());
+            opponent = aiDecks.selectPod(reference, format, 1, podReservations(excluded, slots.size(), reference),
+                    java.util.concurrent.ThreadLocalRandom.current().nextLong()).get(0);
+        }
         Deck deck;
         try { deck = aiDecks.load(opponent, format); }
         catch (Exception error) { throw new IllegalArgumentException(error.getMessage(), error); }
+        boolean replacement = !target.ai;
+        boolean changed = replacement || target.selection == null || !Objects.equals(target.opponentId, opponent)
+                || !target.selection.deck().getName().equals(deck.getName())
+                || !DeckWorkshopStore.fingerprint(new DeckEditor(catalog, target.selection.deck()).snapshot(), format)
+                    .equals(DeckWorkshopStore.fingerprint(new DeckEditor(catalog, deck).snapshot(), format));
+        if (!changed) return;
         var selection = LobbyDeckSelection.capture(deck, format, catalog);
         if (selection.problem() != null) throw new IllegalArgumentException("Choose a legal AI deck");
-        boolean replacement = !target.ai;
         if (replacement) target.participantId = UUID.randomUUID().toString();
         target.ai = true; target.opponentId = opponent; target.selection = selection; target.ready = true;
         if (replacement || automaticAiName(target.name, index)) target.name = aiName(index);
-        if (replacement) renewSetupConsent();
+        if (replacement || matchSetup != null && matchSetup.cooperative()) renewSetupConsent();
         conversation.activity(host, "set seat " + (index + 1) + " to AI with " + deck.getName() + ".");
+    }
+    private Deck podReference(java.util.Set<Integer> excluded, int limit) {
+        for (int index = 0; index < Math.min(limit, slots.size()); index++) {
+            var slot = slots.get(index);
+            if (!excluded.contains(index) && slot.occupied && !slot.ai && slot.selection != null) return slot.selection.deck();
+        }
+        return null;
+    }
+    private List<Deck> podReservations(java.util.Set<Integer> excluded, int limit, Deck reference) {
+        var reserved = new ArrayList<Deck>();
+        for (int index = 0; index < Math.min(limit, slots.size()); index++) {
+            var slot = slots.get(index);
+            if (!excluded.contains(index) && slot.selection != null && slot.selection.deck() != reference) reserved.add(slot.selection.deck());
+        }
+        return List.copyOf(reserved);
     }
     private void configureSeats(String nextFormat, int count) {
         if (!List.of("Commander", "Constructed").contains(nextFormat)) throw new IllegalArgumentException("Unsupported format");

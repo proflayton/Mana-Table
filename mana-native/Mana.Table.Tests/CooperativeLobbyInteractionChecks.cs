@@ -74,9 +74,9 @@ internal static partial class CooperativeLobbyInteractionChecks
         port.FriendJoins(1);
         run.Until(() => run.View.Lobby?.Seats[1].Type == "REMOTE", "A friend's ordinary lobby publication fills an allied seat");
         foreach (int seat in new[] { 2, 3 }) {
-            run.Click("lobby-ai:" + seat); run.Click("lobby-ai-deck:ai-a");
+            run.Click("lobby-ai:" + seat);
             run.Until(() => run.View.Lobby?.Seats[seat].Type == "AI" && run.View.SetupModal.Length == 0 && !run.View.Busy,
-                "An open allied seat accepts its selected saved AI deck");
+                "Add AI fills an open allied seat with the provider's acknowledged default without a picker");
         }
         run.Tick();
         var roster = run.View.Lobby!.Seats;
@@ -179,7 +179,7 @@ internal static partial class CooperativeLobbyInteractionChecks
         check(run.Shows("Open seat") && run.Shows("Add AI") && !run.Shows("Open ally seat")
                 && !run.Shows("Add AI ally") && !run.Text.Contains("add an AI ally") && !run.Shows("YOUR SIDE"),
             "A " + seats + "-player free-for-all keeps opponent/empty-seat language instead of calling its players allies at " + viewport);
-        run.Click("lobby-ai:" + (seats - 1)); run.Click("lobby-ai-deck:ai-a");
+        run.Click("lobby-ai:" + (seats - 1));
         run.Until(() => run.View.Lobby?.Seats[seats - 1].Type == "AI" && !run.View.Busy && run.View.SetupModal.Length == 0,
             "The far free-for-all seat accepts its own AI opponent assignment");
         check(run.View.Lobby!.Seats.All(seat => seat.Role == MatchSeatRole.Participant)
