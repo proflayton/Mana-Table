@@ -44,7 +44,9 @@ internal static partial class PregameFlowChecks
                 "Quick Play forwards exact opaque saved-deck identifiers and preserves the other prepared seat choices");
         }
         const string automaticId = "ai:provider-default";
-        var host = new PregameEngine { AdditionalAiDecks = [new(automaticId, "Automatic opponent", "Controlled default"), saved] };
+        const string automaticLabel = "Pir & Toothy · Partners", automaticTitle = "Captured partner deck";
+        var host = new PregameEngine { AdditionalAiDecks = [new(automaticId, automaticLabel, "Controlled default"), saved],
+            AiDeckTitles = ImmutableDictionary<string, string>.Empty.Add(automaticId, automaticTitle) };
         using (var run = new Runner(profile, "saved-ai-host", host, check)) {
             run.Click("friends-tab"); run.Click("host");
             run.Until(() => run.View.Lobby?.Mode == "hosting" && !run.View.Busy && !run.View.ActivityOpen, "The host's real pregame path exposes its AI seat controls");
@@ -56,7 +58,23 @@ internal static partial class PregameFlowChecks
             check(run.View.SetupModal.Length == 0 && host.AutomaticSeatRequests == 1
                     && run.View.Lobby!.Seats.Single(seat => seat.Local).Ready,
                 "The host sends one unpinned current-table assignment and retains the human's explicit Ready consent");
-            run.Click("lobby-ai:1"); run.Click("lobby-ai-deck:" + savedId);
+            var automaticLobby = run.View.Lobby!;
+            var automaticSeat = automaticLobby.Seats.Single(seat => seat.Index == 1);
+            check(LobbyAiSeatSmoke.HasReadyAiAssignment(automaticLobby, automaticSeat)
+                    && automaticSeat.OpponentId == automaticId && automaticSeat.Deck == automaticTitle && automaticSeat.Deck != automaticLabel
+                    && automaticSeat.DeckPreview!.Commanders.Select(card => card.Name)
+                        .SequenceEqual(["Pir, Imaginative Rascal", "Toothy, Imaginary Friend"])
+                    && automaticLobby.Seats.Where(seat => seat.Index > 1).All(seat => seat.Type == "OPEN")
+                    && run.View.DeckConfirmed && run.View.SelectedDeck?.Id == "a",
+                "The real Add AI gesture accepts the smoke's ready public assignment even when its catalog label and captured title differ");
+            CheckAiAssignmentControls(automaticLobby, automaticSeat, check);
+            run.Click("lobby-ai:1");
+            check(run.Frame.Hits.Any(hit => hit.Id == "lobby-ai-deck:" + automaticId)
+                    && run.Frame.Drawing.Commands.Any(command => command is DrawCommand.Text text && text.Value == automaticLabel)
+                    && run.Frame.Drawing.Commands.Any(command => command is DrawCommand.Text text && text.Value == "Selected"
+                        || command is DrawCommand.CenterText centered && centered.Value == "Selected"),
+                "Change deck still presents the selected opponent's catalog label rather than replacing it with the captured deck title");
+            run.Click("lobby-ai-deck:" + savedId);
             run.Until(() => run.View.SetupModal.Length == 0 && run.View.Lobby?.Seats.Single(seat => seat.Index == 1).OpponentId == savedId && !run.View.Busy && !run.View.ActivityOpen,
                 "The existing Change deck journey assigns the host-owned saved deck to exactly one AI seat");
             for (int refresh = 0; refresh < 25; refresh++) run.Tick();
@@ -73,6 +91,27 @@ internal static partial class PregameFlowChecks
                     || run.Frame.Drawing.Commands.Any(command => command is DrawCommand.CenterText text && text.Value == "Selected"),
                 "Reopening Change deck visibly marks the same saved AI deck selected");
         }
+    }
+
+    private static void CheckAiAssignmentControls(Lobby current, Seat assigned, Action<bool, string> check)
+    {
+        var preview = assigned.DeckPreview!;
+        (Seat Seat, string Reason)[] controls = [
+            (assigned with { OpponentId = "not-advertised-by-this-table" }, "a foreign opponent ID"),
+            (assigned with { Ready = false }, "an unready AI"),
+            (assigned with { Type = "OPEN" }, "an open seat"),
+            (assigned with { Deck = null }, "a missing assigned deck title"),
+            (assigned with { DeckPreview = null }, "a missing captured preview"),
+            (assigned with { DeckPreview = preview with { Name = "A different captured deck" } }, "a contradictory captured title"),
+            (assigned with { DeckPreview = preview with { SelectionId = "" } }, "a missing captured assignment identity"),
+            (assigned with { DeckPreview = preview with { Problem = "Invalid commander assignment" } }, "an invalid assigned deck"),
+            (assigned with { DeckPreview = preview with { Commanders = [] } }, "missing commander portraits"),
+            (assigned with { DeckPreview = preview with { Commanders = [preview.Commanders[0] with { Name = "" }] } }, "an unreadable commander portrait"),
+            (assigned with { DeckPreview = preview with { Commanders = [preview.Commanders[0] with { FaceDown = true }] } }, "a concealed commander portrait"),
+            (assigned with { DeckPreview = preview with { Commanders = [preview.Commanders[0] with { Key = "not-a-public-portrait" }] } }, "an authorizing commander portrait")
+        ];
+        foreach (var control in controls) check(!LobbyAiSeatSmoke.HasReadyAiAssignment(current, control.Seat),
+            "The actual smoke assignment predicate rejects " + control.Reason);
     }
 
     private static void CheckAiPodLifecycle(string profile, Action<bool, string> check)
@@ -154,6 +193,7 @@ internal static partial class PregameFlowChecks
     private sealed partial class PregameEngine : ITableSeatSetup
     {
         internal ImmutableArray<AiOpponent> AdditionalAiDecks { get; init; } = [];
+        internal ImmutableDictionary<string, string> AiDeckTitles { get; init; } = ImmutableDictionary<string, string>.Empty;
         internal Func<string, SoloSetup, SoloSetup>? SetupProjection { get; set; }
         internal int AutomaticSeatRequests;
         internal void FinishSolo()
@@ -171,9 +211,10 @@ internal static partial class PregameFlowChecks
                 : AdditionalAiDecks.Single(choice => choice.Id == opponentId);
             if (opponentId == null) Interlocked.Increment(ref AutomaticSeatRequests);
             Calls.Enqueue("ai-seat:" + index + ":" + opponentId);
+            string title = AiDeckTitles.TryGetValue(opponent.Id, out var captured) ? captured : opponent.Name;
             lobby = lobby with { Seats = lobby.Seats.Select(seat => seat.Index == index
-                ? seat with { Type = "AI", Deck = opponent.Name, Ready = true, OpponentId = opponent.Id,
-                    DeckPreview = new("ai-assignment-" + index, opponent.Name,
+                ? seat with { Type = "AI", Deck = title, Ready = true, OpponentId = opponent.Id,
+                    DeckPreview = new("ai-assignment-" + index, title,
                         [new() { Name = "Pir, Imaginative Rascal", Type = "Legendary Creature" }, new() { Name = "Toothy, Imaginary Friend", Type = "Legendary Creature" }], null) }
                 : seat).ToImmutableArray(), Revision = lobby.Revision + 1 };
             return Task.FromResult(lobby);
