@@ -68,6 +68,9 @@ internal sealed partial class TableApplication
         if (CardPresentation.CommanderTaxDetails(card) is { Length: > 0 } taxDetails) stateText = taxDetails + (stateText.Length > 0 ? "\n" + stateText : "");
         if (CardPresentation.Counters(card) is { Length: > 0 } counters) stateText += "\nCounters: " + string.Join("; ", counters.Select(c => c.Key + " × " + c.Value));
         string effectiveDetails = onBattlefield ? string.Join("\n", CardPresentation.AbilityDetails(card)) : "";
+        if (!historyInspector && !inspectBack && TargetRestrictionFacts.For(match, original) is { } restriction)
+            stateText = TargetRestrictionCaption(restriction) + "\n" + TargetRestrictionDescription(match, restriction)
+                + (stateText.Length > 0 ? "\n\n" + stateText : "");
         return canvas.TextPages((stateText.Length > 0 ? stateText + "\n\n" : "") + card.Text
             + (effectiveDetails.Length > 0 ? "\n\nCurrent abilities\n" + effectiveDetails : ""), .8f, 660, 333, 80);
     }

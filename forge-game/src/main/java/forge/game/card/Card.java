@@ -6889,23 +6889,32 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
 
     @Override
     public final boolean canBeTargetedBy(final SpellAbility sa) {
+        return targetingProblem(sa) == null;
+    }
+
+    /** The same current targeting gate, retaining an actual blocking static for readable feedback. */
+    public record TargetingProblem(Kind kind, StaticAbility blockingAbility) {
+        public enum Kind { OWNER_LEFT, PHASED_OUT, STATIC_ABILITY }
+        private static final TargetingProblem OWNER_LEFT = new TargetingProblem(Kind.OWNER_LEFT, null);
+        private static final TargetingProblem PHASED_OUT = new TargetingProblem(Kind.PHASED_OUT, null);
+    }
+
+    /** Null means allowed. The ordinary successful check allocates no result object. */
+    public final TargetingProblem targetingProblem(final SpellAbility sa) {
         if (!getOwner().isInGame()) {
-            return false;
+            return TargetingProblem.OWNER_LEFT;
         }
 
         if (sa == null) {
-            return true;
+            return null;
         }
 
         if (isPhasedOut()) {
-            return false;
+            return TargetingProblem.PHASED_OUT;
         }
 
-        if (StaticAbilityCantTarget.cantTarget(this, sa) != null) {
-            return false;
-        }
-
-        return true;
+        var blocking = StaticAbilityCantTarget.cantTarget(this, sa);
+        return blocking == null ? null : new TargetingProblem(TargetingProblem.Kind.STATIC_ABILITY, blocking);
     }
 
     public final boolean canBeControlledBy(final Player newController) {
