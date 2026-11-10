@@ -101,12 +101,13 @@ public final class AiReleaseFixtureEngine {
         }
         if (name.equals("Resource qualification Traxos")) {
             // Explicit controlled runtime, not a shipping Commander list or
-            // campaign deck qualification: opening seven plus the actual first
-            // draw reaches both witnesses before any empty-library draw.
+            // campaign deck qualification: two copies of each required spell
+            // guarantee both in opening seven plus the actual first draw,
+            // regardless of shuffle. One card remains for Mind Stone's draw.
             var main = players.get(0).getDeck().getMain();
             main.clear();
-            for (String card : List.of("Mind Stone", "Spatial Contortion",
-                    "Wastes", "Wastes", "Wastes", "Wastes", "Wastes", "Wastes"))
+            for (String card : List.of("Mind Stone", "Mind Stone", "Spatial Contortion", "Spatial Contortion",
+                    "Wastes", "Wastes", "Wastes", "Wastes", "Wastes"))
                 main.add(StaticData.instance().getCommonCards().getCard(card));
             addExtras(players.get(0), Collections.nCopies(8, "Wastes"));
             return;

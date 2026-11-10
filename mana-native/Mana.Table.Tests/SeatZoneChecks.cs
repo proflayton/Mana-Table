@@ -19,11 +19,91 @@ internal static class SeatZoneChecks
     internal static void Run(string profile, Action<bool, string> check)
     {
         PhysicalOwnership(check);
+        foreach (int count in new[] { 2, 4, 6 })
+        foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) })
+            QuietOpeningStations(profile, count, size, check);
         LargeTableChecks.Run(profile, check);
         foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) }) {
             LocalSeatClearance(profile, size, check);
             PointerJourney(profile, size, check);
         }
+    }
+
+    private static void QuietOpeningStations(string profile, int count, Point size, Action<bool, string> check)
+    {
+        string path = Path.Combine(profile, $"quiet-opening-stations-{count}-{size.X}");
+        Directory.CreateDirectory(path);
+        new PlayPreferences { ReducedMotion = true, Sounds = false, TextScale = 1.3f }.Save(path);
+        var state = OpeningState(count);
+        var engine = new InteractionScenarioEngine(); engine.Present(state);
+        // Present publishes a rekeyed immutable snapshot with a fresh revision.
+        // Retain that actual accepted fixture state, not its authored input.
+        var accepted = engine.State;
+        using var run = new PresentationRun(TestTableServices.For(engine), path, engine.State, size);
+        run.EnableLiveTableStudy();
+        var frame = run.Tick(TimeSpan.FromSeconds(.1), default);
+        frame = run.Tick(TimeSpan.FromSeconds(.1), default);
+        foreach (var seat in frame.Scene!.Seats) {
+            var geometry = seat.Geometry;
+            string context = $"{count} seats/{size.X}px/owner {seat.PlayerId}";
+            var tray = geometry.ZoneStation!.Tray;
+            var stationFaces = geometry.Commanders.Select(card => card.Pose).Concat(geometry.Piles.Select(pile => pile.Pose)).ToArray();
+            check(geometry.Frame.LocalApron ? tray == null
+                    : tray != null && stationFaces.All(face => TableSurfaceProjectionChecks.InPlacement(tray.Placement, face)),
+                context + ": waiting commanders and personal piles retain their existing protected physical station; the near bare-wood row remains unchanged");
+            var mat = geometry.PlaymatSurface!.Value;
+            var matBounds = mat.Bounds; matBounds.Inflate(2, 2);
+            var cloth = frame.Drawing.Commands.OfType<DrawCommand.Polygon>().Where(polygon =>
+                polygon.Color == new Microsoft.Xna.Framework.Color(13, 17, 18) && polygon.Points.Count == 28
+                && polygon.Points.All(point => matBounds.Contains(point.ToPoint()))).ToArray();
+            bool Filled(Vector2 point) => cloth.Any(polygon => Enumerable.Range(1, polygon.Points.Count - 2)
+                .Any(index => InTriangle(point, polygon.Points[0], polygon.Points[index], polygon.Points[index + 1])));
+            check(cloth.Length == 1 && geometry.PlaymatPlacement!.Value.Width * geometry.PlaymatPlacement.Value.Height == 512 * 288
+                    && Filled(TableSurfaceProjection.Project(geometry.Frame.Project(new Vector2(256, 230)))),
+                context + ": every seat retains its complete rectangular cloth and identical physical mat area rather than a puzzle-shaped cutout");
+            check(tray == null || new[] { 0, 7 }.All(inset => frame.Drawing.Commands.OfType<DrawCommand.Polygon>()
+                    .Any(polygon => polygon.Points.SequenceEqual(tray.Outline(inset)))),
+                context + ": the production drawing paints the prepared chamfered wooden rim and recessed station floor under the out-of-play cards");
+            foreach (var pile in geometry.Piles.Where(pile => pile.Zone is "Graveyard" or "Exile")) {
+                var body = PileGeometry.Create(pile, 0);
+                var top = frame.BoardView.Apply(body.Top); var shadow = frame.BoardView.Apply(body.Shadow);
+                var hit = frame.Hits.Single(item => item.Id == $"zone:{seat.PlayerId}:{pile.Zone}");
+                check(!frame.Drawing.Commands.OfType<DrawCommand.Surface>().Any(surface => surface.Pose == top || surface.Pose == shadow)
+                        && hit.Intent is MatchIntent.OpenZone open && open.PlayerId == seat.PlayerId && open.Zone == pile.Zone
+                        && hit.Contains(frame.BoardView.Apply(pile.Caption!.Value).Center),
+                    context + $": an empty {pile.Zone} paints no phantom card or card shadow while its labelled inspection target remains available");
+            }
+        }
+        check(engine.Replies.Count == 0 && ReferenceEquals(engine.State, accepted),
+            $"{count} seats/{size.X}px: quieter personal zones preserve the exact accepted state and submit no gameplay command");
+
+        static bool InTriangle(Vector2 point, Vector2 a, Vector2 b, Vector2 c)
+        {
+            static float Cross(Vector2 first, Vector2 second) => first.X * second.Y - first.Y * second.X;
+            if (Math.Abs(Cross(b - a, c - a)) < .001f) return false;
+            float first = Cross(b - a, point - a), second = Cross(c - b, point - b), third = Cross(a - c, point - c);
+            return first >= -.001f && second >= -.001f && third >= -.001f
+                || first <= .001f && second <= .001f && third <= .001f;
+        }
+    }
+
+    internal static GameSnapshot OpeningState(int count)
+    {
+        var state = LargeTableChecks.State(count, 0);
+        Card Commander(int player, int index, string name, string cost) => new() {
+            VisualId = $"opening-{player}-commander-{index}", CombatId = $"opening-{player}-commander-{index}",
+            Name = name, Type = "Legendary Creature", ManaCost = cost, Power = 1, Toughness = 1
+        };
+        return state with { Players = state.Players.Select(player => player with {
+            Mana = ImmutableDictionary<string, int>.Empty,
+            Zones = player.Zones.Select(zone => zone.Name switch {
+                "Battlefield" or "Graveyard" or "Exile" => zone with { Count = 0, Cards = [], TopCard = null },
+                "Command" => zone with { Count = 2, Cards = [Commander(player.Id, 0, "Toothy, Imaginary Friend", "{3}{U}"),
+                    Commander(player.Id, 1, "Pir, Imaginative Rascal", "{2}{G}")], TopCard = null },
+                "Library" => zone with { Count = 91, Cards = [], TopCard = null },
+                _ => zone
+            }).ToImmutableArray()
+        }).ToImmutableArray() };
     }
 
     private static void PhysicalOwnership(Action<bool, string> check)

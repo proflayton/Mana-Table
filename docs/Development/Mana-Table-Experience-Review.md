@@ -4049,3 +4049,39 @@ between views without replacing the object. Inspect frame, printed identity,
 state overlays, exposed attachment access and the current action/result together.
 Automation and agent captures supply geometry and interaction evidence; they do
 not approve the player's ability to recognize or understand these cards.
+
+## Separate waiting zones from played permanents: 9 November 2026
+
+**Source candidate; human review pending.** The player reports that an opponent's
+command-zone card and the empty graveyard/exile backs look like permanents
+already in play. The small Command caption does not overcome their placement
+on the same cloth as the battlefield. The player's supplied MTG Arena gameplay
+screenshots keep library and public piles at the board edge, visibly separate
+from the permanent rows. That spatial distinction is the precedent; Arena's
+two-player corners do not establish room for four or six independent seats.
+
+The Mana Table adaptation puts a shallow wooden card station in the existing
+protected personal area. Its chamfered rim, recessed floor, grain and shallow
+shadow distinguish cards waiting outside play from the permanent rows. This
+physical accessory is our adaptation, not an observed Arena tray. Every cloth
+mat retains its complete rectangular shape and uniform dimensions. Printed
+commander and pile faces keep their current seat-facing positions, dimensions
+and ownership; battlefield lanes do not move. The near player's existing row
+already rests on wood beside the mat and retains that placement. Moving remote
+stations outward without making space would cross adjacent mats or fixed
+portraits. Known-empty graveyards and exile zones retain their label, count and
+inspection target but paint no card back, stack layer or card shadow.
+
+The player intent is to distinguish cards waiting outside play, then read or
+deliberately use that exact source. Hover and click retain the existing current
+card/zone reader. They do not cast a commander or answer a choice. Only selecting
+an engine-authorized current action can start casting, and the existing physical
+card transition carries that occurrence onto the battlefield after resolution.
+No zone-access permission, hidden face or engine state is inferred by the station.
+
+Review an empty opening battlefield and a developed one at 1000x740 and
+1540x980, including two commanders, actual pile artwork, far and side seats,
+six-seat play, focus and camera movement. Check that commanders remain readable
+and usable, empty zones remain inspectable, and the personal station reads as
+outside play. Automated production drawing/input checks and agent captures do
+not supply human acceptance of the new physical boundary.

@@ -13,6 +13,108 @@ internal static class AiRepeatedCadenceRegression
         await Boundaries(check);
         await AgedPublicParent(check);
         await PaymentAndRequiredChoice(check);
+        await QueuedInternalChoices(check);
+    }
+
+    private static async Task QueuedInternalChoices(Action<bool, string> check)
+    {
+        // Actual player history showed one Temple of Silence trigger entering
+        // Resolution/Cost/Resolution with no intervening public event. This
+        // authored equivalent uses no private card faces or captured handles.
+        var clock = new Clock(); var pace = new TimedAiHostPacing(TimeSpan.FromSeconds(2.4), clock);
+        var provider = new QueueProvider(1) { Transform = state => QueuedStep(state, ExecutionStep.Stack) };
+        var policy = new Passing();
+        await using var host = new AiTableHost(provider, _ => policy, 42, pacing: pace);
+        await host.StepAsync(); await provider.PassHuman(0); await provider.PassHuman(1);
+        clock.Advance(TimeSpan.FromSeconds(2));
+        foreach (var step in new[] { ExecutionStep.Resolution, ExecutionStep.Cost, ExecutionStep.Choice }) {
+            provider.Transform = state => QueuedStep(state, step);
+            await host.StepAsync();
+            check(provider.BotCommands == 0 && policy.Evaluations == 0 && !pace.Ready("cadence-game", 2),
+                "An already announced queued " + step + " step preserves the unfinished initial beat without evaluating a bot early");
+        }
+        clock.Advance(TimeSpan.FromSeconds(.4)); await host.StepAsync();
+        check(provider.BotCommands == 1 && policy.Evaluations == 1 && pace.Ready("cadence-game", 2),
+            "Internal queued choices consume only the original remaining0.4s instead of restarting another2.4s beat");
+        provider.Transform = state => QueuedStep(state, ExecutionStep.Resolution);
+        await host.StepAsync();
+        check(provider.BotCommands == 2 && provider.BotDecisionIds.Distinct().Count() == 2
+                && clock.Elapsed == TimeSpan.FromSeconds(2.4) && host.LastFault == null,
+            "After the original beat another internal queued step lets the actual host answer fresh authority without waiting again");
+        await host.StepAsync();
+        check(!pace.Ready("cadence-game", 2),
+            "The same queued trigger's actual resolved event and departure still receive a new readable beat");
+        clock.Advance(TimeSpan.FromSeconds(2.4));
+        provider.Transform = state => state with {
+            Stack = [new("New public ability", "Newly announced", StackActionKind.TriggeredAbility, state.Players[0].Zone("Battlefield").Cards[0]) {
+                Id = "fresh-stack", ExecutionId = "fresh-execution", ControllerId = 0 }],
+            Executions = state.Executions! with {
+                Occurrences = state.Executions.Occurrences.Add(new("fresh-execution", "fresh-execution", ExecutionKind.Trigger, ExecutionStep.Stack) {
+                    ActorPlayerId = 0, SourceCardId = "source" }) }
+        };
+        await host.StepAsync();
+        check(!pace.Ready("cadence-game", 2),
+            "A newly arrived public ability keeps its own full announcement after internal queued choices");
+
+        foreach (string change in new[] { "event", "retarget", "reorder", "source", "actor", "parent", "root", "kind",
+            "unknown-source", "unknown-actor", "unknown-queue-kind", "preparation", "terminal", "cancelled", "unqueued" }) {
+            var boundaryClock = new Clock(); var boundaryPace = new TimedAiHostPacing(TimeSpan.FromSeconds(2.4), boundaryClock);
+            var boundary = new QueueProvider(2) { Transform = state => QueuedBoundary(state, change, false) };
+            await using var boundaryHost = new AiTableHost(boundary, _ => new Passing(), 42, pacing: boundaryPace);
+            await boundaryHost.StepAsync(); await boundary.PassHuman(0); await boundary.PassHuman(1);
+            boundaryClock.Advance(TimeSpan.FromSeconds(2));
+            boundary.Transform = state => QueuedBoundary(state, change, true);
+            await boundaryHost.StepAsync(); boundaryClock.Advance(TimeSpan.FromSeconds(.4)); await boundaryHost.StepAsync();
+            check(boundary.BotCommands == 0 && !boundaryPace.Ready("cadence-game", 2),
+                "A queued internal-step optimization retains the new ordinary beat for " + change);
+            boundaryClock.Advance(TimeSpan.FromSeconds(2)); await boundaryHost.StepAsync();
+            check(boundary.BotCommands == 1 && boundaryHost.LastFault == null,
+                "The conservative " + change + " boundary answers fresh authority after its own complete beat without restarting on unchanged polls");
+        }
+    }
+
+    private static GameSnapshot QueuedStep(GameSnapshot state, ExecutionStep step) => state with {
+        Stack = state.Stack.Select(item => item with { Repetition = null }).ToImmutableArray(),
+        Executions = state.Executions! with {
+            Occurrences = state.Executions.Occurrences.Select(item => item.Step == ExecutionStep.Complete ? item : item with { Step = step }).ToImmutableArray()
+        }
+    };
+
+    private static GameSnapshot QueuedBoundary(GameSnapshot state, string change, bool changed)
+    {
+        var result = QueuedStep(state, changed ? ExecutionStep.Resolution : ExecutionStep.Stack);
+        var frame = result.Executions!;
+        var first = frame.Occurrences[0];
+        if (change == "unknown-source") first = first with { SourceCardId = null };
+        if (change == "unknown-actor") first = first with { ActorPlayerId = null };
+        if (change == "unknown-queue-kind") result = result with { Stack = result.Stack.SetItem(0, result.Stack[0] with { Kind = StackActionKind.Ability }) };
+        if (changed) {
+            first = change switch {
+                "source" => first with { SourceCardId = "different-public-source" },
+                "actor" => first with { ActorPlayerId = 1 },
+                "parent" => first with { ParentId = frame.Occurrences[1].Id },
+                "root" => first with { BudgetRootId = frame.Occurrences[1].Id },
+                "kind" => first with { Kind = ExecutionKind.Activation },
+                "preparation" => first with { Step = ExecutionStep.Preparation },
+                "terminal" => first with { Step = ExecutionStep.Complete, Outcome = ExecutionOutcome.Resolved },
+                "cancelled" => first with { Step = ExecutionStep.Complete, Outcome = ExecutionOutcome.Cancelled },
+                _ => first
+            };
+            if (change == "event") result = result with {
+                Activity = result.Activity.Add(new(99, 7, "MAIN1", "draw", 0, "An actual public draw", null, null) {
+                    ExecutionId = first.Id, ExecutionStep = ExecutionStep.Resolution }) };
+            if (change == "retarget") result = Alter(result, "retarget");
+            if (change == "reorder") result = Alter(result, "reorder");
+        }
+        result = result with { Executions = frame with { Occurrences = frame.Occurrences.SetItem(0, first) } };
+        if (change == "unqueued") result = result with {
+            Executions = result.Executions with {
+                Occurrences = result.Executions.Occurrences.Add(new("outside-queue", "outside-queue", ExecutionKind.Activation,
+                    changed ? ExecutionStep.Resolution : ExecutionStep.Stack) { ActorPlayerId = 0, SourceCardId = "source" }) },
+            Activity = result.Activity.Add(new(99, 7, "MAIN1", "ability", 0, "An independent public execution", "source", null) {
+                ExecutionId = "outside-queue", ExecutionStep = ExecutionStep.Stack })
+        };
+        return result;
     }
 
     private static async Task AgedPublicParent(Action<bool, string> check)

@@ -3,12 +3,15 @@ using System.Diagnostics;
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Forge;
+using Mana.AI;
 
 namespace Mana.Table;
 
 // One declared pregame fixture in the existing warmed test JVM. Root choices
-// and costs are scripted through ordinary current capabilities; this is actual
-// rules/provider evidence, not a claim of AI strategy or campaign qualification.
+// and the original resource casts are scripted through ordinary capabilities.
+// The final consuming activation and its payment use the production policy in
+// the unfiltered current domain. This controlled opportunity is not a natural
+// strategy result, legal runtime Commander deck or campaign qualification.
 internal static class AiResourceQualificationJourney
 {
     internal static async Task RunStandaloneAsync(ForgePaths paths, string productionJar)
@@ -40,6 +43,7 @@ internal static class AiResourceQualificationJourney
         var history = new AiCausalHistoryReader();
         var snapshots = new List<GameSnapshot>();
         var commands = new List<object>();
+        var policyDecisions = new List<object>();
         var sourceIds = new Dictionary<string, string>(StringComparer.Ordinal);
         var executionIds = new Dictionary<string, string>(StringComparer.Ordinal);
         var answered = new HashSet<(int Seat, long Revision, string Decision, long Offers)>();
@@ -49,8 +53,12 @@ internal static class AiResourceQualificationJourney
         if (!engine.SupportsAutomatedHistory) throw new NotSupportedException("The resource journey requires actual owned-seat payment history.");
         var started = await engine.StartSimulationAsync([actorDeck, opponent, opponent, opponent]);
         string gameId = started.Id;
+        using var consumer = new AiSeatSession(gameId, 0, new CasualCommanderPolicy(), 261109,
+            new(TimeSpan.FromSeconds(3), 2048));
         var clock = Stopwatch.StartNew();
-        bool initial = false, genericControl = false, complete = false;
+        bool initial = false, genericControl = false, resourceComplete = false, landPlayed = false,
+            consumingInitiated = false, complete = false;
+        int policyAccepted = 0;
         int initiated = 0, firstTurn = 0;
         GameSnapshot? pending = null, lastPublic = null;
         Exception? failure = null;
@@ -60,6 +68,9 @@ internal static class AiResourceQualificationJourney
                     throw new TimeoutException("The resource qualification journey exceeded its focused watchdog.");
                 var seats = await engine.ObserveAutomatedSeatsAsync();
                 foreach (var seat in seats) evidence.ObserveOwned(seat);
+                foreach (var seat in seats.Where(item => item.SeatId == 0))
+                    if (!consumer.ObserveAutomaticProgress(seat.State))
+                        throw new InvalidDataException("The resource policy rejected its owned progress observation.");
                 await history.DrainAsync(engine, seats, evidence);
                 lastPublic = await engine.ObserveSimulationAsync() ?? throw new IOException("The resource fixture lost its public observer.");
                 evidence.ObservePublic(lastPublic);
@@ -85,7 +96,7 @@ internal static class AiResourceQualificationJourney
                             "The actual command-zone Traxos enters tapped after C paid a generic bill; that genuine consumption cannot qualify an explicit C requirement.");
                         genericControl = true;
                     }
-                    if (initiated == 3 && Resolved("Spatial Contortion")
+                    if (!resourceComplete && initiated == 3 && Resolved("Spatial Contortion")
                         && evidence.Witnesses.Any(item => item.WitnessId == "required-colorless-payment"
                             && item.SourceCardId == sourceIds["Spatial Contortion"])
                         && actor.Stack.IsEmpty && actor.Decision?.Payload is PriorityPayload) {
@@ -98,6 +109,19 @@ internal static class AiResourceQualificationJourney
                         check(evidence.CastFactsFor(gameId, 0, executionIds["Mind Stone"]).Single().HistoricSpell == true
                             && evidence.CastFactsFor(gameId, 0, executionIds["Spatial Contortion"]).Single().HistoricSpell == false,
                             "The same archived native history preserves actual Mind Stone historic and Spatial Contortion nonhistoric facts rather than reconstructing them from their names or card faces.");
+                        resourceComplete = true;
+                    }
+                    if (resourceComplete && evidence.Witnesses.Any(item => item.WitnessId == "positive-consuming-artifact-activation"
+                        && item.SourceCardId == sourceIds["Mind Stone"])) {
+                        // The public read can advance beyond the earlier owned
+                        // batch. Confirm public consequences in the same fresh
+                        // audience that supplied this witness, not that old batch.
+                        var publicActor = lastPublic.Players.Single(item => item.Id == 0);
+                        check(consumingInitiated && policyAccepted >= 2
+                            && publicActor.Zone("Graveyard").Cards.Any(card => CardViews.Identity(card) == sourceIds["Mind Stone"])
+                            && publicActor.Zone("Library").Count == 0
+                            && publicActor.Zone("Battlefield").Cards.Count(card => card.Name == "Wastes" && card.Tapped) == 9,
+                            "The ordinary production policy chooses the genuine Mind Stone sacrifice/draw route and pays with a separate real Wastes; the same causal reader confirms its exact cost, resolved activation and one-card draw.");
                         complete = true; break;
                     }
                 }
@@ -108,15 +132,42 @@ internal static class AiResourceQualificationJourney
                         || !answered.Add((observation.SeatId, state.Revision, decision.Id, observation.Domain.Version))) continue;
                     pending = state;
                     DecisionCommand command;
-                    if (observation.SeatId == 0 && decision.Payload is PriorityPayload
+                    AiSubmission? ticket = null;
+                    if (observation.SeatId == 0 && resourceComplete && landPlayed) {
+                        consumer.Observe(new(state, domain: observation.Domain, semantics: observation.Semantics));
+                        var policyView = await consumer.EvaluateAsync();
+                        ticket = consumer.TakeCommand()
+                            ?? throw new InvalidDataException("The consuming resource policy did not produce a current command: " + policyView);
+                        command = ticket.Command;
+                        policyDecisions.Add(new { observation, policyView, ticket.Stamp, ticket.ReasonCode,
+                            command = JsonSerializer.SerializeToElement(command, command.GetType()) });
+                        if (!consumingInitiated) {
+                            if (decision.Payload is not PriorityPayload || command is not UseOfferedAction chosen
+                                || !observation.Domain.Sources.Any(source => source.SourceCardId == sourceIds["Mind Stone"]
+                                    && source.SourceCardKey == chosen.Card && source.Actions.Any(action => action.Id == chosen.ActionId))
+                                || !observation.Domain.Actions.Any(action => action.ActionId == chosen.ActionId
+                                    && !action.ManaAbility && action.Effect == ActionEffectKind.Draw && action.EffectAmount == 1
+                                    && action.Costs.Any(cost => cost.Kind == ActionCostKind.Sacrifice && cost.FromSource)))
+                                throw new InvalidDataException("The unfiltered current policy did not choose the controlled positive consuming artifact opportunity.");
+                            consumingInitiated = true;
+                        }
+                    } else if (observation.SeatId == 0 && resourceComplete && decision.Payload is PriorityPayload
+                        && state.ActivePlayerId == 0 && state.PhaseKey == "MAIN1" && state.Stack.IsEmpty) {
+                        var wastes = state.Viewer!.Zone("Hand").Cards.First(card => card.Name == "Wastes");
+                        var source = observation.Domain.Sources.Single(item => item.SourceCardId == CardViews.Identity(wastes));
+                        var route = source.Actions.Single(action => observation.Domain.Actions.Any(semantic =>
+                            semantic.ActionId == action.Id && semantic.Effect == ActionEffectKind.Land));
+                        command = new UseOfferedAction(state.Id, decision.Id, source.SourceCardKey, route.Id);
+                        landPlayed = true;
+                    } else if (observation.SeatId == 0 && decision.Payload is PriorityPayload
                         && state.ActivePlayerId == 0 && state.PhaseKey == "MAIN1" && state.Stack.IsEmpty) {
                         if (!initial) {
                             check(state.Players.Length == 4 && state.Viewer!.Zone("Hand").Count == 8
-                                && state.Viewer.Zone("Library").Count == 0
+                                && state.Viewer.Zone("Library").Count == 1
                                 && state.Viewer.Zone("Hand").Cards.Any(card => card.Name == "Mind Stone")
                                 && state.Viewer.Zone("Hand").Cards.Any(card => card.Name == "Spatial Contortion")
                                 && state.Viewer.Zone("Battlefield").Cards.Count(card => card.Name == "Wastes" && !card.Tapped) == 8,
-                                "The declared test-only eight-card library reaches both actual hand cards through opening seven plus the genuine draw, with eight real pregame Wastes and a proper commander.");
+                                "The declared test-only nine-card library with duplicate witnesses guarantees both actual spell choices through opening seven plus the genuine draw, preserving one real library card, eight pregame Wastes and a proper commander.");
                             initial = true; firstTurn = state.Turn;
                         }
                         if (state.Turn != firstTurn) throw new InvalidOperationException("The fixture cannot continue into an empty-library draw.");
@@ -131,7 +182,7 @@ internal static class AiResourceQualificationJourney
                         if (next == null) command = new PassPriority(state.Id, decision.Id);
                         else {
                             string zone = initiated == 0 ? "Command" : "Hand";
-                            var card = state.Viewer!.Zone(zone).Cards.Single(item => item.Name == next);
+                            var card = state.Viewer!.Zone(zone).Cards.First(item => item.Name == next);
                             var source = observation.Domain.Sources.Single(item => item.SourceCardId == CardViews.Identity(card));
                             var route = source.Actions.Single(item => item.Kind == "cast");
                             command = new UseOfferedAction(state.Id, decision.Id, source.SourceCardKey, route.Id);
@@ -155,11 +206,17 @@ internal static class AiResourceQualificationJourney
                         command = traxos.Selectable ? new SelectCard(state.Id, decision.Id, traxos.Key) : Answer(state);
                     } else command = Answer(state);
                     if (!GameCommandPermissions.Allows(state, command)) throw new InvalidDataException("The resource driver left the exact current capability.");
-                    await engine.ExecuteAutomatedAsync(observation.SeatId, command);
+                    try {
+                        await engine.ExecuteAutomatedAsync(observation.SeatId, command);
+                        if (ticket != null) { consumer.Report(ticket, AiExecutionReceipt.Accepted); policyAccepted++; }
+                    } catch {
+                        if (ticket != null) consumer.Report(ticket, AiExecutionReceipt.Unknown);
+                        throw;
+                    }
                     evidence.Receipt(observation, command, true);
                     await history.DrainAsync(engine, [observation], evidence, force: true);
                     commands.Add(new { observation.SeatId, state.Revision, decision.Id, decision.ExecutionId,
-                        command = command.GetType().Name, scripted = true });
+                        command = command.GetType().Name, scripted = ticket == null });
                     submitted = true; break;
                 }
                 if (!submitted) await Task.Delay(2);
@@ -168,9 +225,10 @@ internal static class AiResourceQualificationJourney
         finally {
             try {
                 File.WriteAllText(Path.Combine(directory, "private-resource-witnesses.json"), JsonSerializer.Serialize(new {
-                    scope = "Scripted actual engine/provider witnesses. Saved Commander deck and controlled eight-card runtime are separate; no campaign qualification or AI-strategy credit.",
+                    scope = "Declared nine-card nonlegal runtime fixture. Original casts and the later real land play are scripted; final consuming activation and payment use the unfiltered production policy. This focused opportunity is not a natural strategy result or campaign/deck qualification.",
                     failure = failure?.ToString(), initiated, complete, genericControl, firstTurn,
-                    sourceIds, executionIds, pending, lastPublic, snapshots, commands, witnesses = evidence.Witnesses,
+                    sourceIds, executionIds, pending, lastPublic, snapshots, commands, policyAccepted, policyDecisions,
+                    resourceComplete, landPlayed, consumingInitiated, witnesses = evidence.Witnesses,
                     genericPayments = executionIds.TryGetValue("Traxos, Scourge of Kroog", out var root)
                         ? evidence.PaymentsFor(gameId, 0, root) : []
                 }, new JsonSerializerOptions { WriteIndented = true }));

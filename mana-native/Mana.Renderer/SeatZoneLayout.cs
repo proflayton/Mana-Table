@@ -1,5 +1,6 @@
 using Mana.Contracts;
 using Microsoft.Xna.Framework;
+using Point = Microsoft.Xna.Framework.Point;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Renderer;
@@ -16,6 +17,7 @@ public sealed class SeatZoneLayout
     public Rectangle CommandActions => CommandLabel;
     public IReadOnlyList<SceneCard> Commanders { get; }
     public IReadOnlyList<PilePlan> Piles { get; }
+    public SeatZoneTrayGeometry? Tray { get; }
 
     internal SeatZoneLayout(Player player, TableSeatFrame frame, Vector2 hero)
     {
@@ -24,6 +26,7 @@ public sealed class SeatZoneLayout
         // The near seat keeps its life counter centered above the held hand.
         // Its personal row sits alongside the mat, facing the same player.
         Placement = frame.Project(near ? new(-324, 210, 318, 68) : PlayerPlaymat.PersonalArea);
+        Tray = near ? null : new(Placement);
         Vector2 Point(Vector2 local) => frame.Project(local);
         Pose Face(Vector2 local, Vector2 size) => TableSurfaceProjection.Project(
             new Pose(Point(local), size, frame.Facing));
@@ -79,5 +82,23 @@ public sealed class SeatZoneLayout
                 Caption = label
             };
         }).ToArray());
+    }
+}
+
+/// <summary>The immutable physical tray face shared by painting and review.
+/// It adds no zone access, action scope or independent input surface.</summary>
+public sealed record SeatZoneTrayGeometry(Rectangle Placement)
+{
+    public IReadOnlyList<Vector2> Outline(int inset = 0, Point offset = default)
+    {
+        var bounds = Placement; bounds.Inflate(-inset, -inset); bounds.Offset(offset);
+        int chamfer = Math.Max(2, 7 - inset);
+        var points = new[] {
+            new Vector2(bounds.Left + chamfer, bounds.Top), new Vector2(bounds.Right - chamfer, bounds.Top),
+            new Vector2(bounds.Right, bounds.Top + chamfer), new Vector2(bounds.Right, bounds.Bottom - chamfer),
+            new Vector2(bounds.Right - chamfer, bounds.Bottom), new Vector2(bounds.Left + chamfer, bounds.Bottom),
+            new Vector2(bounds.Left, bounds.Bottom - chamfer), new Vector2(bounds.Left, bounds.Top + chamfer)
+        };
+        return Array.AsReadOnly(points.Select(TableSurfaceProjection.Project).ToArray());
     }
 }

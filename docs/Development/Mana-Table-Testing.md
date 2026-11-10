@@ -1206,11 +1206,21 @@ stale Surefire files do not belong to a later focused run.
 `AiResourceQualificationJourney` reuses the initialized fixture engine in the
 normal source-bound headless engine smoke, with an optional local
 `--smoke-ai-resources` route. Its declared pregame fixture supplies eight Wastes
-and an eight-card runtime library. Scripted ordinary commands cast Traxos using
+and a nine-card runtime library with duplicate Mind Stone and Spatial Contortion
+copies, guaranteeing both in the initial eight draws and leaving one real card
+to draw. Scripted ordinary commands cast Traxos using
 generic mana, then Mind Stone to trigger its actual untap, then Spatial Contortion
 with an explicit colorless requirement. Archived receipts must distinguish the
-generic negative control from actual `C` consumption. The saved Commander list
-is legal; the deliberately shortened runtime is a test fixture. This does not
+generic negative control from actual `C` consumption. After the original three
+casts and eight paid Wastes are verified, the driver plays a genuine hand Wastes.
+The unfiltered production policy then chooses and pays for Mind Stone's sacrifice
+activation. The shared causal reader requires its exact source sacrifice,
+resolved activation, attributed one-card draw and public hand/library change.
+`AiConsumingArtifactEvidenceChecks` and the campaign tracker checks protect wrong
+actors, sources, stages, unrelated draws, cancellation, retention loss and credit
+to another deck. This is the first supported consuming-artifact witness, scoped
+to a positive draw; other consuming outcomes remain unproven.
+The saved Commander list is legal; the deliberately shortened runtime is a test fixture. This does not
 qualify a campaign deck, prove AI strategy, or replace mixed human play review.
 External resources alone remain unbound; exact-source CI establishes package
 identity separately. No test cutoff becomes a draw or a reason to extend budgets.
@@ -2256,7 +2266,17 @@ hand, both partners, six floating mana colors and two public counter types. Actu
 pile, caption, commander backing/shadow and count paint must clear the prepared
 portrait/phase/mana/hand targets; public state and zone hits retain their owner.
 The near row is checked on the table beside its mat, closer to that mat than any
-foreign mat; opponent rows stay inside their cloth. Automatic focus includes
+foreign mat; opponent rows retain their reserved station in the same mat
+footprint, separated from played permanents by a shallow physical wooden tray.
+The full rectangular cloth and every card's position remain unchanged.
+Empty graveyards and exile retain labelled inspection targets without painting
+card backs or shadows. `SeatZoneChecks` additionally checks the actual painted
+tray and empty-zone hits at two, four and six seats at both window sizes.
+The test-only `--capture-large-table --capture-view opening` route captures the
+production renderer's four-seat empty battlefield with both partner commanders;
+use a fresh `--profile`, `--size 1000x740` or `1540x980`, and optionally an existing
+artwork cache through `--art-cache`. These captures do not supply human approval.
+Automatic focus includes
 the complete physical setup, and the wood support check consumes the prepared
 pile plan rather than rebuilding an obsolete label. Explicit table-placement
 checks also keep a public spread,

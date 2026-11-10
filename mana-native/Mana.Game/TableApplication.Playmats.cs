@@ -33,6 +33,8 @@ internal sealed partial class TableApplication
         canvas.BeginTransform(boardView);
         foreach (var seat in tableScene!.Seats)
             if (seat.Geometry.PlaymatPlacement is { } bounds) DrawPlayerPlaymat(seat.Geometry.Frame, bounds);
+        foreach (var seat in tableScene.Seats)
+            if (seat.Geometry.ZoneStation?.Tray is { } tray) DrawPersonalStation(seat.Geometry.Frame, tray);
         canvas.EndTransform();
         canvas.EndClip();
     }
@@ -91,6 +93,28 @@ internal sealed partial class TableApplication
         }
 
         void Stitch(Vector2 from, Vector2 to) => PlaneLine(from, to, thread * .65f, 1);
+    }
+
+    private void DrawPersonalStation(TableSeatFrame frame, SeatZoneTrayGeometry tray)
+    {
+        // A raised wooden card station is a physical object, distinct from the
+        // cloth occupied by played permanents. Its prepared placement is also
+        // used by inspection geometry; no card or pile is repositioned here.
+        canvas.Polygon(tray.Outline(offset: new(3, 5)), Color.Black * .55f);
+        canvas.Polygon(tray.Outline(), new Color(35, 24, 17));
+        canvas.Polygon(tray.Outline(2), new Color(123, 89, 54));
+        canvas.Polygon(tray.Outline(5), new Color(69, 47, 31));
+        canvas.Polygon(tray.Outline(7), new Color(47, 33, 24));
+        var area = PlayerPlaymat.PersonalArea;
+        for (int index = 0; index < 14; index++) {
+            float y = area.Top + 12 + index * (area.Height - 24) / 14f;
+            PlaneLine(frame.Project(new Vector2(area.Left + 11, y)),
+                frame.Project(new Vector2(area.Right - 11, y)), new Color(153, 107, 60) * .1f, .8f);
+        }
+        // The shallow groove separates waiting commanders from the lower
+        // piles without introducing another dashboard row or control.
+        PlaneLine(frame.Project(new Vector2(area.Left + 9, 216)),
+            frame.Project(new Vector2(area.Right - 9, 216)), new Color(20, 14, 10) * .8f, 2);
     }
 
     private void PlaneLine(Vector2 from, Vector2 to, Color color, float width) =>
