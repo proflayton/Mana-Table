@@ -60,9 +60,9 @@ remains explicit; it does not prevent completing independent authorized work.
 
 | Workstream | Design review | Execution | Integration |
 | --- | --- | --- | --- |
-| Artwork | Revised design accepted; stable-graphics cross-review resolved | Residency, frame leases, admission and meaningful GPU checks approved | Pending |
-| Diagnostics | Revised design accepted | Bounded drain, isolated writer, retirement and child-pipe checks approved | Pending |
-| AI | Revised design accepted | Phase A provenance approved; B requires its actual-provider reproduction | Pending |
+| Artwork | Revised design accepted; stable-graphics cross-review resolved | Implementing residency, frame leases, admission and GPU checks | Pending |
+| Diagnostics | Revised design accepted | Implementing bounded drain, isolated writer, retirement and child-pipe checks | Pending |
+| AI | Revised design accepted | Implementing Phase A provenance; B requires its actual-provider reproduction | Pending |
 | Presentation | Revised history-owner design accepted | P1 history ownership and bounded actual I/O approved | Pending |
 | Live updates | Revised delivery design accepted | Mainline U1 retained update owner approved; isolated U2 keeps its own gates | Pending |
 
@@ -119,3 +119,15 @@ Workers may add the narrow existing-runner registrations needed to execute their
 own regressions. The lead reconciles those registrations and the small shared
 application/window construction seams during review. Canonical guide updates
 and all Git integration remain lead-owned.
+
+### Existing remote evidence to keep separate
+
+The earlier draft PR 136 checks used merge-test source `4c4fc887700a13d0c6a42b634a705e8014b2a626`.
+Its [mixed-game job](https://github.com/proflayton/Mana-Table/actions/runs/42791391189/job/129746934430)
+ended inconclusive because not every requested natural rotation reached an outcome
+within its existing limits. Its [Java 21 job](https://github.com/proflayton/Mana-Table/actions/runs/42791391123/job/129745432555)
+failed `TerminalProjectionTest.aRealLosingBlockPreventsAnOtherwiseFatalCommanderHit`
+while awaiting an exact staged blocker assignment. These precede this program;
+neither is attributed to a new implementation without final-source evidence.
+Their retained failures do not justify relaxing checks, extending budgets or
+claiming complete gameplay qualification from the passing local baseline suites.

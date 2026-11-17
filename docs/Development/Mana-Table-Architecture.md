@@ -9,6 +9,11 @@ Use the package's `SOURCE.txt`/`build.json` and release notes to identify its be
 The [native development guide](../../mana-native/README.md) is the build/run entry
 point for the Windows client.
 
+The [gameplay reliability program](Mana-Table-Reliability-Program.md) records the
+reviewed artwork, process diagnostics, AI failure, history presentation and
+update-operation designs. Its implementation and qualification states are
+tracked separately from the larger cooperative and live-update milestones.
+
 The [3 November boundary audit](Mana-Table-Boundary-Audit-2026-11-03.md) follows
 recent regressions across published source facts, client audience lifetimes and
 current native composition. Those values have separate invalidation rules:
