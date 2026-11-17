@@ -61,9 +61,9 @@ remains explicit; it does not prevent completing independent authorized work.
 | Workstream | Design review | Execution | Integration |
 | --- | --- | --- | --- |
 | Artwork | Revised design accepted; stable-graphics cross-review resolved | Implementing residency, frame leases, admission and GPU checks | Pending |
-| Diagnostics | Revised design accepted | Implementing bounded drain, isolated writer, retirement and child-pipe checks | Pending |
+| Diagnostics | Revised design and source accepted | Bounded drain, isolated writer, retirement and child-pipe checks implemented | Merged `71593996f28`; integrated 39-check group passed |
 | AI | Revised design accepted | Phase A implemented and source-reviewed; B requires its actual-provider reproduction | Merged `03cbf020e44`; integrated focused checks passed |
-| Presentation | Revised history-owner design accepted | P1 history ownership and bounded actual I/O approved | Pending |
+| Presentation | Revised history-owner design accepted | Implementing P1 history ownership and bounded actual I/O | Pending |
 | Live updates | Revised delivery design accepted | Implementing mainline U1 retained update owner; isolated U2 keeps its own gates | Pending |
 
 All five specialist assignments begin design-only. Production changes begin

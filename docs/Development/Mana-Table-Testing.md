@@ -15,6 +15,13 @@ corroborated budgets, exception redaction, cancellation, original receipt scope,
 no-progress and older replay JSON. These checks do not qualify a deck or replace
 natural mixed-game and human gameplay review.
 
+After building `Mana.Table.Tests`, select process-diagnostic checks with
+`--smoke-headless-presentation --presentation-group engine-diagnostics` and a
+fresh `--profile`. They also run in the existing configured-simulation group and
+full headless inventory. Authored child replies establish actual pipe/storage
+liveness under failed or blocked sinks, bounded output and A-to-B-to-C process
+replacement. They do not simulate Magic rules or qualify complete games.
+
 ## Current target restriction feedback
 
 `--smoke-headless-presentation --presentation-group target-restrictions` runs the

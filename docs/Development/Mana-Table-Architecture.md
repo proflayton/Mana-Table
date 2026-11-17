@@ -14,6 +14,16 @@ reviewed artwork, process diagnostics, AI failure, history presentation and
 update-operation designs. Its implementation and qualification states are
 tracked separately from the larger cooperative and live-update milestones.
 
+Rules-process diagnostics have a process-owned bounded stderr drain and an
+independent optional file worker. A slow or failed `engine.log` sink cannot
+backpressure the child through that drain. Fixed queue/tail storage, explicit
+omission accounting and one half-second retirement grace bound optional work.
+After a noncooperative file worker is abandoned, that engine instance suppresses
+later file workers while continuing each process's drain. Retired status is
+text-free and immutable; diagnostics never acquire command or failure authority.
+See the [diagnostics design](Mana-Table-Engine-Diagnostics-Design.md) for the
+retention limits and process-liveness evidence.
+
 The [3 November boundary audit](Mana-Table-Boundary-Audit-2026-11-03.md) follows
 recent regressions across published source facts, client audience lifetimes and
 current native composition. Those values have separate invalidation rules:
