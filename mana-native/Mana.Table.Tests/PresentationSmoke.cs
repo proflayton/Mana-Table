@@ -27,6 +27,7 @@ internal static class PresentationSmoke
         DecisionSessionChecks.Run(Check);
         ImpactFeedbackChecks.Run(Check);
         CardArtPreloadChecks.Run(Check);
+        ArtworkResidencyChecks.Run(Check);
         PriorityAbilitySmoke.CheckArtworkHandoff(profile, Check);
         ManaPoolFeedbackChecks.Run(Check);
         InteractionFrameChecks.Run(Check);

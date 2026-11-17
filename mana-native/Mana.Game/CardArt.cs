@@ -1,5 +1,4 @@
-using System.Collections.Concurrent;
-using Mana.Renderer;
+﻿using Mana.Renderer;
 using Microsoft.Xna.Framework.Graphics;
 using Mana.Contracts;
 using Mana.Table.Presentation;
@@ -8,25 +7,56 @@ namespace Mana.Table;
 
 internal sealed class CardArt : IDisposable
 {
-    private const int VisibleLimit = 512, AnticipatedLimit = 160;
-    private const int UploadByteBudget = 8 * 1024 * 1024, MaximumImageBytes = 4 * 1024 * 1024;
+    private const int VisibleLimit = 512, AnticipatedLimit = 160, MetadataLimit = 4096, CaptureLimit = 4, MandatoryFrameLimit = 4;
+    private const int UploadByteBudget = 8 * 1024 * 1024;
+    private sealed class Metadata
+    {
+        internal bool Warmed, Queued;
+        internal long Used, Demanded, DeniedGeneration = -1;
+        internal DateTimeOffset RetryAfter;
+        internal ArtworkImageInfo? Image;
+    }
+    private sealed record Upload(string Key, byte[] Bytes, ArtworkImageInfo Image);
     private readonly ICardArtSource source;
-    private readonly ConcurrentQueue<(string Name, byte[] Bytes)> loaded = new();
-    private readonly Dictionary<string, Texture2D> textures = [];
+    private readonly ArtworkResidency residency;
+    private readonly Queue<Upload> loaded = new();
+    private readonly Dictionary<string, Texture2D> textures = new(StringComparer.Ordinal);
+    private readonly Dictionary<Texture2D, string> ownedTextures = new();
+    private readonly Dictionary<string, Metadata> metadata = new(StringComparer.Ordinal);
+    private readonly HashSet<FrameLease> leases = [];
     private readonly CancellationTokenSource stopped = new();
     private readonly object gate = new();
-    private readonly Dictionary<string, ArtRequest> foreground = [];
+    private readonly Dictionary<string, ArtRequest> foreground = new(StringComparer.Ordinal);
     private Dictionary<string, ArtRequest> visible = [], anticipated = [];
     private IEnumerable<Card>? previousVisible, previousAnticipated;
-    private readonly HashSet<string> warmed = [], uploaded = [];
-    private readonly Dictionary<string, DateTime> retryAfter = [];
-    private int waitingBytes;
+    private TaskCompletionSource queueChanged = Signal();
+    private readonly TimeProvider clock;
+    private int waitingBytes, heldBytes, uploadingBytes, deviceThread, captures, mandatoryFrames;
+    private string? loading, uploading;
+    private long ordinal, demandGeneration, pressureDenials;
     private bool working, disposed;
-    public CardArt(ICardArtSource source) { this.source = source; }
+    private Task worker = Task.CompletedTask;
+    private long uploadFailures;
+    private string lastUploadFailure = "";
+    private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public CardArt(ICardArtSource source, ArtworkResidencyLimits? limits = null, TimeProvider? clock = null)
+    {
+        this.source = source; this.clock = clock ?? TimeProvider.System;
+        limits ??= new(); limits.Validate(); residency = new(limits);
+    }
+    internal ArtworkCacheMetrics Metrics {
+        get { lock (gate) return new(residency.Count, residency.Bytes, residency.PeakBytes, loaded.Count,
+            waitingBytes, heldBytes, uploadingBytes, metadata.Count, residency.CapacityGeneration, residency.Evictions, pressureDenials, captures,
+            mandatoryFrames, leases.Count, uploadFailures, lastUploadFailure); }
+    }
+    internal Task PendingLoad { get { lock (gate) return worker; } }
+    // Encoded stage counts exclude the source reader's MemoryStream/copy buffers,
+    // decoder buffers and driver storage. They are not a total CPU-memory budget.
+    internal sealed record ArtworkCacheMetrics(int Residents, long ResidentBytes, long AccountedPeakBytes,
+        int Queued, int QueuedBytes, int HeldBytes, int DeviceUploadBytes, int Metadata, long CapacityGeneration,
+        long Evictions, long PressureDenials, int Captures, int MandatoryFrames, int LiveLeases,
+        long UploadFailures, string LastUploadFailure);
 
-    // Replace speculative work with the current view rather than appending an
-    // unbounded queue as players browse. Decks warm disk; visible faces also
-    // prepare GPU uploads. A newly read card can always jump ahead of both.
     internal void Preload(IEnumerable<Card> visibleCards, IEnumerable<Card>? anticipatedCards = null)
     {
         if (ReferenceEquals(previousVisible, visibleCards) && ReferenceEquals(previousAnticipated, anticipatedCards)) return;
@@ -36,13 +66,14 @@ internal sealed class CardArt : IDisposable
         lock (gate) {
             if (disposed) return;
             visible = current; anticipated = upcoming;
-            StartWorker();
+            foreach (string key in foreground.Keys.Where(key => metadata[key].Demanded < demandGeneration
+                && !visible.ContainsKey(key)).ToArray()) foreground.Remove(key);
+            PruneMetadata(); WakeQueue(); StartWorker();
         }
     }
-
     private static Dictionary<string, ArtRequest> Requests(IEnumerable<Card> cards, int limit)
     {
-        var requests = new Dictionary<string, ArtRequest>();
+        var requests = new Dictionary<string, ArtRequest>(StringComparer.Ordinal);
         foreach (var card in cards) {
             if (Mana.Magic.CardPresentation.Artwork(card) is not { } request) continue;
             requests.TryAdd(request.Key, request);
@@ -50,9 +81,6 @@ internal sealed class CardArt : IDisposable
         }
         return requests;
     }
-
-    // Queued bytes are not ready art. Only the window's successful GPU upload
-    // counts; a failed face settles to its existing readable fallback.
     internal ArtworkReadiness Readiness(Card[] cards)
     {
         var requests = Requests(cards, VisibleLimit);
@@ -60,111 +88,228 @@ internal sealed class CardArt : IDisposable
         lock (gate) {
             foreach (var key in requests.Keys) {
                 if (textures.ContainsKey(key)) ready++;
-                else if (retryAfter.TryGetValue(key, out var retry) && retry > DateTime.UtcNow) unavailable++;
+                else if (metadata.TryGetValue(key, out var entry)
+                    && (entry.RetryAfter > clock.GetUtcNow() || entry.Image is { } image
+                        && entry.DeniedGeneration >= 0 && !residency.CanAdmit(image))) unavailable++;
             }
         }
         return new(requests.Count, ready, unavailable);
     }
-
     public void Update(GraphicsDevice graphics)
     {
-        for (int uploaded = 0; uploaded < 2 && loaded.TryDequeue(out var item); uploaded++) {
-            lock (gate) waitingBytes -= item.Bytes.Length;
-            try { using var stream = new MemoryStream(item.Bytes); textures[item.Name] = TextureFiltering.Load(graphics, stream); }
-            catch {
-                // A corrupt image retains the readable fallback and can retry
-                // later instead of starting a failing request every frame.
-                lock (gate) { this.uploaded.Remove(item.Name); retryAfter[item.Name] = DateTime.UtcNow.AddSeconds(30); }
+        AssertDevice(bind: true);
+        lock (gate) { if (disposed) return; demandGeneration++; }
+        for (int uploaded = 0; uploaded < 2; uploaded++) {
+            Upload item; ArtworkResidency.Reservation? admission;
+            lock (gate) {
+                if (!loaded.TryDequeue(out item!)) break;
+                waitingBytes -= item.Bytes.Length; var entry = metadata[item.Key]; entry.Queued = false;
+                WakeQueue();
+                if (!Wanted(item.Key) || residency.Contains(item.Key)) continue;
+                admission = residency.TryReserve(item.Key, item.Image);
+                if (admission == null) { entry.DeniedGeneration = residency.CapacityGeneration; pressureDenials++; continue; }
+                uploading = item.Key; uploadingBytes = item.Bytes.Length;
+                foreach (string key in admission.Evicted) {
+                    var old = textures[key]; textures.Remove(key); ownedTextures.Remove(old); old.Dispose();
+                }
+            }
+            Texture2D? texture = null;
+            using (admission) {
+                try {
+                    texture = TextureFiltering.Load(graphics, item.Bytes, item.Image);
+                    long bytes = EncodedArtwork.ColorBytes(texture.Width, texture.Height, texture.LevelCount);
+                    if (texture.Format != SurfaceFormat.Color || bytes != item.Image.Bytes)
+                        throw new InvalidDataException("The uploaded artwork contradicted its reserved footprint.");
+                    lock (gate) {
+                        textures.Add(item.Key, texture);
+                        try { ownedTextures.Add(texture, item.Key); admission.Commit(bytes); }
+                        catch { textures.Remove(item.Key); ownedTextures.Remove(texture); throw; }
+                        metadata[item.Key].DeniedGeneration = -1;
+                    }
+                    texture = null;
+                } catch (Exception error) {
+                    texture?.Dispose();
+                    lock (gate) {
+                        metadata[item.Key].RetryAfter = clock.GetUtcNow().AddSeconds(30); uploadFailures++;
+                        string detail = error.GetType().Name + ": " + error.Message;
+                        lastUploadFailure = detail[..Math.Min(detail.Length, 1024)];
+                    }
+                } finally { lock (gate) { uploading = null; uploadingBytes = 0; } }
             }
         }
-        lock (gate) StartWorker();
+        lock (gate) { PruneMetadata(); StartWorker(); }
     }
     public Texture2D? Get(Card card)
     {
+        AssertDevice();
         if (Mana.Magic.CardPresentation.Artwork(card) is not { } request) return null;
-        string cacheName = request.Key;
-        if (textures.TryGetValue(cacheName, out var texture)) return texture;
         lock (gate) {
-            if (!disposed && Ready(request, true)) {
-                // Full-card reading paints after the table. Its latest demand
-                // should not wait behind every small face in a crowded scene.
-                foreground.Remove(cacheName);
-                if (foreground.Count >= VisibleLimit) foreground.Remove(foreground.Keys.First());
-                foreground.Add(cacheName, request);
-            }
-            StartWorker();
+            if (disposed) return null;
+            var entry = Entry(request.Key); entry.Demanded = demandGeneration;
+            if (textures.TryGetValue(request.Key, out var texture)) { residency.Touch(request.Key); return texture; }
+            foreground.Remove(request.Key);
+            if (foreground.Count >= VisibleLimit) foreground.Remove(foreground.Keys.MinBy(key => metadata[key].Used)!);
+            foreground.Add(request.Key, request);
+            StartWorker(); return null;
         }
-        return null;
     }
-
-    // Only this worker enters the art source. Thousands of draw calls cannot
-    // occupy the source's network semaphore ahead of the card being inspected.
+    internal FrameLease PinFrame(DrawingFrame frame)
+    {
+        AssertDevice();
+        lock (gate) {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (mandatoryFrames >= MandatoryFrameLimit) throw new InvalidOperationException("Required artwork frame ownership exceeded its fixed roles.");
+            return Lease(frame, capture: false);
+        }
+    }
+    internal bool TryPinCapture(DrawingFrame frame, out FrameLease? lease)
+    {
+        AssertDevice();
+        lock (gate) {
+            lease = null;
+            if (disposed || captures >= CaptureLimit) return false;
+            lease = Lease(frame, capture: true); return true;
+        }
+    }
+    private FrameLease Lease(DrawingFrame frame, bool capture)
+    {
+        string[] keys = frame.TextureResources.Where(ownedTextures.ContainsKey).Select(texture => ownedTextures[texture]).Distinct().ToArray();
+        if (frame.TextureResources.Any(texture => texture.IsDisposed)) throw new InvalidOperationException("A retained artwork frame references a disposed texture.");
+        residency.Pin(keys);
+        if (capture) captures++; else mandatoryFrames++;
+        var lease = new FrameLease(this, frame, keys, capture); leases.Add(lease); return lease;
+    }
+    internal sealed class FrameLease : IDisposable
+    {
+        private CardArt? current;
+        private DrawingFrame? drawing;
+        private string[]? keys;
+        private readonly bool capture;
+        internal bool Active => Volatile.Read(ref current) != null;
+        internal DrawingFrame? Drawing => Active ? drawing : null;
+        internal int RetainedKeys => Active ? keys?.Length ?? 0 : 0;
+        internal FrameLease(CardArt owner, DrawingFrame frame, string[] keys, bool capture)
+            => (current, drawing, this.keys, this.capture) = (owner, frame, keys, capture);
+        // Called only while the owner gate is held, including before GPU shutdown.
+        internal void Revoke()
+        {
+            if (Volatile.Read(ref current) is not { } owner) return;
+            var previousKeys = keys!;
+            drawing = null; keys = null; Volatile.Write(ref current, null);
+            owner.residency.Unpin(previousKeys); owner.leases.Remove(this);
+            if (capture) owner.captures--; else owner.mandatoryFrames--;
+        }
+        public void Dispose()
+        {
+            var owner = Volatile.Read(ref current);
+            if (owner == null) return;
+            owner.AssertDevice();
+            lock (owner.gate) {
+                Revoke();
+                if (!owner.disposed) owner.StartWorker();
+            }
+        }
+    }
+    private Metadata Entry(string key)
+    {
+        if (!metadata.TryGetValue(key, out var entry)) { PruneMetadata(reserve: 1); metadata.Add(key, entry = new()); }
+        entry.Used = ++ordinal; return entry;
+    }
+    private void PruneMetadata(int reserve = 0)
+    {
+        if (metadata.Count + reserve <= MetadataLimit) return;
+        foreach (string key in metadata.Where(pair => !pair.Value.Queued && loading != pair.Key && uploading != pair.Key && !residency.Contains(pair.Key)
+            && !visible.ContainsKey(pair.Key) && !anticipated.ContainsKey(pair.Key) && !foreground.ContainsKey(pair.Key))
+            .OrderBy(pair => pair.Value.Used).ThenBy(pair => pair.Key, StringComparer.Ordinal)
+            .Take(metadata.Count + reserve - MetadataLimit).Select(pair => pair.Key).ToArray()) metadata.Remove(key);
+        if (metadata.Count + reserve > MetadataLimit) throw new InvalidOperationException("Active artwork metadata exceeded its bounded demand envelope.");
+    }
+    private bool Ready(ArtRequest request, bool upload)
+    {
+        if (residency.Contains(request.Key) || loading == request.Key || uploading == request.Key) return false;
+        if (!metadata.TryGetValue(request.Key, out var entry)) return true;
+        if (entry.Queued || entry.RetryAfter > clock.GetUtcNow() || !upload && entry.Warmed) return false;
+        if (upload && entry.DeniedGeneration >= 0 && entry.Image is { } image) {
+            if (entry.DeniedGeneration == residency.CapacityGeneration) return false;
+            if (!residency.CanAdmit(image)) { entry.DeniedGeneration = residency.CapacityGeneration; return false; }
+        }
+        return true;
+    }
+    private bool Wanted(string key) => foreground.ContainsKey(key) || visible.ContainsKey(key);
+    private bool HasWork() => foreground.Values.Any(request => Ready(request, true))
+        || visible.Values.Any(request => Ready(request, true)) || anticipated.Values.Any(request => Ready(request, false));
     private void StartWorker()
     {
         if (working || disposed || loaded.Count >= 16 || waitingBytes >= UploadByteBudget || !HasWork()) return;
-        working = true;
-        _ = Task.Run(LoadQueued);
+        working = true; worker = Task.Run(LoadQueued);
     }
-
-    private bool Ready(ArtRequest request, bool upload) => !(upload ? uploaded : warmed).Contains(request.Key)
-        && (!retryAfter.TryGetValue(request.Key, out var retry) || retry <= DateTime.UtcNow);
-
-    private bool HasWork() => foreground.Values.Any(request => Ready(request, true))
-        || visible.Values.Any(request => Ready(request, true)) || anticipated.Values.Any(request => Ready(request, false));
-
+    private void WakeQueue() { var signal = queueChanged; queueChanged = Signal(); signal.TrySetResult(); }
     private async Task LoadQueued()
     {
         bool normalExit = false;
         try {
             while (true) {
                 ArtRequest? request;
-                bool upload;
                 lock (gate) {
-                    // Cached files can finish much faster than GPU uploads. Keep
-                    // encoded images bounded even when the game is not drawing.
-                    if (loaded.Count >= 16 || waitingBytes >= UploadByteBudget) { normalExit = true; return; }
-                    request = foreground.Values.LastOrDefault(candidate => Ready(candidate, true));
-                    if (request != null) foreground.Remove(request.Key);
-                    request ??= visible.Values.FirstOrDefault(candidate => Ready(candidate, true));
-                    upload = request != null;
-                    request ??= anticipated.Values.FirstOrDefault(candidate => Ready(candidate, false));
-                    if (disposed || request == null) { normalExit = true; return; }
+                    if (disposed || loaded.Count >= 16 || waitingBytes >= UploadByteBudget) { normalExit = true; return; }
+                    request = foreground.Values.OrderByDescending(candidate => metadata[candidate.Key].Used).FirstOrDefault(candidate => Ready(candidate, true))
+                        ?? visible.Values.FirstOrDefault(candidate => Ready(candidate, true))
+                        ?? anticipated.Values.FirstOrDefault(candidate => Ready(candidate, false));
+                    if (request == null) { normalExit = true; return; }
+                    loading = request.Key; Entry(request.Key);
                 }
                 byte[]? bytes = null;
-                try {
-                    bytes = await source.LoadAsync(request, stopped.Token);
-                } catch (Exception) {
-                    // The injected source boundary may fail beyond ordinary
-                    // network/cache errors. Back off this face and keep the
-                    // remaining cards available instead of stranding ownership.
-                }
-                lock (gate) {
-                    if (disposed) { normalExit = true; return; }
-                    if (bytes is { Length: > 0 and <= MaximumImageBytes }) {
-                        warmed.Add(request.Key); retryAfter.Remove(request.Key);
-                        // A deck prefetch may become a visible card while loading.
-                        upload |= foreground.Remove(request.Key) || visible.ContainsKey(request.Key);
-                        if (upload && uploaded.Add(request.Key)) {
-                            waitingBytes += bytes.Length;
-                            loaded.Enqueue((request.Key, bytes));
+                try { bytes = await source.LoadAsync(request, stopped.Token).ConfigureAwait(false); }
+                catch (Exception) { /* Keep the current readable fallback; a source failure cannot strand the worker. */ }
+                ArtworkImageInfo image = default;
+                bool valid = bytes != null && EncodedArtwork.TryDescribe(bytes, out image);
+                while (true) {
+                    Task? wait = null;
+                    lock (gate) {
+                        if (disposed) { normalExit = true; return; }
+                        var entry = Entry(request.Key);
+                        if (!valid) { entry.RetryAfter = clock.GetUtcNow().AddSeconds(30); loading = null; break; }
+                        entry.Warmed = true; entry.Image = image; entry.RetryAfter = default;
+                        if (!Wanted(request.Key)) { loading = null; break; }
+                        if (waitingBytes + bytes!.Length <= UploadByteBudget && loaded.Count < 16) {
+                            entry.Queued = true; waitingBytes += bytes.Length;
+                            loaded.Enqueue(new(request.Key, bytes, image)); loading = null; heldBytes = 0; break;
                         }
-                    } else retryAfter[request.Key] = DateTime.UtcNow.AddSeconds(30);
+                        heldBytes = bytes!.Length; wait = queueChanged.Task;
+                    }
+                    await wait!.WaitAsync(stopped.Token).ConfigureAwait(false);
                 }
             }
-        } finally {
-            lock (gate) {
-                working = false;
-                // Close the wake-up race with a request arriving as a normal
-                // drain ends. Exceptional exits never restart themselves.
-                if (normalExit) StartWorker();
-            }
+        } catch (OperationCanceledException) when (stopped.IsCancellationRequested) { normalExit = true; }
+        finally {
+            lock (gate) { loading = null; heldBytes = 0; working = false; if (normalExit) StartWorker(); }
         }
+    }
+    private void AssertDevice(bool bind = false)
+    {
+        int thread = Environment.CurrentManagedThreadId;
+        if (bind && deviceThread == 0) deviceThread = thread;
+        if (deviceThread != 0 && deviceThread != thread) throw new InvalidOperationException("Artwork GPU resources belong to the window thread.");
     }
     public void Dispose()
     {
-        lock (gate) { if (disposed) return; disposed = true; }
-        stopped.Cancel(); source.Dispose();
-        foreach (var texture in textures.Values) texture.Dispose();
-        while (loaded.TryDequeue(out _)) { }
+        AssertDevice();
+        Task pending;
+        lock (gate) {
+            if (disposed) return; disposed = true;
+            pending = worker;
+            // Retained drawing references lose paint authority before their GPU
+            // resources retire. External delayed lease.Dispose calls are inert.
+            foreach (var lease in leases.ToArray()) lease.Revoke();
+            foreach (var texture in textures.Values) texture.Dispose();
+            textures.Clear(); ownedTextures.Clear(); residency.Clear(); loaded.Clear(); metadata.Clear();
+            visible.Clear(); anticipated.Clear(); foreground.Clear(); waitingBytes = heldBytes = uploadingBytes = 0; WakeQueue();
+        }
+        stopped.Cancel();
+        try { source.Dispose(); }
+        finally {
+            _ = pending.ContinueWith(task => { _ = task.Exception; stopped.Dispose(); },
+                CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        }
     }
 }

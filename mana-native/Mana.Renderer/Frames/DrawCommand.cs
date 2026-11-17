@@ -9,6 +9,7 @@ namespace Mana.Renderer;
 public abstract record DrawCommand
 {
     internal abstract void Paint(Canvas canvas);
+    internal virtual Texture2D? TextureResource => null;
     public sealed record BeginClip(Rectangle Bounds) : DrawCommand
     {
         internal override void Paint(Canvas canvas) => canvas.BeginClip(Bounds);
@@ -67,10 +68,12 @@ public abstract record DrawCommand
     }
     public sealed record Image(Texture2D Texture, Rectangle Bounds, float Alpha) : DrawCommand
     {
+        internal override Texture2D? TextureResource => Texture;
         internal override void Paint(Canvas canvas) => canvas.Image(Texture, Bounds, Alpha);
     }
     public sealed record Sprite(Texture2D Texture, Vector2 Center, Vector2 Size, float Rotation, Color? Tint, Rectangle? Crop) : DrawCommand
     {
+        internal override Texture2D? TextureResource => Texture;
         internal override void Paint(Canvas canvas) => canvas.Sprite(Texture, Center, Size, Rotation, Tint, Crop);
     }
     public sealed record Quad(Vector2 Center, Vector2 Size, float Angle, Color Tint) : DrawCommand
@@ -79,6 +82,7 @@ public abstract record DrawCommand
     }
     public sealed record Surface(Texture2D? Texture, Pose Pose, Color Tint) : DrawCommand
     {
+        internal override Texture2D? TextureResource => Texture;
         internal override void Paint(Canvas canvas) => canvas.Surface(Texture, Pose, Tint);
     }
     public sealed record Polygon(IReadOnlyList<Vector2> Points, Color Color) : DrawCommand
@@ -87,10 +91,12 @@ public abstract record DrawCommand
     }
     public sealed record Portrait(Texture2D Texture, Vector2 Center, float Radius, Color Tint) : DrawCommand
     {
+        internal override Texture2D? TextureResource => Texture;
         internal override void Paint(Canvas canvas) => canvas.Portrait(Texture, Center, Radius, Tint);
     }
     public sealed record ProjectedEllipse(Texture2D Texture, Pose Pose, Color Tint) : DrawCommand
     {
+        internal override Texture2D? TextureResource => Texture;
         internal override void Paint(Canvas canvas) => canvas.ProjectedEllipse(Texture, Pose, Tint);
     }
     public sealed record CardFrame(Pose Pose, Color Color, int Width) : DrawCommand

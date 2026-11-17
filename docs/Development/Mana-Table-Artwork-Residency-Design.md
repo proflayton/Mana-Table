@@ -1,8 +1,10 @@
 ﻿# Artwork residency and frame lifetime design
 
-Status: design accepted by the technical lead, 16 November 2026. This design starts from
-`0eaa9f70abe3a40f92342352a20dc805a0ea730a`. Implementation and GPU soak results
-are pending. It covers window-owned card artwork, including its upload queue and
+Status: design accepted and mainline implementation locally validated for
+integration, 16 November 2026. This design starts from
+`0eaa9f70abe3a40f92342352a20dc805a0ea730a`; the execution record below identifies
+completed controls and remaining Host, telemetry and release gates.
+It covers window-owned card artwork, including its upload queue and
 bookkeeping; it does not change game rules, card disclosure, gestures or layout.
 
 The intended result is bounded artwork memory during prolonged deck browsing
@@ -30,6 +32,23 @@ out-of-memory failure or session-duration threshold is claimed by this audit.
 `SurfaceFormat.Color` mipmapped render target. The destination, every mip level,
 and the temporary original must be considered separately. A 4 MiB compressed
 file does not establish its pixel dimensions or decoded allocation.
+
+The follow-up source audit also found that MagicArtSource used unbounded
+GetByteArrayAsync and ReadAllBytesAsync, and LocalArtSource used unbounded
+ReadAllBytesAsync. Rejecting an oversized byte array after those calls cannot
+bound their source allocation. The accepted execution extension therefore adds
+one shared 4 MiB contract constant and small private streamed readers in those
+two existing owners, without a new project or download framework. Remote declared
+lengths and open-file lengths are checked first; streamed or growing contents
+are still limited to the cap plus a one-byte over-limit witness. Failed,
+cancelled or incomplete network bodies never publish cache entries. The existing
+atomic temporary-file publication remains intact.
+
+ResponseHeadersRead requires an explicit total twelve-second network deadline
+across headers and all body reads. It must not restart when headers finish or a
+read begins. An optional injected TimeProvider supplies deterministic deadline
+tests; this changes no game or action protocol. Existing request serialization,
+150 ms remote pacing and caller cancellation remain in force.
 
 `DrawingFrame` commands contain raw texture references. `TableWindow.Update`
 uploads artwork before composing the next application frame; `Draw` paints the
@@ -291,6 +310,25 @@ idempotent, cancels loading, clears encoded payload and releases all resident
 resources. It must not synchronously wait for an art source that ignores
 cancellation on the window thread.
 
+Owner shutdown explicitly revokes the bounded live lease registry before any
+resident texture is disposed. Each revoked lease clears its owner, DrawingFrame
+and key-array references, and its Drawing becomes unavailable. Delayed external
+lease.Dispose is inert. Capture and mandatory counters return to zero during
+owner close, even when a capture caller has not released its handle. Mandatory
+leases have four fixed-role slots, independent of the four optional capture
+slots; capture exhaustion cannot consume publication capacity. The window and
+temporary painters use only an active lease's retained drawing. Once the owner
+closes, a retained handle grants no further permitted paint.
+
+Encoded metrics name stages rather than claim a total CPU-memory limit:
+QueuedBytes covers queued completions, HeldBytes the one completion waiting for
+queue room, and DeviceUploadBytes the separately retained byte array being
+decoded on the device thread. Source-reader MemoryStream capacity/ToArray copies,
+read buffers and decoder buffers are additional transient memory. The 8 MiB
+queue limit and 4 MiB held-result limit must never be described as a total CPU
+bound. Working-set observations remain separate from these counters and from
+calculated GPU payload.
+
 Keep ArtPreloadCards' current seat-filtered snapshot and explicit selected-deck
 sources. Cached image bytes are not authority to inspect a hidden occurrence.
 Revoked faces disappear through current composition/scoping even if their
@@ -302,6 +340,7 @@ and bytes without card identities or hidden deck contents.
 | Files | Change |
 | --- | --- |
 | `Mana.Game/CardArt.cs` | Bounded resident/queue/metadata state, admission, reload, pressure status and frame leases |
+| `Mana.Contracts/Art.cs`, `Mana.Magic/MagicArtSource.cs`, `Mana.Client/LocalArtSource.cs` | Shared encoded-size constant; bounded remote/cache/local reads and one total network deadline |
 | New small `Mana.Game/ArtworkResidency.cs` | Graphics-free accounting, reservation, pin and eviction policy |
 | `Mana.Renderer/TextureFiltering.cs` and a focused dimension helper if needed | Bounded dimension/footprint description and validated upload contract |
 | `Mana.Renderer/Frames/DrawingFrame.cs`, `DrawCommand.cs` | Complete deduplicated texture inventory; no application/provider dependency |
@@ -405,10 +444,75 @@ fully pinned pressure. This revision resolves the requested lifetime details:
 | Header preflight must be unambiguous | Valid PNG, baseline JPEG and progressive JPEG decode; duplicate/conflicting PNG IHDR, multiple JPEG SOF, DNL, unsupported formats and appended/truncated input are rejected before the instrumented GPU allocator is entered |
 | Optional capture pressure must not interrupt play | Hold the capture quota, request another capture and observe structured refusal while current Update/Draw and a fresh ordinary game gesture continue; release a capture and obtain a later successful capture |
 | Policy tests must prove actual owner behavior | The real CardArt source counter increments when an evicted face is revisited; the old actual Texture2D is disposed exactly once, the reloaded texture is a different live instance with populated mips, queue/resident markers settle and bytes return to zero on disposal |
+| Closing the owner must retire held paint authority first | Hold four mandatory and four capture leases on a real GPU texture, close CardArt, verify all drawing/key/owner references and counters retire, observe one actual texture Disposing event, and prove later lease.Dispose or capture/pin requests cannot restore paint authority |
 | Stable graphics and Host port must preserve frame identity | Under A-to-B adoption at capacity, paint the exact retained B RuntimeFrame/lease, keep held A capture pixels valid, and reject any Draw-time reread of the changing Current role |
 | Aborted preparation must not retire A | Hold B preparation under pressure, abort it, verify B-only leases release and A still paints/accepts current input with no disposed texture references |
 | Delayed captures must not root private code | Retain only stable A drawing plus capture lease across B adoption and private-generation retirement; A capture still paints while the collectible A presentation can retire, then releasing the capture makes its unused textures evictable |
 
-These gates add real owner, allocator and GPU evidence to the pure accounting
-checks. They remain pending implementation; this design revision supplies no
-claim of passing lifetime, soak or human-review results.
+These gates require real owner, allocator and GPU evidence alongside pure
+accounting checks. The execution record below distinguishes completed mainline
+controls from future Host gates; this acceptance table alone establishes no
+passing result or human approval.
+
+## Mainline implementation evidence on 16 November 2026
+
+The mainline source slice is implemented on the reviewed program baseline
+`4e67e04da98`, with the tech lead responsible for final commit identity and
+integration. It is a source candidate, not a published release. The source
+review accepted residency/admission, bounded source reads, frame publication and
+the explicit owner-close revocation follow-up. Human review remains pending.
+
+| Local command or owner | Recorded result |
+| --- | --- |
+| `dotnet build mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release --no-restore` | Passed; the existing audio-test nullability warning and unavailable NuGet advisory-feed warning were retained |
+| `dotnet run --project mana-native/Mana.Client.Tests/Mana.Client.Tests.csproj -c Release --no-restore` | 5,565 checks passed, including finite header/chunked/cache/local size bounds, partial/cancelled publication, exact-printing reuse and one total network deadline |
+| Native driver `--smoke-presentation --profile <fresh-profile>` | 1,776 checks passed, including strict headers, mip arithmetic, pressure generations, historical metadata, encoded-byte backpressure and held-completion shutdown |
+| Native driver `--smoke-card-reading --size 1000x740 --test-offscreen --profile <fresh-profile>` | 155 checks passed, including the actual GPU owner-close ordering control |
+| Native driver `--smoke-card-reading --size 1540x980 --test-offscreen --profile <fresh-profile>` | 155 checks passed with the same real decoder, retention, eviction/reload and close controls |
+| Repository documentation checker and `git diff --check` | Passed |
+
+The GPU controls decode real PNG, baseline JPEG and progressive JPEG bytes;
+exercise each texture-bearing command independently; hold required and optional
+frames through pressure; render delayed captures; reload a disposed victim; and
+recover from an actual image-decoder failure. A close control holds all four
+mandatory and four optional leases on a real texture. At its Disposing event,
+every lease is already inactive with no retained drawing/key references and all
+lease counters are zero. Later same-thread and cross-thread handle disposal is
+inert, and exactly one texture disposal is observed.
+
+The count/lifetime soak loads 2,000 distinct tiny fixture faces and revisits an
+early evicted face. Each size records exactly 2,001 source reads, at most 1,024
+resident textures, 977 evictions and zero final queued/held/device-upload bytes.
+Its final logical mip payload is 348,160 bytes. Tiny configured byte budgets
+separately exercise real byte-pressure denial, so this soak does not pretend to
+saturate the default 224 MiB budget. Historical warming of 4,300 identities
+separately confirms the metadata bound.
+
+First-failure artifacts retain the old owner's failure to evict after 1,025
+tiny GPU faces. Intermediate evidence exposed and corrected a dequeue-to-commit
+duplicate upload and historical foreground reload churn. The final soak's exact
+source-read count guards those corrections. The disposal follow-up retains its
+own final `artwork-close-*` build, result, timing and soak evidence alongside the
+earlier artifacts; `artwork-client-final.log` records the complete source-bound
+client checks. These are evidence labels, not contributor setup directories.
+
+Agent inspection compared the candidate large reader with its baseline and
+checked the small readable fallback. No visual regression was observed in those
+captures. They use authored fixtures and do not supply human gameplay approval.
+
+### Remaining Host and telemetry gates
+
+The mainline change does not implement or merge the separate
+[live-update U2 work](Mana-Table-Live-Update-Delivery-Design.md). Its stable
+Mana.Graphics/Host port, exact RuntimeFrame adoption, A-to-B update under
+pressure, aborted passive preparation and collectible-generation retirement
+remain U2/later compatibility gates. The completed ordinary-frame and delayed
+capture controls do not establish those update-generation behaviors.
+
+The soak records raw process working-set samples and elapsed fixture time.
+Physical GPU allocation, driver caches, total CPU-memory plateau, render-frame
+percentiles, upload-latency budgets and natural four/six-seat game performance
+remain unqualified. Calculated mip payload and queued/held/device-upload stage
+counts must not be presented as those measurements. Required integrated-source
+CI, public package checks and exact-candidate human review retain their existing
+program gates.
