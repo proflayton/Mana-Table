@@ -10,6 +10,11 @@ if (args.Contains("--verify-failure-reporting"))
     throw new InvalidOperationException("Controlled test-runner failure reporting check.");
 int checks = 0;
 void Check(bool value, string description) { if (!value) throw new Exception(description); checks++; Console.WriteLine(description); }
+if (args.Contains("--ai-failure-provenance-checks")) {
+    await AiFailureProvenanceRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} AI failure provenance checks.");
+    return 0;
+}
 if (args.Contains("--priority-continuation-checks")) {
     await PriorityContinuationRegression.RunAsync(Check);
     await PriorityObservationRegression.RunAsync(Check);
@@ -227,6 +232,7 @@ await MatchHistoryRegression.RunAsync(Check);
 await HistoryAnnouncementRegression.RunAsync(Check);
 await ReadAudienceLifecycleRegression.RunAsync(Check);
 await AiFrameworkRegression.RunAsync(Check);
+await AiFailureProvenanceRegression.RunAsync(Check);
 AiSemanticRegression.Run(Check);
 await AiHostRegression.RunAsync(Check);
 await AiHostLoopRegression.RunAsync(Check);

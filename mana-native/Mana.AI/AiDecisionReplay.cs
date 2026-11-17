@@ -48,6 +48,7 @@ public static class AiDecisionReplay
                 || entry.Stamp.Revision < 0 || entry.Stamp.Revision > frame.State.Revision
                 || entry.Stamp.BoardRevision < 0 || entry.Stamp.BoardRevision > frame.State.BoardRevision || entry.Stamp.OfferVersion < 0
                 || entry.Stamp.RestorationVersion < 0 || entry.Stamp.RestorationVersion > (frame.State.Undo?.RestorationVersion ?? 0)
+                || entry.Failure is { } failure && !failure.Matches(entry)
                 || entry.PlanVersion < 0 || entry.RetainedPlan is { } retained && (retained.GameId != frame.State.Id
                     || retained.SeatId != frame.State.ViewerId || retained.Version != entry.PlanVersion)
                 || entry.ProposedPlanTransition?.Next is { } proposed && (proposed.GameId != frame.State.Id || proposed.SeatId != frame.State.ViewerId))

@@ -3,7 +3,8 @@
 Status: design accepted by the technical lead, 16 November 2026. Source baseline:
 `0eaa9f70abe3a40f92342352a20dc805a0ea730a` (the 0.2.469 source).
 This design does not certify a deck, complete encounters M1/M2, or approve a
-release. Implementation and exact-candidate human gameplay review are pending.
+release. Phase A is implemented in the source candidate and locally checked;
+later phases and exact-candidate human gameplay review remain pending.
 
 The goal is to finish complicated Commander games reliably while preserving
 each seat's knowledge and every accepted rules action. Phase A independently
@@ -102,8 +103,8 @@ and host diagnostics. Proposed fields are:
 
 | Field | Meaning |
 | --- | --- |
-| `Kind` | Closed enum: capability, work limit, time limit, invalid output, policy exception, execution uncertainty, or no progress |
-| `Code` | Validated existing bounded machine code, at most 96 ASCII letters/digits/hyphens |
+| `Kind` | Closed enum: capability, work limit, time limit, route limit, invalid output, policy exception, execution uncertainty, or no progress |
+| `Code` | Existing validated machine-code alphabet: at most 96 ASCII letters/digits plus dot, underscore and hyphen; public Java reasons remain unchanged |
 | `Stamp` / `Task` / `EpisodeId` | Exact evaluated seat input, task family and existing causal budget identity |
 | `RemainingWork` / `Elapsed` | Existing session accounting captured at result admission, never new limits |
 
@@ -122,6 +123,24 @@ optimization limits with an already valid answer remain the existing bounded
 strategy behavior. The baseline's explicit whole-budget exits should return a
 typed budget result (or a session-owned budget classification), not relabel an
 arbitrary third-party capability string as computation exhaustion.
+Baseline target assessment also has local slices whose refusal can end a policy
+proposal while preserving episode reserve. Its existing unavailable result may
+carry an internal, JSON-ignored reference to the exact limited budget. Admission
+must corroborate an actual refusal and ancestry to the current session allowance;
+only immutable scalar evidence survives. Distinguish `local-work-budget` from an
+episode work limit. A foreign or earlier episode budget cannot certify the cause,
+and a valid Answer remains valid after an optional local optimization reaches
+its limit. Session-owned route-history saturation has its own route-limit cause.
+An exception thrown by a policy, including `TimeoutException`, is distinct from
+expiration of the session's wait deadline. Keep existing coarse statuses and
+public reasons while retaining that more precise private category.
+The same distinction applies to `OperationCanceledException`: a policy throwing
+it while its owning token is live retains `PolicyException/policy-cancelled`
+evidence. Actual owner cancellation and retired late results remain non-failures.
+Phase A preserves the existing coarse `Cancelled` state and cached no-command,
+no-fault host disposition for an independently thrown policy cancellation. That
+existing liveness limitation is recorded, not silently changed into a recovery
+read, retry, terminal report or fallback by this informational slice.
 The `TakeCommand` handoff-budget path also creates this descriptor when a
 previously ready proposal loses its allowance before submission. The host must
 inspect that resulting state instead of treating a null handoff as progress.
@@ -463,3 +482,19 @@ review. Automated counts do not establish enjoyable AI or universal card support
   remains gated on its actual-provider reproduction; C and D remain separately
   reviewed qualification work. Production changes wait for the five-design
   ownership review. Human gameplay review remains pending.
+
+## Phase A source and local evidence
+
+The source candidate retains typed private causes in seat views, bounded history,
+host faults and host logs. Replay evidence is bound to its original record;
+older format-1 JSON without the additive field remains readable. Public Java
+fault reasons, command/observation timing, budgets and policy choices are
+unchanged. No confirmation, strategy, qualified-deck or recovery change is part
+of this implementation.
+
+The focused provenance runner passed 34 checks and the full client runner passed
+5,589 checks on the reviewed source. The shipping Release build passed with no
+warnings or errors. The original attribution failure and the first policy-timeout
+classification failure were retained separately. Technical-lead review added
+paired independent-policy-cancellation and genuine-owner-cancellation controls.
+These are local source results; exact final integration/PR checks remain separate.
