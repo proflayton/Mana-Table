@@ -62,9 +62,9 @@ remains explicit; it does not prevent completing independent authorized work.
 | --- | --- | --- | --- |
 | Artwork | Revised design accepted; stable-graphics cross-review resolved | Implementing residency, frame leases, admission and GPU checks | Pending |
 | Diagnostics | Revised design accepted | Implementing bounded drain, isolated writer, retirement and child-pipe checks | Pending |
-| AI | Revised design accepted | Implementing Phase A provenance; B requires its actual-provider reproduction | Pending |
+| AI | Revised design accepted | Phase A implemented and source-reviewed; B requires its actual-provider reproduction | Merged `03cbf020e44`; integrated focused checks passed |
 | Presentation | Revised history-owner design accepted | P1 history ownership and bounded actual I/O approved | Pending |
-| Live updates | Revised delivery design accepted | Mainline U1 retained update owner approved; isolated U2 keeps its own gates | Pending |
+| Live updates | Revised delivery design accepted | Implementing mainline U1 retained update owner; isolated U2 keeps its own gates | Pending |
 
 All five specialist assignments begin design-only. Production changes begin
 after the five designs and their cross-stream boundaries have been reviewed.

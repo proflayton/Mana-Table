@@ -1,5 +1,20 @@
 # Testing Mana Table
 
+## Reliability workstream checks
+
+The [reliability program](Mana-Table-Reliability-Program.md) records reviewed
+designs, implementation scope and baseline evidence. The focused AI provenance
+checks run in the normal client suite and can also be selected directly:
+
+```powershell
+dotnet run --project mana-native/Mana.Client.Tests/Mana.Client.Tests.csproj -c Release -- --ai-failure-provenance-checks
+```
+
+They cover private-cause retention, public fault/dispatch compatibility,
+corroborated budgets, exception redaction, cancellation, original receipt scope,
+no-progress and older replay JSON. These checks do not qualify a deck or replace
+natural mixed-game and human gameplay review.
+
 ## Current target restriction feedback
 
 `--smoke-headless-presentation --presentation-group target-restrictions` runs the

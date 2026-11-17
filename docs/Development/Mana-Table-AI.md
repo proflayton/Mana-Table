@@ -1,5 +1,28 @@
 # Multiplayer AI framework and investigation
 
+## Private failure provenance
+
+The source candidate retains an optional immutable `AiFailure` on seat views,
+decision history and host faults. It records the owned input, task, causal
+episode, remaining work and elapsed decision time, with a validated cause code.
+Capability gaps, corroborated local/episode work limits, active-time limits,
+route saturation, invalid output, policy exceptions, uncertain execution and
+accepted-command no-progress remain distinguishable in private evidence.
+
+Public Java fault reasons, terminal behavior, policy choices, budgets and
+command/observation timing are unchanged. A policy exception cannot contribute
+raw text or card data to the descriptor. Genuine owner cancellation and retired
+late results remain non-failures. An independently thrown policy cancellation
+retains its precise cause while preserving the existing coarse Cancelled
+disposition; that liveness limitation is recorded in the
+[reviewed reliability design](Mana-Table-AI-Reliability-Design.md).
+
+Replay format 1 accepts older records without this additive field and verifies
+that present evidence belongs to its original decision record. No work-budget
+object or executable command is retained by the descriptor. Recovery changes
+and qualification of deck versions keep their separate reproduction and
+gameplay gates.
+
 ## Response preparation is independent of pass consent
 
 An external controller previously requested its availability scan only after a
