@@ -14,6 +14,7 @@ internal static class Program
             if (args.Contains(ConfiguredSimulationProtocolProbe.Marker)) return ConfiguredSimulationProtocolProbe.Serve(args);
             if (args.Contains(AutomatedHistoryProtocolProbe.Marker)) return AutomatedHistoryProtocolProbe.Serve(args);
             if (args.Contains(ForgeRequestCancellationProtocolProbe.Marker)) return ForgeRequestCancellationProtocolProbe.Serve(args);
+            if (args.Contains(ForgeDiagnosticsProtocolProbe.Marker)) return ForgeDiagnosticsProtocolProbe.Serve(args);
             if (args.Contains(OwnedDecisionObservationProtocolProbe.Marker)) return OwnedDecisionObservationProtocolProbe.Serve(args);
             if (args.Contains(AutomatedPriorityProtocolProbe.Marker)) return AutomatedPriorityProtocolProbe.Serve(args);
             if (args.Contains(PriorityResponsesProtocolProbe.Marker)) return PriorityResponsesProtocolProbe.Serve(args);

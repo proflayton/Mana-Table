@@ -1,7 +1,7 @@
 # Engine diagnostics without gameplay backpressure
 
-Design accepted by the technical lead, 16 November 2026. Implementation and
-integrated qualification are pending.
+Implemented source candidate, 16 November 2026. Design and code review are
+accepted; integration qualification and required remote CI remain pending.
 The baseline is `0eaa9f70abe3a40f92342352a20dc805a0ea730a`.
 
 The rules process must remain able to write stderr when diagnostic storage is
@@ -333,4 +333,63 @@ revisions, now incorporated for cross-stream review:
   update frozen A evidence, B's current evidence, protocol state or receipts.
 
 The technical lead accepted this revised execution scope after source review.
-No production or test implementation has been made by this design revision.
+The review-only revision contained no production or test implementation.
+
+## Execution evidence
+
+Implementation began from the five-design integration commit `4e67e04da98`.
+The provider now owns the fixed chunk drain/tail and a separate bounded file
+worker. Sink construction through disposal stays on that worker. The existing
+friend declaration in `ForgeCommandScope.cs` supplies test access; no duplicate
+assembly attribute or public diagnostic API was added. Sink code remains within
+`EngineDiagnostics.cs`, as permitted by the ownership map.
+
+The first real child-pipe witness failed against unchanged production code:
+making `engine.log` a directory stopped the original stderr task, and the child's
+ordinary reply timed out at the test's five-second watchdog after it attempted
+2 MiB of unterminated stderr. The same witness passes with this source candidate.
+That watchdog is test supervision, not a change to the provider's 45-second
+transport deadline.
+
+The final focused diagnostics group passes 39 checks. It includes all four sink
+failure/blocking stages, explicit bounded loss, recent-tail preservation, the
+300/499/500 ms shared retirement gate, frozen late evidence, a weak-reference
+witness that an abandoned writer releases its retired drain/tail owner, and
+actual A-to-B-to-C process replacement with only the original file worker.
+A separate engine instance still logs normally. Real clean pipe EOF and original
+startup error preservation also pass.
+
+The existing configured-simulation group passed 953 checks on the initial
+implementation candidate. After adding the ownership controls and synchronizing
+the tests' independent stdout/stderr observations, the final full headless
+inventory passed 8,806 checks. Child witnesses now await the exact finite stderr
+character count and terminal sentinel; a stdout reply alone does not establish
+drain completion. This synchronization issue was corrected by inspection; it
+did not produce an observed failing assertion. No fixed delay or larger watchdog
+was introduced.
+
+Final validation used a Release build of `Mana.Table.Tests`, followed sequentially
+by the focused group and full headless executable. The equivalent contributor
+commands are:
+
+```powershell
+dotnet build mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release
+dotnet run --project mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release --no-build -- --smoke-headless-presentation --presentation-group engine-diagnostics --profile "$env:TEMP/ManaTableDiagnostics-$([Guid]::NewGuid())"
+dotnet run --project mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release --no-build -- --smoke-headless-presentation --profile "$env:TEMP/ManaTableHeadless-$([Guid]::NewGuid())"
+node scripts/mana-table/check-docs.cjs
+```
+
+The Release build has no new warnings; the existing `AudioSettingsSmoke.cs`
+nullability warning remains. An intermediate rebuild collided with the still
+running previous harness's Windows DLL lock; waiting for that process to exit
+and rebuilding sequentially resolved the tooling error. The initial missing
+restore assets were generated from the existing dependency cache. These tooling
+failures remain separate from the reproduced production liveness failure.
+
+The append log still has no rotation policy. Diagnostic overflow intentionally
+loses old queued text and records omission counts/markers. An uncooperative sink
+can retain its bounded writer state after the half-second retirement grace;
+later processes in that engine instance continue draining with file logging
+suppressed. Raw stderr remains private evidence. These checks cover process,
+storage and protocol liveness; they do not qualify Magic interactions, complete
+mixed games, or human gameplay experience.
