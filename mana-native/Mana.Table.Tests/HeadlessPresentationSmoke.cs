@@ -34,6 +34,7 @@ internal static partial class HeadlessPresentationSmoke
             if (group != null) {
                 if (group == "startup-playback") StartupPlaybackChecks.Run(profile, Check);
                 else if (group == "engine-diagnostics") ForgeDiagnosticsProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
+                else if (group == "updates-owner") UpdateOwnershipChecks.Run(profile, Check);
                 else if (group == "ai-pods") PregameFlowChecks.RunAiPods(profile, Check);
                 else if (group == "capture-png") CapturePngChecks.Run(Check);
                 else if (group == "mana-pool") CheckManaPoolPaymentClarity(profile, Check, trace, performance);
@@ -172,6 +173,7 @@ internal static partial class HeadlessPresentationSmoke
             AiEngineCampaign.CheckDisclosureBounds(Check);
             ForgePublicProjectionChecks.Run(profile, Check);
             CapturePngChecks.Run(Check);
+            UpdateOwnershipChecks.Run(profile, Check);
             CheckKnownActionFaces(profile, Check, trace, performance);
             PregameFlowChecks.Run(profile, Check);
             CooperativeLobbyInteractionChecks.Run(profile, Check);

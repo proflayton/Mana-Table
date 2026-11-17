@@ -15,6 +15,11 @@ if (args.Contains("--ai-failure-provenance-checks")) {
     Console.WriteLine($"Passed {checks} AI failure provenance checks.");
     return 0;
 }
+if (args.Contains("--app-update-checks")) {
+    await AppUpdateSessionRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} retained update ownership checks.");
+    return 0;
+}
 if (args.Contains("--priority-continuation-checks")) {
     await PriorityContinuationRegression.RunAsync(Check);
     await PriorityObservationRegression.RunAsync(Check);

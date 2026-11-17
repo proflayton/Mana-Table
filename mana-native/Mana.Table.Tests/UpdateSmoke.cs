@@ -25,6 +25,7 @@ internal static class UpdateSmoke
         {
             var engine = new StartupEngine();
             using var game = new TableWindow(TestTableServices.For(engine), path, null, null, size, artSource: new EmptyArt(), appUpdates: service, installUpdate: install);
+            game.Window.Position = new Point(-32000, -32000);
             var view = game.TestPort; var script = new Script(view); game.Automation = script;
             arrange(script, view, engine); game.Run(); return view;
         }

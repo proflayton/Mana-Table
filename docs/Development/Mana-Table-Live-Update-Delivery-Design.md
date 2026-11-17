@@ -1,6 +1,9 @@
 # Update ownership and live update delivery design
 
-Status: design accepted by the technical lead, 16 November 2026. Mainline baseline:
+Status: U1 design accepted and implemented as a locally verified source candidate,
+16 November 2026; technical-lead code review found no blocking issue. Integration,
+required PR checks and public release qualification remain pending. U2 remains
+design-only and gated. Mainline baseline:
 `0eaa9f70abe3a40f92342352a20dc805a0ea730a`. Candidate input:
 `c79263b887ae2ee93217fdaeb739b0f6b386fa74`, the existing live-update design and
 implementation branch. This specification refines that branch's M1 through M6
@@ -70,7 +73,7 @@ then let the fixture's existing service owner dispose the provider.
 
 Proposed concrete API names are `AppUpdateSession.AttachView()`, an idempotent
 binding `Dispose`, binding commands `Check`, `Download`, `CancelDownload`,
-`Install(context)`, `ToggleStartupCheck`, and immutable `Read`/`Build` access.
+`Install(context)`, `ToggleStartupCheck`, and immutable `View`/`Build` access.
 Mutators on the session become internal owner operations rather than a public
 bypass around binding admission. A binding contains only its owner and opaque
 identity. Each command checks reference identity against the current binding;
@@ -429,6 +432,47 @@ U2 production implementation retains its separate admission gates.
 | Keep U2 behavior selection and execution gated | The actual Auto-panel A/B pair is an accepted design input; runtime behavior/recipe remains unresolved for admission, and no U2 production implementation is authorized by this revision |
 
 ## Evidence and technical references
+
+### U1 execution record 16 November 2026
+
+The isolated U1 implementation starts from the program's accepted-design commit
+`4e67e04da98b01a8e5973d46bb8d6c527d48a373`, whose production baseline remains
+0.2.469. The technical lead reviewed the owner, binding, composition and held-
+operation source and found no blocking issue before integration.
+
+`AppUpdateSession` now owns one terminal-result slot and one coalesced progress
+slot, plus a passive asynchronous queued-work notification. `AppUpdateViewBinding`
+supplies revocable current-view authority; `AppUpdateInstallContext` supplies fresh
+neutral blockers. `TableWindow` owns construction, one post-application pump and
+actual-task-joining close. Game owns only its borrowed binding and local modal.
+Program's provider ownership and the explicit restart path remain unchanged.
+The candidate loader/store/signing implementation was not imported.
+
+The baseline held-download experiment failed the retained-view contract: closing
+the original Game-owned workflow requested cancellation and the replacement
+workflow had no download state. That failure is retained separately from an
+initial proof-fixture compilation failure (a missing ValidateAsync stub), which
+was corrected before the behavior experiment. A later native test compilation
+failure used a read-only scenario State initializer; the test was corrected to
+the existing Present method. No failed behavior assertion was weakened.
+
+| Local validation | Result and scope |
+| --- | --- |
+| `Mana.Client.Tests --app-update-checks` | 52 passed: ordinary workflow, progress/phase scopes, held result, view replacement/ABA, cancelled waiter isolation, fresh restart consent, pump-independent close, callback failure and borrowed-service disposal |
+| Full `Mana.Client.Tests` | 5,580 passed on the U1 source |
+| Native `--smoke-headless-presentation --presentation-group updates-owner` | 24 passed across 1000 by 740 and 1540 by 980: actual application input/composition, old hit retirement, progress-stable Cancel press/release and Game disposal with a retained operation |
+| Native `--smoke-presentation` | 1,781 passed on the final production source |
+| Full native `--smoke-headless-presentation` | 8,791 passed on the final production source |
+| Offscreen native `--smoke-updates` | 31 passed at each supported size; final-source repetition is recorded in the integration handoff |
+| Agent image inspection | Existing small download/progress and large Ready layouts remain readable, with the established Cancel and Restart to update controls |
+
+These runs use controlled update providers. They establish ownership, input,
+geometry and failure behavior, not a new real installed-SDK handoff, Magic rules
+result, production publisher signature or human UX approval. Required exact-head
+CI, the existing installed-update release lane, and integration verification still
+apply. Truly noncooperative SDK work retains the documented indefinite join.
+U2's runtime A/B behavior decision, production trust and complete live journey
+remain unimplemented.
 
 Extend existing suites: `Mana.Client.Tests` for role/operation/store policy,
 `Mana.Table.Tests` for production input and Host authority, `Mana.Runtime.Tests`
