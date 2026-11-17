@@ -280,6 +280,15 @@ prepared files again and exits normally so Java can shut down before replacement
 An ordinary launch never applies a waiting update automatically. A completed SDK
 restart is acknowledged after the app's startup succeeds.
 
+Source-only U1 retains discovery/download/preparation in the composition-owned
+`AppUpdateSession` when its view retires. The replacement view can display the
+same operation; its own explicit restart intent and fresh blockers are required
+after verification. Window close fences commands, cancels and joins actual
+provider work before provider disposal. Noncooperative SDK work can still delay
+shutdown. This is an ownership change to the existing restart path. The
+[live-update design](Mana-Table-Live-Update-Delivery-Design.md) records separate,
+unimplemented authenticated-store and same-window runtime admission gates.
+
 Velopack **1.2.161** supplies package caching, native binary patches, full-package
 fallback and apply/restart. The selected strategy determines the displayed
 download size. Missing bases, unsuitable chains or failed patches use a complete

@@ -132,6 +132,14 @@ neither is attributed to a new implementation without final-source evidence.
 Their retained failures do not justify relaxing checks, extending budgets or
 claiming complete gameplay qualification from the passing local baseline suites.
 
+The integrated AI/diagnostics source also passed the existing real
+`--smoke-headless-engine` journey with a locally rebuilt, unchanged Java engine.
+The result reported `passed: true` in 104.5 seconds. Its local test bundle uses
+the current checkout's resources and an existing local Java runtime; it is not a
+published package or final five-stream release qualification. The result and
+progress journal retain exact private interaction evidence. Natural four-game
+completion, required exact-head CI and human experience review remain separate.
+
 ### First implementation failure witnesses
 
 Before production changes, the graphics worker loaded 1,025 distinct tiny faces

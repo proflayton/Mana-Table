@@ -1,5 +1,25 @@
 # Testing Mana Table
 
+## Reliability ownership checks
+
+The source-only [reliability program](Mana-Table-Reliability-Program.md) adds
+regressions to the existing runners and CI lanes. `Mana.Client.Tests` includes
+bounded artwork source reads and retained update ownership; `--app-update-checks`
+selects the latter. `--smoke-presentation` includes pure artwork accounting,
+history ownership and retained updater controls. After the native test build,
+`--smoke-headless-presentation --presentation-group history-owner` or
+`--presentation-group updates-owner` selects each production ownership journey
+with an isolated `--profile`; both also run in the full headless inventory.
+
+The existing GPU card-reading journey at 1000x740 and 1540x980 now exercises
+real PNG, baseline/progressive JPEG decoding, protected frame/capture leases,
+pressure fallback, eviction/reload and owner-close disposal ordering. Its local
+2,000-face fixture soak reports logical payload/counters separately from process
+working set. It does not establish physical VRAM usage or a frame-rate budget.
+Malformed/oversized source and fixed total header/body deadline controls avoid
+live-network timing. These fixtures establish resource and input ownership,
+not Magic rules, complete-game progress or human visual acceptance.
+
 ## Reliability workstream checks
 
 The [reliability program](Mana-Table-Reliability-Program.md) records reviewed

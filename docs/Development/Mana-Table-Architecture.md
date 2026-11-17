@@ -279,9 +279,16 @@ while malformed responses remain errors rather than unsupported fallbacks.
 game/audience generation. It owns deduplication, gaps and the immutable
 `MatchHistoryReadModel`; it cannot issue a gameplay command. Historical identities
 never enter the live action catalog. The renderer's existing feedback consumers
-are not yet migrated to this new reader. `Mana.Game` owns selected play, measured
-reading, current disclosure checks and archive navigation, with no rules inference
-from nearby observations or payment pool differences.
+are not yet migrated to this new reader. The source-only P1 extraction places
+selection, pages, retained detail formatting and archive requests in
+`HistoryPresentationSession`. It publishes one immutable view after measured
+page reconciliation. Composition retains global overlay and current disclosure
+checks, recording and archive closure; historical identities grant no commands.
+One actual storage pipeline and one replaceable pending read bound outstanding
+work. Logical cancellation or the ten-second UI limit revokes results without
+freeing a still-running I/O slot. Export is explicit and never queued for replay.
+An in-progress destination write can finish after the reader closes. Actual I/O
+settlement alone does not prove private callbacks have drained for future unload.
 
 Composition constructs `MatchHistoryArchive` and injects it through `TableServices`.
 Accepted history batches feed its bounded background writer. Archives use local
@@ -3667,6 +3674,27 @@ remains an open design problem.
 `TextureFiltering` builds GPU mipmaps once per loaded image; anisotropic card
 sampling handles angled minification, and table surfaces request 4x MSAA.
 Full-resolution artwork and rendered rules text remain available for inspection.
+
+The source-only artwork residency policy admits checked PNG/JPEG dimensions and
+encoded lengths before GPU decoding. `CardArt` accounts complete RGBA mip chains,
+evicts unpinned LRU entries and bounds resident payload, transient upload peak,
+texture count, queued bytes and metadata. `DrawingFrame` inventories its texture
+references. Window composition pins the exact completed frame before releasing
+the previous one, and Draw consumes that retained frame/lease pair. Mandatory
+roles and optional captures have separate fixed quotas. Shutdown revokes every
+lease before disposing textures. Queue, source-held and device-upload byte
+counters exclude decoder/source copy buffers and driver allocations; they are
+not total CPU/VRAM measurements. See the [residency design](Mana-Table-Artwork-Residency-Design.md).
+
+The source-only U1 update workflow belongs to `TableWindow` composition through
+`AppUpdateSession`. `TableApplication` borrows one revocable `AppUpdateViewBinding`;
+retiring it cannot cancel an accepted download or retain restart authority.
+One completion slot and one coalesced progress slot feed a composition pump after
+application update, using fresh install blockers. Byte-only progress preserves
+control scope. Close fences commands and joins actual provider work independently
+of Game/session callbacks; Program retains provider disposal. This preserves the
+existing possibly indefinite join for a noncooperative SDK. It supplies no live
+assembly loading or authenticated live-update store.
 
 Native updates are separate from engine commands. Supported managed installations
 use `IncrementalAppUpdates` and the pinned Velopack SDK for selected full/delta
