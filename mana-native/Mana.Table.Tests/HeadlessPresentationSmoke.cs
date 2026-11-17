@@ -33,6 +33,7 @@ internal static partial class HeadlessPresentationSmoke
         try {
             if (group != null) {
                 if (group == "startup-playback") StartupPlaybackChecks.Run(profile, Check);
+                else if (group == "engine-diagnostics") ForgeDiagnosticsProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                 else if (group == "ai-pods") PregameFlowChecks.RunAiPods(profile, Check);
                 else if (group == "capture-png") CapturePngChecks.Run(Check);
                 else if (group == "mana-pool") CheckManaPoolPaymentClarity(profile, Check, trace, performance);
@@ -70,6 +71,7 @@ internal static partial class HeadlessPresentationSmoke
                     AutomatedHistoryProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                     HistoryAnnouncementPresentationChecks.Run(profile, Check);
                     ForgeRequestCancellationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
+                    ForgeDiagnosticsProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                     OwnedDecisionObservationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                 }
                 else if (group == "encounter-start") {
@@ -147,6 +149,7 @@ internal static partial class HeadlessPresentationSmoke
             ConfiguredSimulationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             AutomatedHistoryProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             ForgeRequestCancellationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
+            ForgeDiagnosticsProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             OwnedDecisionObservationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             EncounterStartWireChecks.Run(Check);
             EncounterStartProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
