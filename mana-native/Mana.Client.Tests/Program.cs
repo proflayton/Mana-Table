@@ -282,6 +282,7 @@ PublicStateDescriptorChecks.Run(Check);
 DeckExperienceChecks.Run(Check);
 SoloOpponentSelectionRegression.Run(Check);
 await PrintingArtRegression.RunAsync(Check);
+await ArtworkSourceBoundsRegression.RunAsync(Check);
 Console.WriteLine($"Passed {checks} headless checks.");
 return 0;
 } catch (Exception error) {

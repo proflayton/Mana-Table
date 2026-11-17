@@ -28,6 +28,9 @@ public sealed class TableWindow : Game
     private readonly TableApplication application;
     private readonly PresentationResources resources = new();
     private readonly CardArt art;
+    private PresentationFrame? artworkFrame;
+    private CardArt.FrameLease? artworkFrameLease;
+    private int refusedArtworkCaptures;
     private readonly GraphicsDeviceManager graphics;
     private readonly string? capture;
     private Canvas? painter;
@@ -87,6 +90,11 @@ public sealed class TableWindow : Game
         var backbuffer = GraphicsDevice.PresentationParameters;
         application.Update(time, mouse, keys, new(backbuffer.BackBufferWidth, backbuffer.BackBufferHeight),
             inputActive: IsActive || Automation != null);
+        var completed = application.ReadPresentation();
+        var nextLease = art.PinFrame(completed.Drawing);
+        var previousLease = artworkFrameLease;
+        artworkFrame = completed; artworkFrameLease = nextLease;
+        previousLease?.Dispose();
         var preload = application.ArtPreloadCards();
         art.Preload(preload.Visible, preload.Anticipated);
         bool cardPointer = application.InteractivePointer;
@@ -102,7 +110,8 @@ public sealed class TableWindow : Game
     }
     protected override void Draw(GameTime time)
     {
-        var frame = application.ReadPresentation();
+        if (artworkFrameLease?.Drawing is not { } retainedDrawing) return;
+        var frame = artworkFrame ?? throw new InvalidOperationException("The window has no completed artwork frame.");
         var backbuffer = GraphicsDevice.PresentationParameters;
         var renderView = RenderViewport.Fit(new(backbuffer.BackBufferWidth, backbuffer.BackBufferHeight), frame.DesignHeight);
         if (surface == null || surface.Width != renderView.Bounds.Width || surface.Height != renderView.Bounds.Height) {
@@ -112,7 +121,7 @@ public sealed class TableWindow : Game
         }
         GraphicsDevice.SetRenderTarget(surface);
         GraphicsDevice.Clear(new Color(17, 22, 29));
-        painter!.Draw(frame.Drawing, renderView.Scale);
+        painter!.Draw(retainedDrawing, renderView.Scale);
         GraphicsDevice.SetRenderTarget(null); GraphicsDevice.Clear(Color.Black);
         Automation?.Frame(surface);
         var view = GraphicsDevice.Viewport;
@@ -140,6 +149,7 @@ public sealed class TableWindow : Game
     protected override void Dispose(bool disposing)
     {
         if (disposing) {
+            artworkFrameLease?.Dispose(); artworkFrameLease = null; artworkFrame = null;
             application.Dispose(); art.Dispose(); assets?.Dispose(); painter?.Dispose(); screen?.Dispose();
             surface?.Dispose();
         }
@@ -155,17 +165,23 @@ public sealed class TableWindow : Game
     {
         internal GraphicsDevice GraphicsDevice => window.GraphicsDevice;
         internal Texture2D Surface => window.surface ?? throw new InvalidOperationException("The window has not loaded.");
+        internal int RefusedArtworkCaptures => window.refusedArtworkCaptures;
         internal void CaptureWindow(string path) => window.windowCapture = path;
         internal void CaptureSurface(string path) => window.CaptureSurface(path);
         internal PresentationFrame CaptureLobbySnapshot(Lobby state, string path)
         {
             var frame = ComposeLobbySnapshot(state);
+            if (!window.art.TryPinCapture(frame.Drawing, out var captureLease)) {
+                window.refusedArtworkCaptures++; return frame;
+            }
+            using var retainedArtwork = captureLease;
+            if (retainedArtwork?.Drawing is not { } capturedDrawing) { window.refusedArtworkCaptures++; return frame; }
             var backbuffer = window.GraphicsDevice.PresentationParameters;
             var view = RenderViewport.Fit(new(backbuffer.BackBufferWidth, backbuffer.BackBufferHeight), frame.DesignHeight);
             window.GraphicsDevice.SetRenderTarget(window.surface);
             try {
                 window.GraphicsDevice.Clear(new Color(17, 22, 29));
-                window.painter!.Draw(frame.Drawing, view.Scale);
+                window.painter!.Draw(capturedDrawing, view.Scale);
             } finally { window.GraphicsDevice.SetRenderTarget(null); }
             window.CaptureSurface(path);
             window.windowCapture = Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + "-window.png");

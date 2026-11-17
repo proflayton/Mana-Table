@@ -229,7 +229,13 @@ internal static class CardArtPreloadChecks
 
     private sealed record Pending(ArtRequest Request, TaskCompletionSource<byte[]?> Bytes)
     {
-        internal void Complete() => Bytes.TrySetResult([1, 2, 3]);
+        private static readonly byte[] Image = QueuedImage();
+        private static byte[] QueuedImage()
+        {
+            using var fixture = new CardReadingArtFixture();
+            return fixture.LoadAsync(new("Queued fixture", "front"), CancellationToken.None).GetAwaiter().GetResult()!;
+        }
+        internal void Complete() => Bytes.TrySetResult(Image);
     }
 
     private sealed class ControlledArt : ICardArtSource

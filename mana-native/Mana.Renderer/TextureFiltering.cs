@@ -10,7 +10,25 @@ public static class TextureFiltering
 {
     public static Texture2D Load(GraphicsDevice device, Stream stream)
     {
+        using var encoded = new MemoryStream();
+        byte[] buffer = new byte[16 * 1024];
+        int count;
+        while ((count = stream.Read(buffer, 0, buffer.Length)) != 0) {
+            if (encoded.Length + count > EncodedArtwork.MaximumBytes) throw new InvalidDataException("Artwork exceeds its encoded-byte limit.");
+            encoded.Write(buffer, 0, count);
+        }
+        byte[] bytes = encoded.ToArray();
+        if (!EncodedArtwork.TryDescribe(bytes, out var image)) throw new InvalidDataException("Unsupported or ambiguous artwork dimensions.");
+        return Load(device, bytes, image);
+    }
+    public static Texture2D Load(GraphicsDevice device, byte[] bytes, ArtworkImageInfo image)
+    {
+        if (!EncodedArtwork.TryDescribe(bytes, out var actual) || actual != image)
+            throw new InvalidDataException("Artwork changed after dimension admission.");
+        using var stream = new MemoryStream(bytes, writable: false);
         using var original = Texture2D.FromStream(device, stream);
+        if (original.Width != image.Width || original.Height != image.Height || original.Format != SurfaceFormat.Color)
+            throw new InvalidDataException("The artwork decoder contradicted its admitted dimensions or format.");
         var filtered = new RenderTarget2D(device, original.Width, original.Height, true,
             SurfaceFormat.Color, DepthFormat.None, 0, RenderTargetUsage.PreserveContents);
         var previous = device.GetRenderTargets();
@@ -25,8 +43,8 @@ public static class TextureFiltering
             device.SetRenderTargets(previous);
             return filtered;
         } catch {
-            device.SetRenderTargets(previous);
-            filtered.Dispose();
+            try { device.SetRenderTargets(previous); }
+            finally { filtered.Dispose(); }
             throw;
         }
     }
