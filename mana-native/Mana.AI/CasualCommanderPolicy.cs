@@ -17,7 +17,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellation.ThrowIfCancellationRequested();
-        if (!request.Work.TrySpend()) return Task.FromResult<AiProposal>(new AiProposal.Unavailable("work-budget", "Decision allowance exhausted."));
+        if (!request.Work.TrySpend()) return Task.FromResult<AiProposal>(AiProposal.Unavailable.FromWorkLimit(request.Work));
         var state = request.Frame.State;
         var decision = state.Decision!;
         AiProposal result = decision.Payload switch {
@@ -70,7 +70,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             if (local.Work.WasExceeded) { limited = true; continue; }
             if (score > 0) candidates.Add((offer, score, preserve));
         }
-        if (request.Work.WasExceeded) return Missing("work-budget");
+        if (request.Work.WasExceeded) return AiProposal.Unavailable.FromWorkLimit(request.Work);
         foreach (var candidate in candidates.OrderByDescending(candidate => candidate.Score)
             .ThenBy(candidate => candidate.Offer.Semantics.StableId, StringComparer.Ordinal)) {
             var offer = candidate.Offer;
@@ -218,7 +218,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         // out, the exact current offered-resource fallback can still make a
         // legal next step; it does not turn search incompleteness into a table
         // fault or publish a partial funding witness.
-        if (request.Work.WasExceeded) return Missing("work-budget");
+        if (request.Work.WasExceeded) return AiProposal.Unavailable.FromWorkLimit(request.Work);
         if (funding.Status == AiManaPlanStatus.Funded && funding.Steps.FirstOrDefault() is { } step) {
             if (step is AiManaStep.Pool pool)
                 return PaymentAnswer(new SpendPoolMana(state.Id, state.Decision!.Id, pool.Color), "payment-follow-assignment-pool");
@@ -357,7 +357,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 var assessment = CasualActionAssessment.Target(state, request.Frame.Semantics.OperationGraph, operation,
                     new(identity, SemanticEntityKind.Card, identity, ControllerId: occurrence.PlayerId), localWork,
                     CardViews.Source(state, state.Decision!));
-                if (assessment.Status == CasualAssessmentStatus.BudgetExceeded) return Missing("work-budget");
+                if (assessment.Status == CasualAssessmentStatus.BudgetExceeded) return AiProposal.Unavailable.FromWorkLimit(localWork);
                 if (assessment.Status == CasualAssessmentStatus.SearchLimited) { score = double.NegativeInfinity; limited = true; }
                 if (assessment.Status == CasualAssessmentStatus.Estimated
                     || !stagedDamage && assessment.Status == CasualAssessmentStatus.EstimatedPartial) score = assessment.Value
@@ -384,7 +384,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 var assessment = CasualActionAssessment.Target(state, request.Frame.Semantics.OperationGraph, operation,
                     new("player:" + player, SemanticEntityKind.Player, PlayerId: player), localWork,
                     CardViews.Source(state, state.Decision!));
-                if (assessment.Status == CasualAssessmentStatus.BudgetExceeded) return Missing("work-budget");
+                if (assessment.Status == CasualAssessmentStatus.BudgetExceeded) return AiProposal.Unavailable.FromWorkLimit(localWork);
                 if (assessment.Status == CasualAssessmentStatus.SearchLimited) { score = double.NegativeInfinity; limited = true; }
                 if (assessment.Status == CasualAssessmentStatus.Estimated
                     || !stagedDamage && assessment.Status == CasualAssessmentStatus.EstimatedPartial) score = assessment.Value
@@ -442,7 +442,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         var state = request.Frame.State;
         if (ordering && request.Frame.Semantics.OrderingPurpose == DecisionOrderingPurpose.CostPayment) {
             var defaults = request.Frame.Semantics.DefaultOrder;
-            if (!request.Work.TrySpend(defaults.Length)) return Missing("work-budget");
+            if (!request.Work.TrySpend(defaults.Length)) return AiProposal.Unavailable.FromWorkLimit(request.Work);
             return Answer(request, new OrderOptions(state.Id, state.Decision!.Id, defaults), "order-engine-cost-payment-sequence");
         }
         bool lose = request.Frame.Semantics.SelectionIsCost || request.Frame.Semantics.Intent is DecisionIntent.Discard or DecisionIntent.Sacrifice;
@@ -455,7 +455,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         }
         var ordered = scored.OrderByDescending(item => !lose && item.Modeled && item.Score > 0)
             .ThenByDescending(item => item.Score).ThenBy(item => item.Choice.Index).ToArray();
-        if (request.Work.WasExceeded) return Missing("work-budget");
+        if (request.Work.WasExceeded) return AiProposal.Unavailable.FromWorkLimit(request.Work);
         int count = ordering ? selection.Range.Max : lose ? selection.Range.Min
             : Math.Clamp(ordered.Count(item => item.Score > 0 && (item.Modeled
                 || item.Choice.Card != null && (IsBenefit(request.Frame.Semantics.Intent) || request.Frame.Semantics.Intent == DecisionIntent.Search))),
@@ -808,7 +808,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         var desired = repair.Select(pair => (pair.AttackerId, pair.BlockerId)).ToHashSet();
         foreach (var attack in state.Combat!.Attackers.OrderBy(attack => attack.CardId, StringComparer.Ordinal))
         foreach (string id in attack.BlockerIds.Order(StringComparer.Ordinal)) {
-            if (!request.Work.TrySpend()) return Missing("work-budget");
+            if (!request.Work.TrySpend()) return AiProposal.Unavailable.FromWorkLimit(request.Work);
             var blocker = CardViews.FindZoneOccurrence(state, id);
             if (blocker?.PlayerId != state.ViewerId || desired.Contains((attack.CardId, id))) continue;
             var attacker = CardViews.FindZoneOccurrence(state, attack.CardId)?.Card;

@@ -3,7 +3,10 @@ using Mana.Contracts;
 
 namespace Mana.AI;
 
-public sealed record AiHostFault(string GameId, int SeatId, string ReasonCode);
+public sealed record AiHostFault(string GameId, int SeatId, string ReasonCode)
+{
+    public AiFailure? Failure { get; init; }
+}
 
 /// <summary>Host-only failure evidence. Never part of a policy's seat knowledge or public match state.</summary>
 public interface IAiHostDiagnostics
@@ -29,7 +32,8 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
     private readonly CancellationTokenSource lifetime = new();
     private readonly HashSet<string> faultedGames = [];
     private readonly Dictionary<(string Game, int Seat), AiDecisionStamp> rejected = [];
-    private readonly Dictionary<(string Game, int Seat), long> awaitingObservation = [];
+    private sealed record AwaitingObservation(long Started, AiFailure Evidence);
+    private readonly Dictionary<(string Game, int Seat), AwaitingObservation> awaitingObservation = [];
     private Task? runner;
     private bool enabled, disposed;
     public AiHostFault? LastFault { get; private set; }
@@ -158,7 +162,8 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
                 var result = await session.EvaluateAsync(token).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
                 if (result.Status is AiSeatStatus.Unavailable or AiSeatStatus.Invalid or AiSeatStatus.BudgetExceeded or AiSeatStatus.NeedsRecovery) {
-                    await FaultAsync(state.Id, item.SeatId, result.Status.ToString().ToLowerInvariant(), token).ConfigureAwait(false);
+                    await FaultAsync(state.Id, item.SeatId, result.Status.ToString().ToLowerInvariant(), token,
+                        failure: result.Failure).ConfigureAwait(false);
                     backoffRequired = true;
                     continue;
                 }
@@ -166,7 +171,8 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
                 try {
                     await AwaitProvider("execute", stop => provider.ExecuteAutomatedAsync(item.SeatId, ticket.Command, stop), token).ConfigureAwait(false);
                     acceptedSubmission |= session.Report(ticket, AiExecutionReceipt.Accepted);
-                    awaitingObservation[key] = operationTime.GetTimestamp();
+                    awaitingObservation[key] = new(operationTime.GetTimestamp(),
+                        ticket.FailureEvidence(AiFailureKind.ObservationNoProgress, "accepted-no-progress"));
                 } catch (EngineCommandRejectedException) {
                     session.Report(ticket, AiExecutionReceipt.Rejected);
                     rejected[key] = ticket.Stamp;
@@ -180,7 +186,7 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
                     throw;
                 } catch (Exception error) {
                     session.Report(ticket, AiExecutionReceipt.Unknown);
-                    await FaultAsync(state.Id, item.SeatId, "execution-unknown", token, error).ConfigureAwait(false);
+                    await FaultAsync(state.Id, item.SeatId, "execution-unknown", token, error, session.View.Failure).ConfigureAwait(false);
                     backoffRequired = true;
                 }
             }
@@ -191,17 +197,18 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
 
     private async Task<bool> CheckObservationProgress((string Game, int Seat) key, CancellationToken cancellation)
     {
-        if (!awaitingObservation.TryGetValue(key, out var started)
-            || operationTime.GetElapsedTime(started) < ObservationTimeout) return false;
+        if (!awaitingObservation.TryGetValue(key, out var awaiting)
+            || operationTime.GetElapsedTime(awaiting.Started) < ObservationTimeout) return false;
         awaitingObservation.Remove(key);
         await FaultAsync(key.Game, key.Seat, "accepted-no-progress", cancellation,
-            new TimeoutException("The automated decision did not advance after an accepted command.")).ConfigureAwait(false);
+            new TimeoutException("The automated decision did not advance after an accepted command."), awaiting.Evidence).ConfigureAwait(false);
         return true;
     }
 
-    private async Task FaultAsync(string game, int seat, string reason, CancellationToken cancellation, Exception? error = null)
+    private async Task FaultAsync(string game, int seat, string reason, CancellationToken cancellation,
+        Exception? error = null, AiFailure? failure = null)
     {
-        LastFault = new(game, seat, reason);
+        LastFault = new(game, seat, reason) { Failure = failure };
         ReportDiagnostic(LastFault, error);
         faultedGames.Add(game);
         try { await WithdrawPriorityGameAsync(game, cancellation).ConfigureAwait(false); }
