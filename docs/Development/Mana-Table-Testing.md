@@ -9,7 +9,8 @@ selects the latter. `--smoke-presentation` includes pure artwork accounting,
 history ownership and retained updater controls. After the native test build,
 `--smoke-headless-presentation --presentation-group history-owner` or
 `--presentation-group updates-owner` selects each production ownership journey
-with an isolated `--profile`; both also run in the full headless inventory.
+with an isolated `--profile`. Updater controls also run in the full headless
+inventory; history-owner controls run in the ordinary presentation inventory.
 
 The existing GPU card-reading journey at 1000x740 and 1540x980 now exercises
 real PNG, baseline/progressive JPEG decoding, protected frame/capture leases,

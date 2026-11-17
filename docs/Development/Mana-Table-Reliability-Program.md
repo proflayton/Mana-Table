@@ -60,11 +60,11 @@ remains explicit; it does not prevent completing independent authorized work.
 
 | Workstream | Design review | Execution | Integration |
 | --- | --- | --- | --- |
-| Artwork | Revised design accepted; stable-graphics cross-review resolved | Implementing residency, frame leases, admission and GPU checks | Pending |
+| Artwork | Revised design and source accepted, including shutdown follow-up | Residency, strict admission, frame/capture leases and real GPU controls implemented | Merged `4f9891135f9`; independent combined-source validation follows |
 | Diagnostics | Revised design and source accepted | Bounded drain, isolated writer, retirement and child-pipe checks implemented | Merged `71593996f28`; integrated 39-check group passed |
 | AI | Revised design accepted | Phase A implemented and source-reviewed; B requires its actual-provider reproduction | Merged `03cbf020e44`; integrated focused checks passed |
-| Presentation | Revised history-owner design accepted | Implementing P1 history ownership and bounded actual I/O | Pending |
-| Live updates | Revised delivery design accepted | Implementing mainline U1 retained update owner; isolated U2 keeps its own gates | Pending |
+| Presentation | Revised history-owner design and interaction-epoch correction accepted | P1 ownership implemented; final specialist presentation and two-size GPU checks passed | Merged `2846d9c65e3`; combined-source validation follows |
+| Live updates | Revised delivery design and source accepted; independent review found no blocker | U1 retained update owner implemented; isolated U2 keeps its own gates | Merged `a3b0717d547`; shared frame/update lifecycle reconciled |
 
 All five specialist assignments begin design-only. Production changes begin
 after the five designs and their cross-stream boundaries have been reviewed.
@@ -156,3 +156,20 @@ The AI worker's baseline attribution check preserved public `unavailable` and
 zero command dispatches, but lost the exact capability in private history/host
 evidence. The fix must retain that cause without changing the public failure
 disposition or introducing another observation.
+
+The update worker retained a failing behavioral witness in which retiring the
+original Game cancelled its held download and the replacement lost the operation.
+The corrected retained owner preserves that one operation while revoking old
+view commands and restart intent. New actual pointer tests preserve Cancel
+across byte-only progress and reject prior semantic-phase controls.
+
+### Combined-source checks in progress
+
+After the artwork and U1 merges, the full graphics-free client runner passed
+5,623 checks. All 240 repository-tool tests passed, along with the 26-tool syntax
+check and maintained documentation-link check. Source review reconciled updater
+pumping after application input and exact artwork-frame retention before paint.
+All five reviewed slices are now integrated. Combined native/GPU suites are
+next; no specialist branch's success alone establishes the merged result.
+Specialist-only results are recorded in each design and are not substituted for
+combined-source or required exact-head PR checks.
