@@ -30,6 +30,9 @@ public sealed record EffectTargetDomain(SemanticKnowledge Knowledge, int? Min, i
 public sealed record OperationLink(int OperationId, OperationLinkKind Kind);
 public sealed record ActionOperation(int Id, ActionEffectKind Effect)
 {
+    // Direct continuous characteristics of an attached Aura only. This does
+    // not describe future triggers or grant a target/attachment permission.
+    public AttachmentModifier? Attachment { get; init; }
     public SemanticKnowledge Knowledge { get; init; }
     public int? ActorPlayerId { get; init; }
     public int? Amount { get; init; }

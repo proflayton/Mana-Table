@@ -71,6 +71,13 @@ public sealed class ActionOperationValidation
                     || cost.Amount < 0 || cost.CounterType == null || cost.ManaSymbols.IsDefault || cost.ManaSymbols.Any(string.IsNullOrWhiteSpace))
                 || node.Links.IsDefault || node.Links.Any(link => link == null || !Enum.IsDefined(link.Kind) || !nodes.ContainsKey(link.OperationId))) throw Invalid();
             edges += node.Links.Length;
+            if (node.Attachment is { } attachment && (node.Effect != ActionEffectKind.Attach || !attachment.IsValid)
+                || node.Effect == ActionEffectKind.Attach && node.Knowledge == SemanticKnowledge.Known
+                    && (node.Attachment is not { Knowledge: SemanticKnowledge.Known }
+                        || node.Targets is not { Knowledge: SemanticKnowledge.Known, Min: 1, Max: 1 }
+                        || node.Targets.Candidates.Any(entity => entity.Kind != SemanticEntityKind.Card)
+                        || node.Recipients.Binding != EffectRecipientBinding.Targets
+                        || node.Recipients.TargetOperationId != node.Id)) throw Invalid();
             Binding(node.Sources, nodes, node); Binding(node.Recipients, nodes, node);
             if (node.Targets is { } targets) {
                 if (!Enum.IsDefined(targets.Knowledge) || targets.Min < 0 || targets.Max < 0 || targets.Min > targets.Max
