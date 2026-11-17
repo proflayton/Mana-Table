@@ -132,6 +132,7 @@ internal sealed partial class TableApplication : IDisposable
         session = new(matchConnection, tables, this.clock, services.SourceActions, observationDelivery, services.MatchHistoryProvider, authority);
         session.SetPriorityObservationReady(false);
         updates = new(session);
+        historyReader = new(services.HistoryArchive, updates.Enqueue, this.clock);
         tablePresence = new(services.Presence, updates.Enqueue);
         if (services.Diagnostics is { } diagnostics) session.DiagnosticRecorded += diagnostics;
         if (services.HistoryArchive is { } historyArchive) session.History.Accepted += historyArchive.Record;
@@ -260,6 +261,8 @@ internal sealed partial class TableApplication : IDisposable
         session.SetPriorityObservationReady(false);
         try { session.Pump(); }
         finally { pumpingObservations = false; }
+        historyReader.Tick();
+        ObserveHistoryReader();
         ReconcileManaReading(match, match);
         UpdateLobbyDeck();
         UpdateActivity();
@@ -423,8 +426,7 @@ internal sealed partial class TableApplication : IDisposable
         ClearQuickMana();
         submittedManaContext = null;
         if (match is { } last) CloseHistoryArchive(last, !HistoryObserved(last));
-        historyReadCancellation?.Cancel(); historyReadCancellation?.Dispose();
-        ClearHistoryDetails(); historyDocument = null; archivedHistory = null;
+        historyReader.Dispose();
         updateView.Dispose(); deckWorkspace.Close(); deckPersistence.Close(); catalogRead.Close(); printingRead.Close(); deckTokensRead.Close(); tokenPrintingsRead.Close(); session.Close(); matchPresentation.Reset();
         projectionCapture = null;
         FinishAudioAdjustment();

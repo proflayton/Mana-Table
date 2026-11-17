@@ -1,8 +1,9 @@
 # Presentation ownership and frame composition
 
-Status: design accepted by the technical lead, 16 November 2026. Baseline:
-`0eaa9f70abe3a40f92342352a20dc805a0ea730a`, public 0.2.469. No production
-change or performance improvement is claimed by this design.
+Status: P1 implemented and locally validated; integrated-source, required remote
+checks and release qualification remain separate, 16 November 2026. Baseline:
+`0eaa9f70abe3a40f92342352a20dc805a0ea730a`, public 0.2.469. No performance
+improvement is claimed by this extraction.
 
 The first implementation extracts the match-history reader's complete local
 lifetime from `TableApplication`. Later work separates measured composition
@@ -96,6 +97,13 @@ selection ID. It owns all generation changes. The scope also includes surface,
 reading source, audience/archive identity, selected action, pages and export
 scope, so an old hit cannot be reused after any relevant local transition.
 An unchanged frame must not increment the scope generation.
+
+Composition revision and interaction epoch are separate. An admitted
+same-audience model/status refresh invalidates the measurement basis and cached
+view, while preserving an unchanged reader gesture. Audience replacement,
+explicit navigation/request identity and page clamping still retire the relevant
+interaction scope. A held Previous control can therefore survive a harmless
+history append, but cannot survive its own selection change or viewer A-to-B-to-A.
 
 | Input | Result and invalidation |
 | --- | --- |
@@ -417,3 +425,77 @@ the existing real-GPU `card-reading` journey, including HistorySmoke, passed
 are retained by the lead for semantic and visual comparison. Those results
 describe the pre-extraction source only; they do not validate this design's
 implementation or supply human UX approval.
+
+## P1 execution and evidence
+
+P1 moves navigation, selected model/action, pages, consent, detail cache, request
+leases and storage dispatch into `HistoryPresentationSession`. The application
+retains its established global overlay and current-card resolver, recorder
+subscription and archive-closure provenance. `HistoryDetailsFormatter` is pure
+retained-fact formatting. The history painter measures first, reconciles pages,
+then draws text and publishes hits from one final immutable view. The application
+has no remaining archive-read/export `Task.Run` closures or loose reader-request
+cancellation fields.
+
+Storage uses one actual uncancelled pipeline and one replaceable pending read.
+Logical cancellation/expiry cannot release a destination write. An explicit
+fresh export is unavailable until that actual task ends; no export is queued or
+automatically retried. The ten-second deadline uses a truthful storage-delay
+message while physical work is unresolved. This does not claim an in-progress
+report was rolled back or failed to reach its destination.
+
+`HasOutstandingIo` proves only retirement of the storage operation. A completion
+containing private presentation code may still be queued or executing after
+`Finished` signals. Future passive mount/unload must additionally revoke and
+drain the original private callback lane before unloading that generation.
+Current P1 has no live-unload consumer and adds no cross-generation guarantee;
+the separate update workstream's current slice does not consume this value as
+an unload proof. A noncooperative port may retain one operation per application
+owner indefinitely; this blocks only later history I/O and a future mount,
+without adding global game Busy or new rules authority.
+
+Local checks on the P1 candidate passed:
+
+| Check | Result and scope |
+| --- | --- |
+| Release native test build | Succeeded; existing audio nullability warning and unavailable NuGet advisory-service warnings remain |
+| `--smoke-headless-presentation --presentation-group history-owner` | Final source: 65 checks, comprising 33 new owner/lifecycle/composition controls and 32 existing announced-history controls |
+| `--smoke-presentation` | Final source: 1,790 checks, including the new owner controls through the normal native correctness lane |
+| Full `--smoke-headless-presentation` | Pre-epoch-correction candidate: 8,767 existing production-composition, input, protocol and lifecycle checks; combined-source repetition belongs to the technical lead |
+| Offscreen `--smoke-card-reading --size 1000x740` | 120 real-GPU checks, including the unchanged HistorySmoke journey |
+| Offscreen `--smoke-card-reading --size 1540x980` | 120 real-GPU checks, including the unchanged HistorySmoke journey |
+| Maintained documentation checks and whitespace check | Passed locally |
+
+The six opaque history-panel interiors (payment, concealed source and saved
+payment at both sizes) have zero differing pixels against the lead's baseline:
+363,789 compared pixels per small capture and 875,092 per large capture. The
+complete source-reader image is byte-identical at both sizes. Whole-image hashes
+for other captures differ in the animated battlefield behind the panel, so this
+is a panel/reader equivalence result, not a claim of identical whole-game timing.
+Agent inspection found the same history title, payment text, source visibility,
+navigation and report controls. Automation and agent inspection do not establish
+human UX acceptance.
+
+First attempts are retained separately from successful runs. The initial
+`--no-restore` build lacked fresh-worktree assets; restoration from the shared
+dependency cache resolved that setup failure. Three targeted test attempts
+exposed authored-fixture mistakes: changing a title without changing detail
+facts, using a stale pre-Present scenario prompt, and choosing PassPriority which
+that controlled port does not implement. The fixtures now change retained result
+facts and submit the scenario's actual currently authorized AutoPass command.
+No product deadline, pass permission, validation or retry budget was relaxed.
+
+Final source review separated interaction epoch from composition revision to
+preserve unchanged controls across background history refresh. The added
+production-input sequence admits a new history record while an actual Previous
+hit is held, successfully uses that hit, then rejects it after explicit selection
+change. It also rejects an old History control across an actual viewer
+A-to-B-to-A acceptance. Stale measurement finalization remains refused. The
+focused group, complete presentation suite and both GPU journeys were rerun
+after this correction; the full headless count above remains prior-source
+evidence and is not relabeled as a final-source result.
+
+The technical lead owns final combined-source review, guide/CI integration,
+required exact-commit checks and public merge/release qualification. P2–P5,
+performance budgets, full rules qualification, future generation unloading and
+human gameplay review remain outside this P1 completion claim.

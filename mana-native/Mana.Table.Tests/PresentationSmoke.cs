@@ -25,6 +25,7 @@ internal static class PresentationSmoke
         ExecutionPresentationChecks.Run(Check);
         DeckInteractionChecks.Run(Check);
         DecisionSessionChecks.Run(Check);
+        HistoryPresentationSessionChecks.Run(profile, Check);
         ImpactFeedbackChecks.Run(Check);
         CardArtPreloadChecks.Run(Check);
         ArtworkResidencyChecks.Run(Check);
