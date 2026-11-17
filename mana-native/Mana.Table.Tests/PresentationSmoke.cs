@@ -31,6 +31,7 @@ internal static class PresentationSmoke
         ManaPoolFeedbackChecks.Run(Check);
         InteractionFrameChecks.Run(Check);
         PresentationReadChecks.Run(profile, Check);
+        UpdateOwnershipChecks.Run(profile, Check);
         CardPresentationChecks.Run(Check);
         KeywordHelpChecks.Run(Check);
         CardPlayChecks.Run(Check);

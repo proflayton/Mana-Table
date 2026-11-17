@@ -13,6 +13,8 @@ namespace Mana.Table;
 internal sealed class PresentationRun : IDisposable
 {
     private readonly TableApplication application;
+    private readonly AppUpdateSession? retainedUpdates;
+    private readonly AppUpdateViewBinding updateView;
     private readonly ControlledClock clock = new();
     private readonly ClientSession.ObservationIngress? ingress;
     private readonly bool allowErrors;
@@ -21,13 +23,15 @@ internal sealed class PresentationRun : IDisposable
 
     internal PresentationRun(TableServices services, string profile, GameSnapshot initial, Point viewport,
         ObservationDeliveryMode delivery = ObservationDeliveryMode.External, bool allowErrors = false, bool automated = true,
-        ClientSessionAuthority authority = ClientSessionAuthority.Interactive)
+        ClientSessionAuthority authority = ClientSessionAuthority.Interactive, AppUpdateSession? retainedUpdates = null)
     {
         this.allowErrors = allowErrors;
         Viewport = viewport;
         Delivery = delivery;
+        this.retainedUpdates = retainedUpdates;
+        updateView = retainedUpdates?.AttachView() ?? AppUpdateViewBinding.Disabled;
         application = new(services, profile, initialState: initial, clock: clock, observationDelivery: delivery,
-            authority: authority) { Automated = automated };
+            authority: authority, updateView: updateView) { Automated = automated };
         try {
             application.Initialize();
             if (delivery == ObservationDeliveryMode.External) {
@@ -69,6 +73,7 @@ internal sealed class PresentationRun : IDisposable
         clock.Ticks = total.Ticks;
         Viewport = viewport ?? Viewport;
         application.Update(new(total, elapsed), mouse, keys, Viewport, inputActive: active);
+        retainedUpdates?.Pump(updateView, application.ReadUpdateInstallContext());
         return ReadFrame();
     }
 

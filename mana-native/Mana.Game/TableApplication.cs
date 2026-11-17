@@ -115,7 +115,7 @@ internal sealed partial class TableApplication : IDisposable
     private Hit? HitAt(Point at) => TableHitAt(at);
 
     public TableApplication(TableServices services, string profile, string? fixture = null, GameSnapshot? initialState = null,
-        PresentationResources? resources = null, IAppUpdates? appUpdates = null, Action<PreparedUpdate>? installUpdate = null,
+        PresentationResources? resources = null, AppUpdateViewBinding? updateView = null,
         bool allowAutomaticChecks = false, TimeProvider? clock = null, bool restartedAfterUpdate = false,
         ObservationDeliveryMode observationDelivery = ObservationDeliveryMode.Polled,
         ClientSessionAuthority authority = ClientSessionAuthority.Interactive)
@@ -147,7 +147,7 @@ internal sealed partial class TableApplication : IDisposable
         // available until acknowledged instead of disappearing between frames.
         session.Recovered += () => { if (!commandFailure) error = ""; pendingActionLabel = ""; };
         this.profile = profile; this.fixture = fixture; this.initialState = initialState; this.resources = resources ?? new(); this.allowAutomaticChecks = allowAutomaticChecks;
-        InitializeAppUpdates(appUpdates, installUpdate);
+        this.updateView = updateView ?? AppUpdateViewBinding.Disabled;
         preferences = PlayPreferences.Load(profile); automatic = preferences.Automatic;
     }
     internal void ReceiveText(char character)
@@ -267,7 +267,6 @@ internal sealed partial class TableApplication : IDisposable
         UpdateSocial();
         UpdateDeckCatalog();
         UpdateWorkshopData();
-        UpdateAppUpdates();
         UpdateReaderActions();
         PrepareDecisionSession();
         priorityAttention.Observe(match);
@@ -426,7 +425,7 @@ internal sealed partial class TableApplication : IDisposable
         if (match is { } last) CloseHistoryArchive(last, !HistoryObserved(last));
         historyReadCancellation?.Cancel(); historyReadCancellation?.Dispose();
         ClearHistoryDetails(); historyDocument = null; archivedHistory = null;
-        CloseUpdateRequests(); deckWorkspace.Close(); deckPersistence.Close(); catalogRead.Close(); printingRead.Close(); deckTokensRead.Close(); tokenPrintingsRead.Close(); session.Close(); matchPresentation.Reset();
+        updateView.Dispose(); deckWorkspace.Close(); deckPersistence.Close(); catalogRead.Close(); printingRead.Close(); deckTokensRead.Close(); tokenPrintingsRead.Close(); session.Close(); matchPresentation.Reset();
         projectionCapture = null;
         FinishAudioAdjustment();
         audioMixer?.Dispose();

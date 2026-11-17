@@ -26,6 +26,8 @@ internal interface ITableAutomation
 public sealed class TableWindow : Game
 {
     private readonly TableApplication application;
+    private readonly AppUpdateSession? updateSession;
+    private readonly AppUpdateViewBinding updateView;
     private readonly PresentationResources resources = new();
     private readonly CardArt art;
     private readonly GraphicsDeviceManager graphics;
@@ -55,7 +57,9 @@ public sealed class TableWindow : Game
         art = new(artSource ?? new MagicArtSource(profile));
         resources.Card = art.Get;
         resources.Artwork = art.Readiness;
-        application = new(services, profile, fixture, initialState, resources, appUpdates, installUpdate, allowAutomaticChecks: capture == null,
+        updateSession = appUpdates == null ? null : new(appUpdates, profile, installUpdate, Exit);
+        updateView = updateSession?.AttachView() ?? AppUpdateViewBinding.Disabled;
+        application = new(services, profile, fixture, initialState, resources, updateView, allowAutomaticChecks: capture == null,
             restartedAfterUpdate: restartedAfterUpdate);
         if (enableLiveTableStudy) application.EnableLiveTableStudy();
         application.CaptureMode = capture != null;
@@ -87,6 +91,7 @@ public sealed class TableWindow : Game
         var backbuffer = GraphicsDevice.PresentationParameters;
         application.Update(time, mouse, keys, new(backbuffer.BackBufferWidth, backbuffer.BackBufferHeight),
             inputActive: IsActive || Automation != null);
+        updateSession?.Pump(updateView, application.ReadUpdateInstallContext());
         var preload = application.ArtPreloadCards();
         art.Preload(preload.Visible, preload.Anticipated);
         bool cardPointer = application.InteractivePointer;
@@ -140,8 +145,11 @@ public sealed class TableWindow : Game
     protected override void Dispose(bool disposing)
     {
         if (disposing) {
-            application.Dispose(); art.Dispose(); assets?.Dispose(); painter?.Dispose(); screen?.Dispose();
-            surface?.Dispose();
+            try { updateSession?.Close(); }
+            finally {
+                application.Dispose(); art.Dispose(); assets?.Dispose(); painter?.Dispose(); screen?.Dispose();
+                surface?.Dispose();
+            }
         }
         base.Dispose(disposing);
     }

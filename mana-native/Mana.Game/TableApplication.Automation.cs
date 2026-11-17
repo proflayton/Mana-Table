@@ -99,7 +99,7 @@ internal sealed partial class TableApplication
         internal bool UpdateDownloading => game.UpdateView.Downloading;
         internal bool UpdateValidating => game.UpdateView.Verifying;
         internal bool UpdateInstallerLaunched => game.UpdateView.InstallerLaunched;
-        internal bool UpdateCheckOnStartup => game.updateSession.CheckOnStartup;
+        internal bool UpdateCheckOnStartup => game.updateView.CheckOnStartup;
         internal bool AutomaticUpdateCheckAllowed => game.AutomaticUpdateCheckAllowed;
         internal string UpdateError => game.UpdateView.Error;
         internal string UpdateNotice => game.UpdateView.Notice;

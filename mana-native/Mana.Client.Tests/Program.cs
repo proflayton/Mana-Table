@@ -10,6 +10,11 @@ if (args.Contains("--verify-failure-reporting"))
     throw new InvalidOperationException("Controlled test-runner failure reporting check.");
 int checks = 0;
 void Check(bool value, string description) { if (!value) throw new Exception(description); checks++; Console.WriteLine(description); }
+if (args.Contains("--app-update-checks")) {
+    await AppUpdateSessionRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} retained update ownership checks.");
+    return 0;
+}
 if (args.Contains("--priority-continuation-checks")) {
     await PriorityContinuationRegression.RunAsync(Check);
     await PriorityObservationRegression.RunAsync(Check);
