@@ -131,3 +131,20 @@ while awaiting an exact staged blocker assignment. These precede this program;
 neither is attributed to a new implementation without final-source evidence.
 Their retained failures do not justify relaxing checks, extending budgets or
 claiming complete gameplay qualification from the passing local baseline suites.
+
+### First implementation failure witnesses
+
+Before production changes, the graphics worker loaded 1,025 distinct tiny faces
+through the real GPU CardArt path. The first texture remained live beyond the
+proposed 1,024-object ceiling. This establishes unbounded residency without
+claiming an observed out-of-memory crash.
+
+The diagnostics worker denied `engine.log` access, then let a real child write
+2 MiB of stderr without a newline before an ordinary protocol reply. The reply
+failed the test's five-second watchdog on the original provider. The test keeps
+the production command deadline unchanged.
+
+The AI worker's baseline attribution check preserved public `unavailable` and
+zero command dispatches, but lost the exact capability in private history/host
+evidence. The fix must retain that cause without changing the public failure
+disposition or introducing another observation.
