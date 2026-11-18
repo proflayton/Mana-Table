@@ -225,7 +225,7 @@ internal static class ForgeSnapshotDecoder
             Id = Identifier(Id), ControllerId = ControllerId, Repetition = Repetition,
             Targets = Targets.IsDefault ? throw Invalid() : Targets, Effect = Effect, ExecutionId = ExecutionId ?? "",
             OperationGraph = OperationGraph.ValueKind == JsonValueKind.Undefined ? ActionOperationGraph.Unknown
-                : OperationGraph.Deserialize<ActionOperationGraph>(OperationJson) ?? throw Invalid()
+                : ForgeAttachmentProjection.Normalize(OperationGraph.Deserialize<ActionOperationGraph>(OperationJson) ?? throw Invalid())
         };
     }
 

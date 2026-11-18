@@ -5,7 +5,7 @@ namespace Mana.Contracts;
 // Knowledge describes mechanical projection, never predicted resolution or value.
 public enum SemanticKnowledge { Unknown, Known, Unsupported }
 public enum SemanticEntityKind { Player, Card, Spell }
-public enum EffectRecipientBinding { Unknown, Actor, Source, Explicit, Targets, TargetControllers, TargetOwners }
+public enum EffectRecipientBinding { Unknown, Actor, Source, Explicit, Targets, TargetControllers, TargetOwners, DecisionSource }
 // Scheduled is a future recipe, not another effect executing now. Its trigger,
 // future recipients, payments and conditions have not been resolved.
 public enum OperationLinkKind { Sequence, Choice, IfTrue, IfFalse, Repeat, Additional, Scheduled }
@@ -33,6 +33,9 @@ public sealed record ActionOperation(int Id, ActionEffectKind Effect)
     // Direct continuous characteristics of an attached Aura only. This does
     // not describe future triggers or grant a target/attachment permission.
     public AttachmentModifier? Attachment { get; init; }
+    // Read-only provenance for the active announcing portrait. This is never
+    // added to the target/resource occurrence catalog or to action handles.
+    public string AttachmentSourceCardId { get; init; } = "";
     public SemanticKnowledge Knowledge { get; init; }
     public int? ActorPlayerId { get; init; }
     public int? Amount { get; init; }

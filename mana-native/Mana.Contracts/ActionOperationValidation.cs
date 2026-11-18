@@ -9,9 +9,11 @@ public sealed class ActionOperationValidation
     private readonly Dictionary<string, int> controllers = new(StringComparer.Ordinal);
     private readonly Dictionary<string, StackItem> stackItems;
     private readonly Dictionary<string, StackItem[]> stackByCard;
+    private readonly GameSnapshot state;
 
     public ActionOperationValidation(GameSnapshot state)
     {
+        this.state = state;
         players = state.Players.Select(player => player.Id).ToHashSet();
         var cards = CardViews.InZones(state).Select(occurrence => occurrence.Card).Concat(state.ActionSources.Select(source => source.Card))
             .Concat(state.Stack.Where(item => item.Kind == StackActionKind.Spell).Select(item => item.Card).OfType<Card>());
@@ -62,6 +64,7 @@ public sealed class ActionOperationValidation
         int edges = 0;
         foreach (var node in graph.Operations) {
             if (!Enum.IsDefined(node.Effect) || !Enum.IsDefined(node.Knowledge) || !Enum.IsDefined(node.AmountKnowledge)
+                || node.AttachmentSourceCardId == null
                 || node.AmountKnowledge == SemanticKnowledge.Known && node.Amount == null || node.CounterType == null
                 || !Zone(node.OriginZone) || !Zone(node.DestinationZone)
                 || node.ActorPlayerId is { } actor && !players.Contains(actor)
@@ -78,7 +81,9 @@ public sealed class ActionOperationValidation
                         || node.Targets.Candidates.Any(entity => entity.Kind != SemanticEntityKind.Card)
                         || node.Recipients.Binding != EffectRecipientBinding.Targets
                         || node.Recipients.TargetOperationId != node.Id)) throw Invalid();
-            Binding(node.Sources, nodes, node); Binding(node.Recipients, nodes, node);
+            if (node.AttachmentSourceCardId.Length > 0 && (node.Effect != ActionEffectKind.Attach || node.Attachment == null
+                || node.Sources.Binding != EffectRecipientBinding.DecisionSource || active != node.Id)) throw Invalid();
+            Binding(node.Sources, nodes, node, source: true); Binding(node.Recipients, nodes, node, source: false);
             if (node.Targets is { } targets) {
                 if (!Enum.IsDefined(targets.Knowledge) || targets.Min < 0 || targets.Max < 0 || targets.Min > targets.Max
                     || targets.Knowledge == SemanticKnowledge.Known && (targets.Min == null || targets.Max == null)
@@ -102,7 +107,7 @@ public sealed class ActionOperationValidation
         if (!Visit(graph.RootId, 1) || colors.Count != nodes.Count) throw Invalid();
     }
 
-    private void Binding(EffectRecipients? binding, Dictionary<int, ActionOperation> nodes, ActionOperation operation)
+    private void Binding(EffectRecipients? binding, Dictionary<int, ActionOperation> nodes, ActionOperation operation, bool source)
     {
         if (binding == null || !Enum.IsDefined(binding.Knowledge) || !Enum.IsDefined(binding.Binding) || binding.Entities.IsDefault
             || binding.Entities.Select(entity => entity?.Id).Distinct(StringComparer.Ordinal).Count() != binding.Entities.Length
@@ -112,6 +117,10 @@ public sealed class ActionOperationValidation
             if (!targets || !nodes.TryGetValue(target, out var node) || node.Targets == null) throw Invalid();
         } else if (targets && binding.Knowledge == SemanticKnowledge.Known) throw Invalid();
         foreach (var entity in binding.Entities) Entity(entity);
+        if (binding.Binding == EffectRecipientBinding.DecisionSource
+            && (!source || binding.Knowledge != SemanticKnowledge.Known || binding.TargetOperationId != null || !binding.Entities.IsEmpty
+                || operation.Effect != ActionEffectKind.Attach || operation.Attachment == null
+                || !AttachmentModifier.IsCurrentDecisionSource(state, operation.AttachmentSourceCardId, operation.ActorPlayerId))) throw Invalid();
         if (binding.Knowledge == SemanticKnowledge.Known && binding.Binding == EffectRecipientBinding.Actor
             && (operation.ActorPlayerId == null || binding.Entities.Length != 1 || binding.Entities[0].Kind != SemanticEntityKind.Player
                 || binding.Entities[0].PlayerId != operation.ActorPlayerId)) throw Invalid();

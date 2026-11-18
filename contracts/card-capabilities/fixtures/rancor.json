@@ -1,0 +1,26 @@
+{
+  "attachment": {
+    "knowledge": "Known",
+    "powerDelta": 2,
+    "toughnessDelta": 0,
+    "grantedKeywords": [
+      "trample"
+    ]
+  },
+  "kind": "attachment_capability",
+  "source": {
+    "extractorVersion": "forge-attachment/1",
+    "provider": "forge",
+    "definitionFingerprint": "06a2a6e75fcf43648846d4373514e24269d262673eb3498b967a4c937e437c34"
+  },
+  "coverage": {
+    "status": "complete_for_declared_features",
+    "declaredFeatures": [
+      "signed_pt",
+      "keyword_grants"
+    ],
+    "unsupportedFeatures": []
+  },
+  "schemaVersion": "1.0",
+  "scope": "direct_continuous_modifiers"
+}
