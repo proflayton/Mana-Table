@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Mana.AI;
 
-public sealed record CasualCommanderOptions(bool AttachmentEvaluation = true);
+public sealed record CasualCommanderOptions(bool AttachmentEvaluation = true, bool LibraryAcquisitionEvaluation = false);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record AiExperimentVariant(string FactoryId, bool AttachmentEvaluation = true);
@@ -13,13 +13,16 @@ public sealed record AiExperimentVariant(string FactoryId, bool AttachmentEvalua
 public static class AiExperimentPolicyRegistry
 {
     public const string CasualCommanderFactoryId = "casual-commander.v6";
+    public const string LibraryAcquisitionFactoryId = "casual-commander.v7.library-acquisition.v1";
 
     public static IAiPolicy Create(AiExperimentVariant variant)
     {
         ArgumentNullException.ThrowIfNull(variant);
-        if (variant.FactoryId != CasualCommanderFactoryId)
+        if (variant.FactoryId != CasualCommanderFactoryId && variant.FactoryId != LibraryAcquisitionFactoryId)
             throw new ArgumentException("Unsupported experiment policy factory.", nameof(variant));
-        return new CasualCommanderPolicy(new(variant.AttachmentEvaluation));
+        if (variant.FactoryId == LibraryAcquisitionFactoryId && !variant.AttachmentEvaluation)
+            throw new ArgumentException("The acquisition candidate requires full attachment evaluation.", nameof(variant));
+        return new CasualCommanderPolicy(new(variant.AttachmentEvaluation, variant.FactoryId == LibraryAcquisitionFactoryId));
     }
 
     public static AiExperimentVariant Parse(JsonElement value)
@@ -38,7 +41,10 @@ public static class AiExperimentPolicyRegistry
                 default: throw new ArgumentException("Unsupported experiment variant setting.");
             }
         }
-        if (factory != CasualCommanderFactoryId) throw new ArgumentException("Unsupported experiment policy factory.");
+        if (factory != CasualCommanderFactoryId && factory != LibraryAcquisitionFactoryId)
+            throw new ArgumentException("Unsupported experiment policy factory.");
+        if (factory == LibraryAcquisitionFactoryId && !attachment)
+            throw new ArgumentException("The acquisition candidate requires full attachment evaluation.");
         return new(factory, attachment);
     }
 }

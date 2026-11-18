@@ -184,21 +184,38 @@ public sealed record OptionsPayload(ChoiceSelection Selection, CounterPaymentCho
     private ChoiceSelection selection = ValidateSelection(Selection, CounterPayment);
     private ManaColorPaymentContext? manaPaymentContext;
     private HandReductionContext? handReduction;
+    private LibraryAcquisitionContext? libraryAcquisition;
     public ChoiceSelection Selection { get => selection; init {
         var validated = ValidateSelection(value, CounterPayment);
         ValidateManaChoice(validated, manaPaymentContext, CounterPayment);
         ValidateHandReduction(validated, handReduction, manaPaymentContext, CounterPayment);
+        ValidateLibraryAcquisition(validated, libraryAcquisition, manaPaymentContext, handReduction, CounterPayment);
         selection = validated;
     } }
     public CounterPaymentChoice? CounterPayment { get; } = CounterPayment;
     public ManaColorPaymentContext? ManaPaymentContext { get => manaPaymentContext; init {
         ValidateManaChoice(selection, value, CounterPayment);
         ValidateHandReduction(selection, handReduction, value, CounterPayment);
+        ValidateLibraryAcquisition(selection, libraryAcquisition, value, handReduction, CounterPayment);
         manaPaymentContext = value;
     } }
     public HandReductionContext? HandReduction { get => handReduction; init {
-        ValidateHandReduction(selection, value, manaPaymentContext, CounterPayment); handReduction = value;
+        ValidateHandReduction(selection, value, manaPaymentContext, CounterPayment);
+        ValidateLibraryAcquisition(selection, libraryAcquisition, manaPaymentContext, value, CounterPayment); handReduction = value;
     } }
+    public LibraryAcquisitionContext? LibraryAcquisition { get => libraryAcquisition; init {
+        ValidateLibraryAcquisition(selection, value, manaPaymentContext, handReduction, CounterPayment); libraryAcquisition = value;
+    } }
+    private static void ValidateLibraryAcquisition(ChoiceSelection selection, LibraryAcquisitionContext? context,
+        ManaColorPaymentContext? mana, HandReductionContext? reduction, CounterPaymentChoice? counters)
+    {
+        if (context != null && (mana != null || reduction != null || counters != null
+            || selection.Range.Max > context.PlannedDestinations.Sum(destination => destination.MaximumCount)
+            || selection.Choices.IsEmpty || selection.Choices.Any(choice => choice.Mana.Length != 0 || choice.CardId.Length != 0
+                || choice.Card is not { Key.Length: 0, VisualId.Length: 0, CombatId.Length: 0,
+                    Selectable: false, Highlighted: false, PlayAffordability: ActionAffordability.Unknown })))
+            throw new ArgumentException("A library acquisition describes only its current keyless library card options and bounded destination plan.", nameof(context));
+    }
     private static void ValidateHandReduction(ChoiceSelection selection, HandReductionContext? context,
         ManaColorPaymentContext? mana, CounterPaymentChoice? counters)
     {
