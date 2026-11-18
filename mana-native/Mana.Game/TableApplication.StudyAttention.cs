@@ -78,7 +78,7 @@ internal sealed partial class TableApplication
         Rectangle? fitted = null;
         foreach (int width in new[] { preferred.Width, preferred.Width + 100, preferred.Width + 220 }) {
             var measuredAnnouncement = MeasurePublicAnnouncement(width);
-            int stackHeight = match.Stack.Length > 0 ? RepeatedStackWorkload ? 190 : MeasureStudyStackHeight(width)
+            int stackHeight = match.Stack.Length > 0 ? RepeatedStackWorkload ? MeasureStackWorkloadsHeight(width) : MeasureStudyStackHeight(width)
                 : ValuedTargetDecision ? preferred.Height : 0;
             var candidate = new Rectangle(preferred.X, preferred.Y, width, stackHeight + (measuredAnnouncement?.Height ?? 0));
             if (TryPlaceStudyHud(candidate, reserved, new(12, 64, 1576, 696)) is not { } complete) continue;
@@ -86,7 +86,7 @@ internal sealed partial class TableApplication
             publicAnnouncementPlan = measuredAnnouncement; break;
         }
         if (fitted == null) {
-            height = match.Stack.Length > 0 ? RepeatedStackWorkload ? 190 : MeasureStudyStackHeight(preferred.Width)
+            height = match.Stack.Length > 0 ? RepeatedStackWorkload ? MeasureStackWorkloadsHeight(preferred.Width) : MeasureStudyStackHeight(preferred.Width)
                 : ValuedTargetDecision ? preferred.Height : 0;
             announcementHeight = publicAnnouncementPlan?.Height ?? 0;
         }

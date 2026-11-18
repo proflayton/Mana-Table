@@ -49,10 +49,15 @@ internal sealed partial class TableApplication
 
     private void DrawStudyStackFlow()
     {
-        var state = match!;
-        var entry = state.Stack[0];
         var area = StudyActionArea;
         if (RepeatedStackWorkload) { DrawStackWorkloads(area); return; }
+        DrawStudyStackEffect(area);
+    }
+
+    private void DrawStudyStackEffect(Rectangle area)
+    {
+        var state = match!;
+        var entry = state.Stack[0];
         string owner = entry.ControllerId is { } controller ? StateClarity.PlayerName(state, controller) : "Controller not reported";
         string status = StackHeading(entry);
         var header = new Rectangle(area.X, area.Y, area.Width, 23);
