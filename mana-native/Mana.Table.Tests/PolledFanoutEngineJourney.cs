@@ -468,7 +468,7 @@ internal static class PolledFanoutEngineJourney
             if (source.GetEntry("forge/api/AiReleaseFixtureEngine$" + bootstrap + ".class") == null)
                 throw new InvalidDataException("The source-bound test launcher lacks its private polled bootstrap: " + bootstrap);
             foreach (var entry in source.Entries.Where(entry => entry.FullName.EndsWith(".class", StringComparison.Ordinal))) {
-                if (!entry.FullName.StartsWith("forge/api/AiReleaseFixtureEngine", StringComparison.Ordinal))
+                if (!AiReleaseEvaluation.FixtureClass(entry.FullName))
                     throw new InvalidDataException("A non-fixture class cannot enter the derived test launcher.");
                 using var input = entry.Open(); using var buffer = new MemoryStream(); input.CopyTo(buffer);
                 byte[] bytes = buffer.ToArray(); classes.Add(entry.FullName, Convert.ToHexString(SHA256.HashData(bytes)));

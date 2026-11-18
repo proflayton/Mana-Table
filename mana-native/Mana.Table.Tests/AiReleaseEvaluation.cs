@@ -163,7 +163,7 @@ internal static class AiReleaseEvaluation
 
     private static string Hash(string file) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(file)));
 
-    private static bool FixtureClass(string name) => new[] {
+    internal static bool FixtureClass(string name) => new[] {
         "forge/api/AiReleaseFixtureEngine", "forge/api/LibraryAcquisitionFixtureEngine"
     }.Any(prefix => name == prefix + ".class"
         || name.StartsWith(prefix + "$", StringComparison.Ordinal) && name.EndsWith(".class", StringComparison.Ordinal));
