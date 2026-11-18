@@ -1,5 +1,10 @@
 # Testing Mana Table
 
+The proposed [AI experiment design](Mana-Table-AI-Experiments-Design.md) separates
+behavioral comparisons from release qualification and specifies experiment
+identity, balanced A/B scheduling, outcome denominators and analysis. It adds
+no executable commands or changed test budgets at this design stage.
+
 ## Shared attachment capability checks
 
 After building `Mana.Table.Tests`, the `attachment-capabilities` headless group

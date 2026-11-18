@@ -1,5 +1,10 @@
 # Multiplayer AI framework and investigation
 
+The proposed [AI experiment framework](Mana-Table-AI-Experiments-Design.md)
+defines paired decision evaluation, balanced natural A/B games and a separate
+casual-play scorecard. Its runner and commands remain a design proposal;
+current release qualification is not a policy-strength benchmark.
+
 ## Direct attachment capabilities: source candidate
 
 `casual-commander.v6` evaluates the shared
