@@ -127,6 +127,7 @@ internal static partial class HeadlessPresentationSmoke
                     PendingEffectPresentationChecks.Run(profile, Check);
                     StackCombatLayoutChecks.Run(profile, Check);
                 }
+                else if (group == "background-input") BackgroundInputChecks.Run(profile, Check);
                 else if (group == "seated-plane") {
                     TableSurfaceProjectionChecks.Run(Check);
                     SeatZoneChecks.Run(profile, Check);

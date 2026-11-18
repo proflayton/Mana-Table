@@ -52,6 +52,29 @@ separate name/count/controller/body regions, exact-source hover, deep-member
 inspection, return and current priority controls. Automated geometry and agent
 inspection remain separate from the player's acceptance of the revised visual.
 
+## Auto across window focus changes: source candidate
+
+**Reported behavior: issues; revised candidate pending human review.** With Auto
+enabled, switching from Mana Table to another application stops automatic
+priority progress. The input-focus gate also withheld observation credit and
+cancelled or withdrew automatic continuation, although the application continued
+to receive and compose current game observations.
+
+The journey uses Mana Table's existing Auto, Hold, phase stops and inspection
+gestures: enable Auto, switch applications, let already-authorized priority work
+continue, then return to the same table or its next required choice. Window focus
+only controls device input. Hold, required choices, meaningful response windows,
+saved own-turn phase stops and deliberate pinned reading/overlays retain their
+existing pauses. Returning with held mouse buttons or shortcut keys still
+requires a neutral input sample before a fresh manual gesture.
+
+This corrects the reported Mana Table gesture; it adds no new visual arrangement
+or controls. The current engine permission and acknowledged continuation policy
+still own every pass. Background updates admit actual command receipts and fresh
+owned observations; tabbing away cannot enable Auto, grant another seat's
+authority or answer a required choice. Review Auto on/off, Hold, an own-turn stop,
+a response, a pinned reader and a fresh required choice across Alt+Tab and return.
+
 ## Understanding a blocked target: source candidate
 
 **Source candidate; human review pending.** A player tried to use Staff of

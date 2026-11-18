@@ -1,4 +1,7 @@
 using System.Collections.Immutable;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Text.Json;
 using Mana.Contracts;
 using Mana.Renderer;
 using Mana.Scenarios;
@@ -77,6 +80,92 @@ internal static class BackgroundInputChecks
         LostCapture(profile, check);
         Text(profile, check);
         ScopedTarget(profile, check);
+        BackgroundProgress(profile, check);
+    }
+
+    private static void BackgroundProgress(string profile, Action<bool, string> check)
+    {
+        foreach (string mode in new[] { "auto", "off", "hold", "phase-stop", "required", "response", "reading" }) {
+            string path = Path.Combine(profile, "background-progress-" + mode);
+            var initial = FourPlayerTableScenario.Create()[0].Snapshot with {
+                Id = "background-progress-" + mode, Turn = 3, ActivePlayerId = mode == "phase-stop" ? 0 : 1,
+                Phase = "Main phase", PhaseKey = "MAIN1", Stack = [], Combat = null, Activity = [], Executions = null,
+                DecisionOwnerId = 0, PriorityPlayerId = 0, ActionClass = "priority",
+                Decision = mode == "required"
+                    ? new("", new("A required choice waits for the player."), new ConfirmationPayload(new("Continue", true)))
+                    : new("", new(), new PriorityPayload(new("Pass once", true), CanAutoPass: mode != "response"))
+            };
+            using var run = new BackgroundRun(profile, "background-progress-" + mode, initial, stopMain: true);
+            var commands = new ConcurrentQueue<GameCommand>();
+            var attempts = new ConcurrentQueue<GameCommand>();
+            var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var offered = run.View.Match!;
+            run.Engine.ReplyOverride = async command => {
+                attempts.Enqueue(command);
+                if (command is not AutoPassPriority || !GameCommandPermissions.Allows(offered, command))
+                    throw new InvalidOperationException("Background Auto escaped its original scoped priority permission.");
+                commands.Enqueue(command);
+                await release.Task;
+                run.Engine.Present(run.Engine.State with { ActionClass = "confirmation", Decision = new("",
+                    new("A fresh required choice stops background Auto."), new ConfirmationPayload(new("Continue", true))) });
+            };
+            if (mode == "reading") {
+                run.Click(run.Frame.Cards.First(card => card.Zone == "Hand").Hit.Id);
+                if (!run.Frame.Cards.Any(card => card.Focused)) throw new InvalidOperationException("The reading control did not pin its actual card.");
+            }
+            run.View.SetHeld(mode == "hold");
+            run.View.SetAutomatic(mode != "off");
+            run.Deactivate();
+            try {
+                // Inactive device samples are hostile input, never permission.
+                for (int frame = 0; frame < 80; frame++) {
+                    run.Tick(new(Keys.F, Keys.Enter, Keys.Space), active: false, allButtons: true, wheelDelta: 120);
+                    Thread.Yield();
+                }
+                if (mode == "auto") {
+                    bool submitted = Pump(() => commands.Count == 1);
+                    Save();
+                    check(submitted && commands.Single() is AutoPassPriority pass && pass.GameId == offered.Id
+                            && pass.DecisionId == offered.Decision!.Id && run.View.Automatic && !run.View.Held,
+                        "Already enabled Auto submits its exact current pass while unfocused, without accepting inactive keyboard or pointer input");
+                    release.TrySetResult();
+                    bool current = Pump(() => !run.View.Busy && run.View.Match?.Decision?.Payload is ConfirmationPayload);
+                    Save();
+                    check(current && run.Frame.Stamp.DecisionId == run.Engine.State.Decision!.Id && commands.Count == 1,
+                        "An inactive update admits the actual accepted continuation and exposes its fresh required choice instead of freezing at old priority");
+                    for (int frame = 0; frame < 40; frame++) run.Tick(new(Keys.Enter), active: false);
+                    check(commands.Count == 1 && run.View.Match?.Decision?.Payload is ConfirmationPayload,
+                        "Background Auto waits at a required choice and ignores an inactive Enter key");
+                } else {
+                    Save();
+                    check(commands.IsEmpty && run.View.Automatic == (mode != "off") && run.View.Held == (mode == "hold"),
+                        "Losing focus preserves the existing automatic-play boundary: " + mode);
+                }
+                int beforeRegain = commands.Count;
+                run.Tick(new(Keys.F, Keys.Enter), allButtons: true);
+                run.Tick(); // Consume neutral foreground input before fresh gestures.
+                check(commands.Count == beforeRegain && run.AcceptedHit == null && !run.AcceptedDrag,
+                    "Held activation keys and buttons cannot become a manual game action on focus return: " + mode);
+            } finally { release.TrySetResult(); Save(); }
+
+            bool Pump(Func<bool> ready)
+            {
+                var time = Stopwatch.StartNew();
+                while (!ready() && time.Elapsed < TimeSpan.FromSeconds(5)) {
+                    run.Tick(active: false); Thread.Sleep(1);
+                }
+                return ready();
+            }
+            void Save() => File.WriteAllText(Path.Combine(path, "background-progress.json"), JsonSerializer.Serialize(new {
+                mode, automatic = run.View.Automatic, held = run.View.Held, run.View.Busy,
+                attempts = attempts.Select(command => new { kind = command.GetType().Name,
+                    command = JsonSerializer.SerializeToElement(command, command.GetType()) }).ToArray(),
+                commands = commands.Select(command => new { kind = command.GetType().Name,
+                    command = JsonSerializer.SerializeToElement(command, command.GetType()) }).ToArray(),
+                current = run.View.Match, frame = run.Frame.Observe(),
+                scope = "Production application/session with authored permissions and controlled accepted replies; no Magic rules or live-game claim."
+            }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+        }
     }
 
     private static void LostCapture(string profile, Action<bool, string> check)
@@ -146,11 +235,12 @@ internal static class BackgroundInputChecks
         internal bool AcceptedDrag => presentation.AcceptedDrag;
         internal IEnumerable<string> PaintedText => Frame.Drawing.Commands.Select(command => command switch {
             DrawCommand.Text text => text.Value, DrawCommand.CenterText text => text.Value, _ => null }).OfType<string>();
-        internal BackgroundRun(string profile, string name)
+        internal BackgroundRun(string profile, string name, GameSnapshot? initial = null, bool stopMain = false)
         {
             var path = Path.Combine(profile, name); Directory.CreateDirectory(path);
-            new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false }.Save(path);
-            Engine.Present(FourPlayerTableScenario.Create()[0].Snapshot);
+            new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false,
+                Stops = stopMain ? ["MAIN1"] : [] }.Save(path);
+            Engine.Present(initial ?? FourPlayerTableScenario.Create()[0].Snapshot);
             presentation = new(TestTableServices.For(Engine) with { Social = Social }, path, Engine.State, new(1600, 900));
             presentation.EnableLiveTableStudy();
             var lobby = new Lobby("joined", "Background input fixture", null, false, null, true, "", null, [], [], "foreground-input-table");
