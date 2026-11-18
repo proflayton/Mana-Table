@@ -25,6 +25,15 @@ to rebuild, not a wire or saved-data migration: IPC/sync versions and JSON field
 names remain unchanged. Optional workshop metadata collections still distinguish
 omitted/null (leave unchanged) from an explicit empty array (clear).
 
+Actual attachment operations can carry an additive bounded `attachment` body
+describing direct signed P/T and keyword grants. Their Java wire effect and
+knowledge remain `Unknown` for older enum readers. Native clients validate the
+body and current bindings before recognizing internal `Attach`. During an Aura's
+target announcement, `attachmentSourceCardId` may identify the existing read-only
+prompt portrait when the source is absent from zones; generic entity admission
+and action permissions do not change. This field is confined to the owned active
+attachment decision. See the [shared contract and offline export CLI](../contracts/card-capabilities/README.md).
+
 ## Implemented
 
 | Hook | Behavior |

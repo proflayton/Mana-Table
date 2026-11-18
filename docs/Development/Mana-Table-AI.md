@@ -1,5 +1,33 @@
 # Multiplayer AI framework and investigation
 
+## Direct attachment capabilities: source candidate
+
+`casual-commander.v6` evaluates the shared
+[attachment capability subset](../../contracts/card-capabilities/README.md):
+literal signed P/T and a closed set of direct keyword grants on normal creature
+Auras. It compares the recipient's current public characteristics before and
+after the modifier, counts only newly effective keywords and applies the rules
+owned player relationship. Zero toughness and marked lethal damage can make a
+modifier harmful; indestructible prevents only the latter in this nominal
+comparison. Missing or overflowing characteristics remain unassessed.
+
+The policy does not assign the Aura a second permanent body, infer a direction
+from its name or prose, or credit Rancor's future return trigger. Dynamic,
+conditional or mixed unsupported continuous modifiers stay wholly unknown.
+Known positive attachment choices outrank unassessed fallback scores. An unknown
+non-cost target uses current cancellation when completion is unavailable;
+required prompts without cancellation retain a legal bounded answer. Unknown
+targeted casts no longer receive generic positive exploration value. Selection
+costs, existing partial damage evaluation and explicit optional completion keep
+their own handling. Work and command-scope limits remain enforced.
+
+The recorded v5 Rancor failure remains intact. Re-evaluating that old Unknown
+frame under v6 demonstrates safe cancellation, while controlled actual Forge
+observations exercise the new supported modifier path. These prove different
+properties; neither establishes that the earlier campaign timeout is fixed.
+Archive's first bridge consumes definition exports into potential graphs. Full
+strategy packages and a Mana Table strategy-package consumer remain future work.
+
 ## Private failure provenance
 
 The source candidate retains an optional immutable `AiFailure` on seat views,

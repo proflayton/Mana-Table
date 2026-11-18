@@ -14,6 +14,15 @@ reviewed artwork, process diagnostics, AI failure, history presentation and
 update-operation designs. Its implementation and qualification states are
 tracked separately from the larger cooperative and live-update milestones.
 
+The first Archive/Mana Table capability bridge shares a versioned, MIT-licensed
+[definition contract](../../contracts/card-capabilities/README.md) for direct
+Aura modifiers. Forge extracts a closed structural subset, Archive maps exports
+into potential graphs, and native AI consumes current bound modifier facts.
+Definition coverage, live binding, legal commands and strategic evaluation stay
+separate. A current prompt's read-only source portrait can supply attachment
+provenance without entering the target/resource occurrence catalog. Full
+strategy packages and broad interaction discovery remain unimplemented.
+
 Rules-process diagnostics have a process-owned bounded stderr drain and an
 independent optional file worker. A slow or failed `engine.log` sink cannot
 backpressure the child through that drain. Fixed queue/tail storage, explicit

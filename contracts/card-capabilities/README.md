@@ -24,6 +24,38 @@ replacement effects and an entire card's strategic usefulness are outside this
 contract. Complete coverage here is not complete understanding of a card or a
 guarantee that its effect occurs. Potential graph conversion preserves this scope.
 
+## Live compatibility and source binding
+
+The portable envelope is an offline definition artifact. Live operation graphs
+carry only its `attachment` modifier body on an actual Forge `ApiType.Attach`
+operation. Java retains the legacy `Unknown` effect/knowledge enum values; new
+native clients admit the optional body as internal `Attach`. Older clients keep
+the original uncertainty without receiving an unrecognized enum value.
+
+During announcement, the Aura may exist only as the current target prompt's
+read-only source portrait. An additive `attachmentSourceCardId` identifies that
+portrait without changing the generic zone-entity catalog. Native admission
+requires the current active target operation, matching visible nonactionable
+portrait and owned actor. Its internal `DecisionSource` binding has no entities
+and is valid only in the source role. It cannot identify a recipient, payment
+resource, action offer or committed stack source. Ordinary targets retain their
+existing current occurrence validation and command permissions.
+
+## Export
+
+After building the engine, run from the repository root:
+
+```text
+java -cp forge-api/target/forge-engine.jar forge.api.AttachmentCapabilityExport forge-gui/res Rancor rancor.json
+```
+
+An optional final argument selects a zero-based face index. The name selects a
+public catalog definition; structural scripts determine every modifier claim.
+The command initializes catalog resources without creating a match. The four
+fixtures here are actual exports from the versioned extractor, including two
+unsupported definitions. Archive validates this same schema and converts it to
+potential graph facts with an unbound recipient and explicit live-evaluation gaps.
+
 The schema and authored bridge material in this directory are available under
 the accompanying MIT license for use by both projects. Forge implementation
 code retains its repository license.

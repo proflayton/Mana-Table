@@ -1,5 +1,33 @@
 # Testing Mana Table
 
+## Shared attachment capability checks
+
+After building `Mana.Table.Tests`, the `attachment-capabilities` headless group
+exercises actual IPC admission using authored envelopes, malformed/hidden/stale
+controls and the four real definition exports under `contracts/card-capabilities`.
+It also runs in the full headless inventory. Read-only announcing portraits must
+remain unavailable as targets, resources and action handles. The ordinary client
+suite includes attachment valuation/selection checks; `--ai-attachment-checks`
+selects that group. These tests include negative modifiers, duplicate effective
+keywords, partial target knowledge, required versus cancellable prompts,
+scope retirement and finite work.
+
+Java `AttachmentCapabilitiesTest` checks the structural extractor and offline/live
+parity. `AuraAttachmentJourneyTest` drives actual owned observations, payment,
+stack targeting and resolution for supported and unsupported examples. Keep its
+raw owned envelopes distinct from authored native wire controls. The actual
+owned-envelope diagnostic runs `Mana.Table.Tests --attachment-owned-checks
+<directory> --profile <fresh-directory>`: unchanged provider bytes cross native
+admission and a bounded v6 policy replay, with exact current-key/controller and
+permission assertions. Its empty diagnostic seat history is not captured campaign
+history, and replay never submits a gameplay command.
+
+Archive's `test_attachment_capabilities.py` validates the identical schema,
+coverage semantics, bounded local JSON reads and potential graph conversion.
+Neither conversion nor a definition fingerprint certifies current legality or
+resolution. Supported real-engine journeys, historical replay, natural campaign
+completion and whole-deck qualification remain separate evidence.
+
 ## Reliability ownership checks
 
 The source-only [reliability program](Mana-Table-Reliability-Program.md) adds
