@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Magic;
+using Mana.Renderer;
 using Mana.Scenarios;
 using Mana.Table.Interaction;
 using Microsoft.Xna.Framework;
@@ -9,6 +10,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
 using Point = Microsoft.Xna.Framework.Point;
+using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Table;
 
@@ -82,8 +84,8 @@ internal sealed class DrawTriggersSmoke : ITableAutomation
                 && groups.Count(group => group.IsNext) == 1 && groups.Single(group => group.IsNext).MemberIds[0] == lab.State.Stack[0].Id
                 && groups.Single(group => group.IsNext).Positions.Take(3).SequenceEqual([1, 3, 5]),
                 "Source piles retain all 71 real interleaved occurrences and their actual positions while exactly one pile marks the next stack member");
-            Check(groups.All(group => group.Bounds.Height <= 165) && view.Match!.Stack.Length == 71,
-                "The repeated workload uses bounded source-art piles without shrinking, reordering or replacing the actual engine stack");
+            Check(WorkloadGeometryFits() && view.Match!.Stack.Length == 71,
+                "The current effect and other source cohorts keep their actual text inside separate measured regions, inside the workspace and clear of response controls");
             retainedPile = view.Hits.Single(hit => hit.Id == "stack-workload:draw-trigger-0");
             Capture("01-interleaved-source-piles"); MoveHit(retainedPile.Id);
         });
@@ -153,6 +155,34 @@ internal sealed class DrawTriggersSmoke : ITableAutomation
         Wait(() => true, () => Move(new(mouse.X, mouse.Y)));
     }
     private void Check(bool condition, string description) { if (!condition) throw new InvalidOperationException(description); checks.Add(description); }
+    private bool WorkloadGeometryFits()
+    {
+        var drawing = view.Frame!.Drawing;
+        var texts = drawing.Commands.OfType<DrawCommand.Text>().ToArray();
+        var counts = drawing.Commands.OfType<DrawCommand.CenterText>().ToArray();
+        var metrics = new TextMetrics();
+        var response = view.Hits.Where(hit => hit.Id is "confirm" or "stack-resolution-arm" or "stack-resolution-stop").ToArray();
+        foreach (var group in view.StackWorkloads) {
+            if (!view.StudyAttentionBounds.Contains(group.Bounds) || response.Any(hit => hit.Bounds.Intersects(group.Bounds))) return false;
+            Rectangle[] regions = [group.NameBounds, group.ControllerBounds, group.EffectBounds, group.PositionBounds, group.CountBounds];
+            if (regions.Any(region => !group.Bounds.Contains(region))) return false;
+            for (int first = 0; first < regions.Length; first++)
+            for (int second = first + 1; second < regions.Length; second++)
+                if (regions[first].Intersects(regions[second])) return false;
+            foreach (var region in regions.Take(4)) {
+                var painted = texts.Where(text => region.Contains(text.X, text.Y)).ToArray();
+                if (painted.Length != 1) return false;
+                var text = painted[0];
+                var size = metrics.TextSize(text.Value ?? "", text.Size, text.Width, text.MaxLines, text.Bold, drawing.TextScale);
+                if (!region.Contains(new Rectangle(text.X, text.Y, size.X, size.Y))) return false;
+            }
+            var count = counts.SingleOrDefault(text => text.Bounds == group.CountBounds && text.Value == "× " + group.MemberIds.Length);
+            if (count == null) return false;
+            var countSize = metrics.TextSize(count.Value!, count.Size, count.Bounds.Width, 1, count.Bold, drawing.TextScale);
+            if (countSize.X > count.Bounds.Width || countSize.Y > count.Bounds.Height) return false;
+        }
+        return true;
+    }
     private void Capture(string name)
     {
         observations.Add(new { name, lab.StageIndex, workloads = view.StackWorkloads.ToArray(), view.StackResolutionRemaining,

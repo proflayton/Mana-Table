@@ -4,6 +4,7 @@ using Mana.Magic;
 using Mana.Renderer;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
+using Point = Microsoft.Xna.Framework.Point;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Table;
@@ -59,11 +60,12 @@ internal sealed partial class TableApplication
         var expanded = groups.FirstOrDefault(group => group.Key == expandedStackWorkload);
         if (expanded != null) { DrawStackWorkloadFan(expanded); return; }
         expandedStackWorkload = "";
-        int shown = Math.Min(3, groups.Length);
-        var visible = groups.Take(shown).ToArray();
+        var visible = groups.Where(group => !group.IsNext).Take(2).ToArray();
+        int shown = visible.Length + 1;
         int primaryHeight = MeasureStudyStackHeight(area.Width);
         // Repeated work retains exactly the same current effect surface as a
-        // single item. Source rows below it are references, not a rules queue.
+        // single item. Its count opens that cohort; only OTHER cohorts need
+        // source rows below it. Never repeat its complete source/effect row.
         DrawStudyStackEffect(new(area.X, area.Y, area.Width, primaryHeight));
         int headingY = area.Y + primaryHeight + 12;
         canvas.Text(state.Stack.Length + " pending · by source", area.X, headingY, Muted, .55f, area.Width - 110, 1);
@@ -71,10 +73,13 @@ internal sealed partial class TableApplication
             Button("stack-all-sources", "+" + (groups.Length - shown) + " sources", area.Right - 106, headingY, 106,
                 new MatchIntent.OpenStack(), height: 25);
         int y = headingY + StackWorkloadHeadingHeight(area.Width);
-        foreach (var group in visible) {
-            var row = MeasureStackWorkloadRow(group, area.Width);
+        bool columns = visible.Length == 2 && area.Width >= 520;
+        int rowWidth = columns ? (area.Width - 12) / 2 : area.Width;
+        for (int index = 0; index < visible.Length; index++) {
+            var group = visible[index];
+            var row = MeasureStackWorkloadRow(group, rowWidth);
             var first = group.First;
-            var bounds = new Rectangle(area.X, y, area.Width, row.Height);
+            var bounds = new Rectangle(area.X + (columns ? index * (rowWidth + 12) : 0), y, rowWidth, row.Height);
             canvas.Panel(bounds, new(17, 29, 36), Muted * .55f, 3);
             var art = new Rectangle(bounds.X + 10, bounds.Y + 10, 42, 37);
             PaintWorkloadArt(first.Item, art);
@@ -95,20 +100,35 @@ internal sealed partial class TableApplication
             // The group gesture opens references. Hover still resolves the
             // exact current first member through the existing ability reader.
             hits.Add(new("stack-workload:" + first.Item.Id, Scope, bounds, new MatchIntent.OpenStackWorkload(group.Key)));
-            // Keep the primary body's geometry authoritative for stack[0].
-            if (!group.IsNext) stackRows.Add(new(first.Item.Id, first.Position, bounds));
+            stackRows.Add(new(first.Item.Id, first.Position, bounds));
             stackWorkloadPaint.Add(new(group.Key, bounds, group.Members.Select(member => member.Item.Id).ToImmutableArray(),
                 group.Members.Select(member => member.Position).ToImmutableArray(), group.IsNext) {
                 NameBounds = name, ControllerBounds = controller, EffectBounds = effect, CountBounds = count,
                 PositionBounds = position, Name = first.Item.Name, Controller = row.Controller, EffectPreview = row.EffectPreview
             });
-            if (!group.IsNext) PaintStackArrival(first.Item, bounds);
-            y = bounds.Bottom + 8;
+            PaintStackArrival(first.Item, bounds);
+            if (!columns) y = bounds.Bottom + 8;
         }
     }
 
-    private int MeasureStackWorkloadsHeight(int width) => MeasureStudyStackHeight(width) + 12 + StackWorkloadHeadingHeight(width)
-        + CurrentStackWorkloads.Take(3).Sum(group => MeasureStackWorkloadRow(group, width).Height + 8) - 8;
+    private int MeasureStackWorkloadsHeight(int width)
+    {
+        var rows = CurrentStackWorkloads.Where(group => !group.IsNext).Take(2).ToArray();
+        bool columns = rows.Length == 2 && width >= 520;
+        int rowWidth = columns ? (width - 12) / 2 : width;
+        int height = rows.Length == 0 ? 0 : columns
+            ? rows.Max(group => MeasureStackWorkloadRow(group, rowWidth).Height)
+            : rows.Sum(group => MeasureStackWorkloadRow(group, rowWidth).Height) + (rows.Length - 1) * 8;
+        return MeasureStudyStackHeight(width) + 12 + StackWorkloadHeadingHeight(width)
+            + height;
+    }
+
+    private Point MeasureStackWorkloadCount(StackWorkload group)
+    {
+        string count = "× " + group.Members.Length;
+        int width = Math.Max(54, canvas.TextWidth(count, .82f, true) + 16);
+        return new(width, Math.Max(30, canvas.TextSize(count, .82f, width, 80, true).Y + 8));
+    }
 
     private int StackWorkloadHeadingHeight(int width) => Math.Max(25,
         canvas.TextSize(match!.Stack.Length + " pending · by source", .55f, width - 110, 1).Y + 5);
@@ -119,8 +139,8 @@ internal sealed partial class TableApplication
     private StackWorkloadRow MeasureStackWorkloadRow(StackWorkload group, int width)
     {
         var first = group.First;
-        int countWidth = Math.Max(54, canvas.TextWidth("× " + group.Members.Length, .82f, true) + 16);
-        int countHeight = Math.Max(30, canvas.TextSize("× " + group.Members.Length, .82f, countWidth, 80, true).Y + 8);
+        var count = MeasureStackWorkloadCount(group);
+        int countWidth = count.X, countHeight = count.Y;
         int nameWidth = width - 82 - countWidth;
         int nameHeight = canvas.TextSize(first.Item.Name, .67f, nameWidth, 80, true).Y;
         string controller = StateClarity.StackController(match!, first.Item);
