@@ -58,6 +58,15 @@ internal static class AiExperimentNaturalChecks
 
         string directory = Path.Combine(profile, "natural-worker-controls", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
+        var starter = AiExperimentNatural.ObserveStartingPlayer(start, start.State with { Turn = 1, ActivePlayerId = 47 });
+        check(starter is { PlayerId: 47, Slot: 1 },
+            "Experiment starting-player evidence comes from the actual turn-one active player and accepted slot map");
+        check(AiExperimentNatural.ObserveStartingPlayer(start, start.State with { Turn = 0, ActivePlayerId = 29 }) == null
+                && AiExperimentNatural.ObserveStartingPlayer(start, start.State with { Turn = 2, ActivePlayerId = 29 }) == null,
+            "Experiment starting-player exposure remains unknown when turn one was not observed rather than inferred from the focal seat");
+        check(Reject(() => AiExperimentNatural.ObserveStartingPlayer(start, start.State with { Turn = 1, ActivePlayerId = 999 })),
+            "Experiment starting-player evidence rejects an active identity outside the accepted roster");
+        CheckPublicParity(start, directory, check);
         var states = start.Participants.Select(person => new AutomatedSeatObservation(person.PlayerId,
             start.State with { ViewerId = person.PlayerId,
                 Decision = person.PlayerId == 29 ? new("experiment-current", new(), new PriorityPayload(new("Pass", true))) : null },
@@ -165,6 +174,46 @@ internal static class AiExperimentNaturalChecks
     {
         try { action(); return false; }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException or IOException) { return true; }
+    }
+    private static void CheckPublicParity(ConfiguredSimulationStart start, string directory, Action<bool, string> check)
+    {
+        var publicState = start.State;
+        var privateState = publicState with { ViewerId = 29, Revision = publicState.Revision + 123,
+            Decision = new("private-reading-context", new(), new PriorityPayload(new("Pass", true))),
+            Players = publicState.Players.Select(player => player.Id != 29 ? player : player with {
+                Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with {
+                    Cards = [new() { Name = "Private face", VisualId = "private-occurrence", Key = "private-key" }]
+                }).ToImmutableArray()
+            }).ToImmutableArray() };
+        var owned = new AutomatedSeatObservation(29, privateState, DecisionActionDomain.None, new());
+        string positive = Path.Combine(directory, "public-parity-positive"); Directory.CreateDirectory(positive);
+        using (var capture = new AiExperimentNaturalCapture(positive, 1048576)) {
+            AiExperimentNatural.RequirePublicParity(publicState, owned, capture);
+            check(!File.Exists(Path.Combine(positive, "public-projection-mismatch.json")),
+                "Experiment public parity preserves legitimate viewer, revision, private-hand and reading-prompt differences without changing the existing canonical predicate");
+        }
+        void Mismatch(string label, GameSnapshot spectator, AutomatedSeatObservation other, string field)
+        {
+            string path = Path.Combine(directory, "public-parity-" + label); Directory.CreateDirectory(path);
+            using var capture = new AiExperimentNaturalCapture(path, 1048576);
+            bool failed = Reject(() => AiExperimentNatural.RequirePublicParity(spectator, other, capture));
+            using var proof = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(path, "public-projection-mismatch.json")));
+            var root = proof.RootElement;
+            check(failed && capture.Failure == null && !root.GetProperty("factsEqual").GetBoolean()
+                    && root.GetProperty("returnedNativeValues").GetProperty("spectator").GetProperty("BoardRevision").GetInt64() == spectator.BoardRevision
+                    && root.GetProperty("returnedNativeValues").GetProperty("owned").GetProperty("State").GetProperty("ViewerId").GetInt32() == other.State.ViewerId,
+                "Experiment parity mismatch " + label + " preserves both exact returned native values before refusing the comparison");
+            check(root.GetProperty("differences").EnumerateArray().Any(item => item.GetProperty("path").GetString()!.Contains(field, StringComparison.Ordinal))
+                    && root.GetProperty("differences").GetArrayLength() <= 32
+                    && root.GetProperty("spectatorStamp").TryGetProperty("priorityPublicActivitySequence", out _),
+                "Experiment parity mismatch " + label + " retains bounded field differences, provider status/outcome and explicit activity-counter coverage");
+        }
+        Mismatch("public-life", publicState, owned with { State = privateState with {
+            Players = privateState.Players.SetItem(0, privateState.Players[0] with { Life = 39 }) } }, "Life");
+        var finished = publicState with { Status = "finished", Outcome = new(publicState.Id, MatchOutcomeKind.Win, [83], [2], "fixture-terminal") };
+        Mismatch("terminal-versus-older-owned", finished, owned, "/outcome");
+        Mismatch("different-terminal-winner", finished, owned with { State = finished with { ViewerId = 29,
+            Outcome = new(publicState.Id, MatchOutcomeKind.Win, [29], [0], "fixture-terminal") } }, "winningPlayerIds");
     }
     private sealed class FakeProvider(ImmutableArray<AutomatedSeatObservation> observations) : IAutomatedSeatProvider
     {

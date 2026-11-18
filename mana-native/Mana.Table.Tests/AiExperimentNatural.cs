@@ -47,6 +47,7 @@ internal static class AiExperimentNatural
         ConfiguredSimulationStart? configured = null;
         GameSnapshot? state = null;
         AiCampaignOutcomeProof? proof = null;
+        AiExperimentNaturalStartingPlayer? startingPlayer = null;
         var developed = new HashSet<int>();
         var cleanup = new List<string>();
         var clock = new Stopwatch();
@@ -104,6 +105,7 @@ internal static class AiExperimentNatural
                 stage = "validate-public-observation";
                 ConfiguredSimulationFacts.ValidateState(configured, state);
                 ValidatePublic(state);
+                startingPlayer ??= ObserveStartingPlayer(configured, state);
                 foreach (var player in state.Players)
                     if (player.Zone("Battlefield").Cards.Any(card => card.Type.Contains("Land", StringComparison.Ordinal))) developed.Add(player.Id);
                 if (state.Status == "finished") { status = "completed"; break; }
@@ -130,10 +132,7 @@ internal static class AiExperimentNatural
                 foreach (var item in provider.Last) {
                     if (item.State.BoardRevision == state.BoardRevision && item.State.Id == state.Id) {
                         // Same-revision comparison reads only already-returned values.
-                        if (ForgePublicProjectionFacts.Capture(state) != ForgePublicProjectionFacts.Capture(item.State)
-                            || !ForgePublicProjectionFacts.ExecutionCorrelationsAgree(ForgePublicProjectionFacts.CaptureExecutionCorrelations(state),
-                                ForgePublicProjectionFacts.CaptureExecutionCorrelations(item.State)))
-                            throw new AiExperimentNaturalSafetyException("Same-revision public projections disagree.");
+                        RequirePublicParity(state, item, capture);
                         comparisons++;
                     }
                 }
@@ -199,6 +198,10 @@ internal static class AiExperimentNatural
             ["metrics"] = metrics,
             ["details"] = JsonSerializer.SerializeToNode(new {
                 stage, failureStage, hostFault = host?.LastFault, gameStartVerified = configured != null,
+                actualStartingPlayerId = startingPlayer?.PlayerId, actualStartingSlot = startingPlayer?.Slot,
+                focalStarted = startingPlayer == null || configured == null ? (bool?)null
+                    : startingPlayer.PlayerId == configured.Participants.Single(person => person.Index == focalSlot).PlayerId,
+                startingPlayerObservation = startingPlayer,
                 startMeaning = "Start request dispatched; lost receipt remains unresolved.",
                 engineRandomnessControlled = false, javaPath = paths.Java,
                 evidenceScope = "Bounded measurement files; engine-profile is separate operational deck/cache data.",
@@ -218,6 +221,85 @@ internal static class AiExperimentNatural
         ConfiguredSimulationFacts.ValidateState(start, start.State);
         if (focalSlot is < 0 or > 3) throw new ArgumentOutOfRangeException(nameof(focalSlot));
         return start.Participants.ToImmutableDictionary(person => person.PlayerId, person => person.Index == focalSlot ? focal : reference);
+    }
+
+    internal static AiExperimentNaturalStartingPlayer? ObserveStartingPlayer(ConfiguredSimulationStart start, GameSnapshot state)
+    {
+        ConfiguredSimulationFacts.ValidateState(start, state);
+        if (state.Turn != 1 || state.ActivePlayerId is not { } active) return null;
+        var participant = start.Participants.SingleOrDefault(person => person.PlayerId == active)
+            ?? throw new AiExperimentNaturalSafetyException("Turn-one active player is absent from the accepted simulation roster.");
+        return new(active, participant.Index, state.Revision, state.BoardRevision);
+    }
+
+    internal static void RequirePublicParity(GameSnapshot spectator, AutomatedSeatObservation owned, AiExperimentNaturalCapture capture)
+    {
+        if (spectator.Id != owned.State.Id || spectator.BoardRevision != owned.State.BoardRevision)
+            throw new ArgumentException("Parity comparison requires the same game and public board revision.");
+        string first = ForgePublicProjectionFacts.Capture(spectator), second = ForgePublicProjectionFacts.Capture(owned.State);
+        var firstCorrelation = ForgePublicProjectionFacts.CaptureExecutionCorrelations(spectator);
+        var secondCorrelation = ForgePublicProjectionFacts.CaptureExecutionCorrelations(owned.State);
+        bool factsEqual = first == second;
+        bool correlationsEqual = ForgePublicProjectionFacts.ExecutionCorrelationsAgree(firstCorrelation, secondCorrelation);
+        if (factsEqual && correlationsEqual) return;
+        using var publicFacts = JsonDocument.Parse(first);
+        using var ownedFacts = JsonDocument.Parse(second);
+        var differences = Differences(publicFacts.RootElement, ownedFacts.RootElement);
+        try {
+            capture.Required("public-projection-mismatch.json", new {
+                schemaVersion = 1, kind = "natural-public-projection-mismatch", audience = "host-private", authority = "none",
+                valueScope = "Exact immutable native values already returned by provider ports; not original transport bytes. No second observation was requested.",
+                factsEqual, correlationsEqual,
+                spectatorStamp = ParityStamp(spectator), ownedStamp = ParityStamp(owned.State),
+                returnedNativeValues = new { spectator, owned },
+                canonicalFacts = new { spectator = publicFacts.RootElement, owned = ownedFacts.RootElement,
+                    spectatorSha256 = Hash(Encoding.UTF8.GetBytes(first)), ownedSha256 = Hash(Encoding.UTF8.GetBytes(second)) },
+                correlations = new { spectator = firstCorrelation, owned = secondCorrelation },
+                differences, differenceLimit = 32
+            });
+        } catch (AiExperimentNaturalEvidenceException error) {
+            throw new AiExperimentNaturalSafetyException("Same-revision public projections disagree; bounded pair capture also failed.", error);
+        }
+        throw new AiExperimentNaturalSafetyException("Same-revision public projections disagree. Exact returned native pair and bounded field differences were retained.");
+    }
+
+    private static object ParityStamp(GameSnapshot state) => new {
+        state.Id, state.Revision, state.BoardRevision, state.ViewerId, state.Status, state.Result, state.Turn, state.PhaseKey,
+        state.ActivePlayerId, state.DecisionOwnerId, state.PriorityPlayerId, state.Outcome,
+        priorityPublicActivitySequence = state.PriorityObservation?.PublicActivitySequence,
+        maxObservedActivityId = state.Activity.IsDefaultOrEmpty ? (long?)null : state.Activity.Max(item => item.Id),
+        observedActivityCount = state.Activity.Length
+    };
+
+    private static List<object> Differences(JsonElement first, JsonElement second)
+    {
+        var result = new List<object>();
+        void Add(string path, string kind, JsonElement? left, JsonElement? right) {
+            string? Text(JsonElement? value) {
+                if (value == null) return null;
+                string raw = value.Value.GetRawText(); return raw.Length <= 512 ? raw : raw[..512] + "...";
+            }
+            if (result.Count < 32) result.Add(new { path, kind, spectator = Text(left), owned = Text(right) });
+        }
+        void Visit(JsonElement left, JsonElement right, string path) {
+            if (result.Count >= 32) return;
+            if (left.ValueKind != right.ValueKind) { Add(path, "type", left, right); return; }
+            if (left.ValueKind == JsonValueKind.Object) {
+                var leftMembers = left.EnumerateObject().ToDictionary(item => item.Name, item => item.Value, StringComparer.Ordinal);
+                var rightMembers = right.EnumerateObject().ToDictionary(item => item.Name, item => item.Value, StringComparer.Ordinal);
+                foreach (string name in leftMembers.Keys.Union(rightMembers.Keys, StringComparer.Ordinal).Order(StringComparer.Ordinal)) {
+                    bool hasLeft = leftMembers.TryGetValue(name, out var a), hasRight = rightMembers.TryGetValue(name, out var b);
+                    if (!hasLeft || !hasRight) Add(path + "/" + name, "missing", hasLeft ? a : null, hasRight ? b : null);
+                    else Visit(a, b, path + "/" + name);
+                    if (result.Count >= 32) break;
+                }
+            } else if (left.ValueKind == JsonValueKind.Array) {
+                int count = Math.Min(left.GetArrayLength(), right.GetArrayLength());
+                if (left.GetArrayLength() != right.GetArrayLength()) Add(path, "array-length", left, right);
+                for (int index = 0; index < count && result.Count < 32; index++) Visit(left[index], right[index], path + "/" + index);
+            } else if (left.GetRawText() != right.GetRawText()) Add(path, "value", left, right);
+        }
+        Visit(first, second, ""); return result;
     }
 
     internal static JsonObject Outcome(ConfiguredSimulationStart? configured, int focalSlot, AiCampaignOutcomeProof? proof, bool committed)
@@ -254,4 +336,5 @@ internal static class AiExperimentNatural
     }
 }
 
-internal sealed class AiExperimentNaturalSafetyException(string message) : IOException(message);
+internal sealed class AiExperimentNaturalSafetyException(string message, Exception? cause = null) : IOException(message, cause);
+internal sealed record AiExperimentNaturalStartingPlayer(int PlayerId, int Slot, long Revision, long BoardRevision);
