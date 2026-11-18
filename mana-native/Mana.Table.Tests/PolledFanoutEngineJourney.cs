@@ -555,6 +555,9 @@ internal static class PolledFanoutEngineJourney
                     payment?.OptionalPaymentSupport?.Availability == OptionalManaPaymentAvailability.Unpayable));
             } };
             Client = new(Port, engine, sourceActions: new SourcePort(engine, SourceErrors, SourceTrace));
+            // Match the shipping application's foreground-completion wake;
+            // idle observations still retain their ordinary 50/120 ms cadence.
+            Client.Completed += () => nextPoll = 0;
             Client.Changed += (_, state) => {
                 if (state == null) { if (prior != null) throw new InvalidDataException("The ordinary fanout viewer lost its match."); return; }
                 if (prior != null && (state.Id != prior.Id || state.ViewerId != prior.ViewerId

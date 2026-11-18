@@ -143,6 +143,10 @@ internal sealed class ConnectedPlayerDriver : IDisposable
         client = mode == MixedGameDriveMode.PolledBackground
             ? new(connection, setup, clock: operationTime, sourceActions: sources)
             : new(connection, clock: operationTime, sourceActions: sources, observationDelivery: ObservationDeliveryMode.External);
+        // The shipping application's completed foreground operation wakes its
+        // owner immediately. Preserve that wake here too; quiet idle polls keep
+        // their existing cadence and cannot race the freshly accepted input.
+        client.Completed += () => nextPoll = 0;
         if (mode == MixedGameDriveMode.PolledBackground) client.Changed += (previous, current) => {
             if (passing == ConnectedPlayerPassingMode.ServerAuto) {
                 attention.Observe(current);

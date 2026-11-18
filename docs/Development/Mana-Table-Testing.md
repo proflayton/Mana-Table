@@ -832,6 +832,17 @@ their tokens, late execution remaining an unknown receipt, no replay, and recove
 only through an independently observed fresh scope. The first baseline failures
 are retained separately from the corrected candidate's passing invocation.
 
+The ordinary connected-player and trigger-fanout owners wake immediately after
+`ClientSession.Completed`, matching the shipping application's existing handler.
+Quiet idle polls retain their 50/120 ms cadence. The focused native
+`owner-command-wake` group and the existing configured-simulation/full inventory
+prove that a completed foreground command does not leave the owner waiting for
+an obsolete poll deadline, while the next exact current decision is prepared
+before an idle poll. This changes test-driver scheduling, not production pacing,
+policy, command authority or the 90/180-second qualification limits. Controlled
+clock fixtures drain legitimate in-flight observations before advancing time or
+publishing another authored state; they retain all recovery/authority assertions.
+
 Accepted-input progress regressions cover opening, required payment, selection
 and combat, closed presentation pacing, stale snapshots and regressed offer
 versions. Repeated successful polls stay quiet through 44 virtual seconds and
