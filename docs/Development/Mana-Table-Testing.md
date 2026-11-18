@@ -1,5 +1,29 @@
 # Testing Mana Table
 
+## Mixed Explore trigger readability
+
+The existing `pending-effects` native headless group includes the authored
+`explore-triggers.v1` journey: Nicanzil's different land/nonland effects, an
+interleaved cohort, a changed stack top, an opposing response and 110 retained
+occurrences. It runs at 1000x740 and 1540x980, normal/enlarged text and both motion
+settings. The group also runs in the ordinary full headless inventory and CI.
+It checks actual composed glyph/panel geometry, scoped fan/reader gestures and
+zero gameplay commands while reading; it does not establish Explore rules or
+approve the visual experience.
+
+After building the shipping app, review actual rendered checkpoints with its
+existing isolated Experience Lab:
+
+```powershell
+ManaTable.exe --experience-lab explore-triggers.v1 --stage 1 --table-study --size 1000x740 --text-scale 1.3 --reduced-motion --capture C:\review\explore.png
+```
+
+`--text-scale` accepts 1 through 1.3 and `--reduced-motion` changes only the
+disposable lab preferences. Omit `--capture` to inspect and navigate the scenario,
+or use `--capture-replay <directory>` for the authored transition keyframes.
+Review the larger window too. These flags start no Forge game and alter no saved
+player settings. Keep human acceptance separate from agent captures and checks.
+
 ## Current target restriction feedback
 
 `--smoke-headless-presentation --presentation-group target-restrictions` runs the

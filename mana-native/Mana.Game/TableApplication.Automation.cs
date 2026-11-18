@@ -57,6 +57,10 @@ internal sealed partial class TableApplication
         internal bool PriorityContinuationReserved => game.session.PriorityContinuationReserved;
         internal bool PriorityContinuationWithdrawing => game.session.PriorityContinuationWithdrawing;
         internal string? AnnouncementId => game.matchPresentation.Announcement(game.now)?.Id;
+        internal Rectangle? AnnouncementBounds => game.publicAnnouncementPlan?.Area;
+        internal bool StackWorkloadInspectionActive => game.expandedStackWorkload.Length > 0;
+        internal IReadOnlyList<Rectangle> PendingReaderReservations => game.pendingReaderReservations;
+        internal IReadOnlyList<PendingReaderFit> PendingReaderFits => game.pendingReaderFits;
         internal ManaJourneyPaint? ManaJourney => game.manaJourneyPaint;
         internal IReadOnlyList<ManaSourcePaint> ManaSources => game.manaSourcePaint;
         internal IReadOnlyList<ManaColorPaint> ManaColors => game.manaColorPaint;

@@ -74,6 +74,10 @@ internal static partial class HeadlessPresentationSmoke
             var fourth = response with { Id = "fourth-source", Name = "Newest response" };
             run.Present(threeSources with { Stack = threeSources.Stack.Insert(0, fourth) });
             run.Tick("fourth-source-next");
+            check(run.View.StackWorkloads.Single().MemberIds.SequenceEqual(new[] { fourth.Id })
+                    && run.Frame.Hits.Any(hit => hit.Id == "stack-workload-overview"),
+                "The current top effect stays prominent while other sources remain behind an explicit inspection gesture");
+            run.ClickHit("stack-workload-overview"); run.Settle("fourth-source-overview");
             check(run.View.StackWorkloads.Count == 3
                 && run.View.StackWorkloads.Single(group => group.IsNext).MemberIds.SequenceEqual(new[] { fourth.Id })
                 && run.Frame.Hits.Any(hit => hit.Id == "stack-workload:" + fourth.Id)

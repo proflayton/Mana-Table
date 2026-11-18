@@ -66,7 +66,7 @@ internal sealed partial class TableApplication
                 TurnControlLayout.AutoControlWidth, TurnControlLayout.AutoControlHeight);
             automaticModeArea = PlaceStudyHud(preferredMode, [HudPaint(body)], new(8, 58, 1584, 834));
         }
-        if (!TableStudyEnabled) return;
+        if (!TableStudyEnabled && !RepeatedStackWorkload) return;
         var reserved = new List<Rectangle> { HudPaint(portraitPriorityPlan?.Area ?? Rectangle.Empty), HudPaint(automaticModeArea) };
         PrepareAbilityPassingArea(reserved);
         if (!abilityPassingArea.IsEmpty) reserved.Add(HudPaint(abilityPassingArea));

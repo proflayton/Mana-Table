@@ -145,7 +145,14 @@ public static class ExperienceLabLauncher
             if (replayCapture != null) lab.Replay(0);
             if (capture != null) Directory.CreateDirectory(Path.GetDirectoryName(capture)!);
             var engine = new ExperienceLabEngine(lab);
-            new PlayPreferences { Automatic = false, Sounds = false }.Save(profile);
+            float textScale = 1;
+            if (Arg("--text-scale") is { } requestedScale
+                && (!float.TryParse(requestedScale, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out textScale)
+                    || !float.IsFinite(textScale) || textScale is < 1 or > 1.3f))
+                throw new ArgumentException("Use --text-scale between 1 and 1.3 for the isolated lab profile.");
+            new PlayPreferences { Automatic = false, Sounds = false, TextScale = textScale,
+                ReducedMotion = args.Contains("--reduced-motion") }.Save(profile);
             File.WriteAllText(Path.Combine(profile, "experience-lab.json"), System.Text.Json.JsonSerializer.Serialize(new {
                 scenarioId = lab.Scenario.Id, stage = lab.StageIndex, scripted = true, profile, realDecks = false, forgeStarted = false
             }));
