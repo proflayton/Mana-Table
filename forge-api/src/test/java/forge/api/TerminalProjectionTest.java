@@ -33,11 +33,20 @@ public class TerminalProjectionTest {
     }
 
     @Test(timeOut = 90000)
+    public void aPendingCombatRefreshRequiresFreshAuthorityBeforeTheSingleBlockToggle() throws Exception {
+        commanderCombat(true, false, true);
+    }
+
+    @Test(timeOut = 90000)
     public void theLastLossRevealCannotReauthorizeEliminatedBattlefieldPortraits() throws Exception {
         commanderCombat(false, true);
     }
 
     private static void commanderCombat(boolean blocks, boolean withManifest) throws Exception {
+        commanderCombat(blocks, withManifest, false);
+    }
+
+    private static void commanderCombat(boolean blocks, boolean withManifest, boolean pendingRefresh) throws Exception {
         var resources = Path.of("../forge-gui/res");
         if (StaticData.instance() == null) EngineResources.load(resources);
         var deck = new Deck("Terminal commander damage");
@@ -99,6 +108,20 @@ public class TerminalProjectionTest {
                 var blockStage = new CombatStage("InputBlock", text(block.state().getAsJsonObject("combat"), "declarationId"),
                         text(currentAttacker, "combatId"), 1, text(blocker, "combatId"));
                 assertFalse(blockStage.matches(block.state()), "An eligible blocker without an assigned pair is incomplete");
+                if (pendingRefresh) {
+                    var previous = block;
+                    HeadlessPlatform.query(table, () -> {
+                        // Emission-only invalidation: preserve the actual input,
+                        // creatures and combat, but retire this published domain.
+                        var session = table.automatedSeat(1);
+                        table.game.fireEvent(new forge.game.event.GameEventCardStatsChanged(
+                                table.game.getRegisteredPlayers().get(1).getCreaturesInPlay()));
+                        session.publishInput();
+                        assertNull(session.state().get("prompt"), "Pending fresh offers cannot authorize the stale pair");
+                        assertThrows(IllegalArgumentException.class, () -> session.action(request(previous, Map.of("action", "ok"))));
+                        return null;
+                    });
+                }
                 block = stage(table, block, Map.of("action", "block", "attackerKey", text(currentAttacker, "key"), "blockerKey", text(blocker, "key")),
                         blockStage, evidence, "block");
                 assertFalse(new CombatStage(blockStage.inputType(), blockStage.declarationId(), blockStage.blockerId(), 1, blockStage.attackerId())
@@ -248,11 +271,51 @@ public class TerminalProjectionTest {
     private static RulesScenario.Input stage(MatchTable table, RulesScenario.Input input, Map<String, ?> action,
             CombatStage expected, Path evidence, String name) throws Exception {
         Files.writeString(evidence.resolve("private-" + name + "-before.json"), JSON.toJson(Map.of("state", input.state(), "action", action, "expected", expected)));
-        // Staging is not input completion. Submit this toggle once, then witness
-        // its actual pair; an ACK alone cannot authorize another toggle or OK.
-        var accepted = table.automatedSeat(input.seat()).action(request(input, action));
-        Files.writeString(evidence.resolve("private-" + name + "-ack.json"), JSON.toJson(accepted));
-        return staged(table, input, expected, evidence, name);
+        // Input setup can still have owner-thread display/domain work queued.
+        // Drain that work, read its current publication and admit exactly once
+        // on the same owner. Never replay a toggle after an admission ACK.
+        var admitted = HeadlessPlatform.query(table, () -> {
+            var session = table.automatedSeat(input.seat());
+            var state = JSON.toJsonTree(session.state()).getAsJsonObject();
+            assertEquals(text(state, "id"), text(input.state(), "id"));
+            assertEquals(state.get("viewerId").getAsInt(), input.seat());
+            var prompt = state.getAsJsonObject("prompt"); assertNotNull(prompt, "The current combat domain must be published before admission");
+            assertEquals(text(prompt, "inputType"), expected.inputType());
+            var combat = state.getAsJsonObject("combat");
+            assertEquals(text(combat, "declarationId"), expected.declarationId(), "A different declaration cannot inherit this fixture intent");
+            assertFalse(expected.matches(state), "An already assigned exact pair must never be toggled again");
+            var attacker = physical(state, expected.attackerId());
+            Map<String, Object> currentAction;
+            if (expected.inputType().equals("InputAttack")) {
+                assertEquals(action.get("action"), "attack");
+                assertTrue(combat.getAsJsonArray("attackOptions").asList().stream().map(value -> value.getAsJsonObject())
+                        .anyMatch(option -> text(option, "cardId").equals(expected.attackerId())
+                                && option.getAsJsonArray("defenders").asList().stream().map(value -> value.getAsJsonObject())
+                                .anyMatch(defender -> text(defender, "kind").equals("player") && defender.get("id").getAsInt() == expected.defenderId())));
+                currentAction = Map.of("action", "attack", "attackerKey", text(attacker, "key"), "defenderPlayerId", expected.defenderId());
+            } else {
+                assertEquals(action.get("action"), "block");
+                assertTrue(new CombatStage(expected.inputType(), expected.declarationId(), expected.attackerId(), expected.defenderId(), "").matches(state));
+                assertTrue(combat.getAsJsonArray("attackers").asList().stream().map(value -> value.getAsJsonObject())
+                        .anyMatch(option -> text(option, "cardId").equals(expected.attackerId())
+                                && option.getAsJsonArray("eligibleBlockerIds").asList().stream().anyMatch(value -> value.getAsString().equals(expected.blockerId()))));
+                currentAction = Map.of("action", "block", "attackerKey", text(attacker, "key"), "blockerKey", text(physical(state, expected.blockerId()), "key"));
+            }
+            var current = new RulesScenario.Input(input.seat(), state, prompt);
+            return new CombatAdmission(current, currentAction, session.action(request(current, currentAction)));
+        });
+        Files.writeString(evidence.resolve("private-" + name + "-admitted.json"), JSON.toJson(Map.of("state", admitted.input().state(), "action", admitted.action())));
+        Files.writeString(evidence.resolve("private-" + name + "-ack.json"), JSON.toJson(admitted.response()));
+        return staged(table, admitted.input(), expected, evidence, name);
+    }
+
+    private record CombatAdmission(RulesScenario.Input input, Map<String, Object> action, Map<String, Object> response) { }
+
+    private static JsonObject physical(JsonObject state, String id) {
+        return state.getAsJsonArray("players").asList().stream().map(value -> value.getAsJsonObject())
+                .flatMap(player -> zone(player, "Battlefield").getAsJsonArray("cards").asList().stream())
+                .map(value -> value.getAsJsonObject()).filter(card -> text(card, "combatId").equals(id) && !text(card, "key").isEmpty())
+                .findFirst().orElseThrow(() -> new AssertionError("The exact current combat occurrence has no published handle: " + id));
     }
 
     private static RulesScenario.Input staged(MatchTable table, RulesScenario.Input input, CombatStage expected, Path evidence, String name) throws Exception {
