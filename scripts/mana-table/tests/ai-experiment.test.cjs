@@ -211,3 +211,13 @@ test('an interrupted ledger append is retained and cannot be silently concatenat
   const value = await E.analyze(f.out); assert.equal(value.report.ledger.valid, false); assert.equal(value.report.interpretation, 'experiment-invalid');
   assert.equal(value.report.rows.filter(row => row.attempted).length, 0);
 });
+
+test('an unexpected natural worker failure cannot manufacture a known game start', async t => {
+  const f = fixture(t, 'natural', "result.status='provider-failure';result.started=false;result.natural.terminalVerified=false;result.natural.outcome=null;result.details={gameStartUncertain:true};");
+  await E.plan(f.specFile, f.out);
+  const value = await E.run(f.out, 1, 1), row = value.report.rows.find(item => item.attempted);
+  assert.equal(row.started, null); assert.equal(row.score, null);
+  assert.equal(value.report.natural.arms[row.arm].startedKnown, 0);
+  assert.equal(value.report.natural.arms[row.arm].startUnknown, 1);
+  assert.equal(value.report.natural.arms[row.arm].startedOrPossible.unresolved, 1);
+});

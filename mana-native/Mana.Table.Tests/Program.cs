@@ -9,6 +9,7 @@ internal static class Program
     private static int Main(string[] args)
     {
         try {
+            if (AiExperimentCommands.Handles(args)) return AiExperimentCommands.Run(args);
             if (args.Contains(TablePresenceWireChecks.Marker)) return TablePresenceWireChecks.Serve(args);
             if (args.Contains(EncounterStartProtocolProbe.Marker)) return EncounterStartProtocolProbe.Serve(args);
             if (args.Contains(ConfiguredSimulationProtocolProbe.Marker)) return ConfiguredSimulationProtocolProbe.Serve(args);

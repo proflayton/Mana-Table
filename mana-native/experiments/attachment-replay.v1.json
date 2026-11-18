@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "kind": "ai-experiment-spec",
+  "id": "attachment-replay-development-v1",
+  "hypothesis": "Full v6 handles known direct attachment target opportunities better than its explicitly ablated control. These five synthetic-game captures are known development regressions, not held-out strength evidence.",
+  "mode": "replay",
+  "primaryEndpoint": "acceptable-decision-rate",
+  "variants": {
+    "baseline": { "factoryId": "casual-commander.v6", "attachmentEvaluation": false },
+    "candidate": { "factoryId": "casual-commander.v6", "attachmentEvaluation": true },
+    "reference": { "factoryId": "casual-commander.v6", "attachmentEvaluation": true }
+  },
+  "limits": {
+    "decisionMs": 3000, "workUnits": 4096,
+    "matchMs": 180000, "turns": 160, "workerMs": 240000, "captureBytes": 16777216
+  },
+  "runtime": {
+    "dotnetPath": "C:/Program Files/dotnet/dotnet.exe",
+    "driverPath": "../Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.dll"
+  },
+  "planningSeed": "261027",
+  "policySeed": "2668620592559112008",
+  "repetitions": 1,
+  "replays": [
+    {
+      "id": "rancor", "path": "../Mana.Table.Tests/Fixtures/AttachmentOwned/attachment-rancor.json.gz",
+      "format": "owned", "family": "attachment-benefit", "expectation": { "kind": "target-self" },
+      "certifiedUndo": true,
+      "capabilityContext": "Synthetic in-process AuraAttachmentJourneyTest capture; the same provider declares certified-one-step-undo. No transport handshake was captured."
+    },
+    {
+      "id": "renamed-positive", "path": "../Mana.Table.Tests/Fixtures/AttachmentOwned/attachment-renamed-positive.json.gz",
+      "format": "owned", "family": "attachment-benefit", "expectation": { "kind": "target-self" },
+      "certifiedUndo": true,
+      "capabilityContext": "Synthetic in-process AuraAttachmentJourneyTest capture; the same provider declares certified-one-step-undo. No transport handshake was captured."
+    },
+    {
+      "id": "dead-weight", "path": "../Mana.Table.Tests/Fixtures/AttachmentOwned/attachment-dead-weight.json.gz",
+      "format": "owned", "family": "attachment-harm", "expectation": { "kind": "target-opponent" },
+      "certifiedUndo": true,
+      "capabilityContext": "Synthetic in-process AuraAttachmentJourneyTest capture; the same provider declares certified-one-step-undo. No transport handshake was captured."
+    },
+    {
+      "id": "mixed-unsupported", "path": "../Mana.Table.Tests/Fixtures/AttachmentOwned/attachment-mixed.json.gz",
+      "format": "owned", "family": "attachment-unsupported", "expectation": { "kind": "cancel" },
+      "certifiedUndo": true,
+      "capabilityContext": "Synthetic in-process AuraAttachmentJourneyTest capture; the same provider declares certified-one-step-undo. No transport handshake was captured."
+    },
+    {
+      "id": "conditional-unsupported", "path": "../Mana.Table.Tests/Fixtures/AttachmentOwned/attachment-conditional.json.gz",
+      "format": "owned", "family": "attachment-unsupported", "expectation": { "kind": "cancel" },
+      "certifiedUndo": true,
+      "capabilityContext": "Synthetic in-process AuraAttachmentJourneyTest capture; the same provider declares certified-one-step-undo. No transport handshake was captured."
+    }
+  ]
+}

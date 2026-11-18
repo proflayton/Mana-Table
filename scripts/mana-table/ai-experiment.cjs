@@ -130,7 +130,10 @@ async function run(directory, jobs = 1, maxJobs = 10000) {
       const reservation = { schemaVersion: 1, kind: 'ai-experiment-reservation', lockSha256, jobId: job.id, attemptId: 'attempt-0001', reservationToken: crypto.randomBytes(32).toString('hex'), createdAtUtc: new Date().toISOString() };
       atomic(path.join(attempt, 'reservation.json'), reservation); append(ledger, { event: 'reserved', ...reservation });
       append(ledger, { event: 'launch-requested', jobId: job.id, reservationToken: reservation.reservationToken, atUtc: new Date().toISOString() });
-      const processResult = await launch(lock, directory, job, attempt, reservation.reservationToken); launched++;
+      let processResult;
+      try { processResult = await launch(lock, directory, job, attempt, reservation.reservationToken); }
+      catch (error) { ownershipUncertain = true; throw error; }
+      launched++;
       ownershipUncertain ||= processResult.retirementUnknown;
       let committed = null, failure = null;
       try { committed = await receipt(attempt, job, lockSha256); const captureSize = files(attempt).filter(file => !path.basename(file).startsWith('coordinator-')).reduce((sum, file) => sum + fs.statSync(file).size, 0); assert(captureSize <= lock.limits.captureBytes, 'Worker exceeded its locked evidence capture budget.'); assert(processResult.code === 0 && !processResult.timedOut && !processResult.captureOverflow && !processResult.ioFailure, 'Worker did not exit cleanly with its complete receipt.'); }
@@ -172,7 +175,10 @@ async function analyze(directory) {
         if (fs.existsSync(processFile)) { const processResult = read(processFile); assert(processResult.lockSha256 === lockSha256 && processResult.jobId === job.id && processResult.receiptVerified === true && processResult.resultSha256 === value.resultSha256 && processResult.artifactsSha256 === value.artifactsSha256, 'Coordinator did not verify this immutable worker receipt.'); }
         // A committed atomic worker receipt can be reconciled after a coordinator
         // crash without launching that job again.
-        row.status = result.status; row.started = result.started; row.criticalSafetyFailure = result.criticalSafetyFailure; row.cleanupFailure = Boolean(result.cleanupErrors?.length);
+        row.status = result.status;
+        row.started = result.details?.gameStartUncertain === true
+          || job.mode === 'natural' && result.started && result.details?.gameStartVerified === false ? null : result.started;
+        row.criticalSafetyFailure = result.criticalSafetyFailure; row.cleanupFailure = Boolean(result.cleanupErrors?.length);
         if (job.mode === 'natural' && result.natural?.terminalVerified) { assert(result.natural.participants.some(item => item.slot === job.natural.focalSlot && item.playerId === result.natural.focalPlayerId), 'Focal assignment does not match its locked slot.'); row.score = score(result.natural); row.draw = result.natural.outcome.kind === 'draw'; row.soleWin = result.natural.outcome.kind === 'win' && result.natural.outcome.winningPlayerIds.length === 1 && result.natural.outcome.winningPlayerIds.includes(result.natural.focalPlayerId); }
         row.metrics = result.metrics ?? null;
         if (job.mode === 'replay') { row.incompatible = Boolean(result.details?.incompatible); row.evaluatorEligible = result.replay?.eligible ?? null; row.grade = result.replay?.grade ?? 'ungraded'; row.admissible = result.replay?.admissible ?? null;

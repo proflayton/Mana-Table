@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Content Include="../../scripts/mana-table/ai-experiment*.cjs" Exclude="../../scripts/mana-table/*.test.cjs" Link="ExperimentTools/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../contracts/card-capabilities/fixtures/*.json" Link="Fixtures/AttachmentCapabilities/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Fixtures/AttachmentOwned/*.json.gz" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
