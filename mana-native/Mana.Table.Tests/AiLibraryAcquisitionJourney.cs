@@ -238,13 +238,69 @@ internal static class AiLibraryAcquisitionJourney
                 expectedHand, expectedField, newHand, newField, arrived,
                 zoneEvents, allObservedActivity = events.Values.OrderBy(entry => entry.Id).ToArray(), finalOwnedState = final
             });
+            var originalResolvedFrame = final;
+            var lastEvidenceFrame = final;
+            ImmutableArray<AutomatedSeatObservation> lastEvidenceBatch = [];
+            var evidencePolls = new List<object>();
+            JsonElement privateAudit;
+            long? requiredAuditBoard = null;
+            // Evidence discovery has one fixed window inside the original game
+            // deadline. It never resumes sessions or dispatches another command.
+            using (var evidenceWindow = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token)) {
+                evidenceWindow.CancelAfter(TimeSpan.FromSeconds(5));
+                try {
+                    privateAudit = await ReadPrivateAuditEnvelopeAsync(Path.Combine(paths.Profile, "private-library-acquisition-audit.json"), evidenceWindow.Token);
+                    requiredAuditBoard = AuditHeader(privateAudit, final.Id, sourceExecution!, sourceId!, focal).Board;
+                    final = await SynchronizePublicationAsync(originalResolvedFrame, requiredAuditBoard.Value, sourceExecution!, async stop => {
+                        var batch = await port.ObserveAutomatedSeatsAsync(stop); lastEvidenceBatch = batch;
+                        if (batch.Length != start.Participants.Length || batch.Select(item => item.SeatId).Distinct().Count() != batch.Length
+                            || !batch.Select(item => item.SeatId).Order().SequenceEqual(start.Participants.Select(item => item.PlayerId).Order()))
+                            throw new InvalidDataException("Evidence-only discovery changed the accepted owned roster.");
+                        foreach (var item in batch) {
+                            if (!sessions.ContainsKey(item.SeatId) || item.State.ViewerId != item.SeatId
+                                || !AiCampaignVisibility.PrivateWindowsAreDisclosed(item.State, item.Semantics, item.Domain))
+                                throw new InvalidDataException("Evidence-only discovery received an invalid owned audience.");
+                            ConfiguredSimulationFacts.ValidateOwnedState(start, item.State);
+                            if (item.State.Status != "playing") throw new InvalidDataException("The controlled game ended during evidence synchronization.");
+                        }
+                        return batch.Single(item => item.SeatId == focal).State;
+                    }, observed => {
+                        lastEvidenceFrame = observed;
+                        evidencePolls.Add(new { observed.Id, observed.ViewerId, observed.Revision, observed.BoardRevision });
+                        foreach (var occurrence in observed.Executions?.Occurrences ?? [])
+                            if (occurrence.Id == sourceExecution || occurrence.BudgetRootId == sourceExecution
+                                || occurrence.ParentId != null && rootExecutions.Contains(occurrence.ParentId)) rootExecutions.Add(occurrence.Id);
+                        foreach (var entry in observed.Activity) events[entry.Id] = entry;
+                    }, evidenceWindow.Token);
+                } catch (OperationCanceledException error) when (!deadline.IsCancellationRequested) {
+                    throw new InvalidDataException("The bounded evidence window expired before audit and owned publication could be synchronized.", error);
+                } finally {
+                    Write("post-resolution-evidence-publication.json", new {
+                        purpose = "read-only-evidence-no-policy-evaluation-or-commands", requiredAuditBoard,
+                        originalRevision = originalResolvedFrame.Revision, originalBoardRevision = originalResolvedFrame.BoardRevision,
+                        evidencePolls, lastEvidenceBatch, finalEvidenceOwnedState = lastEvidenceFrame
+                    });
+                }
+            }
+            after = final.Viewer!;
+            newHand = Ids(after.Zone("Hand")).Except(beforeHandIds).ToHashSet(StringComparer.Ordinal);
+            newField = Ids(after.Zone("Battlefield")).Except(beforeFieldIds).ToHashSet(StringComparer.Ordinal);
+            zoneEvents = events.Values.Where(entry => (rootExecutions.Contains(entry.ExecutionId)
+                    || entry.Cause?.Id is { } cause && rootExecutions.Contains(cause))
+                && entry.Impact is { Kind: "zone", FromZone: "Library", ToZone: "Battlefield", RecipientControllerId: var recipient }
+                && recipient == focal).ToArray();
+            arrived = zoneEvents.Select(entry => entry.Impact!.CardId ?? entry.CardId).OfType<string>().Where(id => id.Length > 0).ToHashSet(StringComparer.Ordinal);
+            Write("synchronized-pre-assertion-consequence.json", new {
+                factoryId, fixtureMode, sourceId, sourceExecution, rootExecutions, resolved, beforeHand, beforeField, beforeHandIds, beforeFieldIds,
+                expectedHand, expectedField, newHand, newField, arrived, zoneEvents,
+                allObservedActivity = events.Values.OrderBy(entry => entry.Id).ToArray(), finalOwnedState = final
+            });
             check(after.Zone("Hand").Count - beforeHand == expectedHand && after.Zone("Battlefield").Count - beforeField == expectedField
                 && newHand.Count == expectedHand && newField.Count == expectedField,
                 "The actual source resolution changed the focal hand and battlefield by its declared acquisition counts");
             check(arrived.SetEquals(newField),
                 "Public typed library zone-change events under this source execution identify exactly the newly acquired battlefield occurrences");
-            var privateAudit = await ReadPrivateAuditAsync(Path.Combine(paths.Profile, "private-library-acquisition-audit.json"),
-                final.Id, sourceExecution!, sourceId!, focal, final.BoardRevision, newHand, rootExecutions, deadline.Token);
+            ValidatePrivateAudit(privateAudit, final.Id, sourceExecution!, sourceId!, focal, final.BoardRevision, newHand, rootExecutions);
             Write("validated-private-hand-audit.json", privateAudit);
             check(true, "The separate bounded private fixture audit bridges actual committed hand movements to the already observed owned hand identities");
             var acquisitionAnswers = sessions[focal].History.Decisions.Where(record => record.Outcome == AiDecisionOutcome.Accepted
@@ -279,8 +335,7 @@ internal static class AiLibraryAcquisitionJourney
 
     private static HashSet<string> Ids(Zone zone) => zone.Cards.Select(CardViews.Identity).Where(id => id.Length > 0).ToHashSet(StringComparer.Ordinal);
 
-    private static async Task<JsonElement> ReadPrivateAuditAsync(string path, string game, string sourceExecution, string sourceCard,
-        int actor, long finalBoard, HashSet<string> newHand, HashSet<string> executionIds, CancellationToken cancellation)
+    private static async Task<JsonElement> ReadPrivateAuditEnvelopeAsync(string path, CancellationToken cancellation)
     {
         var wait = Stopwatch.StartNew();
         while (wait.Elapsed < TimeSpan.FromSeconds(5)) {
@@ -291,7 +346,6 @@ internal static class AiLibraryAcquisitionJourney
                 do { next = await input.ReadAsync(bytes.AsMemory(count), cancellation); count += next; } while (next > 0 && count < bytes.Length);
                 if (count > 65536) throw new InvalidDataException("The private acquisition audit exceeds its 64 KiB cap.");
                 using var document = JsonDocument.Parse(bytes.AsMemory(0, count));
-                ValidatePrivateAudit(document.RootElement, game, sourceExecution, sourceCard, actor, finalBoard, newHand, executionIds);
                 return document.RootElement.Clone();
             }
             await Task.Delay(20, cancellation);
@@ -299,32 +353,76 @@ internal static class AiLibraryAcquisitionJourney
         throw new InvalidDataException("The private source-linked hand movement audit is unavailable; anonymous activity cannot replace its identity proof.");
     }
 
+    private static async Task<GameSnapshot> SynchronizePublicationAsync(GameSnapshot original, long minimumBoard, string sourceExecution,
+        Func<CancellationToken, Task<GameSnapshot>> observeValidatedFocal, Action<GameSnapshot> retain,
+        CancellationToken cancellation)
+    {
+        if (minimumBoard < 0) throw new InvalidDataException("The audit publication requirement is invalid.");
+        var current = original;
+        for (int polls = 0; polls <= 64; polls++) {
+            RequireResolvedPublication(original, current, sourceExecution);
+            if (current.BoardRevision >= minimumBoard) return current;
+            if (polls == 64) break;
+            cancellation.ThrowIfCancellationRequested();
+            var previous = current;
+            current = await observeValidatedFocal(cancellation);
+            retain(current); // Preserve the returned frame even if validation rejects it.
+            if (current.BoardRevision < previous.BoardRevision || current.Revision < previous.Revision)
+                throw new InvalidDataException("Evidence-only publication moved backwards between observations.");
+            await Task.Delay(20, cancellation);
+        }
+        throw new InvalidDataException("The bounded evidence-only discovery did not reach the audit's publication.");
+    }
+
+    private static void RequireResolvedPublication(GameSnapshot original, GameSnapshot current, string sourceExecution)
+    {
+        if (current.Id != original.Id || current.ViewerId != original.ViewerId || current.Viewer == null
+            || current.Status != "playing" || current.DecisionOwnerId != current.ViewerId
+            || current.Decision?.Payload is not PriorityPayload || !current.Stack.IsEmpty
+            || current.BoardRevision < original.BoardRevision || current.Revision < original.Revision
+            || current.Turn != original.Turn || current.PhaseKey != original.PhaseKey || current.ActivePlayerId != original.ActivePlayerId
+            || current.Executions?.Occurrences.Any(item => item.Id == sourceExecution && item.BudgetRootId == sourceExecution
+                && item.ActorPlayerId == original.ViewerId && item.Outcome == ExecutionOutcome.Resolved) != true)
+            throw new InvalidDataException("Evidence-only publication no longer identifies the same owned resolved source and current priority.");
+    }
+
+    private static void AuditObject(JsonElement value, params string[] names)
+    {
+        if (value.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Private audit object is malformed.");
+        var keys = value.EnumerateObject().Select(item => item.Name).ToArray();
+        if (keys.Length != names.Length || keys.Distinct(StringComparer.Ordinal).Count() != keys.Length || keys.Any(key => !names.Contains(key, StringComparer.Ordinal)))
+            throw new InvalidDataException("Private audit fields are missing, duplicated or unsupported.");
+    }
+
+    // This reads a synchronization requirement, not a movement grade. The
+    // complete proof still undergoes the unchanged strict final-frame checks.
+    private static (JsonElement Root, int SourceEngine, long Board) AuditHeader(JsonElement audit,
+        string game, string sourceExecution, string sourceCard, int actor)
+    {
+        AuditObject(audit, "schemaVersion", "kind", "gameId", "complete", "error", "roots");
+        if (audit.GetProperty("schemaVersion").GetInt32() != 1 || audit.GetProperty("kind").GetString() != "private-fixture-library-acquisition-audit"
+            || audit.GetProperty("gameId").GetString() != game || !audit.GetProperty("complete").GetBoolean() || audit.GetProperty("error").GetString() != ""
+            || audit.GetProperty("roots").GetArrayLength() != 1) throw new InvalidDataException("The private audit does not identify one completed source in this game.");
+        var root = audit.GetProperty("roots")[0];
+        AuditObject(root, "sourceExecutionId", "sourceEngineCardId", "sourceNativeCardId", "actorPlayerId", "resolved", "bridgeBoardRevision", "handMovements");
+        int sourceEngine = root.GetProperty("sourceEngineCardId").GetInt32(); long board = root.GetProperty("bridgeBoardRevision").GetInt64();
+        if (root.GetProperty("sourceExecutionId").GetString() != sourceExecution || root.GetProperty("sourceNativeCardId").GetString() != sourceCard
+            || sourceEngine < 0 || root.GetProperty("actorPlayerId").GetInt32() != actor || !root.GetProperty("resolved").GetBoolean() || board < 0)
+            throw new InvalidDataException("The private audit source, owner or publication cannot match the retained owned frame.");
+        return (root, sourceEngine, board);
+    }
+
     private static void ValidatePrivateAudit(JsonElement audit, string game, string sourceExecution, string sourceCard,
         int actor, long finalBoard, HashSet<string> newHand, HashSet<string> executionIds)
     {
-        static void Closed(JsonElement value, params string[] names) {
-            if (value.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Private audit object is malformed.");
-            var keys = value.EnumerateObject().Select(item => item.Name).ToArray();
-            if (keys.Length != names.Length || keys.Distinct(StringComparer.Ordinal).Count() != keys.Length || keys.Any(key => !names.Contains(key, StringComparer.Ordinal)))
-                throw new InvalidDataException("Private audit fields are missing, duplicated or unsupported.");
-        }
         try {
-            Closed(audit, "schemaVersion", "kind", "gameId", "complete", "error", "roots");
-            if (audit.GetProperty("schemaVersion").GetInt32() != 1 || audit.GetProperty("kind").GetString() != "private-fixture-library-acquisition-audit"
-                || audit.GetProperty("gameId").GetString() != game || !audit.GetProperty("complete").GetBoolean() || audit.GetProperty("error").GetString() != ""
-                || audit.GetProperty("roots").GetArrayLength() != 1) throw new InvalidDataException("The private audit does not identify one completed source in this game.");
-            var root = audit.GetProperty("roots")[0];
-            Closed(root, "sourceExecutionId", "sourceEngineCardId", "sourceNativeCardId", "actorPlayerId", "resolved", "bridgeBoardRevision", "handMovements");
-            int sourceEngine = root.GetProperty("sourceEngineCardId").GetInt32();
-            long board = root.GetProperty("bridgeBoardRevision").GetInt64();
-            if (root.GetProperty("sourceExecutionId").GetString() != sourceExecution || root.GetProperty("sourceNativeCardId").GetString() != sourceCard
-                || sourceEngine < 0 || root.GetProperty("actorPlayerId").GetInt32() != actor || !root.GetProperty("resolved").GetBoolean()
-                || board < 0 || board > finalBoard) throw new InvalidDataException("The private audit source, owner or publication cannot match the retained owned frame.");
+            var (root, sourceEngine, board) = AuditHeader(audit, game, sourceExecution, sourceCard, actor);
+            if (board > finalBoard) throw new InvalidDataException("The private audit source, owner or publication cannot match the retained owned frame.");
             var nativeIds = new HashSet<string>(StringComparer.Ordinal); var engineIds = new HashSet<int>();
             var movements = root.GetProperty("handMovements");
             if (movements.GetArrayLength() > 16) throw new InvalidDataException("The private audit exceeded its movement capacity.");
             foreach (var movement in movements.EnumerateArray()) {
-                Closed(movement, "engineCardId", "nativeCardId", "cardOwnerId", "fromOwnerId", "toOwnerId", "fromZone", "toZone", "executionId", "budgetRootId");
+                AuditObject(movement, "engineCardId", "nativeCardId", "cardOwnerId", "fromOwnerId", "toOwnerId", "fromZone", "toZone", "executionId", "budgetRootId");
                 int engineId = movement.GetProperty("engineCardId").GetInt32(); string nativeId = movement.GetProperty("nativeCardId").GetString() ?? "";
                 if (engineId < 0 || engineId == sourceEngine || !engineIds.Add(engineId) || string.IsNullOrWhiteSpace(nativeId) || !nativeIds.Add(nativeId)
                     || movement.GetProperty("cardOwnerId").GetInt32() != actor || movement.GetProperty("fromOwnerId").GetInt32() != actor
@@ -370,10 +468,55 @@ internal static class AiLibraryAcquisitionJourney
         string directory = Path.Combine(Path.GetTempPath(), "mana-private-audit-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
         string file = Path.Combine(directory, "oversized.json"); File.WriteAllBytes(file, new byte[65537]);
         bool oversized;
-        try { ReadPrivateAuditAsync(file, "audit-game", "audit-execution", "audit-source", 29, 7, ["new-hand-card"], ["audit-execution"], CancellationToken.None).GetAwaiter().GetResult(); oversized = false; }
+        try { ReadPrivateAuditEnvelopeAsync(file, CancellationToken.None).GetAwaiter().GetResult(); oversized = false; }
         catch (InvalidDataException) { oversized = true; }
         finally { File.Delete(file); Directory.Delete(directory); }
         check(oversized, "Private audit file reads enforce the fixed byte cap before parsing or claiming a movement");
+        var resolvedRoot = new ExecutionOccurrence("audit-execution", "audit-execution", ExecutionKind.Activation, ExecutionStep.Complete) {
+            ActorPlayerId = 29, Outcome = ExecutionOutcome.Resolved };
+        var originalFrame = new GameSnapshot("audit-game", "playing", null, null, 29, 1, "Main", "MAIN1", 29,
+            [new(29, "Actor", 40, true, false, ImmutableDictionary<string, int>.Empty, [])], [], null,
+            new("audit-priority", new(), new PriorityPayload(new("Pass", true)))) {
+            Revision = 6, BoardRevision = 6, DecisionOwnerId = 29, Executions = new(1, 1, [resolvedRoot], []) };
+        int observedCount = 0, retainedCount = 0;
+        var synchronized = SynchronizePublicationAsync(originalFrame, 7, "audit-execution",
+            _ => { observedCount++; return Task.FromResult(originalFrame with { Revision = 7, BoardRevision = 7 }); },
+            _ => retainedCount++, CancellationToken.None).GetAwaiter().GetResult();
+        check(synchronized.BoardRevision == 7 && observedCount == 1 && retainedCount == 1 && originalFrame.BoardRevision == 6,
+            "A later actual resolved owned publication reaches the audit board without altering the retained original frame");
+        observedCount = 0;
+        check(ReferenceEquals(SynchronizePublicationAsync(originalFrame, 6, "audit-execution",
+                _ => { observedCount++; return Task.FromResult(originalFrame); }, _ => { }, CancellationToken.None).GetAwaiter().GetResult(), originalFrame)
+            && observedCount == 0, "An already sufficient owned publication requires no additional discovery");
+        foreach (var alter in new Func<GameSnapshot, GameSnapshot>[] {
+            frame => frame with { Id = "other-game" }, frame => frame with { ViewerId = 47 },
+            frame => frame with { DecisionOwnerId = 47 }, frame => frame with { Status = "finished" },
+            frame => frame with { Decision = null }, frame => frame with { BoardRevision = 5 },
+            frame => frame with { Revision = 5 }, frame => frame with { Turn = 2 },
+            frame => frame with { PhaseKey = "COMBAT_DAMAGE" }, frame => frame with { ActivePlayerId = 47 },
+            frame => frame with { Executions = new(1, 1, [resolvedRoot with { Outcome = null }], []) },
+            frame => frame with { Executions = new(1, 1, [resolvedRoot with { ActorPlayerId = 47 }], []) },
+            frame => frame with { Executions = new(1, 1, [resolvedRoot with { BudgetRootId = "other-root" }], []) }
+        }) {
+            bool rejected; retainedCount = 0;
+            try { SynchronizePublicationAsync(originalFrame, 7, "audit-execution",
+                    _ => Task.FromResult(alter(originalFrame with { Revision = 7, BoardRevision = 7 })),
+                    _ => retainedCount++, CancellationToken.None).GetAwaiter().GetResult(); rejected = false; }
+            catch (InvalidDataException) { rejected = true; }
+            check(rejected && retainedCount == 1, "Evidence-only synchronization retains then rejects a changed game, audience, priority, resolved root or backwards publication");
+        }
+        int backwardsPolls = 0; retainedCount = 0; bool backwardsRejected;
+        try { SynchronizePublicationAsync(originalFrame, 9, "audit-execution",
+                _ => Task.FromResult(originalFrame with { Revision = ++backwardsPolls == 1 ? 8 : 7, BoardRevision = backwardsPolls == 1 ? 8 : 7 }),
+                _ => retainedCount++, CancellationToken.None).GetAwaiter().GetResult(); backwardsRejected = false; }
+        catch (InvalidDataException) { backwardsRejected = true; }
+        check(backwardsRejected && backwardsPolls == 2 && retainedCount == 2,
+            "A publication cannot regress between evidence polls even when both frames remain newer than the original");
+        using var stopped = new CancellationTokenSource(); stopped.Cancel(); observedCount = 0; bool cancelled;
+        try { SynchronizePublicationAsync(originalFrame, 7, "audit-execution",
+                _ => { observedCount++; return Task.FromResult(originalFrame); }, _ => { }, stopped.Token).GetAwaiter().GetResult(); cancelled = false; }
+        catch (OperationCanceledException) { cancelled = true; }
+        check(cancelled && observedCount == 0, "Evidence-only discovery honors its existing cancellation without renewing a game allowance");
     }
 
     private sealed class CapturePolicy(IAiPolicy inner, ConcurrentQueue<AiDecisionReplayCase> captures) : IAiPolicy
