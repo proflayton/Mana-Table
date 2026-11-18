@@ -24,8 +24,11 @@ internal sealed class AiExperimentNaturalCapture : IDisposable
     private long workSpent;
     private double policyMs;
     private readonly HashSet<AiTask> sampled = [];
-    private readonly Dictionary<int, AiDecisionReplayCase> latest = [];
-    private readonly Dictionary<int, (AiProposal? Proposal, string? Failure)> latestResults = [];
+    private long invocationSequence;
+    private sealed record RetainedRequest(long Invocation, AiDecisionStamp Stamp, AiDecisionReplayCase Replay);
+    private sealed record RetainedResult(long Invocation, AiDecisionStamp Stamp, AiProposal? Proposal, string? Failure);
+    private readonly Dictionary<int, RetainedRequest> latest = [];
+    private readonly Dictionary<int, RetainedResult> latestResults = [];
     private readonly Dictionary<(int Seat, string Episode), (int Attempts, double Ms, long Work)> episodes = [];
     private readonly Dictionary<AiTask, List<double>> timings = [];
     private readonly List<double> focalWallSamples = [];
@@ -109,7 +112,7 @@ internal sealed class AiExperimentNaturalCapture : IDisposable
             var task = AiTasks.From(frame.State.Decision!.Payload);
             int initialWork = request.Work.Remaining;
             var replay = AiDecisionReplayCase.Capture("natural-" + frame.Stamp.SeatId + "-" + frame.Stamp.DecisionId, inner.Descriptor.Id, request);
-            capture.Begin(replay, task);
+            long invocation = capture.Begin(replay, task, frame.Stamp);
             var clock = Stopwatch.StartNew();
             AiProposal? proposal = null;
             string? failure = null;
@@ -117,13 +120,13 @@ internal sealed class AiExperimentNaturalCapture : IDisposable
             catch (Exception error) { failure = error.GetType().Name; throw; }
             finally {
                 clock.Stop();
-                capture.Evaluation(frame, task, inner.Descriptor.Id, request.Seed, request.RemainingTime,
+                capture.Evaluation(invocation, frame, task, inner.Descriptor.Id, request.Seed, request.RemainingTime,
                     initialWork, request.Work.Remaining, clock.Elapsed.TotalMilliseconds, proposal, failure);
             }
         }
     }
 
-    private void Evaluation(AiDecisionFrame frame, AiTask task, string policy, long seed, TimeSpan remaining,
+    private void Evaluation(long invocation, AiDecisionFrame frame, AiTask task, string policy, long seed, TimeSpan remaining,
         int initial, int final, double milliseconds, AiProposal? proposal, string? failure)
     {
         lock (gate) {
@@ -142,8 +145,8 @@ internal sealed class AiExperimentNaturalCapture : IDisposable
         if (!timings.TryGetValue(task, out var values)) timings.Add(task, values = []);
         values.Add(milliseconds);
         if (latest.TryGetValue(frame.Stamp.SeatId, out var retained)
-            && retained.State.Decision?.Id == frame.Stamp.DecisionId && retained.State.Revision == frame.Stamp.Revision)
-            latestResults[frame.Stamp.SeatId] = (proposal, failure);
+            && retained.Invocation == invocation && retained.Stamp == frame.Stamp)
+            latestResults[frame.Stamp.SeatId] = new(invocation, frame.Stamp, proposal, failure);
         var answer = proposal as AiProposal.Answer;
         Optional(new {
             kind = "policy-evaluation", frame.Stamp, task = task.ToString(), policy, episode,
@@ -157,14 +160,17 @@ internal sealed class AiExperimentNaturalCapture : IDisposable
         }
     }
 
-    private void Begin(AiDecisionReplayCase replay, AiTask task)
+    private long Begin(AiDecisionReplayCase replay, AiTask task, AiDecisionStamp stamp)
     {
         lock (gate) {
-            if (disposed) return;
-            latest[replay.State.ViewerId] = replay;
-            if (replay.State.ViewerId != FocalPlayerId || !sampled.Add(task)) return;
-            if (pending.Count >= QueueCapacity) { omittedReplays++; return; }
+            if (disposed) return 0;
+            long invocation = checked(++invocationSequence);
+            latest[replay.State.ViewerId] = new(invocation, stamp, replay);
+            latestResults.Remove(replay.State.ViewerId);
+            if (replay.State.ViewerId != FocalPlayerId || !sampled.Add(task)) return invocation;
+            if (pending.Count >= QueueCapacity) { omittedReplays++; return invocation; }
             pending.Enqueue(("replay-focal-" + task + ".json", replay));
+            return invocation;
         }
     }
 
@@ -185,15 +191,23 @@ internal sealed class AiExperimentNaturalCapture : IDisposable
 
     internal void CriticalReplay(int player)
     {
-        AiDecisionReplayCase? replay;
-        (AiProposal? Proposal, string? Failure) result;
-        lock (gate) { latest.TryGetValue(player, out replay); result = latestResults.GetValueOrDefault(player); }
-        if (replay != null) {
+        RetainedRequest? request;
+        RetainedResult? result;
+        lock (gate) {
+            latest.TryGetValue(player, out request);
+            latestResults.TryGetValue(player, out result);
+            if (request == null || result?.Invocation != request.Invocation || result.Stamp != request.Stamp) result = null;
+        }
+        if (request != null) {
+            var replay = request.Replay;
             Required("critical-last-policy-request.json", replay);
-            var answer = result.Proposal as AiProposal.Answer;
+            var answer = result?.Proposal as AiProposal.Answer;
             Required("critical-last-policy-result.json", new {
-                replay.Id, replay.PolicyId, result.Failure,
-                status = result.Failure != null ? "exception" : answer != null ? "proposed" : "unavailable",
+                replay.Id, replay.PolicyId, failure = result?.Failure,
+                requestInvocation = request.Invocation, requestStamp = request.Stamp,
+                resultInvocation = result?.Invocation, resultStamp = result?.Stamp, resultCompleted = result != null,
+                status = result == null ? "pending" : result.Failure != null ? "exception"
+                    : answer != null ? "proposed" : result.Proposal is AiProposal.Unavailable ? "unavailable" : "no-proposal",
                 reason = answer?.ReasonCode, commandType = answer?.Command.GetType().Name,
                 command = answer == null ? (JsonElement?)null : JsonSerializer.SerializeToElement(answer.Command, answer.Command.GetType()),
                 executed = false

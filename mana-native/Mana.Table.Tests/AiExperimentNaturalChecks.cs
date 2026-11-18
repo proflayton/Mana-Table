@@ -67,6 +67,7 @@ internal static class AiExperimentNaturalChecks
         check(Reject(() => AiExperimentNatural.ObserveStartingPlayer(start, start.State with { Turn = 1, ActivePlayerId = 999 })),
             "Experiment starting-player evidence rejects an active identity outside the accepted roster");
         CheckPublicParity(start, directory, check);
+        CheckCriticalAttributionAsync(start, directory, check).GetAwaiter().GetResult();
         var states = start.Participants.Select(person => new AutomatedSeatObservation(person.PlayerId,
             start.State with { ViewerId = person.PlayerId,
                 Decision = person.PlayerId == 29 ? new("experiment-current", new(), new PriorityPayload(new("Pass", true))) : null },
@@ -175,6 +176,76 @@ internal static class AiExperimentNaturalChecks
         try { action(); return false; }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException or IOException) { return true; }
     }
+    private static async Task CheckCriticalAttributionAsync(ConfiguredSimulationStart start, string directory, Action<bool, string> check)
+    {
+        AiDecisionFrame Frame(string input, long offer) => new(start.State with { ViewerId = 29,
+            Decision = new(input, new(), new PriorityPayload(new("Pass", true))) },
+            domain: new(offer, ActionDomainCoverage.Complete, [], []));
+        AiSeatSession Session(AiDecisionFrame frame, AiExperimentNaturalCapture capture, AttributionPolicy policy)
+        {
+            var session = new AiSeatSession(frame.State.Id, frame.State.ViewerId, capture.Record(policy), 17,
+                new(TimeSpan.FromSeconds(20), 32));
+            session.Observe(frame); return session;
+        }
+        string pendingDirectory = Path.Combine(directory, "critical-pending"); Directory.CreateDirectory(pendingDirectory);
+        using (var memory = new MemoryStream())
+        using (var capture = new AiExperimentNaturalCapture(pendingDirectory, 1048576, memory)) {
+            var first = new AttributionPolicy("previous-result"); first.Release();
+            using var old = Session(Frame("previous-input", 1), capture, first);
+            await old.EvaluateAsync().ConfigureAwait(false);
+            var held = new AttributionPolicy("pending-result");
+            var current = Frame("current-pending-input", 2);
+            using var next = Session(current, capture, held);
+            var evaluation = next.EvaluateAsync();
+            try {
+                await held.Started.WaitAsync(TimeSpan.FromSeconds(20)).ConfigureAwait(false);
+                check(memory.Length == 0 && !Directory.EnumerateFiles(pendingDirectory).Any(),
+                    "Beginning a replacement request invalidates prior results without callback serialization or file I/O");
+                capture.CriticalReplay(29);
+                using var result = JsonDocument.Parse(File.ReadAllText(Path.Combine(pendingDirectory, "critical-last-policy-result.json")));
+                var root = result.RootElement;
+                check(root.GetProperty("status").GetString() == "pending"
+                        && root.TryGetProperty("resultCompleted", out var completed) && !completed.GetBoolean()
+                        && root.GetProperty("command").ValueKind == JsonValueKind.Null
+                        && root.GetProperty("reason").ValueKind == JsonValueKind.Null
+                        && root.GetProperty("requestStamp").GetProperty("DecisionId").GetString() == current.Stamp.DecisionId,
+                    "A held new request retains explicit pending evidence rather than inheriting the previous policy answer or claiming Unavailable");
+            } finally { held.Release(); await evaluation.ConfigureAwait(false); }
+        }
+        foreach (bool identicalFrame in new[] { true, false }) {
+            string lateDirectory = Path.Combine(directory, "critical-late-" + identicalFrame); Directory.CreateDirectory(lateDirectory);
+            using var memory = new MemoryStream();
+            using var capture = new AiExperimentNaturalCapture(lateDirectory, 1048576, memory);
+            var earlier = new AttributionPolicy("older-late-result");
+            var newer = new AttributionPolicy("newer-current-result");
+            var a = Frame("same-input", 1); var b = Frame("same-input", identicalFrame ? 1 : 2);
+            using var old = Session(a, capture, earlier);
+            using var next = Session(b, capture, newer);
+            var oldEvaluation = old.EvaluateAsync();
+            await earlier.Started.WaitAsync(TimeSpan.FromSeconds(20)).ConfigureAwait(false);
+            var newEvaluation = next.EvaluateAsync();
+            try {
+                await newer.Started.WaitAsync(TimeSpan.FromSeconds(20)).ConfigureAwait(false);
+                newer.Release(); var fresh = await newEvaluation.ConfigureAwait(false);
+                earlier.Release(); var late = await oldEvaluation.ConfigureAwait(false);
+                capture.CriticalReplay(29);
+                using var result = JsonDocument.Parse(File.ReadAllText(Path.Combine(lateDirectory, "critical-last-policy-result.json")));
+                var root = result.RootElement;
+                check(fresh.Status == AiSeatStatus.Ready && late.Status == AiSeatStatus.Ready
+                        && root.GetProperty("status").GetString() == "proposed"
+                        && root.GetProperty("reason").GetString() == "newer-current-result"
+                        && root.GetProperty("resultCompleted").GetBoolean()
+                        && root.GetProperty("requestInvocation").GetInt64() == root.GetProperty("resultInvocation").GetInt64()
+                        && root.GetProperty("requestStamp").GetRawText() == root.GetProperty("resultStamp").GetRawText()
+                        && root.GetProperty("resultStamp").GetProperty("OfferVersion").GetInt64() == b.Stamp.OfferVersion,
+                    "A late older callback cannot replace newer critical evidence even when decision/revision are unchanged (identical full frame " + identicalFrame + ")");
+            } finally {
+                earlier.Release(); newer.Release();
+                await Task.WhenAll(oldEvaluation, newEvaluation).ConfigureAwait(false);
+            }
+        }
+    }
+
     private static void CheckPublicParity(ConfiguredSimulationStart start, string directory, Action<bool, string> check)
     {
         var publicState = start.State;
@@ -215,6 +286,23 @@ internal static class AiExperimentNaturalChecks
         Mismatch("different-terminal-winner", finished, owned with { State = finished with { ViewerId = 29,
             Outcome = new(publicState.Id, MatchOutcomeKind.Win, [29], [0], "fixture-terminal") } }, "winningPlayerIds");
     }
+    private sealed class AttributionPolicy(string reason) : IAiPolicy
+    {
+        private readonly TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal Task Started => started.Task;
+        internal void Release() => released.TrySetResult();
+        public AiPolicyDescriptor Descriptor { get; } = new("critical-attribution-control.v1", AiTasks.All);
+        public async Task<AiProposal> EvaluateAsync(AiDecisionRequest request, CancellationToken cancellation)
+        {
+            started.TrySetResult();
+            // Deliberately complete out of order; the capture owner must bind
+            // callbacks, independently of the session's command admission.
+            await released.Task.ConfigureAwait(false);
+            return new AiProposal.Answer(new PassPriority(request.Frame.State.Id, request.Frame.State.Decision!.Id), reason);
+        }
+    }
+
     private sealed class FakeProvider(ImmutableArray<AutomatedSeatObservation> observations) : IAutomatedSeatProvider
     {
         internal int Observations, Executions;
