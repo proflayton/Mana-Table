@@ -193,6 +193,7 @@ internal sealed partial class TableApplication : IDisposable
         => projectionCapture?.ObserveEnvironment(updateTime, ProjectionSettings(updateViewport), match);
     private void AcceptPresentation(GameSnapshot? previous, GameSnapshot? state)
     {
+        ReconcileStackWorkloadInspection();
         tablePresence.Observe(state);
         ReconcileHistory(previous, state);
         ReconcileManaReading(previous, state);
@@ -360,6 +361,7 @@ internal sealed partial class TableApplication : IDisposable
         float frameElapsed = (float)(time.TotalGameTime.TotalSeconds - lastPresentationTime);
         lastPresentationTime = time.TotalGameTime.TotalSeconds;
         canvas.TextScale = preferences.TextScale;
+        ReconcileStackWorkloadInspection();
         matchPresentation.HoldAnnouncements(now, expandedStackWorkload.Length > 0 || match?.Decision is { Payload: not PriorityPayload } && !AutomatedCapturedPayment
             || AutomaticInteractionPause() is DecisionDockPauseReason.Inspection or DecisionDockPauseReason.Overlay);
         PrepareShellPresentation();
