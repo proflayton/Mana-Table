@@ -7,6 +7,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using Point = Microsoft.Xna.Framework.Point;
 using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
+using Keys = Microsoft.Xna.Framework.Input.Keys;
 
 namespace Mana.Table;
 
@@ -37,10 +38,10 @@ internal static class ServerAutoPresentationChecks
             var setup = new InteractionScenarioEngine();
             using var run = new PresentationRun(new(setup, setup, port, () => Task.CompletedTask), path, initial, size);
             Point pointer = new(20, 60);
-            void Tick(TimeSpan elapsed = default, ButtonState button = ButtonState.Released, bool active = true) {
+            void Tick(TimeSpan elapsed = default, ButtonState button = ButtonState.Released, bool active = true, KeyboardState keys = default) {
                 var physical = RenderViewport.Fit(size, run.View.DesignHeight).ToPhysical(pointer.ToVector2());
                 run.Tick(elapsed, new((int)MathF.Ceiling(physical.X), (int)MathF.Ceiling(physical.Y), 0,
-                    button, default, default, default, default), active: active);
+                    button, default, default, default, default), keys, active: active);
             }
             void Until(Func<bool> predicate, bool active = true) {
                 var deadline = DateTime.UtcNow.AddSeconds(3);
@@ -51,11 +52,17 @@ internal static class ServerAutoPresentationChecks
                 pointer = run.Frame.Hits.Single(hit => hit.Id == id).Bounds.Center;
                 Tick(button: ButtonState.Pressed); Tick(); pointer = new(20, 60); Tick();
             }
-            Tick(); run.View.SetAutomatic(true); Tick(TimeSpan.FromSeconds(3));
-            Until(() => port.Commands.OfType<GrantPriorityContinuation>().Any() && !run.View.Busy);
+            Tick(); run.View.SetAutomatic(true); run.Deactivate();
+            Tick(TimeSpan.FromSeconds(3), active: false, keys: new(Keys.F, Keys.LeftControl, Keys.Enter, Keys.Space));
+            Until(() => port.Commands.OfType<GrantPriorityContinuation>().Any() && !run.View.Busy, active: false);
+            var firstGrant = port.Commands.OfType<GrantPriorityContinuation>().Single();
             check(run.View.PriorityContinuationReserved && port.Commands.OfType<GrantPriorityContinuation>().Count() == 1
+                    && run.View.Automatic && !run.View.Held && firstGrant.GameId == initial.Id
+                    && firstGrant.DecisionId == initial.Decision!.Id && firstGrant.Mode == PriorityContinuationMode.NoResponse
+                    && port.State.PriorityContinuation?.GrantId == firstGrant.GrantId
+                    && port.State.PriorityObservation?.Registered == true
                     && !port.Commands.Any(command => command is AutoPassPriority or PassForNow),
-                "Visible Auto installs one server policy after actual observer registration without a second client pass loop at " + size + "; reduced=" + reduced);
+                "Previously enabled Auto starts one acknowledged scoped NoResponse policy while inactive after actual observer registration, without background shortcuts or a client pass loop at " + size + "; reduced=" + reduced);
 
             var resolving = port.State with { Revision = port.State.Revision + 1, Status = "resolving", Decision = null };
             port.State = resolving; run.QueueObservation(resolving); Tick(); Tick();
@@ -82,10 +89,41 @@ internal static class ServerAutoPresentationChecks
                 PriorityObservation = port.State.PriorityObservation! with { BoardRevision = port.State.BoardRevision + 1, PublicActivitySequence = 16 } };
             port.State = unread; run.QueueObservation(unread);
             Tick(active: false);
-            Until(() => port.Commands.OfType<RevokePriorityContinuation>().Count() == 2, active: false);
+            Tick(TimeSpan.FromSeconds(3), active: false);
+            Until(() => port.Commands.OfType<AcknowledgePriorityObservation>().Count() > acknowledged && !run.View.Busy, active: false);
             for (int frame = 0; frame < 12; frame++) Tick(active: false);
-            check(port.Commands.OfType<AcknowledgePriorityObservation>().Count() == acknowledged,
-                "Losing foreground withdraws automatic consent without acknowledging unseen presentation activity");
+            var credits = port.Commands.OfType<AcknowledgePriorityObservation>().ToArray();
+            var currentGrant = port.Commands.OfType<GrantPriorityContinuation>().Last();
+            check(credits.Length == acknowledged + 1 && credits.Last() == new AcknowledgePriorityObservation(unread.Id,
+                        unread.BoardRevision, unread.PriorityObservation!.PublicActivitySequence)
+                    && run.View.Match?.PriorityObservation?.AcknowledgedBoardRevision == unread.BoardRevision
+                    && run.View.Match?.PriorityObservation?.AcknowledgedPublicActivitySequence == 16
+                    && run.View.PriorityContinuationReserved && port.State.PriorityContinuation?.GrantId == currentGrant.GrantId
+                    && currentGrant.Sequence > firstGrant.Sequence && port.Commands.OfType<GrantPriorityContinuation>().Count() == 2
+                    && port.Commands.OfType<RevokePriorityContinuation>().Count() == 1,
+                "Inactive presentation adopts and credits exactly its fresh board/activity prefix once while retaining acknowledged server consent without revoke/regrant churn");
+
+            var required = port.State with { Revision = port.State.Revision + 1,
+                Decision = new("background-server-required", new(), new ConfirmationPayload(new("Continue", true))),
+                PriorityContinuation = port.State.PriorityContinuation! with { Status = PriorityContinuationStatus.Held, ReasonCode = "required-choice" } };
+            port.State = required; run.QueueObservation(required);
+            int beforeChoice = port.Commands.Count;
+            Tick(active: false, keys: new(Keys.Enter, Keys.Space, Keys.F));
+            for (int frame = 0; frame < 12; frame++) Tick(active: false);
+            check(port.Commands.Count == beforeChoice && run.View.Automatic && !run.View.Held
+                    && run.View.Match?.Decision?.Id == "background-server-required"
+                    && run.View.Match.PriorityContinuation?.Status == PriorityContinuationStatus.Held,
+                "A fresh required choice holds the server policy and remains unanswered while inactive shortcuts cannot change Auto or submit its answer");
+
+            run.View.SetHeld(true); Tick(active: false);
+            Until(() => port.Commands.OfType<RevokePriorityContinuation>().Count() == 2 && !run.View.Busy, active: false);
+            for (int frame = 0; frame < 12; frame++) Tick(active: false);
+            check(run.View.Held && !run.View.PriorityContinuationReserved
+                    && port.State.PriorityContinuation?.Status == PriorityContinuationStatus.Revoked
+                    && port.Commands.OfType<GrantPriorityContinuation>().Count() == 2
+                    && !port.Commands.Any(command => command is AutoPassPriority or PassForNow)
+                    && port.MaximumConcurrentCalls == 1,
+                "Explicit Hold withdraws the current grant once while inactive; all permission-validated Execute/Observe calls stay serialized without a replacement policy or client pass");
         }
     }
 
@@ -126,30 +164,46 @@ internal static class ServerAutoPresentationChecks
 
     private sealed class Port(GameSnapshot initial) : IMatchConnection
     {
+        private int concurrentCalls;
+        internal int MaximumConcurrentCalls { get; private set; }
         internal GameSnapshot State = initial;
         internal readonly ConcurrentQueue<GameCommand> Commands = new();
         internal readonly TaskCompletionSource Release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool SupportsPriorityContinuation => true;
         public async Task ExecuteAsync(GameCommand command) {
-            if (!GameCommandPermissions.Allows(State, command)) throw new InvalidOperationException("Stale authored server Auto command.");
-            Commands.Enqueue(command);
-            switch (command) {
-                case AcknowledgePriorityObservation ack:
-                    State = State with { PriorityObservation = State.PriorityObservation! with { Registered = true,
-                        AcknowledgedBoardRevision = ack.BoardRevision, AcknowledgedPublicActivitySequence = ack.PublicActivitySequence } }; break;
-                case GrantPriorityContinuation grant:
-                    State = State with { Revision = State.Revision + 1, PriorityContinuation = new(grant.Sequence, grant.GrantId,
-                        grant.Mode, PriorityContinuationStatus.Active, "", 0, grant.PhaseStops) }; break;
-                case RevokePriorityContinuation:
-                    await Release.Task;
-                    State = State with { Revision = State.Revision + 1,
-                        PriorityContinuation = State.PriorityContinuation! with { Status = PriorityContinuationStatus.Revoked } }; break;
-                case PassPriority:
-                    State = State with { Revision = State.Revision + 1, Decision = null }; break;
-                default: throw new InvalidOperationException("A server-owned policy must not dispatch individual client passes.");
-            }
+            Enter();
+            try {
+                if (!GameCommandPermissions.Allows(State, command)) throw new InvalidOperationException("Stale authored server Auto command.");
+                Commands.Enqueue(command);
+                switch (command) {
+                    case AcknowledgePriorityObservation ack:
+                        State = State with { PriorityObservation = State.PriorityObservation! with { Registered = true,
+                            AcknowledgedBoardRevision = ack.BoardRevision, AcknowledgedPublicActivitySequence = ack.PublicActivitySequence } }; break;
+                    case GrantPriorityContinuation grant:
+                        State = State with { Revision = State.Revision + 1, PriorityContinuation = new(grant.Sequence, grant.GrantId,
+                            grant.Mode, PriorityContinuationStatus.Active, "", 0, grant.PhaseStops) }; break;
+                    case RevokePriorityContinuation:
+                        await Release.Task;
+                        State = State with { Revision = State.Revision + 1,
+                            PriorityContinuation = State.PriorityContinuation! with { Status = PriorityContinuationStatus.Revoked } }; break;
+                    case PassPriority:
+                        State = State with { Revision = State.Revision + 1, Decision = null }; break;
+                    default: throw new InvalidOperationException("A server-owned policy must not dispatch individual client passes.");
+                }
+            } finally { Interlocked.Decrement(ref concurrentCalls); }
         }
-        public Task<GameSnapshot?> ObserveAsync() => Task.FromResult<GameSnapshot?>(State);
+        public Task<GameSnapshot?> ObserveAsync() {
+            Enter();
+            try { return Task.FromResult<GameSnapshot?>(State); }
+            finally { Interlocked.Decrement(ref concurrentCalls); }
+        }
+        private void Enter() {
+            int active = Interlocked.Increment(ref concurrentCalls);
+            MaximumConcurrentCalls = Math.Max(MaximumConcurrentCalls, active);
+            if (active <= 1) return;
+            Interlocked.Decrement(ref concurrentCalls);
+            throw new InvalidOperationException("Server Auto exchanges must stay serialized.");
+        }
         public Task ConcedeAsync(string gameId) => throw new NotSupportedException();
     }
 }
