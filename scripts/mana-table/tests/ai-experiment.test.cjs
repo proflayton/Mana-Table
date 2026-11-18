@@ -98,7 +98,8 @@ test('coordinator refuses concurrent and orphaned ownership; reserved uncertain 
   const f = fixture(t); const lock = await E.plan(f.specFile, f.out);
   const release = E.lease(f.out); await assert.rejects(E.run(f.out), /EEXIST/); release();
   for (const job of lock.jobs) fs.mkdirSync(path.join(f.out, 'jobs', job.id, 'attempt-0001'), { recursive: true });
-  const value = await E.run(f.out); assert.equal(value.launched, 0); assert.equal(value.report.replay.incompletePairs, 1); assert.equal(value.report.interpretation, 'inconclusive');
+  await assert.rejects(E.run(f.out), /Prior attempt is incomplete or invalid/);
+  const value = await E.analyze(f.out); assert.equal(value.report.replay.incompletePairs, 1); assert.equal(value.report.interpretation, 'inconclusive');
   assert.equal(value.report.replay.arms.candidate.missingOrUngraded, 1);
 });
 
@@ -220,4 +221,53 @@ test('an unexpected natural worker failure cannot manufacture a known game start
   assert.equal(value.report.natural.arms[row.arm].startedKnown, 0);
   assert.equal(value.report.natural.arms[row.arm].startUnknown, 1);
   assert.equal(value.report.natural.arms[row.arm].startedOrPossible.unresolved, 1);
+});
+
+test('committed critical and evidence failures permanently stop subsequent run commands', async t => {
+  for (const behavior of ["result.criticalSafetyFailure=true;", "result.status='evidence-failure';"]) {
+    const f = fixture(t, 'replay', behavior); await E.plan(f.specFile, f.out);
+    const first = await E.run(f.out); assert.equal(first.launched, 1);
+    const ledger = fs.readFileSync(path.join(f.out, 'ledger.jsonl'));
+    const attempts = fs.readdirSync(path.join(f.out, 'jobs'));
+    await assert.rejects(E.run(f.out), /permanent guardrail failure/);
+    assert.deepEqual(fs.readFileSync(path.join(f.out, 'ledger.jsonl')), ledger);
+    assert.deepEqual(fs.readdirSync(path.join(f.out, 'jobs')), attempts);
+  }
+});
+
+test('externally clearing a lease cannot erase invalid receipts or cleanup failures', async t => {
+  for (const behavior of ["result.jobId='invalid-owner';", "result.cleanupErrors=['synthetic cleanup failure'];"]) {
+    const f = fixture(t, 'replay', behavior); await E.plan(f.specFile, f.out);
+    const first = await E.run(f.out); assert.equal(first.launched, 1);
+    assert(fs.existsSync(path.join(f.out, 'coordinator.lock')));
+    // Simulate an external lease removal, not an implemented recovery action.
+    fs.unlinkSync(path.join(f.out, 'coordinator.lock'));
+    const ledger = fs.readFileSync(path.join(f.out, 'ledger.jsonl'));
+    await assert.rejects(E.run(f.out), /Prior attempt|permanent guardrail/);
+    assert.deepEqual(fs.readFileSync(path.join(f.out, 'ledger.jsonl')), ledger);
+    assert.equal(fs.readdirSync(path.join(f.out, 'jobs')).length, 1);
+  }
+});
+
+test('removing a failed job directory cannot hide its durable reservation on restart', async t => {
+  const f = fixture(t, 'replay', "result.criticalSafetyFailure=true;"); const lock = await E.plan(f.specFile, f.out);
+  await E.run(f.out); const attempted = lock.jobs[0].id, ledger = fs.readFileSync(path.join(f.out, 'ledger.jsonl'));
+  fs.rmSync(path.join(f.out, 'jobs', attempted), { recursive: true });
+  await assert.rejects(E.run(f.out), /Prior attempt is incomplete or invalid/);
+  assert.deepEqual(fs.readFileSync(path.join(f.out, 'ledger.jsonl')), ledger);
+  assert.equal(fs.readdirSync(path.join(f.out, 'jobs')).length, 0);
+});
+
+test('benign natural cutoffs and clean policy failures can resume their remaining planned cells', async t => {
+  for (const status of ['time-cutoff', 'turn-cutoff', 'policy-failure']) {
+    const f = fixture(t, 'natural', `result.status='${status}';result.natural.terminalVerified=false;result.natural.outcome=null;`);
+    await E.plan(f.specFile, f.out); const first = await E.run(f.out, 1, 1);
+    assert.equal(first.launched, 1); assert.equal(fs.existsSync(path.join(f.out, 'coordinator.lock')), false);
+    const oldJob = first.report.rows.find(row => row.attempted).jobId;
+    const oldReceipt = fs.readFileSync(path.join(f.out, 'jobs', oldJob, 'attempt-0001', 'result.json'));
+    const second = await E.run(f.out, 1, 1); assert.equal(second.launched, 1); assert.equal(second.report.rows.filter(row => row.attempted).length, 2);
+    assert.deepEqual(fs.readFileSync(path.join(f.out, 'jobs', oldJob, 'attempt-0001', 'result.json')), oldReceipt);
+    assert.equal(second.report.natural.arms.baseline.planned.denominator, 16); assert.equal(second.report.natural.arms.candidate.planned.denominator, 16);
+    assert.deepEqual(second.report.natural.plannedDifferenceBounds, [-1, 1]);
+  }
 });

@@ -115,12 +115,43 @@ async function launch(lock, directory, job, attempt, token) {
   finally { clearTimeout(timer); if (forceWait) clearTimeout(forceWait); outputs.forEach(fd => { fs.fsyncSync(fd); fs.closeSync(fd); }); }
   return { ...outcome, timedOut, captureOverflow: overflow, ioFailure, retirementUnknown, capturedOutputBytes: bytes, pid: child.pid ?? null };
 }
+async function priorAttempts(directory, lock, lockSha256, ledger) {
+  // The lease protects this check and all following reservations. A prior stop
+  // is a property of the immutable attempt history, not just the old process.
+  // Even externally removing an orphaned lease cannot erase that stop.
+  const jobs = new Map(lock.jobs.map(job => [job.id, job])), reserved = new Set();
+  for (const event of ledger.events) {
+    assert(jobs.has(event.jobId), 'Prior attempt history contains an unplanned job; a new lock is required.');
+    if (event.event === 'reserved') { assert(!reserved.has(event.jobId), 'Duplicate prior reservation; a new lock is required.'); reserved.add(event.jobId); }
+    else assert(reserved.has(event.jobId), 'Prior attempt history has no durable reservation; a new lock is required.');
+  }
+  const jobDirectory = path.join(directory, 'jobs');
+  if (fs.existsSync(jobDirectory)) for (const entry of fs.readdirSync(jobDirectory, { withFileTypes: true })) {
+    assert(entry.isDirectory() && !entry.isSymbolicLink() && jobs.has(entry.name), 'Unknown prior job ownership; a new lock is required.'); reserved.add(entry.name);
+  }
+  for (const id of reserved) {
+    const job = jobs.get(id), attempt = path.join(jobDirectory, id, 'attempt-0001');
+    let prior, retired;
+    try {
+      prior = await receipt(attempt, job, lockSha256);
+      retired = read(path.join(attempt, 'coordinator-result.json'));
+      assert(retired.schemaVersion === 1 && retired.kind === 'ai-experiment-coordinator-result' && retired.jobId === id && retired.lockSha256 === lockSha256
+        && retired.receiptVerified === true && retired.failure === null && retired.resultSha256 === prior.resultSha256 && retired.artifactsSha256 === prior.artifactsSha256,
+      'Prior receipt is not bound to its verified coordinator retirement.');
+      const process = retired.process;
+      assert(process && process.code === 0 && !process.timedOut && !process.captureOverflow && !process.ioFailure && !process.retirementUnknown && !process.signal,
+        'Prior worker retirement or ownership is uncertain.');
+    } catch (error) { throw new Error('Prior attempt is incomplete or invalid; do not resume this lock. Reconcile ownership and create a new lock. ' + id + ': ' + error.message); }
+    assert(!prior.result.criticalSafetyFailure && prior.result.status !== 'evidence-failure' && !prior.result.cleanupErrors?.length && !prior.result.details?.cleanupFailed,
+      'Prior attempt has a permanent guardrail failure; a new source/spec and new lock are required: ' + id);
+  }
+}
 async function run(directory, jobs = 1, maxJobs = 10000) {
   directory = path.resolve(directory); integer(jobs, 1, 1, 'V1 concurrency (--jobs)'); integer(maxJobs, 1, 10000, 'execution chunk (--max-jobs)'); const release = lease(directory);
   let ownershipUncertain = false;
   try {
     const initial = await verifyLock(directory); assert(initial.lock.concurrency === 1, 'Unsupported locked concurrency.');
-    const ledger = path.join(directory, 'ledger.jsonl'); C.ledger(ledger); let launched = 0;
+    const ledger = path.join(directory, 'ledger.jsonl'); await priorAttempts(directory, initial.lock, initial.lockSha256, C.ledger(ledger)); let launched = 0;
     for (const job of initial.lock.jobs) {
       if (launched >= maxJobs) break;
       const attempt = path.join(directory, 'jobs', job.id, 'attempt-0001');
