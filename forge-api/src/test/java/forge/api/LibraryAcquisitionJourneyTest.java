@@ -2,7 +2,6 @@ package forge.api;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.JsonObject;
 import forge.StaticData;
 import forge.game.card.Card;
 import forge.game.zone.ZoneType;
