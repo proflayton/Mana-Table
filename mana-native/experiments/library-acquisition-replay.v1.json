@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "kind": "ai-experiment-spec",
+  "id": "library-acquisition-replay-development-v1",
+  "hypothesis": "For certified current own-library basic-land acquisition opportunities, the scoped v7 candidate selects the independently expected useful basic-land count more often than full v6. Both arms receive the same new provider facts. These synthetic real-rules captures are development evidence, not held-out or whole-game strength evidence.",
+  "mode": "replay",
+  "primaryEndpoint": "acceptable-decision-rate",
+  "variants": {
+    "baseline": { "factoryId": "casual-commander.v6", "attachmentEvaluation": true },
+    "candidate": { "factoryId": "casual-commander.v7.library-acquisition.v1", "attachmentEvaluation": true },
+    "reference": { "factoryId": "casual-commander.v6", "attachmentEvaluation": true }
+  },
+  "limits": {
+    "decisionMs": 3000, "workUnits": 4096,
+    "matchMs": 180000, "turns": 160, "workerMs": 240000, "captureBytes": 16777216
+  },
+  "runtime": {
+    "dotnetPath": "C:/Program Files/dotnet/dotnet.exe",
+    "driverPath": "../Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.dll"
+  },
+  "planningSeed": "261027",
+  "policySeed": "2668620592559112008",
+  "repetitions": 1,
+  "replays": [
+    {
+      "id": "direct-battlefield", "path": "../Mana.Table.Tests/Fixtures/LibraryAcquisitionOwned/acquisition-direct-battlefield.json.gz",
+      "format": "owned", "family": "own-library-direct-battlefield", "expectation": { "kind": "acquire-basic-lands" },
+      "certifiedUndo": true,
+      "capabilityContext": "Authentic owned observation from a synthetic in-process rules journey; same provider declares certified-one-step-undo. No transport handshake was captured."
+    },
+    {
+      "id": "direct-hand", "path": "../Mana.Table.Tests/Fixtures/LibraryAcquisitionOwned/acquisition-direct-hand.json.gz",
+      "format": "owned", "family": "own-library-direct-hand", "expectation": { "kind": "acquire-basic-lands" },
+      "certifiedUndo": true,
+      "capabilityContext": "Authentic owned observation from a synthetic in-process rules journey; same provider declares certified-one-step-undo. No transport handshake was captured."
+    },
+    {
+      "id": "bundle", "path": "../Mana.Table.Tests/Fixtures/LibraryAcquisitionOwned/acquisition-bundle.json.gz",
+      "format": "owned", "family": "own-library-field-hand-bundle", "expectation": { "kind": "acquire-basic-lands" },
+      "certifiedUndo": true,
+      "capabilityContext": "Authentic owned observation from a synthetic in-process rules journey; same provider declares certified-one-step-undo. No transport handshake was captured."
+    },
+    {
+      "id": "renamed-bundle", "path": "../Mana.Table.Tests/Fixtures/LibraryAcquisitionOwned/acquisition-renamed-bundle.json.gz",
+      "format": "owned", "family": "own-library-field-hand-bundle", "expectation": { "kind": "acquire-basic-lands" },
+      "certifiedUndo": true,
+      "capabilityContext": "Authentic owned observation from a synthetic in-process rules journey; same provider declares certified-one-step-undo. No transport handshake was captured."
+    }
+  ]
+}

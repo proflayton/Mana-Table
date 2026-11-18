@@ -16,6 +16,7 @@ namespace Mana.Table;
 internal static class AiExperimentReplay
 {
     internal const string Evaluator = "current-scoped-choice.v1";
+    internal const string LibraryAcquisitionEvaluator = "own-library-basic-acquisition.v1";
     private const int MaximumInputBytes = 16 * 1024 * 1024;
     private static readonly JsonSerializerOptions Json = new() {
         PropertyNameCaseInsensitive = true, WriteIndented = true,
@@ -41,7 +42,7 @@ internal static class AiExperimentReplay
             family = input.GetProperty("family").GetString() ?? "";
             if (string.IsNullOrWhiteSpace(family)) throw Invalid("A replay requires its declared family.");
             kind = input.GetProperty("expectation").GetProperty("kind").GetString() ?? "";
-            if (kind is not ("target-self" or "target-opponent" or "cancel" or "complete" or "admissible" or "ungraded")) throw Invalid("Unsupported replay evaluator.");
+            if (kind is not ("target-self" or "target-opponent" or "cancel" or "complete" or "admissible" or "ungraded" or "acquire-basic-lands")) throw Invalid("Unsupported replay evaluator.");
             double milliseconds = limits.GetProperty("decisionMs").GetDouble();
             int work = limits.GetProperty("workUnits").GetInt32();
             if (!double.IsFinite(milliseconds) || milliseconds <= 0 || milliseconds > uint.MaxValue - 1 || work <= 0)
@@ -137,10 +138,11 @@ internal static class AiExperimentReplay
             "target-self" => Controller(frame.State, result.Proposal) == frame.State.ViewerId,
             "target-opponent" => Controller(frame.State, result.Proposal) is { } player
                 && PlayerRelations.ForViewer(frame.State, player) == PlayerRelation.Opponent,
+            "acquire-basic-lands" => AcquiresBasicLands(frame, result.Proposal),
             _ => false
         };
         return new() { ["grade"] = !eligible ? "ungraded" : passes ? "pass" : "fail", ["eligible"] = eligible,
-            ["admissible"] = admissible, ["evaluator"] = Evaluator };
+            ["admissible"] = admissible, ["evaluator"] = kind == "acquire-basic-lands" ? LibraryAcquisitionEvaluator : Evaluator };
     }
 
     private static bool Eligible(AiDecisionFrame frame, string kind)
@@ -150,6 +152,7 @@ internal static class AiExperimentReplay
         if (kind == "admissible") return true;
         if (kind == "cancel") return frame.Allows(new CancelSelection(game, decision)) || frame.Allows(new CancelPayment(game, decision));
         if (kind == "complete") return frame.Allows(new CompleteSelection(game, decision));
+        if (kind == "acquire-basic-lands") return LibraryOpportunity(frame) is not null;
         if (kind is not ("target-self" or "target-opponent")) return false;
         bool Matches(int player) => kind == "target-self" ? player == frame.State.ViewerId
             : PlayerRelations.ForViewer(frame.State, player) == PlayerRelation.Opponent;
@@ -158,6 +161,53 @@ internal static class AiExperimentReplay
         return frame.State.Players.Any(player => !frame.Semantics.SelectedPlayers.Contains(player.Id) && Matches(player.Id)
             && frame.Allows(new SelectPlayer(game, decision, player.Id)));
     }
+
+    // This grading predicate is frozen independently of the candidate ranker.
+    // It inspects the whole original offered set, never its search slice,
+    // heuristic utility, explanation string or remaining evaluation budget.
+    private static (int Count, HashSet<int> Indices)? LibraryOpportunity(AiDecisionFrame frame)
+    {
+        if (frame.State.Viewer is null || frame.State.DecisionOwnerId != frame.State.ViewerId
+            || frame.Semantics.SelectionIsCost || frame.Semantics.Intent is DecisionIntent.Discard or DecisionIntent.Sacrifice
+            || frame.State.Decision?.Payload is not OptionsPayload { LibraryAcquisition: { } context } options
+            || context.ActorPlayerId != frame.State.ViewerId || context.LibraryOwnerId != frame.State.ViewerId
+            || context.RecipientPlayerId != frame.State.ViewerId || !context.AdditionalCostKnownAbsent)
+            return null;
+        bool supported = context.Stage switch {
+            LibraryAcquisitionStage.Direct => context.CurrentDestination is "Hand" or "Battlefield",
+            LibraryAcquisitionStage.SelectBundle => context.CurrentDestination == "Library"
+                && context.PlannedDestinations.Length == 2
+                && context.PlannedDestinations.All(destination => destination.MaximumCount == 1)
+                && context.PlannedDestinations.Any(destination => destination.Destination == "Hand")
+                && context.PlannedDestinations.Any(destination => destination.Destination == "Battlefield"),
+            LibraryAcquisitionStage.DistributeBundle => context.CurrentDestination is "Hand" or "Battlefield",
+            _ => false
+        };
+        if (!supported) return null;
+        var indices = options.Selection.Choices.Where(choice => choice.Card is { FaceDown: false } card && BasicLand(card))
+            .Select(choice => choice.Index).ToHashSet();
+        int expected = Math.Min(options.Selection.Range.Max, indices.Count);
+        if (expected <= 0 || expected < options.Selection.Range.Min
+            || !frame.Allows(new ChooseOptions(frame.State.Id, frame.State.Decision.Id,
+                [..indices.Order().Take(expected)]))) return null;
+        return (expected, indices);
+    }
+
+    private static bool BasicLand(Card card)
+    {
+        // Provider-owned type-line tokens are structural facts. Names, Oracle
+        // text, prompts and candidate reasoning have no role in this endpoint.
+        if (string.IsNullOrWhiteSpace(card.Type)) return false;
+        int separator = card.Type.IndexOfAny(['\u2014', '-']);
+        string header = separator < 0 ? card.Type : card.Type[..separator];
+        var types = header.Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+        return types.Contains("Basic", StringComparer.Ordinal) && types.Contains("Land", StringComparer.Ordinal);
+    }
+
+    private static bool AcquiresBasicLands(AiDecisionFrame frame, DecisionCommand? proposal)
+        => LibraryOpportunity(frame) is { } opportunity && proposal is ChooseOptions choice
+            && choice.Choices.Length == opportunity.Count && choice.Choices.Distinct().Count() == opportunity.Count
+            && choice.Choices.All(opportunity.Indices.Contains);
 
     private static int? Controller(GameSnapshot state, DecisionCommand? command)
     {

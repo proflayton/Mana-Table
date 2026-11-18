@@ -108,6 +108,7 @@ internal static class AiExperimentReplayChecks
         check(Grade(ungradedResult) == "ungraded" && !ungradedResult["replay"]!["eligible"]!.GetValue<bool>()
                 && ungradedResult["status"]!.ToString() == "completed",
             "An explicitly ungraded legal proposal stays visible without inventing a tactical verdict");
+        AiLibraryAcquisitionGradeChecks.Run(check);
     }
 
     private static JsonObject Job(string fixture, string expectation)

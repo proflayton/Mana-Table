@@ -36,6 +36,7 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "attachment-capabilities") AttachmentCapabilityWireChecks.Run(Check);
                 else if (group == "attachment-owned") AttachmentOwnedChecks.RunPinned(profile, Check);
                 else if (group == "ai-experiments") {
+                    LibraryAcquisitionWireChecks.Run(Check);
                     AiExperimentWorkerChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     AiExperimentReplayChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     AiExperimentNaturalChecks.Run(profile, Check);
@@ -177,6 +178,7 @@ internal static partial class HeadlessPresentationSmoke
             PendingOperationsWireChecks.Run(Check);
             AttachmentCapabilityWireChecks.Run(Check);
             AttachmentOwnedChecks.RunPinned(profile, Check);
+            LibraryAcquisitionWireChecks.Run(Check);
             AiExperimentWorkerChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             AiExperimentReplayChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             AiExperimentNaturalChecks.Run(profile, Check);

@@ -85,6 +85,27 @@ test('schema rejects registry, limits, capability and output-root changes rather
   await assert.rejects(E.plan(f.specFile, path.join(f.bin, 'output')), /outside immutable/);
 });
 
+test('library-acquisition experiment variants and independent expectation remain closed and backward compatible', t => {
+  const f = fixture(t); C.validateSpec(f.spec);
+  const candidate = structuredClone(f.spec);
+  candidate.variants.baseline.attachmentEvaluation = true;
+  candidate.variants.candidate = { factoryId: 'casual-commander.v7.library-acquisition.v1', attachmentEvaluation: true };
+  candidate.replays[0].expectation = { kind: 'acquire-basic-lands' };
+  C.validateSpec(candidate);
+  for (const change of [
+    spec => spec.variants.candidate.attachmentEvaluation = false,
+    spec => spec.variants.candidate.factoryId = 'casual-commander.v7',
+    spec => spec.variants.candidate.libraryUtilityWeight = 99,
+    spec => spec.replays[0].expectation.kind = 'take-all-cards-by-name',
+    spec => spec.replays[0].expectation.minimumUtility = 1
+  ]) { const invalid = structuredClone(candidate); change(invalid); assert.throws(() => C.validateSpec(invalid)); }
+  const natural = fixture(t, 'natural').spec;
+  natural.variants.baseline.attachmentEvaluation = true;
+  natural.variants.candidate.factoryId = 'casual-commander.v7.library-acquisition.v1';
+  C.validateSpec(natural);
+  assert.equal(C.schedule(natural, natural.decks).length, 32);
+});
+
 test('both-arm replay receipts retain paired eligibility and deterministic independent analysis', async t => {
   const f = fixture(t); await E.plan(f.specFile, f.out);
   const first = await E.run(f.out); assert.equal(first.launched, 2); assert.equal(first.report.replay.corrections, 1); assert.equal(first.report.replay.regressions, 0);
