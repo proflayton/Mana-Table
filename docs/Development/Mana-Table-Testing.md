@@ -1661,23 +1661,43 @@ composition, not natural-game completion, strategy quality, all interactions or
 human gameplay approval.
 
 The ordinary human clients retain every distinct complete accepted immutable
-playing payload from before the cast, with first-callback monotonic offsets and a
-hard512-checkpoint bound. Only adjacent byte-equivalent complete payloads with
-the same publication identity share one checkpoint; their callbacks are counted
-and actual later time gaps/final dwell remain. Fresh same-ID private faces,
-activity or execution changes remain separate checkpoints, covered by controls.
-One per-human archive stores those complete payloads once across both authored
-review viewports. Streaming byte measurement divides it into recording files
-within the unchanged64MiB file ceiling; the archive still has at most512 total
-distinct checkpoints. Its private manifest binds each part's ordinal range,
-global start/end offsets, byte length and SHA256. Playback verifies those parts
-and feeds their original global offsets into one continuous production session;
-a storage seam cannot restart the camera, card identities or announcement state.
-Round-trip controls cover equal-time seams, changed bytes, moved ordinals/offsets,
-foreign paths and attempts to exceed the total checkpoint bound. The new CI
-qualification artifact uses compression level1 for repetitive private JSON; it
-does not change the existing artifact jobs or publish these observations.
-Overflow fails evidence rather than dropping an early cast or trigger. Both
+playing payload from before the cast, with its original first-callback monotonic
+offset. The receipt callback only queues the reference/time into a64-entry pending
+journal; a separate consumer compares fresh same-identity payloads. Reference-equal
+adjacent callbacks need no comparison. Other adjacent callbacks share a checkpoint
+only when the complete serialized payload is equal; changed private faces,
+activity or execution correlations remain separate, even at the same revision.
+The consumer caches the previous comparison payload to avoid serializing both
+sides again on every duplicate. The pending journal cannot block receipt delivery.
+Overload, comparison failure or whole-stream exhaustion records an explicit
+capture fault, surfaced by the journey owner's next guard. A fault cannot become
+a passing truncated replay. Admission freezes when the rules clock stops, before
+consumer draining, persistence, display replay or cleanup.
+
+This finite fanout now has an explicit whole-stream quota of two512-checkpoint
+windows per human (1024 distinct references), at most16 storage parts and512MiB
+of serialized recording files. Two windows are the smallest page allocation that
+retains the observed513th checkpoint; these are evidence resource limits, not
+more rules work or more completion time. The generic ProjectionRecording and
+ProjectionTimeline remain limited to512 observations and64MiB per file.
+A reference quota bounds object retention, not exact process memory: payload
+shape and shared immutable structures affect RAM. Capture diagnostics report
+pending high-water, retained references, alias/duplicate callbacks, serializer
+calls/wall time, callback wall time and unretained callbacks on failure; archive
+part byte counts report the separate serialized footprint. These measurements
+do not establish CPU time, human latency or a causal explanation of older CI.
+
+One per-human archive stores complete payloads once across both authored review
+viewports. Each page is independently validated within512 observations/64MiB;
+its private manifest binds contiguous ordinals, original global timing, byte
+lengths and SHA256. Playback reads pages sequentially through one unchanged
+observation-only connection, application and display clock, validating monotonic
+scope/execution seams. It never reconstructs an oversized generic recording or
+restarts presentation at a storage boundary. Controls include the actual513th
+checkpoint, same-identity payload changes, equal-time seams, stable physical
+owners, changed bytes, foreign paths, bounded pending/aggregate failures and
+cleanup cutoff. Overflow fails evidence rather than dropping a cast or trigger.
+Both
 private windows replay through production presentation at1000x740 and1540x980
 with normal motion. The explicit `ClientSessionAuthority.ObserveOnly` composition
 validates original snapshots while owning no commands, source discovery,

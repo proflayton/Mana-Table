@@ -290,6 +290,7 @@ internal static class PolledFanoutEngineJourney
             Guard();
             File.WriteAllText(Path.Combine(directory, "private-history.json"), JsonSerializer.Serialize(history));
             clock.Complete();
+            foreach (var player in players) player.Projection.Freeze();
             var projectionWindows = players.Select(player => player.Projection.Complete()).ToArray();
             projectionReplayStarted = true;
             foreach (var player in players) {
@@ -307,6 +308,7 @@ internal static class PolledFanoutEngineJourney
         }
         finally {
             clock.Stop();
+            foreach (var player in players) player.Projection.Drain();
             // These asynchronous samples are pre-cleanup evidence, not an
             // atomic cutoff. Only the clock's credited count owns its deadline.
             evidenceSamplingStartedTimestamp = Stopwatch.GetTimestamp();
@@ -315,7 +317,7 @@ internal static class PolledFanoutEngineJourney
                 players = players.Select(player => CaptureStoppedPlayer(player.Client.State, player.Client.SourceActions.View,
                     player.Acknowledgements, player.Terminals, player.Intent?.Progress, player.Intent?.StopReason,
                     player.SourceErrors, player.SourceTrace)).ToImmutableArray(),
-                acceptedProjections = players.Select(player => player.Projection.Count == 0 ? null : player.Projection.Complete()).ToImmutableArray(),
+                acceptedProjections = players.Select(player => player.Projection.Count == 0 ? null : player.Projection.Complete(requireComplete: false)).ToImmutableArray(),
                 histories = ai.Histories, botReceipts = botPort.Receipts.ToArray(), faults = botPort.Faults.ToArray() };
             evidenceSamplingFinishedTimestamp = Stopwatch.GetTimestamp();
             foreach (var player in players) player.Port.Release.TrySetResult();
@@ -373,6 +375,7 @@ internal static class PolledFanoutEngineJourney
                 projectionContinuityVerified,
                 acceptedProjectionWindows = players.Select(player => new { player.Index, player.Projection.Count,
                     player.Projection.AcceptedCallbacks, player.Projection.IdenticalCallbacks,
+                    capture = player.Projection.Diagnostics,
                     clock = "Actual ordinary ClientSession.Changed callbacks; monotonic offsets from first captured playing frame.",
                     scope = "Viewer-private accepted observations; no presentation, pointer, camera, asset-loading or human UX timing was recorded." }),
                 runtime, launch = new { fixture = Hash(paths.Jar), derivedFixture = Hash(launch.Jar), bootstrap = "forge.api.AiReleaseFixtureEngine$PolledFanout" },
@@ -382,6 +385,7 @@ internal static class PolledFanoutEngineJourney
         if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
         void Guard() {
             clock.Check();
+            foreach (var player in players) player.Projection.ThrowIfFaulted();
         }
     }
 

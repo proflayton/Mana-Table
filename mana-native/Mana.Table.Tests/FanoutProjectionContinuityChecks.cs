@@ -30,15 +30,12 @@ internal static class FanoutProjectionContinuityChecks
             .Single(card => CardViews.Identity(card) == toothy).Counters.GetValueOrDefault("+1/+1");
         string archive = Path.Combine(path, "accepted-checkpoints");
         var archived = FanoutProjectionArchive.Write(archive, sourceRevision, window);
-        var stored = FanoutProjectionArchive.Read(archive, new(1000, 740));
         var reports = new List<object>();
         foreach (var viewport in new[] { new Point(1000, 740), new Point(1540, 980) }) {
             // Final display-only dwell is declared separately. It cannot add a
             // rules outcome or extend the actual fixture's completion budget.
             long drain = FanoutProjectionArchive.DisplayDrainTicks;
-            var recording = new ProjectionRecording(1, stored.ProviderId, stored.SourceRevision, stored.Observations,
-                new(stored.Timeline!.AcceptedAtTicks, stored.Timeline.EndTicks,
-                    new(false, 1, true, viewport.X, viewport.Y)));
+            var recording = FanoutProjectionArchive.Read(archive, viewport);
             string sizePath = Path.Combine(path, viewport.X.ToString()); Directory.CreateDirectory(sizePath);
             using var run = new ProjectionReplaySession(recording, Path.Combine(sizePath, "playback"), viewport);
             var seenAnnouncements = new Dictionary<string, object>(StringComparer.Ordinal);
