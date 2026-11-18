@@ -8,6 +8,7 @@ import forge.card.CardStateName;
 import forge.card.mana.ManaAtom;
 import forge.deck.Deck;
 import forge.game.*;
+import forge.game.ability.ApiType;
 import forge.game.event.GameEventTurnPhase;
 import forge.game.event.GameEvent;
 import forge.game.event.GameEventManaPool;
@@ -2287,6 +2288,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 captured = captureChoice(prompt, boardRevision, sourceVersion, projectedPrompt, automatedFacts);
             }
             if (!captured) return null;
+            captureAttachmentDecisionSource(prompt, projectedPrompt, automatedFacts);
         }
         if (!captureNumeric(prompt, boardRevision, sourceVersion, automatedFacts)) return null;
         if (!selection) {
@@ -2314,6 +2316,41 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return new CurrentDecisionProjection.Capture(decisionId, boardRevision, sourceVersion,
                 execution == null ? null : execution.id(), execution == null ? null : execution.step(),
                 promptFacts, automatedFacts, playerChoices, poolColors);
+    }
+
+    /** An announced casting portrait is current reading provenance, not a zone
+     * occurrence. Bind only this active Attach operation to the exact portrait
+     * already admitted in this publication; generic entity/action guards stay
+     * untouched. Old wire readers continue to see Unknown operation semantics. */
+    @SuppressWarnings("unchecked")
+    private void captureAttachmentDecisionSource(Pending prompt, Map<String, Object> projectedPrompt,
+                                                Map<String, Object> automatedFacts) {
+        if (!(prompt.input instanceof InputSelectTargets targeting) || !selectionInputCurrent(prompt)) return;
+        var ability = targeting.getSpellAbility();
+        var host = ability == null ? null : ability.getHostCard();
+        if (ability == null || ability.getApi() != ApiType.Attach || host == null || host.isFaceDown()
+                || !host.getView().canBeShownTo(viewer) || !(projectedPrompt.get("sourceCard") instanceof Map<?, ?> portrait)
+                || Boolean.TRUE.equals(portrait.get("faceDown")) || !Objects.toString(portrait.get("key"), "").isEmpty()
+                || Boolean.TRUE.equals(portrait.get("selectable"))) return;
+        String sourceId = Objects.toString(portrait.get("visualId"), "");
+        if (sourceId.isEmpty()) sourceId = Objects.toString(portrait.get("combatId"), "");
+        if (sourceId.isEmpty() || !sourceId.equals(combatIds.id(host.getView()))
+                || !(automatedFacts.get("operationId") instanceof Number active)
+                || !(automatedFacts.get("operationGraph") instanceof Map<?, ?> graph)
+                || !(graph.get("operations") instanceof List<?> nodes)) return;
+        var amended = new ArrayList<Map<String, Object>>();
+        for (var value : nodes) {
+            if (!(value instanceof Map<?, ?> node)) return;
+            var copy = new LinkedHashMap<>((Map<String, Object>) node);
+            if (Objects.equals(node.get("id"), active.intValue()) && node.get("attachment") instanceof Map<?, ?>
+                    && node.get("sources") instanceof Map<?, ?> sources && sources.get("knowledge").equals("Unknown")
+                    && sources.get("entities") instanceof List<?> entities && entities.isEmpty())
+                copy.put("attachmentSourceCardId", sourceId);
+            amended.add(copy);
+        }
+        var replacement = new LinkedHashMap<>((Map<String, Object>) graph);
+        replacement.put("operations", List.copyOf(amended));
+        automatedFacts.put("operationGraph", replacement);
     }
 
     private boolean captureNumeric(Pending prompt, long boardRevision, long sourceVersion, Map<String, Object> automatedFacts) {

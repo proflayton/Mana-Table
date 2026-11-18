@@ -225,6 +225,7 @@ final class ActionOperationProjection {
 
     private Map<String, Object> operation(int index, SpellAbility ability) {
         String effect = ActionSemantics.effect(ability);
+        var attachment = AttachmentCapabilities.describe(ability, viewer);
         // The scalar field represents a recipient quantity, not an undistributed
         // total. Distribution choices need their own future structural model.
         Integer amount = parameters(ability).keySet().stream().anyMatch(DISTRIBUTED_AMOUNTS::contains)
@@ -258,6 +259,10 @@ final class ActionOperationProjection {
                 "sources", sources, "recipients", recipients, "targets", targets,
                 "costs", committed || ability.getPayCosts() == null ? List.of() : ability.getPayCosts().getCostParts().stream().map(ActionSemantics::cost).toList(),
                 "links", List.copyOf(links.get(index)));
+        // Keep the legacy Unknown enum/knowledge on every wire, including
+        // ordinary TCP stack snapshots. New readers can admit the optional
+        // descriptor as Attach after validating this exact operation's bindings.
+        if (attachment != null) node.put("attachment", attachment);
         if (ability.getApi() == ApiType.Charm && !committed) {
             Integer maximum = integer(ability.getParamOrDefault("CharmNum", "1"));
             Integer minimum = integer(ability.getParamOrDefault("MinCharmNum", ability.getParamOrDefault("CharmNum", "1")));
