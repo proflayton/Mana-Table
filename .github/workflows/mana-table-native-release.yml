@@ -316,6 +316,8 @@ jobs:
             'engine' {
               dotnet ./dist/ci-inputs/harness/Mana.Table.Tests.dll --smoke-headless-engine --engine-jar $env:MANA_NATIVE_FIXTURE_LAUNCHER --production-engine-jar (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar') --engine-resources (Join-Path $env:MANA_NATIVE_PACKAGE 'engine') --source-revision $env:GITHUB_SHA --source-manifest dist/ci-inputs/ci-engine-manifest.json --profile dist/headless-engine-checks
               if ($LASTEXITCODE -ne 0) { throw 'Production native adapter and packaged Forge command checks failed.' }
+              dotnet ./dist/ci-inputs/harness/Mana.Table.Tests.dll --ai-library-acquisition-journey --fixture-mode bundle --engine-jar $env:MANA_NATIVE_FIXTURE_LAUNCHER --production-engine-jar (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar') --engine-resources (Join-Path $env:MANA_NATIVE_PACKAGE 'engine') --source-revision $env:GITHUB_SHA --source-manifest dist/ci-inputs/ci-engine-manifest.json --profile dist/library-acquisition-checks
+              if ($LASTEXITCODE -ne 0) { throw 'Actual baseline/candidate library acquisition continuation failed.' }
               dotnet ./dist/ci-inputs/harness/Mana.Table.Tests.dll --smoke --engine-jar (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar') --engine-resources (Join-Path $env:MANA_NATIVE_PACKAGE 'engine') --profile dist/mixed-lobby-checks
               if ($LASTEXITCODE -ne 0) { throw 'Production four-client and mixed-lobby native checks failed.' }
               $prefixPath = 'dist/mixed-lobby-checks/mixed-lobby/prefix-results.json'

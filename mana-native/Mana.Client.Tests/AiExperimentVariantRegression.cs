@@ -14,6 +14,20 @@ internal static class AiExperimentVariantRegression
             "The closed experiment registry preserves default v6 and names the attachment ablation distinctly");
         check(!ReferenceEquals(AiExperimentPolicyRegistry.Create(full), AiExperimentPolicyRegistry.Create(full)),
             "Every experiment factory request creates an independent policy instance");
+        var acquisition = new AiExperimentVariant(AiExperimentPolicyRegistry.LibraryAcquisitionFactoryId);
+        check(AiExperimentPolicyRegistry.Create(acquisition) is CasualCommanderPolicy {
+                Options: { AttachmentEvaluation: true, LibraryAcquisitionEvaluation: true } } registeredAcquisition
+                && registeredAcquisition.Descriptor.Id == AiExperimentPolicyRegistry.LibraryAcquisitionFactoryId,
+            "The versioned acquisition factory enables one experimental component with full attachment evaluation");
+        check(!ReferenceEquals(AiExperimentPolicyRegistry.Create(acquisition), AiExperimentPolicyRegistry.Create(acquisition)),
+            "Acquisition experiment seats receive independent policy instances");
+        bool unsupportedCombination = false;
+        try { AiExperimentPolicyRegistry.Create(acquisition with { AttachmentEvaluation = false }); }
+        catch (ArgumentException) { unsupportedCombination = true; }
+        check(unsupportedCombination, "The acquisition factory cannot silently combine a second attachment ablation treatment");
+        using (var acquisitionJson = JsonDocument.Parse("{\"factoryId\":\"casual-commander.v7.library-acquisition.v1\",\"attachmentEvaluation\":true}"))
+            check(AiExperimentPolicyRegistry.Parse(acquisitionJson.RootElement) == acquisition,
+                "The strict serialized acquisition identity round trips without a hidden settings override");
         foreach (string invalid in new[] {
             "{}", "null", "{\"factoryId\":\"casual-commander.v5\"}",
             "{\"factoryId\":\"casual-commander.v6\",\"attachmentEvaluation\":null}",

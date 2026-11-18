@@ -42,6 +42,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-headless-engine");
         testRun |= args.Contains("--smoke-cooperative-encounter");
         testRun |= args.Contains("--smoke-configured-simulation");
+        testRun |= args.Contains("--ai-library-acquisition-journey");
         testRun |= args.Contains("--smoke-ai-team-goldens");
         testRun |= args.Contains("--smoke-ai-resources");
         testRun |= args.Contains("--smoke-polled-mixed");
@@ -187,6 +188,10 @@ internal static class Program
             var backend = Arg("--engine") ?? "forge";
             if (backend != "forge") throw new NotSupportedException($"Engine '{backend}' is not installed. Available: forge.");
             var paths = new ForgePaths(Path.Combine(bundle, "runtime", "bin", "java.exe"), Arg("--engine-jar") ?? Path.Combine(bundle, "forge-engine.jar"), Path.Combine(bundle, "forge-res"), profile);
+            if (args.Contains("--ai-library-acquisition-journey")) {
+                AiLibraryAcquisitionJourney.RunStandaloneAsync(paths, Arg("--fixture-mode") ?? "bundle",
+                    Arg("--production-engine-jar"), Arg("--source-revision"), Arg("--source-manifest")).GetAwaiter().GetResult(); return 0;
+            }
             if (args.Contains("--smoke-cooperative-encounter")) {
                 CooperativeEncounterEngineJourney.RunStandaloneAsync(paths).GetAwaiter().GetResult(); return 0;
             }

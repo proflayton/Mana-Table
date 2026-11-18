@@ -36,9 +36,11 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "attachment-capabilities") AttachmentCapabilityWireChecks.Run(Check);
                 else if (group == "attachment-owned") AttachmentOwnedChecks.RunPinned(profile, Check);
                 else if (group == "ai-experiments") {
+                    AiFixtureIsolationChecks.Run(profile, Check);
                     LibraryAcquisitionWireChecks.Run(Check);
                     AiExperimentWorkerChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     AiExperimentReplayChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+                    AiLibraryAcquisitionOwnedChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     AiExperimentNaturalChecks.Run(profile, Check);
                 }
                 else if (group == "engine-diagnostics") ForgeDiagnosticsProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
@@ -178,9 +180,11 @@ internal static partial class HeadlessPresentationSmoke
             PendingOperationsWireChecks.Run(Check);
             AttachmentCapabilityWireChecks.Run(Check);
             AttachmentOwnedChecks.RunPinned(profile, Check);
+            AiFixtureIsolationChecks.Run(profile, Check);
             LibraryAcquisitionWireChecks.Run(Check);
             AiExperimentWorkerChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             AiExperimentReplayChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+            AiLibraryAcquisitionOwnedChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             AiExperimentNaturalChecks.Run(profile, Check);
             BlockingCapacityWireChecks.Run(Check);
             BlockRepairWireChecks.Run(Check);

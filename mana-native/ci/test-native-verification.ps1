@@ -182,16 +182,22 @@ try {
     $checks++
     Reset-Fixture 'engine'
     & $runBlock | Out-Null
-    if ($fixture.Calls.Count -ne 3) { throw 'The headless engine, four-client mixed-lobby and polled campaign journeys must each run exactly once.' }
+    if ($fixture.Calls.Count -ne 4) { throw 'The headless engine, actual acquisition bundle, four-client mixed-lobby and polled campaign journeys must each run exactly once.' }
     Assert-Arguments $fixture.Calls[0] @('./dist/ci-inputs/harness/Mana.Table.Tests.dll', '--smoke-headless-engine', '--engine-jar', $env:MANA_NATIVE_FIXTURE_LAUNCHER,
         '--production-engine-jar', (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar'), '--engine-resources', (Join-Path $env:MANA_NATIVE_PACKAGE 'engine'),
         '--source-revision', $env:GITHUB_SHA, '--source-manifest', 'dist/ci-inputs/ci-engine-manifest.json', '--profile', 'dist/headless-engine-checks')
-    Assert-Arguments $fixture.Calls[1] @('./dist/ci-inputs/harness/Mana.Table.Tests.dll', '--smoke', '--engine-jar',
+    Assert-Arguments $fixture.Calls[1] @('./dist/ci-inputs/harness/Mana.Table.Tests.dll', '--ai-library-acquisition-journey', '--fixture-mode', 'bundle',
+        '--engine-jar', $env:MANA_NATIVE_FIXTURE_LAUNCHER, '--production-engine-jar', (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar'),
+        '--engine-resources', (Join-Path $env:MANA_NATIVE_PACKAGE 'engine'), '--source-revision', $env:GITHUB_SHA,
+        '--source-manifest', 'dist/ci-inputs/ci-engine-manifest.json', '--profile', 'dist/library-acquisition-checks')
+    Assert-Arguments $fixture.Calls[2] @('./dist/ci-inputs/harness/Mana.Table.Tests.dll', '--smoke', '--engine-jar',
         (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar'), '--engine-resources', (Join-Path $env:MANA_NATIVE_PACKAGE 'engine'),
         '--profile', 'dist/mixed-lobby-checks')
-    Assert-Arguments $fixture.Calls[2] @('./dist/ci-inputs/harness/Mana.Table.Tests.dll', '--qualify-mixed-game', '--mixed-game-mode', 'polled-background',
+    Assert-Arguments $fixture.Calls[3] @('./dist/ci-inputs/harness/Mana.Table.Tests.dll', '--qualify-mixed-game', '--mixed-game-mode', 'polled-background',
         '--campaign-profile', 'smoke', '--engine-jar', (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar'),
         '--engine-resources', (Join-Path $env:MANA_NATIVE_PACKAGE 'engine'), '--profile', 'dist/polled-full-game-checks')
+    $profiles = @($fixture.Calls | ForEach-Object { $index = [Array]::IndexOf([string[]]$_, '--profile'); if ($index -lt 0) { throw 'Every native engine check needs an explicit profile.' }; $_[$index + 1] })
+    if (@($profiles | Select-Object -Unique).Count -ne 4) { throw 'Native engine checks must retain four independent evidence profiles.' }
     $checks++
     foreach ($variant in @('missing', 'empty', 'oversized', 'malformed', 'failure', 'not-continued', 'string-continued',
         'wrong-scenario', 'wrong-scope', 'ux-claim', 'outcome-claim', 'qualification-claim', 'missing-failure')) {
@@ -199,14 +205,14 @@ try {
         $fixture.Prefix = $variant
         $rejected = $false
         try { & $runBlock | Out-Null } catch { $rejected = $true }
-        if (-not $rejected -or $fixture.Calls.Count -ne 2) { throw "The mixed-lobby gate accepted invalid prefix evidence: $variant" }
+        if (-not $rejected -or $fixture.Calls.Count -ne 3) { throw "The mixed-lobby gate accepted invalid prefix evidence: $variant" }
         $checks++
     }
     foreach ($variant in @('passed','time-budget','natural-outcome')) {
         Reset-Fixture 'engine'
         $fixture.Campaign = $variant
         & $runBlock | Out-Null
-        if ($fixture.Calls.Count -ne 3) { throw "The campaign gate did not accept valid bounded metadata: $variant" }
+        if ($fixture.Calls.Count -ne 4) { throw "The campaign gate did not accept valid bounded metadata: $variant" }
         $checks++
     }
     $invalidCampaigns = @('wrong-profile','wrong-manifest-mode','wrong-result-mode','missing-failure','failure','unknown-stop','mechanical-stop',
@@ -219,15 +225,15 @@ try {
         $fixture.Campaign = $variant
         $rejected = $false
         try { & $runBlock | Out-Null } catch { $rejected = $true }
-        if (-not $rejected -or $fixture.Calls.Count -ne 3) { throw "The polled campaign gate accepted invalid metadata: $variant" }
+        if (-not $rejected -or $fixture.Calls.Count -ne 4) { throw "The polled campaign gate accepted invalid metadata: $variant" }
         $checks++
     }
     foreach ($suite in @('presentation', 'engine')) {
-        $count = if ($suite -ceq 'presentation') { 4 } else { 3 }
+        $count = 4
         for ($failAt = 1; $failAt -le $count; $failAt++) {
             Reset-Fixture $suite $failAt
             $rejected = $false
-            try { & $runBlock | Out-Null } catch { $rejected = $_.Exception.Message -cmatch '^(Native check failed:|Production native adapter and packaged Forge command checks failed\.|Production four-client and mixed-lobby native checks failed\.|Default-polled/background-AI campaign smoke failed\.)' }
+            try { & $runBlock | Out-Null } catch { $rejected = $_.Exception.Message -cmatch '^(Native check failed:|Production native adapter and packaged Forge command checks failed\.|Actual baseline/candidate library acquisition continuation failed\.|Production four-client and mixed-lobby native checks failed\.|Default-polled/background-AI campaign smoke failed\.)' }
             if (-not $rejected -or $fixture.Calls.Count -ne $failAt) { throw "$suite must stop at failed command $failAt." }
             $checks++
         }

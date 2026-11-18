@@ -8,6 +8,7 @@ import forge.game.player.LibraryAcquisitionOffer;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
+import forge.player.PlayerControllerHuman;
 import org.testng.annotations.Test;
 
 import java.nio.file.Path;
@@ -61,14 +62,22 @@ public class LibraryAcquisitionOfferTest {
             assertNull(fixture.offer(repeat, ZoneType.Library, 2));
             var coupled = fixture.ability("Cultivate"); coupled.getSubAbility().getMapParams().put("UnlessCost", "1");
             assertNull(fixture.offer(coupled, ZoneType.Library, 2));
+            var childCost = fixture.ability("Cultivate"); childCost.getSubAbility().setPayCosts(new forge.game.cost.Cost("1", false));
+            assertNull(fixture.offer(childCost, ZoneType.Library, 2));
             var altered = fixture.ability("Cultivate"); altered.getSubAbility().getSubAbility().getMapParams().put("Destination", "Exile");
             assertNull(fixture.offer(altered, ZoneType.Library, 2));
             var incomplete = fixture.ability("Cultivate"); incomplete.getSubAbility().setSubAbility(null);
             assertNull(fixture.offer(incomplete, ZoneType.Library, 2));
+            var cyclic = fixture.ability("Cultivate"); cyclic.getSubAbility().setParent(cyclic.getSubAbility());
+            assertNull(fixture.offer(cyclic.getSubAbility(), ZoneType.Battlefield, 1), "A cyclic parent walk cannot exceed the bounded recognizer");
             assertNull(LibraryAcquisitionOffer.create(fixture.actor(), fixture.opponent(), ZoneType.Library, List.of(ZoneType.Library), original, fixture.cards, 2));
             assertNull(LibraryAcquisitionOffer.create(fixture.opponent(), fixture.opponent(), ZoneType.Library, List.of(ZoneType.Library), original, fixture.cards, 2));
             assertNull(LibraryAcquisitionOffer.create(fixture.actor(), fixture.actor(), ZoneType.Library, List.of(ZoneType.Graveyard), original, fixture.cards, 2));
             assertNull(fixture.offer(original, ZoneType.Library, 3));
+            var foreign = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Plains"), fixture.opponent());
+            fixture.opponent().getZone(ZoneType.Library).add(foreign);
+            assertNull(LibraryAcquisitionOffer.create(fixture.actor(), fixture.actor(), ZoneType.Library, List.of(ZoneType.Library), original,
+                    new CardCollection(List.of(fixture.cards.get(0), foreign)), 2), "Actual library zone ownership defeats misleading card/control metadata");
             var valid = fixture.offer(original, ZoneType.Library, 2); assertNotNull(valid);
             original.getHostCard().addRemembered(fixture.cards.get(0));
             assertNull(fixture.offer(original, ZoneType.Library, 2), "A new bundle cannot borrow preexisting remembered occurrences");
@@ -81,6 +90,40 @@ public class LibraryAcquisitionOfferTest {
             var moved = fixture.cards.get(0); fixture.actor().getZone(ZoneType.Library).remove(moved); fixture.actor().getZone(ZoneType.Hand).add(moved);
             assertFalse(fresh.matches(fixture.actor(), fixture.cards.stream().map(Card::getView).toList()), "A moved option cannot retain its earlier library context");
             assertNull(fixture.offer(fixture.ability("Farseek"), ZoneType.Battlefield, 1));
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void nestedCallbacksAndExceptionsRestoreOnlyTheExactLiveScopedOffer() throws Exception {
+        try (var fixture = new Fixture("library-offer-scope")) {
+            var controller = (PlayerControllerHuman)fixture.actor().getController();
+            var originalGui = controller.getGui();
+            var ability = fixture.ability("Farseek");
+            var entries = new java.util.concurrent.atomic.AtomicInteger();
+            var stale = new java.util.concurrent.atomic.AtomicReference<LibraryAcquisitionOffer>();
+            var failure = new IllegalStateException("Controlled nested acquisition callback failure");
+            controller.setGui((forge.gui.interfaces.IGuiGame)java.lang.reflect.Proxy.newProxyInstance(
+                    forge.gui.interfaces.IGuiGame.class.getClassLoader(), new Class<?>[] { forge.gui.interfaces.IGuiGame.class }, (proxy, method, arguments) -> {
+                        if (method.getName().equals("chooseSingleEntityForEffect")) {
+                            int entry = entries.incrementAndGet();
+                            if (entry == 2) { assertNull(controller.getLibraryAcquisitionOffer(), "An unsupported nested callback cannot inherit its parent's provenance"); return null; }
+                            assertEquals(entry, 1);
+                            var outer = controller.getLibraryAcquisitionOffer(); assertNotNull(outer); stale.set(outer);
+                            assertTrue(outer.matches(fixture.actor(), fixture.cards.stream().map(Card::getView).toList()));
+                            assertNull(controller.chooseSingleCardForZoneChange(ZoneType.Exile, List.of(ZoneType.Library), ability,
+                                    fixture.cards, null, "Unrelated nested text", true, fixture.actor()));
+                            assertSame(controller.getLibraryAcquisitionOffer(), outer, "Completing the nested callback restores its live outer lease");
+                            throw failure;
+                        }
+                        try { return method.invoke(originalGui, arguments); }
+                        catch (java.lang.reflect.InvocationTargetException error) { throw error.getCause(); }
+                    }));
+            try {
+                assertSame(expectThrows(IllegalStateException.class, () -> controller.chooseSingleCardForZoneChange(
+                        ZoneType.Battlefield, List.of(ZoneType.Library), ability, fixture.cards, null, "Arbitrary prompt", true, fixture.actor())), failure);
+            } finally { controller.setGui(originalGui); }
+            assertEquals(entries.get(), 2); assertNull(controller.getLibraryAcquisitionOffer());
+            assertNotNull(stale.get(), "The test retained the old read-only value; it cannot reinstall the controller's retired lease");
         }
     }
 
