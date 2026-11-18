@@ -11,6 +11,9 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
+    // StackWorkloads emits JSON object keys; this local navigation key cannot
+    // identify a reported cohort or grant any engine action.
+    private const string AllWorkloadsKey = "all-current-stack-workloads";
     private string expandedStackWorkload = "";
     private GameSnapshot? workloadSnapshot;
     private ImmutableArray<StackWorkload> cachedWorkloads = [];
@@ -48,7 +51,8 @@ internal sealed partial class TableApplication
 
     private void OpenStackWorkload(string key)
     {
-        if (match == null || !CurrentStackWorkloads.Any(group => group.Key == key)) return;
+        if (match == null || CurrentStackWorkloads.IsEmpty
+            || key != AllWorkloadsKey && !CurrentStackWorkloads.Any(group => group.Key == key)) return;
         expandedStackWorkload = key;
     }
 
@@ -57,31 +61,58 @@ internal sealed partial class TableApplication
         var state = match!;
         var groups = CurrentStackWorkloads;
         if (state.Decision is { Payload: not PriorityPayload }) expandedStackWorkload = "";
+        if (expandedStackWorkload == AllWorkloadsKey) { DrawStackWorkloadOverview(groups); return; }
         var expanded = groups.FirstOrDefault(group => group.Key == expandedStackWorkload);
         if (expanded != null) { DrawStackWorkloadFan(expanded); return; }
         expandedStackWorkload = "";
-        var visible = groups.Where(group => !group.IsNext).Take(2).ToArray();
-        int shown = visible.Length + 1;
         int primaryHeight = MeasureStudyStackHeight(area.Width);
-        // Repeated work retains exactly the same current effect surface as a
-        // single item. Its count opens that cohort; only OTHER cohorts need
-        // source rows below it. Never repeat its complete source/effect row.
         DrawStudyStackEffect(new(area.X, area.Y, area.Width, primaryHeight));
-        int headingY = area.Y + primaryHeight + 12;
-        canvas.Text(state.Stack.Length + " pending · by source", area.X, headingY, Muted, .55f, area.Width - 110, 1);
+        var bar = new Rectangle(area.X, area.Y + primaryHeight + 12, area.Width, MeasureStackWorkloadBarHeight(area.Width));
+        PaintControlSurface("stack-workload-overview", bar, new(17, 29, 36), Muted * .55f);
+        canvas.Text(StackWorkloadSummary, bar.X + 12, bar.Y + 6, Ink, .55f, bar.Width - 24, 80, true);
+        hits.Add(new("stack-workload-overview", Scope, bar, new MatchIntent.OpenStackWorkload(AllWorkloadsKey)));
+    }
+
+    private string StackWorkloadSummary => match!.Stack.Length + " pending · " + CurrentStackWorkloads.Length + " effects";
+
+    private int MeasureStackWorkloadBarHeight(int width) => Math.Max(30,
+        canvas.TextSize(StackWorkloadSummary, .55f, width - 24, 80, true).Y + 12);
+
+    private int MeasureStackWorkloadsHeight(int width) => MeasureStudyStackHeight(width) + 12 + MeasureStackWorkloadBarHeight(width);
+
+    private void DrawStackWorkloadOverview(ImmutableArray<StackWorkload> groups)
+    {
+        var visible = groups.Take(3).ToArray();
+        int shown = visible.Length, columns = Math.Min(2, shown);
+        const int width = 790, padding = 14, gap = 12;
+        int rowWidth = (width - padding * 2 - gap * (columns - 1)) / columns;
+        var measured = visible.Select(group => MeasureStackWorkloadRow(group, rowWidth)).ToArray();
+        int headingHeight = canvas.TextSize(StackWorkloadSummary, .8f, width - padding * 2, 80, true).Y;
+        const string instruction = "Grouped references · numbers are actual stack positions";
+        int instructionHeight = canvas.TextSize(instruction, .53f, width - padding * 2, 80).Y;
+        int contentY = 126 + padding + headingHeight + 6 + instructionHeight + 12;
+        int contentHeight = 0;
+        for (int row = 0; row < shown; row += columns)
+            contentHeight += measured.Skip(row).Take(columns).Max(item => item.Height) + gap;
+        var surface = new Rectangle(190, 126, width, contentY - 126 + contentHeight + 42 + padding);
+        canvas.Panel(surface, new(12, 23, 31), Gold * .55f, 6);
+        hits.Add(new("stack-workload-overview-surface", Scope, surface, new UiIntent.Block(InteractionScopeKind.Current), ShowPointer: false));
+        canvas.Text(StackWorkloadSummary, surface.X + padding, surface.Y + padding, Gold, .8f, width - padding * 2, 80, true);
+        canvas.Text(instruction, surface.X + padding, surface.Y + padding + headingHeight + 6,
+            Muted, .53f, width - padding * 2, 80);
         if (groups.Length > shown)
-            Button("stack-all-sources", "+" + (groups.Length - shown) + " sources", area.Right - 106, headingY, 106,
-                new MatchIntent.OpenStack(), height: 25);
-        int y = headingY + StackWorkloadHeadingHeight(area.Width);
-        bool columns = visible.Length == 2 && area.Width >= 520;
-        int rowWidth = columns ? (area.Width - 12) / 2 : area.Width;
+            Button("stack-all-sources", "+" + (groups.Length - shown) + " effects", surface.X + padding,
+                surface.Bottom - padding - 42, 150, new MatchIntent.OpenStack(), height: 42);
+        Button("stack-workload-close", "Back to table", surface.Right - padding - 150, surface.Bottom - padding - 42,
+            150, new MatchIntent.CloseStackWorkload(), height: 42);
+        int y = contentY;
         for (int index = 0; index < visible.Length; index++) {
             var group = visible[index];
-            var row = MeasureStackWorkloadRow(group, rowWidth);
+            var row = measured[index];
             var first = group.First;
-            var bounds = new Rectangle(area.X + (columns ? index * (rowWidth + 12) : 0), y, rowWidth, row.Height);
+            var bounds = new Rectangle(surface.X + padding + index % columns * (rowWidth + gap), y, rowWidth, row.Height);
             canvas.Panel(bounds, new(17, 29, 36), Muted * .55f, 3);
-            var art = new Rectangle(bounds.X + 10, bounds.Y + 10, 42, 37);
+            var art = new Rectangle(bounds.X + 10, bounds.Y + 10, 42, first.Item.Ability ? 37 : 59);
             PaintWorkloadArt(first.Item, art);
             var count = new Rectangle(bounds.Right - row.CountWidth - 10, bounds.Y + 10, row.CountWidth, row.CountHeight);
             canvas.Rounded(count, new(13, 25, 29), 6);
@@ -107,20 +138,8 @@ internal sealed partial class TableApplication
                 PositionBounds = position, Name = first.Item.Name, Controller = row.Controller, EffectPreview = row.EffectPreview
             });
             PaintStackArrival(first.Item, bounds);
-            if (!columns) y = bounds.Bottom + 8;
+            if (index % columns == columns - 1) y += measured.Skip(index - columns + 1).Take(columns).Max(item => item.Height) + gap;
         }
-    }
-
-    private int MeasureStackWorkloadsHeight(int width)
-    {
-        var rows = CurrentStackWorkloads.Where(group => !group.IsNext).Take(2).ToArray();
-        bool columns = rows.Length == 2 && width >= 520;
-        int rowWidth = columns ? (width - 12) / 2 : width;
-        int height = rows.Length == 0 ? 0 : columns
-            ? rows.Max(group => MeasureStackWorkloadRow(group, rowWidth).Height)
-            : rows.Sum(group => MeasureStackWorkloadRow(group, rowWidth).Height) + (rows.Length - 1) * 8;
-        return MeasureStudyStackHeight(width) + 12 + StackWorkloadHeadingHeight(width)
-            + height;
     }
 
     private Point MeasureStackWorkloadCount(StackWorkload group)
@@ -129,9 +148,6 @@ internal sealed partial class TableApplication
         int width = Math.Max(54, canvas.TextWidth(count, .82f, true) + 16);
         return new(width, Math.Max(30, canvas.TextSize(count, .82f, width, 80, true).Y + 8));
     }
-
-    private int StackWorkloadHeadingHeight(int width) => Math.Max(25,
-        canvas.TextSize(match!.Stack.Length + " pending · by source", .55f, width - 110, 1).Y + 5);
 
     private static string WorkloadKind(StackItem item) => item.Kind == StackActionKind.TriggeredAbility ? "triggers"
         : item.Ability ? "ability" : "spell";
@@ -158,7 +174,8 @@ internal sealed partial class TableApplication
         }
         int effectHeight = canvas.TextSize(preview, .52f, width - 20, 80).Y;
         int positionHeight = canvas.TextSize("First at #" + first.Position + " · " + WorkloadKind(first.Item), .48f, width - 20, 80).Y;
-        int height = 10 + Math.Max(Math.Max(37, countHeight), nameHeight + 3 + controllerHeight) + 6 + effectHeight + 4 + positionHeight + 10;
+        int height = 10 + Math.Max(Math.Max(first.Item.Ability ? 37 : 59, countHeight), nameHeight + 3 + controllerHeight)
+            + 6 + effectHeight + 4 + positionHeight + 10;
         return new(height, nameHeight, controllerHeight, effectHeight, positionHeight, countWidth, countHeight, controller, preview);
     }
 

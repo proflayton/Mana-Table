@@ -76,16 +76,24 @@ internal sealed class DrawTriggersSmoke : ITableAutomation
             && (window == null || lab.State.Viewer!.Zones.SelectMany(zone => zone.Cards).All(card => view.Art(card) != null)), () => {
             lab.AdvanceTo(1); view.Accept(lab.State);
         });
-        Wait(() => view.Loaded && view.StackWorkloads.Count == 2 && view.Hits.Any(hit => hit.Id == "stack-resolution-arm")
+        Wait(() => view.Loaded && view.StackWorkloads.Count == 1 && view.Hits.Any(hit => hit.Id == "stack-workload-overview")
             && (window == null || lab.State.Viewer!.Zones.SelectMany(zone => zone.Cards).All(card => view.Art(card) != null)), () => {
+            Check(view.StackWorkloads.Single().IsNext && WorkloadGeometryFits(),
+                "The default workload keeps one complete current effect and a measured queue bar clear of response controls");
+            var bar = view.Hits.Single(hit => hit.Id == "stack-workload-overview");
+            Check(!view.Activate(bar with { Intent = new MatchIntent.OpenStackWorkload("unreported-cohort") }),
+                "A forged unknown cohort intent cannot reuse the current queue-bar hit");
+            Capture("00-current-effect-collapsed-queue"); MoveHit(bar.Id);
+        }); Click();
+        Wait(() => view.StackWorkloads.Count == 2 && view.Hits.Any(hit => hit.Id == "stack-workload-overview-surface"), () => {
             var groups = view.StackWorkloads;
             Check(groups.SelectMany(group => group.MemberIds).Distinct().Count() == 71
                 && groups.Select(group => group.MemberIds.Length).Order().SequenceEqual([35, 36])
                 && groups.Count(group => group.IsNext) == 1 && groups.Single(group => group.IsNext).MemberIds[0] == lab.State.Stack[0].Id
                 && groups.Single(group => group.IsNext).Positions.Take(3).SequenceEqual([1, 3, 5]),
                 "Source piles retain all 71 real interleaved occurrences and their actual positions while exactly one pile marks the next stack member");
-            Check(WorkloadGeometryFits() && view.Match!.Stack.Length == 71,
-                "The current effect and other source cohorts keep their actual text inside separate measured regions, inside the workspace and clear of response controls");
+            Check(WorkloadGeometryFits(overview: true) && view.Match!.Stack.Length == 71 && lab.StageIndex == 1,
+                "Opening the opaque source overview keeps every cohort's actual text inside separate measured regions without spending priority");
             retainedPile = view.Hits.Single(hit => hit.Id == "stack-workload:draw-trigger-0");
             Capture("01-interleaved-source-piles"); MoveHit(retainedPile.Id);
         });
@@ -103,7 +111,11 @@ internal sealed class DrawTriggersSmoke : ITableAutomation
             Check(lab.StageIndex == 1, "A deeper fanned member remains read-only and identifies the exact current occurrence rather than choosing a trigger");
             Capture("04-member-41-reading"); MoveHit("stack-workload-close");
         }); Click();
-        Wait(() => view.StackWorkloads.Count == 2 && view.Hits.Any(hit => hit.Id == "stack-resolution-arm"), () => MoveHit("stack-resolution-arm")); Click();
+        Wait(() => view.StackWorkloads.Count == 1 && view.Hits.Any(hit => hit.Id == "stack-resolution-arm"), () => {
+            Check(view.Hits.Any(hit => hit.Id == "stack-workload-overview") && !view.Hits.Any(hit => hit.Id == "stack-workload-overview-surface"),
+                "Closing an exact-member fan restores the single current effect and collapsed queue");
+            MoveHit("stack-resolution-arm");
+        }); Click();
         Wait(() => view.ResolvingCapturedStack && view.Hits.Any(hit => hit.Id == "stack-resolution-stop"), () => {
             Check(view.StackResolutionRemaining > 0 && !view.Hits.Any(hit => hit.Id == "stack-resolution-arm"),
                 "Resolve these keeps one stable Take control action and a captured remaining workload instead of a flashing passing status");
@@ -155,31 +167,39 @@ internal sealed class DrawTriggersSmoke : ITableAutomation
         Wait(() => true, () => Move(new(mouse.X, mouse.Y)));
     }
     private void Check(bool condition, string description) { if (!condition) throw new InvalidOperationException(description); checks.Add(description); }
-    private bool WorkloadGeometryFits()
+    private bool WorkloadGeometryFits(bool overview = false)
     {
         var drawing = view.Frame!.Drawing;
         var texts = drawing.Commands.OfType<DrawCommand.Text>().ToArray();
         var counts = drawing.Commands.OfType<DrawCommand.CenterText>().ToArray();
         var metrics = new TextMetrics();
         var response = view.Hits.Where(hit => hit.Id is "confirm" or "stack-resolution-arm" or "stack-resolution-stop").ToArray();
+        var workspace = overview ? view.Hits.Single(hit => hit.Id == "stack-workload-overview-surface").Bounds : view.StudyAttentionBounds;
         foreach (var group in view.StackWorkloads) {
-            if (!view.StudyAttentionBounds.Contains(group.Bounds) || response.Any(hit => hit.Bounds.Intersects(group.Bounds))) return false;
+            if (!workspace.Contains(group.Bounds)) throw new InvalidOperationException("Workload outside workspace: " + group.Name);
+            if (response.Any(hit => hit.Bounds.Intersects(group.Bounds))) throw new InvalidOperationException("Workload covers response: " + group.Name);
             Rectangle[] regions = [group.NameBounds, group.ControllerBounds, group.EffectBounds, group.PositionBounds, group.CountBounds];
-            if (regions.Any(region => !group.Bounds.Contains(region))) return false;
+            if (regions.Any(region => !group.Bounds.Contains(region))) throw new InvalidOperationException("Workload text region outside card: " + group.Name);
             for (int first = 0; first < regions.Length; first++)
             for (int second = first + 1; second < regions.Length; second++)
-                if (regions[first].Intersects(regions[second])) return false;
-            foreach (var region in regions.Take(4)) {
-                var painted = texts.Where(text => region.Contains(text.X, text.Y)).ToArray();
-                if (painted.Length != 1) return false;
-                var text = painted[0];
+                if (regions[first].Intersects(regions[second])) throw new InvalidOperationException("Workload regions overlap: " + group.Name + " / " + first + " / " + second);
+            var item = view.Match!.Stack.Single(entry => entry.Id == group.MemberIds[0]);
+            string kind = item.Kind == StackActionKind.TriggeredAbility ? "triggers" : item.Ability ? "ability" : "spell";
+            string[] values = [group.Name, group.Controller, group.EffectPreview,
+                overview ? "First at #" + group.Positions[0] + " · " + kind : "Next to resolve"];
+            for (int index = 0; index < values.Length; index++) {
+                var region = regions[index];
+                // Earlier board text remains in the draw list underneath the
+                // opaque overview. Inspect this surface's actual owned text.
+                var text = texts.LastOrDefault(text => text.Value == values[index] && region.Contains(text.X, text.Y));
+                if (text == null) throw new InvalidOperationException("Workload text missing: " + values[index]);
                 var size = metrics.TextSize(text.Value ?? "", text.Size, text.Width, text.MaxLines, text.Bold, drawing.TextScale);
-                if (!region.Contains(new Rectangle(text.X, text.Y, size.X, size.Y))) return false;
+                if (!region.Contains(new Rectangle(text.X, text.Y, size.X, size.Y))) throw new InvalidOperationException("Workload glyphs overflow: " + text.Value);
             }
             var count = counts.SingleOrDefault(text => text.Bounds == group.CountBounds && text.Value == "× " + group.MemberIds.Length);
-            if (count == null) return false;
+            if (count == null) throw new InvalidOperationException("Workload count missing: " + group.Name);
             var countSize = metrics.TextSize(count.Value!, count.Size, count.Bounds.Width, 1, count.Bold, drawing.TextScale);
-            if (countSize.X > count.Bounds.Width || countSize.Y > count.Bounds.Height) return false;
+            if (countSize.X > count.Bounds.Width || countSize.Y > count.Bounds.Height) throw new InvalidOperationException("Workload count glyphs overflow: " + group.Name);
         }
         return true;
     }
