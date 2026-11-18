@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -86,6 +87,13 @@ internal static class AiExperimentWorker
             if (status == null || !Statuses.Contains(status) || payload["started"] is not JsonValue
                 || payload["criticalSafetyFailure"] is not JsonValue)
                 throw new InvalidDataException("The experiment worker produced an incomplete result.");
+            if (payload["details"] == null) payload["details"] = new JsonObject();
+            payload["details"]!.AsObject()["runtimeEnvironment"] = new JsonObject {
+                ["framework"] = RuntimeInformation.FrameworkDescription, ["os"] = RuntimeInformation.OSDescription,
+                ["architecture"] = RuntimeInformation.ProcessArchitecture.ToString(),
+                ["processorCount"] = Environment.ProcessorCount,
+                ["identityScope"] = "Application/input bytes and launchers are hash-pinned; shared runtime libraries and OS are version-observed, not a hermetic image."
+            };
             foreach (var field in payload.ToArray()) {
                 if (identity.ContainsKey(field.Key)) throw new InvalidDataException("Worker payload cannot replace reservation identity.");
                 identity[field.Key] = field.Value?.DeepClone();

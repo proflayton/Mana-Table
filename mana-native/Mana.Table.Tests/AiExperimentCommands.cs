@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace Mana.Table;
 
@@ -28,7 +29,9 @@ internal static class AiExperimentCommands
         string input = Argument(args, flag);
         string script = Path.Combine(AppContext.BaseDirectory, "ExperimentTools", "ai-experiment.cjs");
         if (!File.Exists(script)) throw new FileNotFoundException("Build the complete experiment harness, including its coordinator tools.", script);
-        var start = new ProcessStartInfo("node") { UseShellExecute = false, CreateNoWindow = true };
+        var start = new ProcessStartInfo("node") { UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardOutput = true, RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
         start.ArgumentList.Add(script); start.ArgumentList.Add(operation); start.ArgumentList.Add(input);
         if (operation == "plan") {
             start.ArgumentList.Add("--profile"); start.ArgumentList.Add(Argument(args, "--profile"));
@@ -39,8 +42,23 @@ internal static class AiExperimentCommands
             }
         }
         using var process = Process.Start(start) ?? throw new IOException("Could not start the experiment coordinator.");
+        var output = ForwardAsync(process.StandardOutput, Console.Out);
+        var errors = ForwardAsync(process.StandardError, Console.Error);
         process.WaitForExit();
+        Task.WhenAll(output, errors).GetAwaiter().GetResult();
         return process.ExitCode;
+    }
+
+    private static async Task ForwardAsync(StreamReader source, TextWriter destination)
+    {
+        var buffer = new char[2048];
+        int retained = 0, read;
+        while ((read = await source.ReadAsync(buffer)) != 0) {
+            int count = Math.Min(read, Math.Max(0, 32768 - retained));
+            if (count > 0) await destination.WriteAsync(buffer.AsMemory(0, count));
+            retained += count;
+        }
+        await destination.FlushAsync();
     }
 
     internal static string Argument(string[] args, string name) => Optional(args, name)
