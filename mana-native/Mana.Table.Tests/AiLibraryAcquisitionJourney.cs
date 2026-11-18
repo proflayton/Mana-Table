@@ -231,6 +231,12 @@ internal static class AiLibraryAcquisitionJourney
             var arrived = zoneEvents.Select(entry => entry.Impact!.CardId ?? entry.CardId).OfType<string>().Where(id => id.Length > 0).ToHashSet(StringComparer.Ordinal);
             int expectedHand = candidate && (bundle || fixtureMode == "direct-hand") ? 1 : 0;
             int expectedField = candidate && (bundle || fixtureMode == "direct-battlefield") ? 1 : 0;
+            Write("pre-assertion-consequence.json", new {
+                factoryId, fixtureMode, sourceId, sourceExecution, rootExecutions, resolved,
+                beforeHand, beforeField, beforeHandIds, beforeFieldIds,
+                expectedHand, expectedField, newHand, newField, arrived,
+                zoneEvents, allObservedActivity = events.Values.OrderBy(entry => entry.Id).ToArray(), finalOwnedState = final
+            });
             check(after.Zone("Hand").Count - beforeHand == expectedHand && after.Zone("Battlefield").Count - beforeField == expectedField
                 && newHand.Count == expectedHand && newField.Count == expectedField,
                 "The actual source resolution changed the focal hand and battlefield by its declared acquisition counts");
