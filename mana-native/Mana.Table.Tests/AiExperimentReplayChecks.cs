@@ -16,7 +16,7 @@ internal static class AiExperimentReplayChecks
 
     internal static async Task RunAsync(string profile, Action<bool, string> check)
     {
-        string output = Path.Combine(profile, "experiment-replay-checks");
+        string output = Path.GetFullPath(Path.Combine(profile, "experiment-replay-checks"));
         Directory.CreateDirectory(output);
         int sequence = 0;
         Task<JsonObject> Run(JsonObject job, JsonElement? limits = null)
