@@ -249,7 +249,7 @@ internal static class AiCombatContextRegression
     private static async Task<AiDecisionReplayResult> Forecast(GameSnapshot state, long seed, AiTurnPlan? plan = null, int work = 3436)
     {
         var frame = new AiDecisionFrame(state);
-        var result = await AiDecisionReplay.EvaluateAsync(new(1, "authored-staged-damage", "casual-commander.v5", state,
+        var result = await AiDecisionReplay.EvaluateAsync(new(1, "authored-staged-damage", "casual-commander.v6", state,
             DecisionActionDomain.None, new() { EpisodeId = "authored-staged-declaration" }, new([], []), seed) {
                 RemainingTime = TimeSpan.FromSeconds(5), RemainingWork = work, Plan = plan, PlanVersion = plan?.Version ?? 0
             }, new CasualCommanderPolicy());

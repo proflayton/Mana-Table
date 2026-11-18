@@ -293,6 +293,10 @@ public static class CasualActionAssessment
                         if (prevented.Status != CasualAssessmentStatus.Estimated) return prevented;
                         value += prevented.Value; break;
                     case ActionEffectKind.Bounce when card != null: value -= sign * Worth(card) * .6; break;
+                    case ActionEffectKind.Attach when card != null:
+                        var attachment = AttachmentValue(card, node.Attachment, work);
+                        if (attachment.Status != CasualAssessmentStatus.Estimated) return attachment;
+                        value += sign * attachment.Value; break;
                     case ActionEffectKind.Permanent when card != null: value += sign * CasualTableAssessment.CardValue(card); break;
                     case ActionEffectKind.Land: value += sign * .5; break;
                     case ActionEffectKind.LifeGain:
@@ -338,6 +342,32 @@ public static class CasualActionAssessment
             value -= harm * AiPlayerRelations.Benefit(state, occurrence.Value.PlayerId);
         }
         return new(CasualAssessmentStatus.Estimated, value, "public-effect-values");
+    }
+
+    private static CasualActionEstimate AttachmentValue(Card card, AttachmentModifier? modifier, AiWorkBudget work)
+    {
+        if (modifier is not { Knowledge: SemanticKnowledge.Known, IsValid: true }) return Incomplete("attachment-knowledge");
+        if (card.FaceDown || !CasualTableAssessment.IsCreature(card) || card.Power is not { } power || card.Toughness is not { } toughness)
+            return Incomplete("attachment-recipient");
+        long nextPower = (long)power + modifier.PowerDelta!.Value, nextToughness = (long)toughness + modifier.ToughnessDelta!.Value;
+        if (nextPower is < int.MinValue or > int.MaxValue || nextToughness is < int.MinValue or > int.MaxValue)
+            return Incomplete("attachment-characteristics");
+        var keywords = card.CombatKeywords;
+        var states = card.States;
+        foreach (string keyword in modifier.GrantedKeywords) {
+            if (!work.TrySpend()) return new(CasualAssessmentStatus.BudgetExceeded, 0, "operation-budget");
+            if (CasualTableAssessment.HasKeyword(card, keyword)) continue;
+            if (states is { } effective) states = effective.Add(new(keyword, keyword, "ability", 1, null, "", keyword));
+            else keywords = keywords.Add(keyword);
+        }
+        var after = card with { Power = (int)nextPower, Toughness = (int)nextToughness, CombatKeywords = keywords, States = states };
+        // This is a nominal public-characteristic comparison, not a resolution
+        // forecast. A power increase cannot hide loss of the recipient to zero
+        // toughness or marked lethal damage; indestructible only prevents the latter.
+        double before = CasualTableAssessment.CardValue(card);
+        double change = nextToughness <= 0 || card.Damage >= nextToughness && !CasualTableAssessment.HasKeyword(after, "indestructible")
+            ? -before : CasualTableAssessment.CardValue(after) - before;
+        return new(CasualAssessmentStatus.Estimated, change, "nominal-attachment-characteristics");
     }
 
     private static Card? Card(GameSnapshot state, SemanticEntity entity, Card? source)

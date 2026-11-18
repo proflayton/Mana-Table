@@ -124,7 +124,7 @@ internal static class AiCombatSurvivalRegression
     private static async Task<AiDecisionReplayResult> Evaluate(GameSnapshot state, long seed)
     {
         var frame = new AiDecisionFrame(state);
-        var result = await AiDecisionReplay.EvaluateAsync(new(1, "authored-combat-survival", "casual-commander.v5", state,
+        var result = await AiDecisionReplay.EvaluateAsync(new(1, "authored-combat-survival", "casual-commander.v6", state,
             DecisionActionDomain.None, new() { EpisodeId = "authored-combat-survival" }, new([], []), seed) {
                 RemainingTime = TimeSpan.FromSeconds(5), RemainingWork = 2048
             }, new CasualCommanderPolicy());

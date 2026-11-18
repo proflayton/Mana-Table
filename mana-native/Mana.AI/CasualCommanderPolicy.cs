@@ -11,7 +11,7 @@ namespace Mana.AI;
 /// </summary>
 public sealed class CasualCommanderPolicy : IAiPolicy
 {
-    public AiPolicyDescriptor Descriptor { get; } = new("casual-commander.v5", AiTasks.All, AiPriorityAutomation.NoResponse);
+    public AiPolicyDescriptor Descriptor { get; } = new("casual-commander.v6", AiTasks.All, AiPriorityAutomation.NoResponse);
 
     public Task<AiProposal> EvaluateAsync(AiDecisionRequest request, CancellationToken cancellation)
     {
@@ -125,6 +125,10 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         var assessment = CasualActionAssessment.Evaluate(state, semantic.OperationGraph, request.Work, offer.Source);
         if (assessment.Status is CasualAssessmentStatus.BudgetExceeded or CasualAssessmentStatus.SearchLimited) return -1;
         bool modeled = assessment.Status is CasualAssessmentStatus.Estimated or CasualAssessmentStatus.EstimatedPartial;
+        // Starting an optional targeted cast is distinct from answering a truly
+        // mandatory prompt. Unknown attachment direction cannot justify paying
+        // costs and then choosing a seeded recipient through exploration.
+        if (!modeled && semantic.Targeted && semantic.Effect is ActionEffectKind.Unknown or ActionEffectKind.Attach) return -1;
         double value = modeled ? assessment.Value : !semantic.OperationGraph.Operations.IsDefaultOrEmpty
             ? offer.Action.Kind == "cast" ? 2 : CasualActionAssessment.IsConservativeOwnBenefit(state, semantic.OperationGraph, request.Work) ? 1 : -1
             : semantic.Effect switch {
@@ -315,6 +319,8 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         bool unknownOptional = !cost && complete.Enabled && intent == DecisionIntent.Unknown;
         bool damage = intent == DecisionIntent.Damage || request.Frame.Semantics.OperationGraph.Operations
             .Any(node => node.Id == request.Frame.Semantics.OperationId && node.Effect == ActionEffectKind.Damage);
+        bool attachment = request.Frame.Semantics.OperationGraph.Operations
+            .Any(node => node.Id == request.Frame.Semantics.OperationId && node.Effect == ActionEffectKind.Attach);
         var cards = CardViews.InZones(state).Where(item => item.Card.Selectable && item.Card.Key.Length > 0 && !item.Card.Highlighted)
             .GroupBy(item => item.Card.Key).Select(group => group.First())
             .Where(item => !cost || !AiTurnPlanner.ConflictsWithPendingSourceCosts(request, CardViews.Identity(item.Card))).ToArray();
@@ -332,7 +338,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         // avoids toggling the same targets or paying an optional cost repeatedly.
         if (complete.Enabled && (range?.Min > 0 || cards.Length == 0 && players.IsEmpty))
             return Answer(request, new CompleteSelection(state.Id, state.Decision!.Id), "selection-complete");
-        var options = new List<(DecisionCommand Command, double Score, double Tie, bool PreservesFunding)>();
+        var options = new List<(DecisionCommand Command, double Score, double Tie, bool PreservesFunding, bool Assessed)>();
         bool limited = false;
         foreach (var occurrence in cards.OrderBy(item => CardViews.Identity(item.Card), StringComparer.Ordinal)) {
             if (request.Work.Remaining <= retained) { limited = true; break; }
@@ -347,6 +353,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             bool own = occurrence.PlayerId == state.ViewerId;
             double benefit = AiPlayerRelations.Benefit(state, occurrence.PlayerId);
             bool opponent = AiPlayerRelations.Opponent(state, occurrence.PlayerId);
+            bool assessed = intent != DecisionIntent.Unknown && !attachment;
             double score = cost ? (own ? 100 - value : -100)
                 : IsBenefit(intent) ? (benefit > 0 ? benefit * (100 + value) : benefit < 0 ? -100 : -1)
                 : damage ? (opponent ? DamageThreat(occurrence.PlayerId) : benefit > 0 ? -100 : -1)
@@ -360,13 +367,16 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 if (assessment.Status == CasualAssessmentStatus.BudgetExceeded) return AiProposal.Unavailable.FromWorkLimit(localWork);
                 if (assessment.Status == CasualAssessmentStatus.SearchLimited) { score = double.NegativeInfinity; limited = true; }
                 if (assessment.Status == CasualAssessmentStatus.Estimated
-                    || !stagedDamage && assessment.Status == CasualAssessmentStatus.EstimatedPartial) score = assessment.Value
-                    + (assessment.Value > 0 && opponent ? Math.Clamp(CasualTableAssessment.OpponentScore(request, occurrence.PlayerId) * .01, 0, .25) : 0);
+                    || !stagedDamage && assessment.Status == CasualAssessmentStatus.EstimatedPartial) {
+                    assessed = true;
+                    score = assessment.Value
+                        + (assessment.Value > 0 && opponent ? Math.Clamp(CasualTableAssessment.OpponentScore(request, occurrence.PlayerId) * .01, 0, .25) : 0);
+                }
             }
             if (!cost && benefit == 0 && score == 0) score = -1;
             bool preservesFunding = cost && AiTurnPlanner.PreservesCurrentCostFunding(request with { Work = localWork }, identity);
             options.Add((new SelectCard(state.Id, state.Decision!.Id, card.Key), score,
-                CasualTableAssessment.Tie(request.Seed, identity), preservesFunding));
+                CasualTableAssessment.Tie(request.Seed, identity), preservesFunding, assessed));
         }
         foreach (int player in players.Where(player => !request.Frame.Semantics.SelectedPlayers.Contains(player)).Order()) {
             if (request.Work.Remaining <= retained) { limited = true; break; }
@@ -374,6 +384,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             if (!localWork.TrySpend()) { limited = true; break; }
             double benefit = AiPlayerRelations.Benefit(state, player);
             bool opponent = AiPlayerRelations.Opponent(state, player);
+            bool assessed = intent != DecisionIntent.Unknown && !attachment;
             double score = intent == DecisionIntent.StartingPlayer ? (player == state.ViewerId ? 100 : 0)
                 : IsBenefit(intent) || intent == DecisionIntent.Search ? (benefit > 0 ? benefit * 100 : benefit < 0 ? -100 : -1)
                 : damage ? (opponent ? DamageThreat(player) : benefit > 0 ? -100 : -1)
@@ -387,21 +398,35 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 if (assessment.Status == CasualAssessmentStatus.BudgetExceeded) return AiProposal.Unavailable.FromWorkLimit(localWork);
                 if (assessment.Status == CasualAssessmentStatus.SearchLimited) { score = double.NegativeInfinity; limited = true; }
                 if (assessment.Status == CasualAssessmentStatus.Estimated
-                    || !stagedDamage && assessment.Status == CasualAssessmentStatus.EstimatedPartial) score = assessment.Value
-                    + (assessment.Value > 0 && opponent ? Math.Clamp(CasualTableAssessment.OpponentScore(request, player) * .01, 0, .25) : 0);
+                    || !stagedDamage && assessment.Status == CasualAssessmentStatus.EstimatedPartial) {
+                    assessed = true;
+                    score = assessment.Value
+                        + (assessment.Value > 0 && opponent ? Math.Clamp(CasualTableAssessment.OpponentScore(request, player) * .01, 0, .25) : 0);
+                }
             }
             if (!cost && benefit == 0 && score == 0) score = -1;
             options.Add((new SelectPlayer(state.Id, state.Decision!.Id, player), score,
-                CasualTableAssessment.Tie(request.Seed, player.ToString(CultureInfo.InvariantCulture)), false));
+                CasualTableAssessment.Tie(request.Seed, player.ToString(CultureInfo.InvariantCulture)), false, assessed));
         }
+        if (!cost && !complete.Enabled && cancel.Enabled && options.Count == 0 && (intent == DecisionIntent.Unknown || attachment))
+            return Answer(request, new CancelSelection(state.Id, state.Decision!.Id), "selection-no-current-candidate");
         if (options.Count == 0 && !complete.Enabled) {
             if (cards.OrderBy(item => CardViews.Identity(item.Card), StringComparer.Ordinal).FirstOrDefault().Card is { } fallbackCard)
                 return Answer(request, new SelectCard(state.Id, state.Decision!.Id, fallbackCard.Key), "selection-required-bounded-candidate");
             if (players.Where(player => !request.Frame.Semantics.SelectedPlayers.Contains(player)).Order().Select(player => (int?)player).FirstOrDefault() is { } fallbackPlayer)
                 return Answer(request, new SelectPlayer(state.Id, state.Decision!.Id, fallbackPlayer), "selection-required-bounded-candidate");
         }
-        var best = options.OrderByDescending(option => option.PreservesFunding).ThenByDescending(option => option.Score)
+        // A known useful attachment recipient outranks unassessed seeded or
+        // legacy-intent scores. Unknown recipients retain no invented utility;
+        // the ordinary legal fallback remains when no assessed benefit exists.
+        var best = options.OrderByDescending(option => option.PreservesFunding)
+            .ThenByDescending(option => !cost && attachment && option.Assessed && option.Score > 0)
+            .ThenByDescending(option => option.Score)
             .ThenBy(option => option.Tie).FirstOrDefault();
+        if (!cost && !complete.Enabled && cancel.Enabled && best.Command != null
+            && (!best.Assessed && (intent == DecisionIntent.Unknown || attachment) || attachment && best.Score <= 0))
+            return Answer(request, new CancelSelection(state.Id, state.Decision!.Id),
+                best.Assessed ? "selection-decline-nonpositive-attachment" : "selection-cancel-unassessed-effect");
         if (best.Command != null && (((damage || unknownOptional) && !cost ? best.Score > 0 : best.Score >= 0) || !complete.Enabled)) return Answer(request, best.Command,
             best.PreservesFunding ? "selection-preserve-current-cost-funding"
                 : limited ? "selection-bounded-known-candidate" : cost ? "selection-pay-lowest-opportunity-cost" : "selection-public-effect-recipient");
