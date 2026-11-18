@@ -1,5 +1,22 @@
 # Testing Mana Table
 
+## Background automatic progress
+
+After building the native harness, `--smoke-headless-presentation
+--presentation-group background-input --profile <fresh-directory>` runs the
+existing inactive-input checks and a production application/session witness:
+already enabled Auto sends its current automatic pass while inactive, accepts
+the continuation's actual fresh required choice and waits there. Auto off, Hold,
+own-turn phase stops, response windows and deliberate pinned reading remain
+boundaries. Background keys and held activation inputs cannot become commands.
+The full headless inventory runs this group in CI as well.
+
+The existing server-managed Auto checks cover the modern acknowledged policy and
+observation-credit path separately. These tests use controlled current
+permissions and receipts; they do not simulate Commander rules or establish a
+natural complete game. Human review should switch applications during Auto,
+return at the fresh prompt and confirm that no activation click is replayed.
+
 ## Current target restriction feedback
 
 `--smoke-headless-presentation --presentation-group target-restrictions` runs the

@@ -282,7 +282,9 @@ internal sealed partial class TableApplication : IDisposable
         ContinueQuickMana();
         // Give a ready pass precedence over starting another observation. Use this
         // update's pointer position so entering a card pauses Auto before Draw.
-        bool autoBlocked = !inputActive || !InputReady || AutomaticInteractionPause() != DecisionDockPauseReason.None;
+        // Focus gates device input, not the player's already enabled Auto or
+        // scoped continuation. Deliberate inspection/Hold/choices still pause.
+        bool autoBlocked = AutomaticInteractionPause() != DecisionDockPauseReason.None;
         ArmAutomaticQuietPriority(autoBlocked);
         bool paymentReserved = UpdateOptionalPayments(autoBlocked);
         bool combatReserved = paymentReserved || UpdateGroupBlocks(autoBlocked);
