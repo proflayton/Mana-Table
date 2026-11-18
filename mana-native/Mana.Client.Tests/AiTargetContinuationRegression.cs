@@ -86,14 +86,22 @@ internal static class AiTargetContinuationRegression
                 $"Unknown optional {(entities ? "entity" : "target")} player choices cannot turn seeded ties or counter labels into benefit (already staged {staged})");
         }
         foreach (bool entities in new[] { false, true }) {
-            var required = Selection(entities, 57, 42, complete: false);
+            var cancellable = Selection(entities, 57, 42, complete: false);
+            check((await Evaluate(new(cancellable))).Command is CancelSelection cancellation
+                    && new AiDecisionFrame(cancellable).Allows(cancellation),
+                $"Unknown incomplete {(entities ? "entity" : "target")} card selections cancel when the engine offers that exact continuation");
+            var required = Selection(entities, 57, 42, complete: false, cancel: false);
             var requiredFrame = new AiDecisionFrame(required, semantics: new(DecisionIntent.Unknown));
             var answer = await Evaluate(requiredFrame);
             check(answer.Command is SelectCard card && requiredFrame.Allows(card)
                     && required.Players.SelectMany(player => player.Zone("Battlefield").Cards)
                         .Any(candidate => candidate.Key == card.Card && !candidate.Highlighted),
-                $"Unknown required {(entities ? "entity" : "target")} additions still use an unselected exact current card when completion is disabled");
-            var requiredPlayers = Selection(entities, 0, 0, complete: false, players: [0, 1, 2]);
+                $"Unknown required {(entities ? "entity" : "target")} additions still use an unselected exact current card when completion and cancellation are disabled");
+            var cancellablePlayers = Selection(entities, 0, 0, complete: false, players: [0, 1, 2]);
+            check((await Evaluate(new(cancellablePlayers, semantics: new() { SelectedPlayers = [0] }))).Command is CancelSelection playerCancellation
+                    && new AiDecisionFrame(cancellablePlayers).Allows(playerCancellation),
+                $"Unknown incomplete {(entities ? "entity" : "target")} player selections cancel without toggling an already staged player");
+            var requiredPlayers = Selection(entities, 0, 0, complete: false, players: [0, 1, 2], cancel: false);
             var playerFrame = new AiDecisionFrame(requiredPlayers, semantics: new(DecisionIntent.Unknown) { SelectedPlayers = [0] });
             var playerAnswer = await Evaluate(playerFrame);
             check(playerAnswer.Command is SelectPlayer { Player: not 0 } player && playerFrame.Allows(player),
@@ -161,7 +169,7 @@ internal static class AiTargetContinuationRegression
     }
 
     private static GameSnapshot Selection(bool entities, int eligible, int selected, bool complete,
-        bool reordered = false, ImmutableArray<int> players = default)
+        bool reordered = false, ImmutableArray<int> players = default, bool cancel = true)
     {
         var cards = Enumerable.Range(0, eligible).Select(index => new Card {
             Key = "selection-key:" + index, VisualId = "selection-card:" + index, CombatId = "selection-card:" + index,
@@ -178,8 +186,8 @@ internal static class AiTargetContinuationRegression
         if (reordered) seats = seats.Reverse().ToImmutableArray();
         players = players.IsDefault ? [] : players;
         DecisionPayload payload = entities
-            ? new EntitySelectionPayload(new("Done", complete), new("Cancel", true), players, new(complete ? 0 : selected + 1, eligible + players.Length))
-            : new TargetSelectionPayload(new("Done", complete), new("Cancel", true), new(complete ? 0 : selected + 1, eligible + players.Length), players);
+            ? new EntitySelectionPayload(new("Done", complete), new("Cancel", cancel), players, new(complete ? 0 : selected + 1, eligible + players.Length))
+            : new TargetSelectionPayload(new("Done", complete), new("Cancel", cancel), new(complete ? 0 : selected + 1, eligible + players.Length), players);
         return new("selection-confidence-game", "playing", null, null, 0, 4, "Main", "MAIN1", 0,
             seats, [], null, new("current-selection", new(Message: reordered ? "Other description" : "Current choice"), payload)) {
                 Revision = 1, BoardRevision = 1, DecisionOwnerId = 0
