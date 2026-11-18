@@ -146,11 +146,15 @@ internal static class AiLibraryAcquisitionJourney
             for (int steps = 0; steps < 4096; steps++) {
                 deadline.Token.ThrowIfCancellationRequested();
                 var observations = await port.ObserveAutomatedSeatsAsync(deadline.Token);
+                if (observations.Length != start.Participants.Length
+                    || observations.Select(item => item.SeatId).Distinct().Count() != observations.Length
+                    || !observations.Select(item => item.SeatId).Order().SequenceEqual(start.Participants.Select(item => item.PlayerId).Order()))
+                    throw new InvalidDataException("The controlled owned batch changed the accepted four-player roster.");
                 foreach (var item in observations) {
                     if (!sessions.ContainsKey(item.SeatId) || item.State.ViewerId != item.SeatId
                         || !AiCampaignVisibility.PrivateWindowsAreDisclosed(item.State, item.Semantics, item.Domain))
                         throw new InvalidDataException("The controlled journey received an invalid owned audience.");
-                    ConfiguredSimulationFacts.ValidateState(start, item.State);
+                    ConfiguredSimulationFacts.ValidateOwnedState(start, item.State);
                     if (item.State.Status is "error" or "finished") throw new InvalidOperationException(item.State.Error ?? "The controlled acquisition ended before verification.");
                     if (item.SeatId != focal) continue;
                     final = item.State;
