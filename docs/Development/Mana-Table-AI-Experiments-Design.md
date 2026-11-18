@@ -1,17 +1,53 @@
 # Measuring Mana Table AI experiments
 
-**Status:** Proposed design, reviewed by architecture and statistics specialists.
-No experiment runner, policy configuration or new benchmark result is implemented
-by this document. The commands below are proposed interfaces.
+**Status:** Reviewed design with a first implemented development runner. V1
+supports compatible registered variants, exact replay comparisons, isolated
+natural-game batches and descriptive private reports. Confirmation-grade
+statistics, a human-review UI and the later capabilities below remain future work.
 
 **Objective:** Stronger casual Commander play, as selected by the project owner.
 Measure purposeful decisions, tactical errors, robustness, game results and
 decision cost separately. Human enjoyment remains a reviewed product outcome.
 
-**Source inspected:** `9d06b04a7e886e6a602ab4ced03a6714a9436879`.
+**Baseline source inspected:** `9d06b04a7e886e6a602ab4ced03a6714a9436879`.
 Build on the [AI framework](Mana-Table-AI.md),
 [reliability design](Mana-Table-AI-Reliability-Design.md) and
 [existing evidence gates](Mana-Table-Testing.md#shared-attachment-capability-checks).
+
+## Running the first implementation
+
+Use the [runnable specs and instructions](../../mana-native/experiments/README.md)
+after building the Windows test harness. The registry exposes full v6
+and its distinctly versioned attachment-evaluation ablation. It is a closed
+experimental seam, not a new player preference or arbitrary historical DLL loader.
+
+Plan writes a strict spec copy, exact seed strings, artifact hashes and the full
+randomized schedule. Run reserves immutable first attempts, checks their input
+closure before launch, and verifies atomic result/artifact receipts. Analyze
+recomputes deterministic reports from retained evidence with the locked analyzer;
+the original engine and driver need not remain installed for that analysis.
+V1 supports sequential execution and optional `--max-jobs` execution chunks.
+An incomplete chunk retains every unrun cell in its denominator.
+
+V1 reports family-weighted paired grades, corrections/regressions, natural
+outcome bounds, faults, missing measurements and scoped wall-time/work samples.
+Coverage and causal-consequence fields remain explicitly unavailable where no
+verifier exists. Reports have no confidence intervals or general strength claim.
+The example captures are known development regressions, not an unseen holdout.
+
+Application/input files and runtime launchers are hash-pinned. The actual worker
+records its selected .NET framework, architecture and OS; shared runtime libraries
+and the OS are version-observed rather than a hermetic image. Source metadata is
+an assertion unless independently bound by clean-build/CI receipts. Final-source
+release checks remain separate.
+
+Root review required corrections before integration: measurement callbacks now
+enqueue bounded immutable records and perform no serialization/disk I/O; the
+owner drains outside policy evaluation and command-receipt callbacks. A later
+sink failure cannot change a known accepted acknowledgment. Native admission
+parses and hashes the same lock bytes, claims attempts exclusively, and accounts
+for result and artifact-manifest bytes inside the same capture quota. Coordinator
+failures preserve uncertain ownership rather than launching replacement games.
 
 ## Decisions
 
@@ -28,7 +64,10 @@ Build on the [AI framework](Mana-Table-AI.md),
 6. Report a scorecard and disagreements, rather than one weighted AI score.
    Experiment evidence does not replace required release qualification.
 
-## What exists and what must change
+## Baseline seams and initial gaps
+
+This table records the starting point inspected for the design. V1 adds separate
+experiment owners while retaining the existing qualification runners.
 
 | Existing owner | Reuse | Current gap |
 | --- | --- | --- |
@@ -366,7 +405,11 @@ ownership needs explicit recovery; a reused PID or expired timestamp alone does
 not prove that a worker stopped. Concurrent run/resume commands fail cleanly
 rather than duplicating a scheduled cell.
 
-## Records and proposed interfaces
+## Record design and V1 interfaces
+
+The record table describes the full target design. Implemented V1 accepts the
+strict subset in `ai-experiment-contract.cjs` and the runnable examples; it does
+not accept unsupported confirmation settings or claim those analyses exist.
 
 | Record | Required contents |
 | --- | --- |
@@ -381,7 +424,7 @@ required versions and nonfinite/out-of-range data. Validators impose bounded
 input sizes/depth, resolve only locked local artifacts, and do not evaluate text.
 Analysis consumes retained data without calling the engine or policy.
 
-Proposed Windows harness commands, not yet executable:
+Implemented Windows harness commands:
 
 ```text
 Mana.Table.Tests --ai-experiment-plan <spec.json> --profile <fresh-directory>
@@ -389,7 +432,7 @@ Mana.Table.Tests --ai-experiment-run <locked-directory> --jobs 1
 Mana.Table.Tests --ai-experiment-analyze <locked-directory>
 ```
 
-The coordinator alone invokes an internal worker entry:
+The coordinator alone invokes the implemented internal worker entry:
 
 ```text
 Mana.Table.Tests --ai-experiment-worker <lock.json> --job-id <job>
@@ -455,7 +498,8 @@ it cannot present invented measurements as an experiment result.
 The lead reviews each slice before assigning isolated execution branches. Shared
 contracts/registry are frozen first. Specialists can then own the replay/evaluator,
 natural worker, and analysis/evidence paths with explicit integration boundaries.
-Do not execute these implementation slices as part of this design change.
+The first implementation covers the V1 paths described above. Later statistical,
+coverage, review and runtime capabilities retain their separate exit criteria.
 
 Required regressions include wrong artifact/settings/version refusal; preservation
 of exact 64-bit seeds; slot/player mismatch; no cross-seat knowledge; stale/illegal

@@ -1,9 +1,20 @@
 # Testing Mana Table
 
-The proposed [AI experiment design](Mana-Table-AI-Experiments-Design.md) separates
-behavioral comparisons from release qualification and specifies experiment
-identity, balanced A/B scheduling, outcome denominators and analysis. It adds
-no executable commands or changed test budgets at this design stage.
+The [AI experiment framework](Mana-Table-AI-Experiments-Design.md) separates
+behavioral comparisons from release qualification and implements immutable
+identity, balanced A/B scheduling, outcome denominators and descriptive analysis.
+[Runnable examples](../../mana-native/experiments/README.md) use the built native
+harness and Node coordinator. Existing release budgets and gates are unchanged.
+
+Client regressions include the closed registry, preserved default v6 behavior
+and experimental attachment ablation; `--ai-experiment-checks` selects them.
+The native `ai-experiments` headless group covers exact replay grading,
+reservation/artifact boundaries and the natural worker's typed outcome, privacy,
+bounded queue and accepted-receipt controls. It also runs in the full headless
+inventory. Coordinator, quota, orphan/resume, fixed-denominator, family-weighting
+and retained-analysis tests run with the ordinary repository Node test inventory.
+These controls include synthetic workers and fixture states; real experiment
+results remain separately identified by their actual locks and receipts.
 
 ## Shared attachment capability checks
 

@@ -1,9 +1,11 @@
 # Multiplayer AI framework and investigation
 
-The proposed [AI experiment framework](Mana-Table-AI-Experiments-Design.md)
-defines paired decision evaluation, balanced natural A/B games and a separate
-casual-play scorecard. Its runner and commands remain a design proposal;
-current release qualification is not a policy-strength benchmark.
+The [AI experiment framework](Mana-Table-AI-Experiments-Design.md)
+implements paired decision evaluation, balanced natural A/B scheduling and a
+separate casual-play scorecard. Its first runner produces descriptive private
+reports; confirmation statistics and human review remain separate. See the
+[runnable examples](../../mana-native/experiments/README.md).
+Current release qualification is not a policy-strength benchmark.
 
 ## Direct attachment capabilities: source candidate
 

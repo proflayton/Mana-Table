@@ -31,6 +31,9 @@ The natural example additionally needs a built production engine, its matching
 resources, and `JAVA_HOME` or an explicit `runtime.javaPath`. Review the generated
 lock's duration and disk estimates before launching. It schedules 32 fresh games:
 four focal decks, four seats, two arms, with three fixed full-v6 reference seats.
+The policy seed is pinned; Forge's rules randomness is uncontrolled. These are
+blocked independent games, not identical-shuffle pairs. Actual starting player
+is recorded from turn one when observed and otherwise remains unknown.
 
 ```powershell
 dotnet $driver --ai-experiment-plan mana-native/experiments/attachment-natural-pilot.v1.json --profile "$env:TEMP/Mana-Attachment-Pilot-01"
@@ -54,7 +57,10 @@ timing records are not an exhaustive game archive.
 
 Never edit a lock or reuse an orphaned coordinator lease to force continuation.
 Reconcile owned processes and immutable receipts before explicit recovery; an
-uncertain worker is not automatically retried. Worker exit 0 means a committed
+uncertain worker is not automatically retried. A previous critical safety,
+evidence or cleanup failure permanently stops that lock, including on a later
+Run invocation. Investigate it and use a new source/spec and new lock.
+Worker exit 0 means a committed
 measurement record, which may report a cutoff or policy failure. The report's
 status, receipts and guardrails determine what was actually measured.
 
