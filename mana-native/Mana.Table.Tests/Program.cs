@@ -49,6 +49,7 @@ internal static class Program
         testRun |= args.Contains("--check-polled-fanout-projection");
         testRun |= args.Contains("--smoke-whole-seat-ai");
         testRun |= args.Contains("--replay-ai-decision");
+        testRun |= args.Contains("--attachment-owned-checks");
         testRun |= args.Contains("--replay-projection");
         testRun |= args.Contains("--smoke-execution-journey");
         testRun |= args.Contains("--smoke-ai-repeated-cadence");
@@ -165,6 +166,11 @@ internal static class Program
                 }
                 test.Automation = new CardReadingSmoke(test.TestPort, scenario, selectionOnly: args.Contains("--smoke-compact-selection"), statesOnly: args.Contains("--smoke-card-states"));
                 test.Run(); return 0;
+            }
+            if (args.Contains("--attachment-owned-checks")) {
+                string ownedDirectory = Arg("--attachment-owned-checks") ?? throw new ArgumentException("Attachment checks require the provider envelope directory.");
+                if (string.IsNullOrWhiteSpace(Arg("--profile"))) throw new ArgumentException("Attachment checks require an explicit --profile output directory.");
+                AttachmentOwnedChecks.RunAsync(ownedDirectory, profile).GetAwaiter().GetResult(); return 0;
             }
             if (Arg("--replay-ai-decision") is { } decisionReplay) {
                 AiDecisionReplayCommand.RunAsync(decisionReplay, profile).GetAwaiter().GetResult(); return 0;

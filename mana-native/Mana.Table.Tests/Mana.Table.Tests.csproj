@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <Content Include="../../contracts/card-capabilities/fixtures/*.json" Link="Fixtures/AttachmentCapabilities/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Fixtures/AttachmentOwned/*.json.gz" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <PropertyGroup>
     <OutputType>WinExe</OutputType><TargetFramework>net9.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms>

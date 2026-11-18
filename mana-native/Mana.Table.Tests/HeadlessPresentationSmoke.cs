@@ -34,6 +34,7 @@ internal static partial class HeadlessPresentationSmoke
             if (group != null) {
                 if (group == "startup-playback") StartupPlaybackChecks.Run(profile, Check);
                 else if (group == "attachment-capabilities") AttachmentCapabilityWireChecks.Run(Check);
+                else if (group == "attachment-owned") AttachmentOwnedChecks.RunPinned(profile, Check);
                 else if (group == "engine-diagnostics") ForgeDiagnosticsProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                 else if (group == "updates-owner") UpdateOwnershipChecks.Run(profile, Check);
                 else if (group == "history-owner") {
@@ -170,6 +171,7 @@ internal static partial class HeadlessPresentationSmoke
             ProjectionRecordingChecks.Run(profile, Check);
             PendingOperationsWireChecks.Run(Check);
             AttachmentCapabilityWireChecks.Run(Check);
+            AttachmentOwnedChecks.RunPinned(profile, Check);
             BlockingCapacityWireChecks.Run(Check);
             BlockRepairWireChecks.Run(Check);
             ManaColorPaymentWireChecks.Run(Check);
