@@ -10,6 +10,11 @@ if (args.Contains("--verify-failure-reporting"))
     throw new InvalidOperationException("Controlled test-runner failure reporting check.");
 int checks = 0;
 void Check(bool value, string description) { if (!value) throw new Exception(description); checks++; Console.WriteLine(description); }
+if (args.Contains("--ai-library-acquisition-checks")) {
+    await AiLibraryAcquisitionRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} AI library acquisition checks.");
+    return 0;
+}
 if (args.Contains("--ai-experiment-checks")) {
     await AiExperimentVariantRegression.RunAsync(Check);
     Console.WriteLine($"Passed {checks} AI experiment variant checks.");
@@ -257,6 +262,7 @@ await AiObservationSupersededRegression.RunAsync(Check);
 await AiPolicyRegression.RunAsync(Check);
 await AiDamageTargetRegression.RunAsync(Check);
 await AiExperimentVariantRegression.RunAsync(Check);
+await AiLibraryAcquisitionRegression.RunAsync(Check);
 await AiAttachmentPolicyRegression.RunAsync(Check);
 await AiRouteRetryRegression.RunAsync(Check);
 await AiDecisionQualityRegression.RunAsync(Check);

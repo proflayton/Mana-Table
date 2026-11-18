@@ -19,8 +19,11 @@ public sealed class CasualCommanderPolicy : IAiPolicy
     public CasualCommanderPolicy(CasualCommanderOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+        if (options.LibraryAcquisitionEvaluation && !options.AttachmentEvaluation)
+            throw new ArgumentException("The acquisition candidate requires full attachment evaluation.", nameof(options));
         Options = options;
-        Descriptor = new(Options.AttachmentEvaluation ? "casual-commander.v6" : "casual-commander.v6.attachment-ablation.v1",
+        Descriptor = new(Options.LibraryAcquisitionEvaluation ? "casual-commander.v7.library-acquisition.v1"
+                : Options.AttachmentEvaluation ? "casual-commander.v6" : "casual-commander.v6.attachment-ablation.v1",
             AiTasks.All, AiPriorityAutomation.NoResponse);
     }
 
@@ -41,9 +44,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             EntitySelectionPayload entity => Select(request, entity.Complete, entity.Cancel, entity.Range, entity.Players),
             ConfirmationPayload confirmation => Confirmation(request, confirmation),
             AbilityChoicePayload ability => Choices(request, ability.Selection, false),
-            OptionsPayload options => options.CounterPayment is { } counter ? CounterChoice(request, counter)
-                : options.HandReduction is { } reduction ? ReduceHand(request, options.Selection, reduction)
-                    : Choices(request, options.Selection, false),
+            OptionsPayload options => OptionsChoice(request, options),
             OrderingPayload ordering => Choices(request, ordering.Selection, true),
             RevealPayload => Answer(request, new AcknowledgeReveal(state.Id, decision.Id), "acknowledge-reveal"),
             NumberPayload number => Number(request, number, cancellation),
@@ -471,6 +472,16 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         if (!decline && confirmation.Accept.Enabled) return Answer(request, new AcceptConfirmation(state.Id, state.Decision!.Id), "accept-offered-effect");
         if (confirmation.Decline.Enabled) return Answer(request, new DeclineConfirmation(state.Id, state.Decision!.Id), declineReason);
         return confirmation.Accept.Enabled ? Answer(request, new AcceptConfirmation(state.Id, state.Decision!.Id), "accept-required-effect") : Missing("confirmation-answer");
+    }
+
+    private AiProposal OptionsChoice(AiDecisionRequest request, OptionsPayload options)
+    {
+        if (options.CounterPayment is { } counter) return CounterChoice(request, counter);
+        if (options.HandReduction is { } reduction) return ReduceHand(request, options.Selection, reduction);
+        if (Options.LibraryAcquisitionEvaluation && CasualLibraryAcquisition.TryChoose(request, options, out var indices))
+            return Answer(request, new ChooseOptions(request.Frame.State.Id, request.Frame.State.Decision!.Id, indices),
+                "choose-certified-library-basic-lands");
+        return Choices(request, options.Selection, false);
     }
 
     private AiProposal Choices(AiDecisionRequest request, ChoiceSelection selection, bool ordering)
