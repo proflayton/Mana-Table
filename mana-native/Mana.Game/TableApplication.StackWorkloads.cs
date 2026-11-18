@@ -28,7 +28,7 @@ internal sealed partial class TableApplication
     }
 
     private sealed record StackWorkloadRow(int Height, int NameHeight, int ControllerHeight,
-        int EffectHeight, int PositionHeight, int CountWidth, string Controller, string EffectPreview);
+        int EffectHeight, int PositionHeight, int CountWidth, int CountHeight, string Controller, string EffectPreview);
 
     private ImmutableArray<StackWorkload> CurrentStackWorkloads
     {
@@ -78,13 +78,13 @@ internal sealed partial class TableApplication
             canvas.Panel(bounds, new(17, 29, 36), Muted * .55f, 3);
             var art = new Rectangle(bounds.X + 10, bounds.Y + 10, 42, 37);
             PaintWorkloadArt(first.Item, art);
-            var count = new Rectangle(bounds.Right - row.CountWidth - 10, bounds.Y + 10, row.CountWidth, 30);
+            var count = new Rectangle(bounds.Right - row.CountWidth - 10, bounds.Y + 10, row.CountWidth, row.CountHeight);
             canvas.Rounded(count, new(13, 25, 29), 6);
             canvas.CenterText("× " + group.Members.Length, count, Ink, .82f, true);
             var name = new Rectangle(art.Right + 10, bounds.Y + 10,
                 count.X - art.Right - 20, row.NameHeight);
             var controller = new Rectangle(name.X, name.Bottom + 3, name.Width, row.ControllerHeight);
-            var effect = new Rectangle(bounds.X + 10, Math.Max(art.Bottom, controller.Bottom) + 6,
+            var effect = new Rectangle(bounds.X + 10, Math.Max(Math.Max(art.Bottom, count.Bottom), controller.Bottom) + 6,
                 bounds.Width - 20, row.EffectHeight);
             var position = new Rectangle(effect.X, effect.Bottom + 4, effect.Width, row.PositionHeight);
             canvas.Text(first.Item.Name, name.X, name.Y, Ink, .67f, name.Width, 80, true);
@@ -120,6 +120,7 @@ internal sealed partial class TableApplication
     {
         var first = group.First;
         int countWidth = Math.Max(54, canvas.TextWidth("× " + group.Members.Length, .82f, true) + 16);
+        int countHeight = Math.Max(30, canvas.TextSize("× " + group.Members.Length, .82f, countWidth, 80, true).Y + 8);
         int nameWidth = width - 82 - countWidth;
         int nameHeight = canvas.TextSize(first.Item.Name, .67f, nameWidth, 80, true).Y;
         string controller = StateClarity.StackController(match!, first.Item);
@@ -137,8 +138,8 @@ internal sealed partial class TableApplication
         }
         int effectHeight = canvas.TextSize(preview, .52f, width - 20, 80).Y;
         int positionHeight = canvas.TextSize("First at #" + first.Position + " · " + WorkloadKind(first.Item), .48f, width - 20, 80).Y;
-        int height = 10 + Math.Max(37, nameHeight + 3 + controllerHeight) + 6 + effectHeight + 4 + positionHeight + 10;
-        return new(height, nameHeight, controllerHeight, effectHeight, positionHeight, countWidth, controller, preview);
+        int height = 10 + Math.Max(Math.Max(37, countHeight), nameHeight + 3 + controllerHeight) + 6 + effectHeight + 4 + positionHeight + 10;
+        return new(height, nameHeight, controllerHeight, effectHeight, positionHeight, countWidth, countHeight, controller, preview);
     }
 
     private void PaintWorkloadArt(StackItem item, Rectangle art)

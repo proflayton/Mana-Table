@@ -59,7 +59,7 @@ internal sealed partial class TableApplication
         var state = match!;
         var entry = state.Stack[0];
         string owner = entry.ControllerId is { } controller ? StateClarity.PlayerName(state, controller) : "Controller not reported";
-        string status = StackHeading(entry);
+        string status = RepeatedStackWorkload ? "Next to resolve" : StackHeading(entry);
         var header = new Rectangle(area.X, area.Y, area.Width, 23);
         canvas.Rounded(header, new(11, 22, 28), 4);
         canvas.Text(status, header.X + 10, header.Y + 3, Gold, .52f,
