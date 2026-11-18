@@ -41,6 +41,7 @@ internal static partial class HeadlessPresentationSmoke
                     AiExperimentWorkerChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     AiExperimentReplayChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     AiLibraryAcquisitionOwnedChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+                    AiLibraryAcquisitionJourney.RunAuditChecks(Check);
                     AiExperimentNaturalChecks.Run(profile, Check);
                 }
                 else if (group == "engine-diagnostics") ForgeDiagnosticsProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
@@ -185,6 +186,7 @@ internal static partial class HeadlessPresentationSmoke
             AiExperimentWorkerChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             AiExperimentReplayChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             AiLibraryAcquisitionOwnedChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+            AiLibraryAcquisitionJourney.RunAuditChecks(Check);
             AiExperimentNaturalChecks.Run(profile, Check);
             BlockingCapacityWireChecks.Run(Check);
             BlockRepairWireChecks.Run(Check);

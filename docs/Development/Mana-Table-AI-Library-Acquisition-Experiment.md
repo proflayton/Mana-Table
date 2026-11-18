@@ -88,3 +88,24 @@ and passing relevant existing checks. A favorable heuristic score or accepted
 command alone cannot establish acquisition. Natural games retain the full locked
 32-cell schedule, first attempts, failures and unresolved outcomes. V1 reports
 are descriptive and make no general strength or confidence-interval claim.
+
+## First development measurement
+
+At source `3b7877cbecafbf02c71e0296cef61dde321bc807`, the locked four-case
+owned replay comparison completed all eight jobs: baseline 0/4 useful selections,
+candidate 4/4, four corrections and zero regressions, incomplete pairs or invalid
+evidence. The two staged cases share one family; all three family rates likewise
+changed from zero to one. Candidate A/A completed eight jobs with identical
+proposals and 4/4 passes per arm. The separate five-case attachment comparison
+completed ten jobs with 5/5 per arm and zero regressions. No natural-game strength
+conclusion follows from these development cases.
+
+Actual native continuation needs separate evidence of resolved movement. Public
+Battlefield events supply exact acquired identities. Library-to-Hand activity
+deliberately omits private identities, so a test-only bounded fixture audit records
+committed engine movement and bridges it only to existing IDs in the already
+published owned Hand. Exact source execution, owners, zones and identity sets
+must match. The audit is not policy input or production telemetry. First attempts
+that incorrectly expected a public Hand identity remain retained as failed
+verification attempts; later checks use this independent private proof rather
+than weakening acquisition to a count comparison.

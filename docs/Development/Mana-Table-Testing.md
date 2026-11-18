@@ -16,6 +16,25 @@ and retained-analysis tests run with the ordinary repository Node test inventory
 These controls include synthetic workers and fixture states; real experiment
 results remain separately identified by their actual locks and receipts.
 
+## Basic land acquisition checks
+
+The client suite includes 95 focused policy checks for the experimental
+`casual-commander.v7.library-acquisition.v1` factory. Full v6 remains the default.
+The native `ai-experiments` group also grades the four pinned authentic owned
+acquisition captures, compares repeated candidate proposals, validates malformed
+wire contexts and checks private fixture isolation. Its independent usefulness
+grader does not grant credit to a legal empty selection.
+
+Java `LibraryAcquisitionOfferTest` and `LibraryAcquisitionJourneyTest` exercise
+structural qualification, scoped controller offers and actual rules movement.
+The [experiment examples](../../mana-native/experiments/README.md#basic-land-acquisition-candidate)
+document the separate native real-provider continuation command and four modes.
+The required Windows engine verification runs the staged `bundle` pair with the
+matching source-bound private fixture and production JARs. Assertions require
+accepted choices, resolved execution, actual acquired identities and destinations;
+an acknowledgement or count increase alone is insufficient. Bounded private Hand
+audit admission has negative controls in the ordinary headless inventory.
+
 ## Shared attachment capability checks
 
 After building `Mana.Table.Tests`, the `attachment-capabilities` headless group

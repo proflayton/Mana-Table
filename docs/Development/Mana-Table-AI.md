@@ -7,6 +7,22 @@ reports; confirmation statistics and human review remain separate. See the
 [runnable examples](../../mana-native/experiments/README.md).
 Current release qualification is not a policy-strength benchmark.
 
+## Experimental basic land acquisition
+
+`casual-commander.v7.library-acquisition.v1` is an explicit experimental candidate
+for mechanically certified acquisition of offered basic lands from its own
+library. The provider binds optional facts to the actual current zone-change
+choice; current keyless option faces and indices remain the entire authority.
+Supported direct and remembered-bundle shapes are described in the
+[frozen experiment plan](Mana-Table-AI-Library-Acquisition-Experiment.md).
+Default v6 stays available as the frozen baseline. Replay grades and actual
+rules continuations measure this component separately from Commander strength.
+
+A separate [punisher-choice design](Mana-Table-AI-Punisher-Choice-Design.md)
+records the reproduced Palantír failure: incomplete life-loss uncertainty can
+outrank a known opponent draw. That proposal requires narrowly qualified
+recipient/dependency facts and a separate risk-policy experiment.
+
 ## Direct attachment capabilities: source candidate
 
 `casual-commander.v6` evaluates the shared

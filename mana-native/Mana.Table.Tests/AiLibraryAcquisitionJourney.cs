@@ -5,6 +5,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Mana.AI;
 using Mana.Contracts;
 using Mana.Forge;
@@ -226,7 +227,7 @@ internal static class AiLibraryAcquisitionJourney
             var newField = Ids(after.Zone("Battlefield")).Except(beforeFieldIds).ToHashSet(StringComparer.Ordinal);
             var zoneEvents = events.Values.Where(entry => (rootExecutions.Contains(entry.ExecutionId)
                     || entry.Cause?.Id is { } cause && rootExecutions.Contains(cause))
-                && entry.Impact is { Kind: "zone", FromZone: "Library", ToZone: "Hand" or "Battlefield", RecipientControllerId: var recipient }
+                && entry.Impact is { Kind: "zone", FromZone: "Library", ToZone: "Battlefield", RecipientControllerId: var recipient }
                 && recipient == focal).ToArray();
             var arrived = zoneEvents.Select(entry => entry.Impact!.CardId ?? entry.CardId).OfType<string>().Where(id => id.Length > 0).ToHashSet(StringComparer.Ordinal);
             int expectedHand = candidate && (bundle || fixtureMode == "direct-hand") ? 1 : 0;
@@ -240,8 +241,12 @@ internal static class AiLibraryAcquisitionJourney
             check(after.Zone("Hand").Count - beforeHand == expectedHand && after.Zone("Battlefield").Count - beforeField == expectedField
                 && newHand.Count == expectedHand && newField.Count == expectedField,
                 "The actual source resolution changed the focal hand and battlefield by its declared acquisition counts");
-            check(arrived.SetEquals(newHand.Concat(newField)),
-                "Actual library zone-change events under this source execution identify exactly the newly acquired occurrences");
+            check(arrived.SetEquals(newField),
+                "Public typed library zone-change events under this source execution identify exactly the newly acquired battlefield occurrences");
+            var privateAudit = await ReadPrivateAuditAsync(Path.Combine(paths.Profile, "private-library-acquisition-audit.json"),
+                final.Id, sourceExecution!, sourceId!, focal, final.BoardRevision, newHand, rootExecutions, deadline.Token);
+            Write("validated-private-hand-audit.json", privateAudit);
+            check(true, "The separate bounded private fixture audit bridges actual committed hand movements to the already observed owned hand identities");
             var acquisitionAnswers = sessions[focal].History.Decisions.Where(record => record.Outcome == AiDecisionOutcome.Accepted
                 && record.Task == AiTask.Options && record.Command == nameof(ChooseOptions)).ToArray();
             var firstAnswer = acquisitionAnswers.Single(record => record.Stamp.DecisionId == firstChoiceId);
@@ -249,7 +254,7 @@ internal static class AiLibraryAcquisitionJourney
                 "The actual one-shot policy session submitted its expected initial acquisition count and received the production provider acknowledgement");
             Write("pre-cleanup-resolution-proof.json", new { scope = "controlled-synthetic-fixture-not-natural-strength", factoryId, fixtureMode,
                 focalPlayerId = focal, sourceId, sourceExecution, rootExecutions, beforeHand, beforeField, expectedHand, expectedField,
-                newHandIds = newHand, newBattlefieldIds = newField, zoneEvents, resolved, finalOwnedState = final });
+                newHandIds = newHand, newBattlefieldIds = newField, zoneEvents, privateHandAudit = privateAudit, resolved, finalOwnedState = final });
         } catch (Exception error) { failure = error.ToString(); throw; }
         finally {
             string? cleanupError = null;
@@ -273,6 +278,103 @@ internal static class AiLibraryAcquisitionJourney
     }
 
     private static HashSet<string> Ids(Zone zone) => zone.Cards.Select(CardViews.Identity).Where(id => id.Length > 0).ToHashSet(StringComparer.Ordinal);
+
+    private static async Task<JsonElement> ReadPrivateAuditAsync(string path, string game, string sourceExecution, string sourceCard,
+        int actor, long finalBoard, HashSet<string> newHand, HashSet<string> executionIds, CancellationToken cancellation)
+    {
+        var wait = Stopwatch.StartNew();
+        while (wait.Elapsed < TimeSpan.FromSeconds(5)) {
+            cancellation.ThrowIfCancellationRequested();
+            if (File.Exists(path)) {
+                using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                byte[] bytes = new byte[65537]; int count = 0, next;
+                do { next = await input.ReadAsync(bytes.AsMemory(count), cancellation); count += next; } while (next > 0 && count < bytes.Length);
+                if (count > 65536) throw new InvalidDataException("The private acquisition audit exceeds its 64 KiB cap.");
+                using var document = JsonDocument.Parse(bytes.AsMemory(0, count));
+                ValidatePrivateAudit(document.RootElement, game, sourceExecution, sourceCard, actor, finalBoard, newHand, executionIds);
+                return document.RootElement.Clone();
+            }
+            await Task.Delay(20, cancellation);
+        }
+        throw new InvalidDataException("The private source-linked hand movement audit is unavailable; anonymous activity cannot replace its identity proof.");
+    }
+
+    private static void ValidatePrivateAudit(JsonElement audit, string game, string sourceExecution, string sourceCard,
+        int actor, long finalBoard, HashSet<string> newHand, HashSet<string> executionIds)
+    {
+        static void Closed(JsonElement value, params string[] names) {
+            if (value.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Private audit object is malformed.");
+            var keys = value.EnumerateObject().Select(item => item.Name).ToArray();
+            if (keys.Length != names.Length || keys.Distinct(StringComparer.Ordinal).Count() != keys.Length || keys.Any(key => !names.Contains(key, StringComparer.Ordinal)))
+                throw new InvalidDataException("Private audit fields are missing, duplicated or unsupported.");
+        }
+        try {
+            Closed(audit, "schemaVersion", "kind", "gameId", "complete", "error", "roots");
+            if (audit.GetProperty("schemaVersion").GetInt32() != 1 || audit.GetProperty("kind").GetString() != "private-fixture-library-acquisition-audit"
+                || audit.GetProperty("gameId").GetString() != game || !audit.GetProperty("complete").GetBoolean() || audit.GetProperty("error").GetString() != ""
+                || audit.GetProperty("roots").GetArrayLength() != 1) throw new InvalidDataException("The private audit does not identify one completed source in this game.");
+            var root = audit.GetProperty("roots")[0];
+            Closed(root, "sourceExecutionId", "sourceEngineCardId", "sourceNativeCardId", "actorPlayerId", "resolved", "bridgeBoardRevision", "handMovements");
+            int sourceEngine = root.GetProperty("sourceEngineCardId").GetInt32();
+            long board = root.GetProperty("bridgeBoardRevision").GetInt64();
+            if (root.GetProperty("sourceExecutionId").GetString() != sourceExecution || root.GetProperty("sourceNativeCardId").GetString() != sourceCard
+                || sourceEngine < 0 || root.GetProperty("actorPlayerId").GetInt32() != actor || !root.GetProperty("resolved").GetBoolean()
+                || board < 0 || board > finalBoard) throw new InvalidDataException("The private audit source, owner or publication cannot match the retained owned frame.");
+            var nativeIds = new HashSet<string>(StringComparer.Ordinal); var engineIds = new HashSet<int>();
+            var movements = root.GetProperty("handMovements");
+            if (movements.GetArrayLength() > 16) throw new InvalidDataException("The private audit exceeded its movement capacity.");
+            foreach (var movement in movements.EnumerateArray()) {
+                Closed(movement, "engineCardId", "nativeCardId", "cardOwnerId", "fromOwnerId", "toOwnerId", "fromZone", "toZone", "executionId", "budgetRootId");
+                int engineId = movement.GetProperty("engineCardId").GetInt32(); string nativeId = movement.GetProperty("nativeCardId").GetString() ?? "";
+                if (engineId < 0 || engineId == sourceEngine || !engineIds.Add(engineId) || string.IsNullOrWhiteSpace(nativeId) || !nativeIds.Add(nativeId)
+                    || movement.GetProperty("cardOwnerId").GetInt32() != actor || movement.GetProperty("fromOwnerId").GetInt32() != actor
+                    || movement.GetProperty("toOwnerId").GetInt32() != actor || movement.GetProperty("fromZone").GetString() != "Library"
+                    || movement.GetProperty("toZone").GetString() != "Hand" || movement.GetProperty("budgetRootId").GetString() != sourceExecution
+                    || !executionIds.Contains(movement.GetProperty("executionId").GetString() ?? ""))
+                    throw new InvalidDataException("A private movement lacks its exact physical card, owner, zone or source execution bridge.");
+            }
+            if (!nativeIds.SetEquals(newHand)) throw new InvalidDataException("Private actual hand movements do not match the newly observed owned hand identities.");
+        } catch (Exception error) when (error is InvalidOperationException or KeyNotFoundException or FormatException or OverflowException) {
+            throw new InvalidDataException("The private acquisition audit contains invalid typed evidence.", error);
+        }
+    }
+
+    internal static void RunAuditChecks(Action<bool, string> check)
+    {
+        var original = JsonNode.Parse("""
+            {"schemaVersion":1,"kind":"private-fixture-library-acquisition-audit","gameId":"audit-game","complete":true,"error":"",
+             "roots":[{"sourceExecutionId":"audit-execution","sourceEngineCardId":90,"sourceNativeCardId":"audit-source","actorPlayerId":29,
+               "resolved":true,"bridgeBoardRevision":7,"handMovements":[{"engineCardId":91,"nativeCardId":"new-hand-card","cardOwnerId":29,
+                 "fromOwnerId":29,"toOwnerId":29,"fromZone":"Library","toZone":"Hand","executionId":"audit-execution","budgetRootId":"audit-execution"}]}]}
+            """)!;
+        void Validate(JsonNode value) => ValidatePrivateAudit(JsonSerializer.SerializeToElement(value), "audit-game", "audit-execution", "audit-source", 29, 7,
+            ["new-hand-card"], ["audit-execution"]);
+        Validate(original); check(true, "A complete private actual movement bridge matches the retained owned hand identity");
+        foreach (var mutate in new Action<JsonNode>[] {
+            node => node["gameId"] = "other-game", node => node["complete"] = false, node => node["error"] = "unavailable",
+            node => node["roots"]![0]!["sourceExecutionId"] = "other-execution", node => node["roots"]![0]!["sourceNativeCardId"] = "other-source",
+            node => node["roots"]![0]!["actorPlayerId"] = 47, node => node["roots"]![0]!["resolved"] = false,
+            node => node["roots"]![0]!["bridgeBoardRevision"] = 8, node => node["roots"]![0]!["handMovements"]![0]!["nativeCardId"] = "old-card",
+            node => node["roots"]![0]!["handMovements"]![0]!["engineCardId"] = 90, node => node["roots"]![0]!["handMovements"]![0]!["engineCardId"] = -1,
+            node => node["roots"]![0]!["handMovements"]![0]!["fromOwnerId"] = 47, node => node["roots"]![0]!["handMovements"]![0]!["toOwnerId"] = 47,
+            node => node["roots"]![0]!["handMovements"]![0]!["cardOwnerId"] = 47, node => node["roots"]![0]!["handMovements"]![0]!["toZone"] = "Library",
+            node => node["roots"]![0]!["handMovements"]![0]!["executionId"] = "unrelated", node => node["roots"]![0]!["handMovements"]![0]!["budgetRootId"] = "unrelated",
+            node => node["roots"]![0]!["handMovements"] = new JsonArray(),
+            node => { var rows = node["roots"]![0]!["handMovements"]!.AsArray(); rows.Add(rows[0]!.DeepClone()); },
+            node => node["unexpected"] = "cannot-be-ignored"
+        }) {
+            var invalid = original.DeepClone(); mutate(invalid); bool rejected;
+            try { Validate(invalid); rejected = false; } catch (InvalidDataException) { rejected = true; }
+            check(rejected, "Private copied proofs cannot cross games, sources, owners, zones, identity sets or completion boundaries");
+        }
+        string directory = Path.Combine(Path.GetTempPath(), "mana-private-audit-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
+        string file = Path.Combine(directory, "oversized.json"); File.WriteAllBytes(file, new byte[65537]);
+        bool oversized;
+        try { ReadPrivateAuditAsync(file, "audit-game", "audit-execution", "audit-source", 29, 7, ["new-hand-card"], ["audit-execution"], CancellationToken.None).GetAwaiter().GetResult(); oversized = false; }
+        catch (InvalidDataException) { oversized = true; }
+        finally { File.Delete(file); Directory.Delete(directory); }
+        check(oversized, "Private audit file reads enforce the fixed byte cap before parsing or claiming a movement");
+    }
 
     private sealed class CapturePolicy(IAiPolicy inner, ConcurrentQueue<AiDecisionReplayCase> captures) : IAiPolicy
     {

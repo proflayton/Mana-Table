@@ -66,3 +66,35 @@ status, receipts and guardrails determine what was actually measured.
 
 See the [framework design](../../docs/Development/Mana-Table-AI-Experiments-Design.md)
 for the intended evaluation layers, limitations and later confirmation work.
+
+## Basic land acquisition candidate
+
+`library-acquisition-replay.v1.json` compares frozen full v6 with the explicit
+`casual-commander.v7.library-acquisition.v1` candidate. It uses four unchanged
+owned captures from synthetic real-provider rule journeys: direct Battlefield,
+direct Hand, staged Battlefield/Hand, and a renamed staged equivalent. The
+independent `acquire-basic-lands` grader requires useful current basic-land
+indices, rather than merely an accepted empty answer. The two staged cases
+share one family weight. Capture provenance is retained beside the fixtures.
+
+Use this spec with the same Plan/Run/Analyze commands above and a fresh profile.
+The corresponding `library-acquisition-natural-pilot.v1.json` retains the full
+32-game schedule and fixed full-v6 reference seats. Neither template promotes
+the candidate to the shipping default.
+
+Replay proves selection, not acquisition. The private provider continuation
+below compares actual baseline/candidate resolutions under synthetic pregame
+setup. Pass a matching built production JAR, fixture JAR, and engine resource
+bundle containing `runtime/bin/java.exe` and `forge-res`:
+
+```powershell
+dotnet $driver --ai-library-acquisition-journey --fixture-mode bundle --engine-jar forge-api/target/forge-engine-fixtures.jar --production-engine-jar forge-api/target/forge-engine.jar --engine-resources <engine-bundle> --profile "$env:TEMP/Mana-Acquisition-Bundle-01"
+```
+
+Other modes are `direct-battlefield`, `direct-hand`, and `renamed-bundle`; each
+needs a fresh profile. This test-only launcher never runs in the production JAR.
+The journey retains exact owned frames, proposals, receipts and consequences.
+Hidden Hand moves remain anonymous in public activity. A bounded private fixture
+audit independently binds those moves to IDs already disclosed in the acting
+seat's Hand and the resolved execution; it is never policy input. This is a
+mechanic regression, not a natural-game strength measurement.

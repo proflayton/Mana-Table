@@ -36,6 +36,22 @@ attachment decision. See the [shared contract and offline export CLI](../contrac
 
 ## Implemented
 
+Owned library-search options may include optional `libraryAcquisition` facts:
+`actorPlayerId`, `libraryOwnerId`, `recipientPlayerId`, `stage`,
+`currentDestination`, `additionalCostKnownAbsent`, and `plannedDestinations`
+(`destination`, `maximumCount`). Stages are `direct`, `select-bundle`, and
+`distribute-bundle`. The bounded structural producer certifies only supported
+own-library basic-land acquisition paths. It does not infer intent from names
+or prompt text. Existing `intent` can remain `Unknown`.
+
+Native admission requires the current owned viewer/decision, matching actor,
+owner and recipient, supported stage/destinations, and disclosed keyless options.
+These facts add no identities, inspection privilege or command authority. Missing
+facts preserve older behavior; malformed supplied facts are rejected. No saved
+data migration or protocol version change is required. The experimental policy
+and supported mechanics are described in the
+[acquisition experiment](../docs/Development/Mana-Table-AI-Library-Acquisition-Experiment.md).
+
 | Hook | Behavior |
 | --- | --- |
 | `EngineResources.load(path)` | Explicit, once-per-process initialization from Forge's resource directory |
