@@ -244,6 +244,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         final Set<String> poolManaColors = new HashSet<>();
         final List<java.util.function.Consumer<Map<String, Object>>> contextProjections = new ArrayList<>();
         List<?> offeredChoices;
+        forge.game.player.LibraryAcquisitionOffer libraryAcquisitionOffer;
         boolean orderedChoices;
         SpellAbility announcedAbility;
         String executionId;
@@ -2540,6 +2541,16 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         boolean ordered = prompt.orderedChoices;
         int minimum = prompt.min, maximum = prompt.max;
         var paying = game.costPaymentStack.peek();
+        projectedPrompt.remove("libraryAcquisition");
+        var acquisition = prompt.libraryAcquisitionOffer;
+        if (acquisition != null && paying == null && !ordered && acquisition == human.getLibraryAcquisitionOffer()
+                && acquisition.matches(human.getPlayer(), choices)) {
+            int owner = acquisition.actorPlayerId();
+            projectedPrompt.put("libraryAcquisition", map("actorPlayerId", owner, "libraryOwnerId", owner, "recipientPlayerId", owner,
+                    "stage", acquisition.stage(), "currentDestination", acquisition.currentDestination(), "additionalCostKnownAbsent", true,
+                    "plannedDestinations", acquisition.plannedDestinations().stream().map(item ->
+                            map("destination", item.destination(), "maximumCount", item.maximumCount())).toList()));
+        }
         var base = DecisionSemantics.describeContext(paying);
         var options = DecisionSemantics.options(choices, human::getDecisionAbility, human.getPlayer(), this::semanticCardId);
         var ordering = DecisionSemantics.ordering(choices, ordered, minimum, maximum);
@@ -2553,7 +2564,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         return table.currentPublication(boardRevision) && sourceActionVersion.get() == sourceVersion
                 && selectionOwnerCurrent(prompt) && prompt.offeredChoices == choices
-                && prompt.orderedChoices == ordered && prompt.min == minimum && prompt.max == maximum;
+                && prompt.orderedChoices == ordered && prompt.min == minimum && prompt.max == maximum
+                && (!projectedPrompt.containsKey("libraryAcquisition") || acquisition == human.getLibraryAcquisitionOffer()
+                    && acquisition.matches(human.getPlayer(), choices));
     }
 
     private void withdrawSelection(Pending prompt, CurrentDecisionProjection.Capture observed, long boardRevision, long sourceVersion) {
@@ -3366,6 +3379,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         choices = choices.stream().sorted(Comparator.comparing(item -> label(item), String.CASE_INSENSITIVE_ORDER)
                 .thenComparing(item -> item instanceof CardView card ? card.getId() : 0)).toList();
         var next = choicePrompt("choice", title, choices, Math.max(0, min), Math.min(choices.size(), max < 0 ? choices.size() : max), false, null);
+        var acquisition = human.getLibraryAcquisitionOffer();
+        if (acquisition != null && acquisition.matches(human.getPlayer(), choices)) next.libraryAcquisitionOffer = acquisition;
         libraryPrompt(next, choices, reveal == null ? choices : reveal.getCards(),
                 reveal == null ? ((CardView)choices.get(0)).getController() : reveal.getOwner(), true);
         var selected = new ArrayList<Object>();

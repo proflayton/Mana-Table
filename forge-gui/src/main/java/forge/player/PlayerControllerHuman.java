@@ -130,6 +130,17 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
 
     protected Map<SpellAbilityView, SpellAbility> spellViewCache = null;
     private volatile Map<SpellAbilityView, ? extends SpellAbility> decisionAbilities = Map.of();
+    private volatile forge.game.player.LibraryAcquisitionOffer libraryAcquisitionOffer;
+
+    /** Provenance for the exact currently blocking zone-change choice only. */
+    public forge.game.player.LibraryAcquisitionOffer getLibraryAcquisitionOffer() { return libraryAcquisitionOffer; }
+
+    private <T> T withLibraryAcquisition(forge.game.player.LibraryAcquisitionOffer offer, Supplier<T> choose) {
+        var previous = libraryAcquisitionOffer;
+        libraryAcquisitionOffer = offer;
+        try { return choose.get(); }
+        finally { libraryAcquisitionOffer = previous; }
+    }
 
     /** Exact rules ability for an option in the current blocking choice only. */
     public SpellAbility getDecisionAbility(SpellAbilityView view) { return decisionAbilities.get(view); }
@@ -2820,13 +2831,17 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     public Card chooseSingleCardForZoneChange(final ZoneType destination, final List<ZoneType> origin,
                                               final SpellAbility sa, final CardCollection fetchList, final DelayedReveal delayedReveal,
                                               final String selectPrompt, final boolean isOptional, final Player decider) {
-        return chooseSingleEntityForEffect(fetchList, delayedReveal, sa, selectPrompt, isOptional, decider, null);
+        var offer = forge.game.player.LibraryAcquisitionOffer.create(player, decider, destination, origin, sa, fetchList, 1);
+        return withLibraryAcquisition(offer,
+                () -> chooseSingleEntityForEffect(fetchList, delayedReveal, sa, selectPrompt, isOptional, decider, null));
     }
 
     public List<Card> chooseCardsForZoneChange(final ZoneType destination, final List<ZoneType> origin,
                                                final SpellAbility sa, final CardCollection fetchList, final int min, final int max, final DelayedReveal delayedReveal,
                                                final String selectPrompt, final Player decider) {
-        return chooseEntitiesForEffect(fetchList, min, max, delayedReveal, sa, selectPrompt, decider, null);
+        var offer = forge.game.player.LibraryAcquisitionOffer.create(player, decider, destination, origin, sa, fetchList, max);
+        return withLibraryAcquisition(offer,
+                () -> chooseEntitiesForEffect(fetchList, min, max, delayedReveal, sa, selectPrompt, decider, null));
     }
 
     @Override
