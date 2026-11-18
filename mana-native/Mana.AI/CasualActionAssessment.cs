@@ -44,34 +44,36 @@ public static class CasualActionAssessment
         return benefit;
     }
 
-    public static CasualActionEstimate Evaluate(GameSnapshot state, ActionOperationGraph graph, int workUnits, Card? source = null)
+    public static CasualActionEstimate Evaluate(GameSnapshot state, ActionOperationGraph graph, int workUnits, Card? source = null,
+        bool attachmentEvaluation = true)
     {
         if (workUnits <= 0) throw new ArgumentOutOfRangeException(nameof(workUnits));
-        return Evaluate(state, graph, new AiWorkBudget(workUnits), source, null, [], false);
+        return Evaluate(state, graph, new AiWorkBudget(workUnits), source, null, [], false, attachmentEvaluation: attachmentEvaluation);
     }
 
     public static CasualActionEstimate Evaluate(GameSnapshot state, ActionOperationGraph graph, AiWorkBudget work,
-        Card? source = null) => Evaluate(state, graph, work.CreateSlice(256, 4), source, null, [], true);
+        Card? source = null, bool attachmentEvaluation = true)
+        => Evaluate(state, graph, work.CreateSlice(256, 4), source, null, [], true, attachmentEvaluation: attachmentEvaluation);
 
     public static CasualActionEstimate Target(GameSnapshot state, ActionOperationGraph graph, int operationId,
-        SemanticEntity candidate, AiWorkBudget work, Card? source = null)
+        SemanticEntity candidate, AiWorkBudget work, Card? source = null, bool attachmentEvaluation = true)
     {
         // Marginal value excludes unrelated actor effects from the recipient
         // decision. The incomplete baseline is an evaluation device, never a
         // proposed target set or a relaxation of engine selection constraints.
         var allowance = work.CreateSlice(128, 4);
-        var baseline = Evaluate(state, graph, allowance, source, operationId, [], true);
+        var baseline = Evaluate(state, graph, allowance, source, operationId, [], true, attachmentEvaluation: attachmentEvaluation);
         if (baseline.Status == CasualAssessmentStatus.EstimatedPartial) return new(CasualAssessmentStatus.SearchLimited, 0, "target-comparison-limit");
         if (baseline.Status != CasualAssessmentStatus.Estimated)
             return baseline.Status == CasualAssessmentStatus.Incomplete
-                ? PartialTarget(state, graph, operationId, candidate, allowance, source, baseline) : baseline;
-        var added = Evaluate(state, graph, allowance, source, operationId, [candidate], true);
+                ? PartialTarget(state, graph, operationId, candidate, allowance, source, baseline, attachmentEvaluation) : baseline;
+        var added = Evaluate(state, graph, allowance, source, operationId, [candidate], true, attachmentEvaluation: attachmentEvaluation);
         if (added.Status == CasualAssessmentStatus.EstimatedPartial) return new(CasualAssessmentStatus.SearchLimited, 0, "target-comparison-limit");
         return added.Status == CasualAssessmentStatus.Estimated ? added with { Value = added.Value - baseline.Value } : added;
     }
 
     private static CasualActionEstimate PartialTarget(GameSnapshot state, ActionOperationGraph graph, int operationId,
-        SemanticEntity candidate, AiWorkBudget work, Card? source, CasualActionEstimate incomplete)
+        SemanticEntity candidate, AiWorkBudget work, Card? source, CasualActionEstimate incomplete, bool attachmentEvaluation)
     {
         if (!work.TrySpend()) return new(CasualAssessmentStatus.BudgetExceeded, 0, "operation-budget");
         var node = graph.Operations.FirstOrDefault(operation => operation.Id == operationId);
@@ -88,13 +90,14 @@ public static class CasualActionAssessment
         var recipient = node.Targets.Candidates.FirstOrDefault(entity => Identity(entity) == Identity(candidate)
             && (candidate.Kind == SemanticEntityKind.Player || entity.ControllerId == candidate.ControllerId));
         if (recipient == null) return incomplete;
-        var estimate = Value(state, source, [(node, [recipient])], work, 0);
+        var estimate = Value(state, source, [(node, [recipient])], work, 0, attachmentEvaluation);
         return estimate.Status == CasualAssessmentStatus.Estimated
             ? estimate with { Status = CasualAssessmentStatus.EstimatedPartial, Reason = "known-target-damage-only" } : estimate;
     }
 
     private static CasualActionEstimate Evaluate(GameSnapshot state, ActionOperationGraph graph, AiWorkBudget work,
-        Card? source, int? fixedOperation, ImmutableArray<SemanticEntity> fixedTargets, bool localOptimization, int depth = 0)
+        Card? source, int? fixedOperation, ImmutableArray<SemanticEntity> fixedTargets, bool localOptimization, int depth = 0,
+        bool attachmentEvaluation = true)
     {
         if (depth > 8) return Incomplete("pending-effect-depth");
         if (graph.Knowledge == SemanticKnowledge.Unsupported) return Unsupported("operation-knowledge");
@@ -160,7 +163,7 @@ public static class CasualActionAssessment
             if (index == active.Length) {
                 var effects = new List<(ActionOperation Node, ImmutableArray<SemanticEntity> Entities)>();
                 if (Collect(graph.RootId, new(), effects)) {
-                    var value = Value(state, source, effects, work, depth);
+                    var value = Value(state, source, effects, work, depth, attachmentEvaluation);
                     if (value.Status != CasualAssessmentStatus.Estimated) failure = value;
                     else best = Math.Max(best, value.Value);
                 }
@@ -257,7 +260,7 @@ public static class CasualActionAssessment
     }
 
     private static CasualActionEstimate Value(GameSnapshot state, Card? source,
-        List<(ActionOperation Node, ImmutableArray<SemanticEntity> Entities)> effects, AiWorkBudget work, int depth)
+        List<(ActionOperation Node, ImmutableArray<SemanticEntity> Entities)> effects, AiWorkBudget work, int depth, bool attachmentEvaluation)
     {
         double value = 0;
         var lifeLoss = new Dictionary<int, long>();
@@ -265,6 +268,7 @@ public static class CasualActionAssessment
         var draws = new Dictionary<int, long>();
         var cardDamage = new Dictionary<string, long>();
         foreach (var (node, entities) in effects) {
+            if (!attachmentEvaluation && node.Effect == ActionEffectKind.Attach) return Incomplete("attachment-evaluation-disabled");
             bool quantified = node.Effect is ActionEffectKind.Draw or ActionEffectKind.Damage or ActionEffectKind.AddCounters
                 or ActionEffectKind.RemoveCounters or ActionEffectKind.LifeGain or ActionEffectKind.LifeLoss or ActionEffectKind.Scry or ActionEffectKind.Token;
             if (quantified && (node.AmountKnowledge != SemanticKnowledge.Known || node.Amount is null or < 0)) return Incomplete("effect-amount");
@@ -289,7 +293,7 @@ public static class CasualActionAssessment
                     case ActionEffectKind.Exile when card != null:
                         value -= sign * Worth(card); break;
                     case ActionEffectKind.CounterSpell:
-                        var prevented = CounterTarget(state, entity, work, depth);
+                        var prevented = CounterTarget(state, entity, work, depth, attachmentEvaluation);
                         if (prevented.Status != CasualAssessmentStatus.Estimated) return prevented;
                         value += prevented.Value; break;
                     case ActionEffectKind.Bounce when card != null: value -= sign * Worth(card) * .6; break;
@@ -376,16 +380,16 @@ public static class CasualActionAssessment
             ?? (source != null && CardViews.Identity(source) == entity.CardId ? source : null);
     // A stack occurrence is not a physical card: copies can share CardId while
     // having different chosen targets. Never recover identity from display IDs.
-    public static CasualActionEstimate CounterTarget(GameSnapshot state, SemanticEntity entity, AiWorkBudget work)
-        => CounterTarget(state, entity, work.CreateSlice(256, 4), 0);
+    public static CasualActionEstimate CounterTarget(GameSnapshot state, SemanticEntity entity, AiWorkBudget work, bool attachmentEvaluation = true)
+        => CounterTarget(state, entity, work.CreateSlice(256, 4), 0, attachmentEvaluation);
 
-    private static CasualActionEstimate CounterTarget(GameSnapshot state, SemanticEntity entity, AiWorkBudget work, int depth)
+    private static CasualActionEstimate CounterTarget(GameSnapshot state, SemanticEntity entity, AiWorkBudget work, int depth, bool attachmentEvaluation)
     {
         var matches = state.Stack.Where(item => entity.StackItemId.Length > 0 ? item.Id == entity.StackItemId
             : item.Id == entity.Id || entity.CardId.Length > 0 && item.Card?.VisualId == entity.CardId).Take(2).ToArray();
         if (entity.Kind != SemanticEntityKind.Spell || matches.Length != 1) return Incomplete("pending-occurrence");
         var pending = matches[0];
-        var estimate = Evaluate(state, pending.OperationGraph, work, pending.Card, null, [], false, depth + 1);
+        var estimate = Evaluate(state, pending.OperationGraph, work, pending.Card, null, [], false, depth + 1, attachmentEvaluation);
         return estimate.Status == CasualAssessmentStatus.Estimated ? estimate with { Value = -estimate.Value, Reason = "avoided-pending-effects" } : estimate;
     }
 

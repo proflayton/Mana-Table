@@ -11,7 +11,18 @@ namespace Mana.AI;
 /// </summary>
 public sealed class CasualCommanderPolicy : IAiPolicy
 {
-    public AiPolicyDescriptor Descriptor { get; } = new("casual-commander.v6", AiTasks.All, AiPriorityAutomation.NoResponse);
+    public CasualCommanderOptions Options { get; }
+    public AiPolicyDescriptor Descriptor { get; }
+
+    public CasualCommanderPolicy() : this(new CasualCommanderOptions()) { }
+
+    public CasualCommanderPolicy(CasualCommanderOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        Options = options;
+        Descriptor = new(Options.AttachmentEvaluation ? "casual-commander.v6" : "casual-commander.v6.attachment-ablation.v1",
+            AiTasks.All, AiPriorityAutomation.NoResponse);
+    }
 
     public Task<AiProposal> EvaluateAsync(AiDecisionRequest request, CancellationToken cancellation)
     {
@@ -44,7 +55,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         return Task.FromResult(result);
     }
 
-    private static AiProposal Priority(AiDecisionRequest request, PriorityPayload priority)
+    private AiProposal Priority(AiDecisionRequest request, PriorityPayload priority)
     {
         var state = request.Frame.State;
         var offers = Offers(request).ToArray();
@@ -104,7 +115,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             : Missing("required-priority-route");
     }
 
-    private static double ActionScore(AiDecisionRequest request, Offered offer, Offered[] offers)
+    private double ActionScore(AiDecisionRequest request, Offered offer, Offered[] offers)
     {
         if (!request.Work.TrySpend()) return -1;
         var semantic = offer.Semantics;
@@ -122,7 +133,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             // for a positive nominal investment without removing that offer.
             if (funding.Status != AiManaPlanStatus.Funded) return -1;
         } else if (semantic.Affordability == ActionAffordability.Unknown && !PlausiblyFunded(request, semantic, offers)) return -1;
-        var assessment = CasualActionAssessment.Evaluate(state, semantic.OperationGraph, request.Work, offer.Source);
+        var assessment = CasualActionAssessment.Evaluate(state, semantic.OperationGraph, request.Work, offer.Source, Options.AttachmentEvaluation);
         if (assessment.Status is CasualAssessmentStatus.BudgetExceeded or CasualAssessmentStatus.SearchLimited) return -1;
         bool modeled = assessment.Status is CasualAssessmentStatus.Estimated or CasualAssessmentStatus.EstimatedPartial;
         // Starting an optional targeted cast is distinct from answering a truly
@@ -305,7 +316,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         return colored > 0 ? colored : generic ? 1 : 0;
     }
 
-    private static AiProposal Select(AiDecisionRequest request, DecisionReply complete, DecisionReply cancel, SelectionRange? range, ImmutableArray<int> players)
+    private AiProposal Select(AiDecisionRequest request, DecisionReply complete, DecisionReply cancel, SelectionRange? range, ImmutableArray<int> players)
     {
         var state = request.Frame.State;
         if (state.Decision!.Payload is EntitySelectionPayload { ManaReduction.RemainingManaParts.IsEmpty: true })
@@ -363,7 +374,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             if (!cost && request.Frame.Semantics.OperationId is { } operation) {
                 var assessment = CasualActionAssessment.Target(state, request.Frame.Semantics.OperationGraph, operation,
                     new(identity, SemanticEntityKind.Card, identity, ControllerId: occurrence.PlayerId), localWork,
-                    CardViews.Source(state, state.Decision!));
+                    CardViews.Source(state, state.Decision!), Options.AttachmentEvaluation);
                 if (assessment.Status == CasualAssessmentStatus.BudgetExceeded) return AiProposal.Unavailable.FromWorkLimit(localWork);
                 if (assessment.Status == CasualAssessmentStatus.SearchLimited) { score = double.NegativeInfinity; limited = true; }
                 if (assessment.Status == CasualAssessmentStatus.Estimated
@@ -394,7 +405,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             if (!cost && request.Frame.Semantics.OperationId is { } operation) {
                 var assessment = CasualActionAssessment.Target(state, request.Frame.Semantics.OperationGraph, operation,
                     new("player:" + player, SemanticEntityKind.Player, PlayerId: player), localWork,
-                    CardViews.Source(state, state.Decision!));
+                    CardViews.Source(state, state.Decision!), Options.AttachmentEvaluation);
                 if (assessment.Status == CasualAssessmentStatus.BudgetExceeded) return AiProposal.Unavailable.FromWorkLimit(localWork);
                 if (assessment.Status == CasualAssessmentStatus.SearchLimited) { score = double.NegativeInfinity; limited = true; }
                 if (assessment.Status == CasualAssessmentStatus.Estimated
@@ -439,7 +450,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         double DamageThreat(int player) => Math.Clamp(CasualTableAssessment.OpponentScore(request, player) * .01, 0, .25);
     }
 
-    private static AiProposal Confirmation(AiDecisionRequest request, ConfirmationPayload confirmation)
+    private AiProposal Confirmation(AiDecisionRequest request, ConfirmationPayload confirmation)
     {
         var state = request.Frame.State;
         if (confirmation.Decline == null) return Answer(request, new AcknowledgeDecision(state.Id, state.Decision!.Id), "acknowledge-required-step");
@@ -450,7 +461,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         // Yes based on that consequence would invert the actual choice.
         if (!request.Frame.Semantics.SelectionIsCost) {
             var assessment = CasualActionAssessment.Evaluate(state, request.Frame.Semantics.OperationGraph,
-                request.Work.CreateSlice(256, 4), CardViews.Source(state, state.Decision!));
+                request.Work.CreateSlice(256, 4), CardViews.Source(state, state.Decision!), Options.AttachmentEvaluation);
             if (assessment.Status == CasualAssessmentStatus.Estimated && assessment.Value <= 0) {
                 decline = true; declineReason = "decline-known-nonpositive-effect";
             } else if (assessment.Status is CasualAssessmentStatus.BudgetExceeded or CasualAssessmentStatus.SearchLimited) {
@@ -462,7 +473,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         return confirmation.Accept.Enabled ? Answer(request, new AcceptConfirmation(state.Id, state.Decision!.Id), "accept-required-effect") : Missing("confirmation-answer");
     }
 
-    private static AiProposal Choices(AiDecisionRequest request, ChoiceSelection selection, bool ordering)
+    private AiProposal Choices(AiDecisionRequest request, ChoiceSelection selection, bool ordering)
     {
         var state = request.Frame.State;
         if (ordering && request.Frame.Semantics.OrderingPurpose == DecisionOrderingPurpose.CostPayment) {
@@ -530,7 +541,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             selection.Choices.Where(choice => keeping != selected.Contains(choice.Index)).Select(choice => choice.Index).ToImmutableArray()),
             limited ? "cleanup-required-bounded-candidate" : "cleanup-retain-current-hand-resources");
     }
-    private static double ChoiceScore(AiDecisionRequest request, Choice choice, bool lose, out bool modeled)
+    private double ChoiceScore(AiDecisionRequest request, Choice choice, bool lose, out bool modeled)
     {
         modeled = false;
         if (!request.Work.TrySpend()) return double.NegativeInfinity;
@@ -549,12 +560,12 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             // Unknown optional purposes stay unvalued; required choices still
             // use the ordinary legal minimum rather than inventing avoidance.
             if (!counter) return double.NegativeInfinity;
-            var avoided = CasualActionAssessment.CounterTarget(request.Frame.State, target, request.Work);
+            var avoided = CasualActionAssessment.CounterTarget(request.Frame.State, target, request.Work, Options.AttachmentEvaluation);
             modeled = avoided.Status == CasualAssessmentStatus.Estimated;
             return modeled ? avoided.Value : double.NegativeInfinity;
         }
         var assessment = CasualActionAssessment.Evaluate(request.Frame.State, option?.OperationGraph ?? ActionOperationGraph.Unknown,
-            request.Work, CardViews.Source(request.Frame.State, request.Frame.State.Decision!));
+            request.Work, CardViews.Source(request.Frame.State, request.Frame.State.Decision!), Options.AttachmentEvaluation);
         if (assessment.Status is CasualAssessmentStatus.BudgetExceeded or CasualAssessmentStatus.SearchLimited) return double.NegativeInfinity;
         if (assessment.Status is CasualAssessmentStatus.Estimated or CasualAssessmentStatus.EstimatedPartial) { modeled = true; return assessment.Value; }
         // An incomplete effect headline has no established recipient or net
