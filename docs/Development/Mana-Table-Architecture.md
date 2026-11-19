@@ -1392,6 +1392,19 @@ credit, accepted receipt, rules consequence or renewed decision allowance.
 The existing operation clock schedules the idle wait; announcement pacing and
 all current actor, offer and command permissions remain separate gates.
 
+The separate manual all-AI campaign has no background host timer or configured
+presentation pacing. Its test-driver wait follows the existing independent
+spectator checks and natural/turn/time stop checks. A small per-Match helper may
+cooperatively yield after validated strict public board progress, while its
+original one-millisecond timer remains for baseline, idle, metadata-only,
+foreign or invalid input. Bound game/roster and scalar revision, board and
+restoration high-waters prevent rollback from manufacturing progress; recovery
+first requires a complete baseline. This helper never inspects private scopes
+or changes a command, provider call, policy allowance, consent or grade. It
+records only aggregate wait counts/elapsed ticks through the existing result
+writer. Await elapsed includes continuation scheduling and supplies no CPU or
+historical throughput claim.
+
 The source implementation after 0.2.292 separates announcement timing from
 cohort validity. With complete typed public progress, a phase, action-version or
 owned-choice-version change alone ends a captured cohort without restarting its

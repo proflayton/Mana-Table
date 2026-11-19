@@ -1963,7 +1963,7 @@ uses these same provenance checks.
 
 The wrapper is a test-only launcher for controlled positions using the exact
 production engine. It is checked against the shipping JAR and never supplies a
-shipping scenario API. The existing process initializes one JVM for the ten
+shipping scenario API. The existing process initializes one JVM for the declared
 controlled native goldens and subsequent games. The release campaign uses four
 cyclic seat rotations, each bounded by 160 global turns and 180 seconds. This is
 at most twelve minutes of nominal game budget, separate from fast CI. Limits are
@@ -1974,6 +1974,36 @@ draw can pass; the driver does not invent individual loss reasons which the
 provider omits. It records the public state and outcome before its only
 `StopSimulation` cleanup call. Forced cleanup, aborts and automation faults cannot
 manufacture a finish.
+
+The manual all-AI driver keeps its original one-millisecond idle timer. After
+the existing independent spectator/privacy/parity checks and all stop checks,
+strict public board progress can instead use `Task.Yield`. A per-Match helper
+binds the actual game and original public roster, baselines the first validated
+spectator read, and retains revision/board/restoration ceilings through invalid,
+foreign or rolled-back input. Catch-up first baselines; metadata-only or
+unchanged reads restore the timer. This changes no policy, private ownership,
+provider request, consent, watchdog, presentation beat or qualification limit.
+The next host step still obtains its own current scoped observation.
+
+`--presentation-group ai-campaign-wait` exercises that shared wait boundary with
+the actual manual host, production policy and authored independent spectator
+stream. The behavior-preserving extracted timer baseline blocks at two reads;
+the identical valid fixture with active yielding reaches its third independent
+read and one current command without advancing the fake driver timer. An
+unchanged follow-up waits again. Separate controls cover static metadata,
+public roster/identity changes, B100/rollback/catch-up recovery, restoration
+epochs, bounded yield counts, original wait exceptions and scalar summaries.
+They reuse existing continuation/profile grading checks, not a new deadline API.
+These are scheduling controls, not a rules-game result or proof of a cutoff fix.
+
+Each game adds a constant-size `Scheduling` result with branch counts and actual
+Stopwatch elapsed around the awaited timer/yield. These durations include
+continuation dispatch and are neither CPU nor pure blocked time; no threshold
+affects qualification. The first frozen d55 cutoff did not contain these spans.
+Separate timer calibration and sparse checkpoints cannot establish its saved
+time, and all previous first-attempt evidence stays unchanged.
+`Scheduling` is optional additive test-report data: older reports may omit it;
+persisted player profiles and IPC protocols are unchanged.
 
 The initial real-provider conformance driver discards explicitly expired source
 reads and requires a strictly newer observation of the same game before querying

@@ -21,6 +21,7 @@ internal sealed record AiCampaignResult(int Match, string StopReason, string? Me
     public ConfiguredSimulationSetup? Setup { get; init; }
     public ImmutableArray<ConfiguredSimulationParticipant> Participants { get; init; } = [];
     public ImmutableArray<AiCampaignDeckQualification> DeckQualification { get; init; } = [];
+    public AiCampaignStepWaitEvidence? Scheduling { get; init; }
 }
 
 // Sequential games reuse the existing JVM lane. Budgets stop tests explicitly;
@@ -282,6 +283,7 @@ internal static class AiEngineCampaign
         AiCampaignOutcomeProof? outcome = null;
         ConfiguredSimulationStart? configured = null;
         AiCampaignQualificationTracker? qualification = null;
+        AiCampaignStepWait? stepWait = null;
         try {
             if (specification != null) {
                 var setup = new ConfiguredSimulationSetup(specification, decks);
@@ -294,6 +296,7 @@ internal static class AiEngineCampaign
                 evidence.BindQualification(qualification);
                 File.WriteAllText(Path.Combine(directory, "configured-start.json"), JsonSerializer.Serialize(configured, new JsonSerializerOptions { WriteIndented = true }));
             } else state = await engine.StartSimulationAsync(decks);
+            stepWait = new AiCampaignStepWait(state.Id);
             while (true) {
                 if (configured != null) ConfiguredSimulationFacts.ValidateState(configured, state);
                 stage = "host-step";
@@ -335,7 +338,7 @@ internal static class AiEngineCampaign
                         throw new TimeoutException("The campaign did not reach two multiplayer rounds within its time budget.");
                     stop = "time-budget"; break;
                 }
-                await Task.Delay(1);
+                await stepWait.WaitAsync(state);
             }
         } catch (Exception error) { stop = "mechanical-failure"; failure = error.ToString(); primaryFailure = error; }
         finally {
@@ -367,7 +370,8 @@ internal static class AiEngineCampaign
             AiCampaignContinuation.Assess(stop, limits.Turns, state?.Turn ?? 0, outcome?.VerifiedNaturalOutcome == true, limits.Goal)) {
                 Profile = limits.Profile, Goal = limits.Goal, Outcome = outcome, ConfigurationId = configurationId,
                 ConfigurationSha256 = configurationHash, Setup = configured?.Setup, Participants = configured?.Participants ?? [],
-                DeckQualification = qualification?.Summary(stop, outcome?.VerifiedNaturalOutcome == true, failure) ?? [] };
+                DeckQualification = qualification?.Summary(stop, outcome?.VerifiedNaturalOutcome == true, failure) ?? [],
+                Scheduling = stepWait?.Evidence };
         File.WriteAllText(Path.Combine(directory, "result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         return result;
     }

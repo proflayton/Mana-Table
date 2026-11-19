@@ -72,6 +72,10 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "owner-read-admission") PolledFullGameContractChecks.RunOwnerReadAdmissionControlsAsync(profile, Check).GetAwaiter().GetResult();
                 else if (group == "owner-command-wake") PolledFullGameContractChecks.RunCommandCompletionWakeAsync(profile, Check).GetAwaiter().GetResult();
                 else if (group == "polled-evidence") PolledEvidenceInboxChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+                else if (group == "ai-campaign-wait") {
+                    AiCampaignStepWaitChecks.RunAsync(Check).GetAwaiter().GetResult();
+                    AiCampaignStepWaitNegativeChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+                }
                 else if (group == "owner-read-marker") PolledFullGameContractChecks.RunOwnerReadMarkerControlAsync(profile, Check).GetAwaiter().GetResult();
                 else if (group == "owner-read-related") PolledFullGameContractChecks.RunOwnerReadRelatedAsync(profile, Check).GetAwaiter().GetResult();
                 else if (group == "owner-read-lineage") PolledFullGameContractChecks.RunOwnerReadLineageControlAsync(profile, Check).GetAwaiter().GetResult();
@@ -163,6 +167,8 @@ internal static partial class HeadlessPresentationSmoke
             SmokeSourceReadChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             JourneyProgressClockChecks.Run(Check);
             AiCampaignQualificationChecks.Run(Check);
+            AiCampaignStepWaitChecks.RunAsync(Check).GetAwaiter().GetResult();
+            AiCampaignStepWaitNegativeChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             MixedGameQualificationChecks.Run(Check);
             ResourceEvidenceWireChecks.Run(Check);
             ConfiguredSimulationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
