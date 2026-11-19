@@ -821,6 +821,26 @@ and insufficient shared work retain the existing fallback. This is a narrow
 public combat estimate, not a complete multiplayer strategy or prediction of
 hidden responses.
 
+`--ai-swarm-combat-checks` also exercises public arithmetic distilled from three
+retained first-failure decisions: eight/eight/ten offered attackers against
+four/four/five block slots, with a one-life defender and nonlethal separate
+returning commander channels. Fresh staged sessions complete minimal five/five/
+six-body cohorts within the original 4096-unit episode, leave spare creatures,
+reject old keys and require each current receipt. Controls cover real ordinary
+and commander lethal damage, partner identities, changed control, an excluded
+defender's prior damage, malformed/partial lineage, legacy Command-zone and
+eliminated-player lineage, unknown traits, reservations and insufficient work.
+The first arithmetic-only iteration still declined the exact private captures
+because protection, menace and modular were outside the default helper's
+coverage. A separate scoped iteration recognizes only those three traits in a
+named full-unblocked-return risk query; default and AfterBlock coverage remain
+unknown for them. Checks reject reduced amounts, other traits, infect,
+toughness-based damage and global/player/counter uncertainty. Unmodified exact
+private replay inputs then propose an additional offered attacker; offline
+staging with authored fresh authority completes the same five/five/six-body
+cohorts. These are policy/staging controls, not engine combat outcomes or proof
+of a natural game finishing before its deadline.
+
 Staged-combat scoring checks include four plus one nominal unblocked flying
 damage already aimed at a six-life opponent, with a one-power candidate and a
 competing defender. They distinguish a new threshold crossing from already

@@ -72,6 +72,23 @@ bindings remain unknown. The AI shares one bounded nominal combat assessment
 between blocking and reserving defenders; it does not turn this forecast into
 rules authority or claim to simulate every prevention/replacement effect.
 
+The optional free-for-all elimination forecast uses that same assessment for
+ordinary return attacks by the other surviving players. Ordinary life damage
+stays aggregated; commander contributions join prior damage by `CommanderId`,
+including under changed control. Partner commanders never share a damage bill,
+and the defender being eliminated contributes no future attack. Unknown helper
+coverage declines the optional cohort. Its named risk-only unblocked-return
+query additionally recognizes exactly menace, protection and modular, which do
+not change full current-power player damage when no own blockers are credited.
+It requires each supplied amount to equal the source's full nominal damage;
+default current-damage, blocking and retention assessments keep their original
+coverage. Already-terminal prior damage also declines.
+The former pooled commander upper bound remains only for genuinely legacy
+frames: missing rules and no typed lineage in any retained player's bounded
+Battlefield, Command zone or damage rows. Partial typed data cannot enter that
+fallback. Those scans, assessment construction and risk channels are charged
+to the existing search slice and reserved again for later staged inputs.
+
 Standing Auto also separates desired policy from wire ownership. A retained
 `NoResponse` intent reserves the automatic progression route, but an available
 or unknown response does not become a pending grant or block the foreground
