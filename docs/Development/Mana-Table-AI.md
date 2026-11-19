@@ -7,6 +7,13 @@ reports; confirmation statistics and human review remain separate. See the
 [runnable examples](../../mana-native/experiments/README.md).
 Current release qualification is not a policy-strength benchmark.
 
+The release evaluation has fourteen controlled engine goldens, followed by four
+required natural games. Its typed-return vigilance case verifies current-policy
+attack staging, three real blocks, attributed combat damage and an elimination
+without treating the partial fixture as a completed game. The exact-source CI
+engine suite also requires that targeted golden; see the
+[testing contract](Mana-Table-Testing.md) for its evidence boundaries.
+
 ## Experimental basic land acquisition
 
 `casual-commander.v7.library-acquisition.v1` is an explicit experimental candidate

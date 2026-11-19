@@ -1463,6 +1463,31 @@ combat. Receipt regressions reject foreign seats, non-allies, cost selections
 and missing owner, execution, target or baseline facts. The enemy-removal golden
 keeps its declared lethal target and surviving ally/nonlethal enemy checks.
 
+The AI release evaluation retains those thirteen goldens in their original order
+and appends `typed-return-vigilance-elimination` as the fourteenth. Its test-only
+pregame fixture supplies six printed 2/2 vigilance creatures, Crossroads haste,
+Power Play's first turn, three single blockers, and a remaining prowess creature
+and zero-power defender. Normal policy inputs must stage six exact current
+attackers, commit three real blocks, and produce attributed combat damage and
+the target's elimination. Authorized actor activity supplies combat impacts;
+the independent spectator supplies board, blocks, elimination and untapped
+survivor proof, with spectator activity remaining empty. This controlled partial
+game supplies no natural-game or campaign-deck qualification credit.
+Attack and block declaration IDs remain separate owned input scopes. Exact
+cohort and block pairs, the first actor turn and the declared fixture's absence
+of extra-combat/extra-turn effects delimit this combat; the test does not invent
+a shared spectator or engine-wide combat identifier.
+Diagnostic errors, policy review findings and evidence capture failures prevent
+a pass. Graphics-free controls require empty diagnostic evidence and preserve
+the original provider exception when a secondary report write fails.
+
+The required CI engine suite also runs `--ai-typed-return-golden` against the
+verified fixture launcher, production dependency, packaged resources and exact
+source manifest. Its private `typed-return-golden-checks` evidence is retained on
+failure through the existing JSON/log/gzip artifact rules. The 30-second golden,
+10-second/4096-unit policy allowance, existing thirteen cases, four natural
+160-turn/180-second release games, and CI job limits remain required.
+
 For varied team play, run the compiled native test driver with the normal fresh
 profile/runtime/resource arguments and:
 

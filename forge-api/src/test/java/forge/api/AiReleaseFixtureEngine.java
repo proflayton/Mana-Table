@@ -84,6 +84,23 @@ public final class AiReleaseFixtureEngine {
 
     static void configure(List<RegisteredPlayer> players) {
         String name = players.get(0).getDeck().getName();
+        if (name.equals("AI typed return vigilance elimination")) {
+            if (players.size() != 4) throw new IllegalArgumentException("The typed return fixture requires four registered players");
+            // Pregame fixture facts only. The ordinary policy must stage all
+            // attackers, the defender must block, and the engine resolves combat.
+            var powerPlay = StaticData.instance().getVariantCards().getCard("Power Play");
+            if (powerPlay == null) throw new IllegalArgumentException("Missing typed return fixture Power Play");
+            players.get(0).getDeck().getOrCreate(DeckSection.Conspiracy).add(powerPlay);
+            players.get(0).assignConspiracies();
+            var actor = new ArrayList<>(Collections.nCopies(6, "Steadfast Guard"));
+            actor.add("Concordant Crossroads");
+            addExtras(players.get(0), actor);
+            addExtras(players.get(1), List.of("Monastery Swiftspear", "Thermo-Alchemist"));
+            addExtras(players.get(2), List.of("Ornithopter"));
+            addExtras(players.get(3), Collections.nCopies(3, "Grizzly Bears"));
+            players.get(3).setStartingLife(6);
+            return;
+        }
         if (name.equals("AI terminal-risk current routes")) {
             // Declared test-only opening library: seven plus the first natural
             // draw reveals every witness. Stop after the nondrawing safe spell;
