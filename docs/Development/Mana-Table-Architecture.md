@@ -1433,6 +1433,20 @@ the next ordinary poll can discover fresh authority. A command or post-command
 readback still uses the normal uncertain-receipt failure path. Catching a safe
 read at this owner must not turn a possibly executed command into a retry.
 
+Before a poll worker invokes match observation, it rechecks its captured session
+epoch, bootstrap audience and lobby owner under the same session gate used by
+command admission. This check follows the optional awaited lobby discovery and
+also covers a late-starting poll without lobby discovery. The shipping Forge
+adapter captures its provider read lease synchronously during that invocation;
+the returned task is awaited outside the session gate. Thus an obsolete worker
+cannot acquire a post-command Forge lease and race the actual command readback.
+Already-invoked reads retain their existing provider and publication fences.
+This adds no observation retry, command replay or timeout extension. It does not
+impose synchronous lease capture on arbitrary `IMatchConnection` implementations:
+a wrapper that delays its underlying invocation must preserve its own ownership.
+`BindLobby` remains an owner-thread operation with the existing reply-side owner
+reference check; this gate is not a general concurrent lobby-writer contract.
+
 The Forge provider also fences its own command-authority cache. An ordinary or
 owned read captures its audience, command-admission sequence and observed anchor
 as one immutable lease. Validated command mapping advances that sequence under

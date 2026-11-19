@@ -15,6 +15,7 @@ internal static partial class OwnedDecisionObservationProtocolProbe
         const string game = "publication-admission-game", initial = "publication-initial";
         bool owned = mode.Contains("-owned-", StringComparison.Ordinal);
         bool postCommand = mode == "publication-admission-postcommand-newer";
+        bool delayedLobby = mode == "publication-admission-delayed-lobby";
         string outcome = mode[(mode.LastIndexOf('-') + 1)..];
         Console.WriteLine(JsonSerializer.Serialize(new { @event = "ready", protocolVersion = ForgeProtocol.Version,
             capabilities = ForgeProtocol.RequiredCapabilities.Add("automated-seats").Add("owned-decision-observation") }));
@@ -32,7 +33,8 @@ internal static partial class OwnedDecisionObservationProtocolProbe
             if (method == "matchState") {
                 states++;
                 if (states == 1) { Reply(id, State(game, InitialViewer, initial, 10)); continue; }
-                if (!owned && !postCommand && states == 2) { oldRead = id; File.WriteAllText(Path.Combine(directory, "old-read-held.txt"), "held"); continue; }
+                if (delayedLobby && states == 3) { Reply(id, State(game, InitialViewer, "publication-obsolete-poll", 12)); continue; }
+                if (!owned && !postCommand && !delayedLobby && states == 2) { oldRead = id; File.WriteAllText(Path.Combine(directory, "old-read-held.txt"), "held"); continue; }
                 readback = id; File.WriteAllText(Path.Combine(directory, "readback-held.txt"), "held"); continue;
             }
             if (method == "matchDecisionObservation") {
@@ -50,7 +52,7 @@ internal static partial class OwnedDecisionObservationProtocolProbe
             }
             if (method == "automatedEnable") {
                 controls++; Reply(id, new { acknowledged = true });
-                if (postCommand && controls == 1 && readback is { } post) {
+                if ((postCommand || delayedLobby) && controls == 1 && readback is { } post) {
                     Reply(post, State(game, InitialViewer, "publication-after-command", 11)); readback = null; continue;
                 }
                 if (controls == 1 && oldRead is { } old) {
@@ -80,6 +82,7 @@ internal static partial class OwnedDecisionObservationProtocolProbe
     internal static async Task CheckPublicationAdmissionAsync(string profile, Action<bool, string> check)
     {
         string executable = Path.Combine(Path.GetDirectoryName(typeof(OwnedDecisionObservationProtocolProbe).Assembly.Location)!, "Mana.Table.Tests.exe");
+        await CheckDelayedLobbyPollAsync(profile, executable, check);
         foreach (bool owned in new[] { false, true })
         foreach (string outcome in owned ? new[] { "newer", "null", "malformed", "superseded" } : new[] { "newer", "null", "malformed" }) {
             string mode = "publication-admission-" + (owned ? "owned-" : "ordinary-") + outcome;

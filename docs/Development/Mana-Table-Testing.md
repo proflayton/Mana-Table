@@ -965,6 +965,23 @@ replies must not change the provider's current authority. Invalid commands do
 not retire a current read; genuinely superseded post-command readbacks still
 fail with typed uncertainty and exactly one command dispatch.
 
+The same authored pipe probe holds a poll's lobby discovery until an explicit
+command has dispatched and begun its real readback. The obsolete poll must not
+then invoke Forge match observation: only the initial read and command readback
+enter the pipe, and the command is sent once. On the unfenced client this
+controlled schedule admitted a newer poll revision and produced same-admission
+`RevisionBehind` uncertainty for the command readback. This reproduces a possible
+schedule, not the missing raw reply from the original release smoke failure or
+a Magic game. The independent genuine post-command competition control still
+expects typed uncertainty, no cache substitution and no hidden discovery retry.
+`PollInvocationRegression` runs inside the existing operation-reservation and
+full client suites. It covers ordinary polls with and without lobby discovery,
+plus held-lobby reset, game/viewer handoff, restoration and lobby-owner
+replacement. The no-lobby branch shares the invocation fence; these controls do
+not inject a Task.Run scheduler or claim to force its late-start interleaving.
+Existing post-invocation Close controls retain the command and metadata wire
+lifetime coverage; a closed session does not pump its queued poll-finally action.
+
 `OperationReservationRegression` holds a quiet reading acknowledgement while a
 foreground gesture and ordinary poll arrive. A valid newer poll must remain
 admissible until the gesture actually owns the lane. Controlled wire and owner
