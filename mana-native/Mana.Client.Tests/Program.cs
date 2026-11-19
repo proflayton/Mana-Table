@@ -30,6 +30,11 @@ if (args.Contains("--ai-failure-provenance-checks")) {
     Console.WriteLine($"Passed {checks} AI failure provenance checks.");
     return 0;
 }
+if (args.Contains("--ai-host-loop-checks")) {
+    await AiHostLoopRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} AI host loop checks.");
+    return 0;
+}
 if (args.Contains("--app-update-checks")) {
     await AppUpdateSessionRegression.RunAsync(Check);
     Console.WriteLine($"Passed {checks} retained update ownership checks.");

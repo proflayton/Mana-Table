@@ -10,6 +10,13 @@ internal static class AiHostLoopRegression
     internal static async Task RunAsync(Action<bool, string> check)
     {
         await AcceptedRefresh(check);
+        await NewAiOnlyPublicBoard(check);
+        await NewBoardFindsCurrentDecision(check);
+        await MixedTableBecomesAiOnly(check);
+        await PacingClosesDuringBoardStep(check);
+        foreach (string mode in new[] { "unchanged", "metadata", "human", "omitted-roster", "inconsistent-roster",
+            "new-game", "missing-seat", "single-living", "rollback", "finished", "empty", "pacing", "fault", "rejected" })
+            await NoPublicBoardHint(mode, check);
         foreach (string mode in new[] { "empty", "resolving", "superseded", "rejected", "unknown", "policy-failure" })
             await IdleOutcome(mode, check);
         foreach (string mode in new[] { "mixed-rejected", "mixed-unknown" }) await MixedOutcome(mode, check);
@@ -54,6 +61,169 @@ internal static class AiHostLoopRegression
             check(provider.Commands.Count == 2 && provider.Reads == 5 && clock.Pending == 0 && provider.Reports.IsEmpty,
                 "Disposal cancels the held immediate observation, joins the host and leaves no timer, late policy or replay");
         } finally { provider.Release.TrySetResult(); await host.DisposeAsync(); }
+    }
+
+    private static async Task NewAiOnlyPublicBoard(Action<bool, string> check)
+    {
+        var clock = new Clock();
+        var provider = new Port(clock) { Reply = read => read switch {
+            1 => BoardBatch(1, 1), 2 => BoardBatch(2, 2), _ => BoardBatch(2, 3)
+        } };
+        var policy = new Policy();
+        await using var host = new AiTableHost(provider, _ => policy, 42, operationClock: clock);
+        await host.StartAsync(); await Until(() => clock.IdlePending == 1);
+        check(provider.Reads == 1 && provider.Commands.IsEmpty && policy.Calls == 0,
+            "The first AI-only resolving publication establishes a baseline without a speculative read or command");
+        clock.Advance(40);
+        await Until(() => clock.IdlePending == 1);
+        Console.WriteLine("AI-only public-board witness: reads=" + provider.Reads
+            + "; readStarts=" + string.Join(',', provider.ReadStarts) + "; commands=" + provider.Commands.Count
+            + "; policyCalls=" + policy.Calls + "; idleTimers=" + clock.IdlePending);
+        check(provider.Reads == 3 && provider.ReadStarts.SequenceEqual([0L, 40L, 40L])
+                && provider.Commands.IsEmpty && policy.Calls == 0 && host.LastFault == null,
+            "A genuinely advanced AI-only public board requests one fresh observation before treating the continuing rules transition as idle");
+        clock.Advance(39);
+        check(provider.Reads == 3 && provider.Commands.IsEmpty,
+            "An unchanged board with only a newer metadata revision retains the full ordinary 40 ms idle interval");
+    }
+
+    private static async Task NewBoardFindsCurrentDecision(Action<bool, string> check)
+    {
+        var clock = new Clock();
+        var provider = new Port(clock) { Reply = read => read switch {
+            1 => BoardBatch(1, 1), 2 => BoardBatch(2, 2), _ => BoardBatch(2, 3, ownPrompt: true)
+        }, HoldRead = 4 };
+        var policy = new Policy();
+        await using var host = new AiTableHost(provider, _ => policy, 42, operationClock: clock);
+        try {
+            await host.StartAsync(); await Until(() => clock.IdlePending == 1);
+            clock.Advance(40); await provider.Held.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            check(provider.ReadStarts.SequenceEqual([0L, 40L, 40L, 40L])
+                    && provider.Commands.ToArray() is [KeepOpeningHand { DecisionId: "public-progress-current" }]
+                    && policy.Calls == 1 && Accepted(host) == 1 && host.LastFault == null,
+                "An AI-only public-board hint obtains a separate exact owned prompt before one normal policy command and its accepted refresh");
+        } finally { provider.Release.TrySetResult(); }
+    }
+
+    private static async Task MixedTableBecomesAiOnly(Action<bool, string> check)
+    {
+        var clock = new Clock();
+        var provider = new Port(clock) { Reply = read => read switch {
+            1 => BoardBatch(1, 1, humans: 2),
+            2 => BoardBatch(2, 2, humans: 2, eliminatedHumans: true),
+            _ => BoardBatch(2, 3, humans: 2, eliminatedHumans: true)
+        } };
+        await using var host = new AiTableHost(provider, _ => new Policy(), 42, operationClock: clock);
+        await host.StartAsync(); await Until(() => clock.IdlePending == 1);
+        clock.Advance(40); await Until(() => clock.IdlePending == 1);
+        check(provider.Reads == 3 && provider.ReadStarts.SequenceEqual([0L, 40L, 40L]) && provider.Commands.IsEmpty,
+            "Two actual remaining AI owners can request a fresh board after both humans become eliminated while all four original player IDs remain bound");
+    }
+
+    private static async Task NoPublicBoardHint(string mode, Action<bool, string> check)
+    {
+        var clock = new Clock(); var policy = new Policy(mode == "pacing" ? AiPriorityAutomation.NoResponse : AiPriorityAutomation.FullControl) { Fail = mode == "fault" };
+        int humans = mode is "human" or "omitted-roster" ? 2 : 0;
+        long initialBoard = mode == "rollback" ? 2 : 1;
+        var initial = BoardBatch(initialBoard, initialBoard, humans: humans);
+        var next = BoardBatch(mode is "unchanged" or "metadata" ? 1 : 3,
+            mode == "unchanged" ? 1 : 3, humans: humans, ownPrompt: mode is "fault" or "rejected");
+        next = mode switch {
+            "omitted-roster" => next.Select(row => row with { State = row.State with {
+                Players = row.State.Players.Where(player => player.Id >= 2).ToImmutableArray() } }).ToImmutableArray(),
+            "inconsistent-roster" => next.SetItem(1, next[1] with { State = next[1].State with {
+                Players = next[1].State.Players.Add(Frame(seat: 2).State.Viewer!) } }),
+            "new-game" => next.Select(row => row with { State = row.State with { Id = "another-public-game" } }).ToImmutableArray(),
+            "missing-seat" => [next[0]],
+            "single-living" => next.Select(row => row with { State = row.State with {
+                Players = row.State.Players.Select(player => player.Id == 1 ? player with { Eliminated = true } : player).ToImmutableArray() } }).ToImmutableArray(),
+            "rollback" => next.SetItem(1, next[1] with { State = next[1].State with { Revision = 1, BoardRevision = 1 } }),
+            "finished" => next.Select(row => row with { State = row.State with { Status = "finished",
+                Outcome = new(row.State.Id, MatchOutcomeKind.Draw, [], [], "AllPlayersDrew") } }).ToImmutableArray(),
+            "empty" => [],
+            _ => next
+        };
+        if (mode == "pacing") {
+            ImmutableArray<AutomatedSeatObservation> Announced(ImmutableArray<AutomatedSeatObservation> rows) => rows.Select(row => row with {
+                State = row.State with {
+                    Stack = [new("New public spell", "", false, null) { Id = "paced-public-spell" }],
+                    Decision = row.SeatId == 0 ? new("paced-priority", new(), new PriorityPayload(new("Pass", true), CanAutoPass: true) {
+                        ResponseAvailability = PriorityResponseAvailability.Absent }) : null,
+                    DecisionOwnerId = 0, PriorityPlayerId = 0, StackInterruptionVersion = 0,
+                    PriorityContinuation = new(0, "", null, PriorityContinuationStatus.Idle, "", 0, []),
+                    PriorityObservation = new(row.State.BoardRevision, 0, 0, 0, true, false)
+                }
+            }).ToImmutableArray();
+            initial = Announced(initial); next = Announced(next);
+        }
+        var provider = new Port(clock) { Reply = read => read == 1 ? initial
+                : read >= 3 && (mode is "empty" or "missing-seat" or "finished" or "new-game") ? BoardBatch(9, 9) : next,
+            Mode = mode == "rejected" ? "rejected" : "", SupportsPriority = mode == "pacing" };
+        var pacing = mode == "pacing" ? new TimedAiHostPacing(TimeSpan.FromSeconds(2.4), clock) : null;
+        await using var host = new AiTableHost(provider, _ => policy, 42, pacing: pacing, operationClock: clock);
+        await host.StartAsync(); await Until(() => clock.IdlePending == 1);
+        clock.Advance(40); await Until(() => clock.IdlePending == 1);
+        check(provider.Reads == 2 && provider.ReadStarts.SequenceEqual([0L, 40L])
+                && provider.Commands.Count == (mode == "rejected" ? 1 : 0)
+                && policy.Calls == (mode is "fault" or "rejected" ? 1 : 0),
+            "A public-board hint cannot bypass ordinary idle, ownership, complete roster, monotonic scope, pacing or failure handling: " + mode);
+        clock.Advance(39);
+        check(provider.Reads == 2,
+            "The full 40 ms idle interval remains through39ms after the noneligible board: " + mode);
+        if (mode == "pacing") {
+            clock.Advance(2320); await Until(() => clock.IdlePending == 1);
+            check(provider.Controls.IsEmpty && provider.Commands.IsEmpty && policy.Calls == 0,
+                "Both live AI rows retain the real 2.4 second announcement barrier through2399ms without an ACK, grant, command or evaluation");
+            clock.Advance(40); await Until(() => clock.IdlePending == 1);
+            check(provider.Controls.ToArray() is [AutomatedPriorityControl.Acknowledge]
+                    && provider.Commands.IsEmpty && policy.Calls == 0 && host.LastFault == null,
+                "Only an independently observed post-beat priority frame attempts its scoped ACK; its known-retired control cannot become consent or a policy pass");
+        }
+        if (mode is "empty" or "missing-seat" or "finished" or "new-game") {
+            clock.Advance(1); await Until(() => clock.IdlePending == 1);
+            check(provider.Reads == 3 && provider.ReadStarts.SequenceEqual([0L, 40L, 80L]) && provider.Commands.IsEmpty,
+                "Reappearing owned scopes establish a fresh baseline instead of reviving retired public-board high-water: " + mode);
+        }
+    }
+
+    private static async Task PacingClosesDuringBoardStep(Action<bool, string> check)
+    {
+        var clock = new Clock(); var pace = new ClosingPace(); var policy = new Policy();
+        var provider = new Port(clock) { Reply = read => read == 1 ? BoardBatch(1, 1) : BoardBatch(2, 2, ownPrompt: true) };
+        await using var host = new AiTableHost(provider, _ => policy, 42, pacing: pace, operationClock: clock);
+        await host.StartAsync(); await Until(() => clock.IdlePending == 1);
+        clock.Advance(40); await Until(() => clock.IdlePending == 1);
+        Console.WriteLine("AI public-board final pacing witness: reads=" + provider.Reads + "; closed=" + pace.Closed
+            + "; commands=" + provider.Commands.Count + "; policyCalls=" + policy.Calls);
+        check(pace.Closed && provider.Reads == 2 && provider.Commands.IsEmpty && policy.Calls == 0,
+            "A pacing barrier closing during the current board step suppresses its read hint as well as policy and commands");
+    }
+
+    private static ImmutableArray<AutomatedSeatObservation> BoardBatch(long board, long revision,
+        int humans = 0, bool eliminatedHumans = false, bool ownPrompt = false)
+    {
+        var players = Enumerable.Range(0, humans + 2).Select(id => Frame(seat: id).State.Viewer! with {
+            Eliminated = id < humans && eliminatedHumans }).ToImmutableArray();
+        return Enumerable.Range(humans, 2).Select(seat => {
+            var source = Frame("public-progress-current", revision, seat);
+            return source with { State = source.State with { Players = players, BoardRevision = board,
+                Turn = 1, ActivePlayerId = humans, DecisionOwnerId = ownPrompt ? humans : null,
+                Decision = ownPrompt && seat == humans ? source.State.Decision : null,
+                ActionClass = ownPrompt ? "decision" : "resolving"
+            } };
+        }).ToImmutableArray();
+    }
+
+    private sealed class ClosingPace : IAiHostPacing
+    {
+        private int observations, readyCalls;
+        internal bool Closed { get; private set; }
+        public void Observe(ImmutableArray<AiTableProgress> progress) => observations++;
+        public bool Ready(string gameId, int seatId) {
+            if (observations < 2) return true;
+            if (++readyCalls <= 2) return true;
+            Closed = true; return false;
+        }
     }
 
     private static async Task IdleOutcome(string mode, Action<bool, string> check)
@@ -171,10 +341,10 @@ internal static class AiHostLoopRegression
         while (!condition()) await Task.Delay(1, bound.Token);
     }
 
-    private sealed class Policy : IAiPolicy
+    private sealed class Policy(AiPriorityAutomation automation = AiPriorityAutomation.FullControl) : IAiPolicy
     {
         private int calls; internal int Calls => Volatile.Read(ref calls); internal bool Fail;
-        public AiPolicyDescriptor Descriptor { get; } = new("ai-loop-test.v1", AiTasks.All);
+        public AiPolicyDescriptor Descriptor { get; } = new("ai-loop-test.v1", AiTasks.All, automation);
         public Task<AiProposal> EvaluateAsync(AiDecisionRequest request, CancellationToken cancellation)
         {
             Interlocked.Increment(ref calls);
@@ -183,14 +353,18 @@ internal static class AiHostLoopRegression
             return Task.FromResult<AiProposal>(new AiProposal.Answer(new KeepOpeningHand(state.Id, state.Decision!.Id), "keep-current"));
         }
     }
-    private sealed class Port(Clock clock) : IAutomatedSeatProvider
+    private sealed class Port(Clock clock) : IAutomatedSeatProvider, IAutomatedPriorityContinuation
     {
         internal Func<int, ImmutableArray<AutomatedSeatObservation>> Reply = _ => [Frame()];
         internal string Mode = ""; internal int HoldRead;
+        internal bool SupportsPriority;
+        public bool SupportsAutomatedPriorityContinuation => SupportsPriority;
+        public long AutomatedPriorityEpoch => 1;
         private int reads; internal int Reads => Volatile.Read(ref reads);
         internal ConcurrentQueue<long> ReadStarts { get; } = new();
         internal ConcurrentQueue<GameCommand> Commands { get; } = new();
         internal ConcurrentQueue<string> Reports { get; } = new();
+        internal ConcurrentQueue<AutomatedPriorityControl> Controls { get; } = new();
         internal TaskCompletionSource Held { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly ConcurrentDictionary<int, GameSnapshot> current = new();
@@ -213,6 +387,15 @@ internal static class AiHostLoopRegression
         }
         public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode, CancellationToken cancellation = default)
         { Reports.Enqueue(reasonCode); return Task.CompletedTask; }
+        public Task<AutomatedPriorityControlResult> ExecuteAutomatedPriorityControlAsync(long epoch, int seatId,
+            AutomatedPriorityControl control, CancellationToken cancellation = default)
+        {
+            control.Validate();
+            if (!SupportsPriority || epoch != 1 || !current.TryGetValue(seatId, out var state) || state.Id != control.GameId)
+                throw new InvalidDataException("Unowned loop priority control");
+            Controls.Enqueue(control);
+            return Task.FromResult<AutomatedPriorityControlResult>(new AutomatedPriorityControlResult.Retired());
+        }
     }
 
     private sealed class Clock : TimeProvider

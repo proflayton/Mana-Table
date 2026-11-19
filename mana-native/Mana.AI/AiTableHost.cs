@@ -34,6 +34,8 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
     private readonly Dictionary<(string Game, int Seat), AiDecisionStamp> rejected = [];
     private sealed record AwaitingObservation(long Started, AiFailure Evidence);
     private readonly Dictionary<(string Game, int Seat), AwaitingObservation> awaitingObservation = [];
+    private readonly Dictionary<(string Game, int Seat), (long Revision, long Board)> publicReadProgress = [];
+    private readonly Dictionary<string, ImmutableHashSet<int>> publicReadRosters = [];
     private Task? runner;
     private bool enabled, disposed;
     public AiHostFault? LastFault { get; private set; }
@@ -66,9 +68,10 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
         await StepCoreAsync(cancellation).ConfigureAwait(false);
     }
 
-    // Acknowledgement requests another read, never means input consumption or
-    // permission to reuse this batch. Absence of work keeps the idle backoff.
-    private enum AiHostStepOutcome { WaitForCurrentWork, ReobserveAfterAcceptedSubmission }
+    // Acknowledgement or a new AI-only public board requests another read,
+    // never input consumption or permission to reuse this batch. Unchanged
+    // work keeps the idle backoff.
+    private enum AiHostStepOutcome { WaitForCurrentWork, ReobserveCurrentWork }
 
     private async Task<AiHostStepOutcome> StepCoreAsync(CancellationToken cancellation)
     {
@@ -96,6 +99,8 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
                     awaitingObservation.Remove(key);
                 }
             }
+            bool newAiOnlyBoard = ObserveAiOnlyPublicProgress(observed, active);
+            bool progressFramesValid = true;
             foreach (var item in observed) {
                 token.ThrowIfCancellationRequested();
                 var state = item.State;
@@ -121,6 +126,7 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
                 // Execution/resource facts matter even between owned inputs;
                 // their validation precedes observation-owner mutation.
                 if (!session.ObserveAutomaticProgress(state)) {
+                    progressFramesValid = false;
                     if (await CheckObservationProgress(key, token).ConfigureAwait(false)) backoffRequired = true;
                     continue;
                 }
@@ -190,9 +196,66 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
                     backoffRequired = true;
                 }
             }
-            return (acceptedSubmission || acceptedControl) && !backoffRequired ? AiHostStepOutcome.ReobserveAfterAcceptedSubmission
+            // A pacing owner can close while this step awaits provider work.
+            // Recheck only the new scheduling hint; existing post-ACK refresh
+            // semantics remain independent and cannot grant an input answer.
+            bool freshPublicWork = newAiOnlyBoard && progressFramesValid && (pacing == null
+                || observed.Where(row => row.State.Viewer is { Eliminated: false })
+                    .All(row => pacing.Ready(row.State.Id, row.SeatId)));
+            return (acceptedSubmission || acceptedControl || freshPublicWork) && !backoffRequired
+                ? AiHostStepOutcome.ReobserveCurrentWork
                 : AiHostStepOutcome.WaitForCurrentWork;
         } finally { step.Release(); }
+    }
+
+    // A new public board in an already-bound all-AI endgame is continuing
+    // rules work, not an idle poll. This requests one independent provider read;
+    // it supplies no decision, pacing credit, command or renewed work budget.
+    private bool ObserveAiOnlyPublicProgress(ImmutableArray<AutomatedSeatObservation> observed,
+        HashSet<(string Id, int SeatId)> active)
+    {
+        foreach (var key in publicReadProgress.Keys.Where(key => !active.Contains(key)).ToArray()) publicReadProgress.Remove(key);
+        foreach (string game in publicReadRosters.Keys.Where(game => !active.Any(key => key.Id == game)).ToArray()) publicReadRosters.Remove(game);
+        bool fresh = false;
+        foreach (var group in observed.GroupBy(row => row.State.Id)) {
+            var rows = group.ToArray();
+            if (rows.Any(row => row.State.ViewerId != row.SeatId || row.State.Viewer == null
+                    || row.State.Status is not ("playing" or "resolving") || row.State.Error != null
+                    || row.State.Revision < 0 || row.State.BoardRevision < 0)) {
+                foreach (var row in rows) publicReadProgress.Remove((group.Key, row.SeatId));
+                continue;
+            }
+            var players = rows[0].State.Players;
+            var ids = players.Select(player => player.Id).ToImmutableHashSet();
+            bool coherent = ids.Count == players.Length && ids.All(id => id >= 0)
+                && rows.Select(row => row.SeatId).Distinct().Count() == rows.Length
+                && rows.All(row => row.State.Players.Length == ids.Count
+                    && row.State.Players.Select(player => player.Id).ToHashSet().SetEquals(ids)
+                    && row.State.Players.All(player => players.Single(original => original.Id == player.Id).Eliminated == player.Eliminated));
+            bool rosterKnown = publicReadRosters.TryGetValue(group.Key, out var roster);
+            if (!rosterKnown && coherent) publicReadRosters.Add(group.Key, roster = ids);
+            if (!coherent || rosterKnown && !roster!.SetEquals(ids)) {
+                foreach (var row in rows) publicReadProgress.Remove((group.Key, row.SeatId));
+                continue;
+            }
+            bool bound = rosterKnown && coherent && roster!.SetEquals(ids);
+            bool advanced = false, monotonic = true;
+            foreach (var row in rows) {
+                var key = (group.Key, row.SeatId);
+                bool priorKnown = publicReadProgress.TryGetValue(key, out var prior);
+                bound &= priorKnown && seats.ContainsKey(key);
+                bool ordered = !priorKnown || row.State.Revision >= prior.Revision && row.State.BoardRevision >= prior.Board;
+                monotonic &= ordered;
+                advanced |= priorKnown && row.State.BoardRevision > prior.Board;
+                if (ordered) publicReadProgress[key] = (row.State.Revision, row.State.BoardRevision);
+            }
+            var living = players.Where(player => !player.Eliminated).Select(player => player.Id).ToHashSet();
+            var owned = rows.Select(row => row.SeatId).ToHashSet();
+            if (bound && monotonic && advanced && living.Count >= 2 && living.IsSubsetOf(owned)
+                && rows.Where(row => living.Contains(row.SeatId)).All(row => pacing == null || pacing.Ready(group.Key, row.SeatId)))
+                fresh = true;
+        }
+        return fresh;
     }
 
     private async Task<bool> CheckObservationProgress((string Game, int Seat) key, CancellationToken cancellation)

@@ -1351,8 +1351,19 @@ automated input still receives a fresh observation and policy evaluation.
 The background loop separately distinguishes an accepted submission that needs
 a fresh observation from a cycle with no current work. Acceptance skips the
 40 ms idle backoff before that read; it proves no input consumption or resolved
-effect. Resolving, unchanged authority and presentation holds keep the backoff,
-and rejection or failure overrides another seat's accepted-submission hint.
+effect. Same-board resolving, unchanged authority and presentation holds keep
+the backoff, and rejection or failure overrides another seat's refresh hint.
+An already-bound game can also request one fresh read when its public board
+advances and every remaining player is privately owned by this AI host. This
+requires at least two living players, identical complete player-ID rosters
+across the owned views and the retained game binding, monotonic per-seat
+revision/board watermarks, and current pacing readiness before and after the
+step. An omitted human cannot become an invented AI-only table. Initial,
+retired, regressed, metadata-only, mixed-human or unchanged scopes retain the
+ordinary backoff. Progress watermarks retain only active game/seat IDs and
+scalar revisions, and retire alongside the corresponding seat ownership.
+This scheduling hint neither reuses a batch nor supplies an answer, observation
+credit, accepted receipt, rules consequence or renewed decision allowance.
 The existing operation clock schedules the idle wait; announcement pacing and
 all current actor, offer and command permissions remain separate gates.
 

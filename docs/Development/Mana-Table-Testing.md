@@ -1589,13 +1589,32 @@ single composition owner.
 
 `AiHostLoopRegression` drives the real background loop with timer-controlled
 provider replies. An accepted submission immediately requests a new observation;
-resolving and the identical old stamp grant no replay and retain the40 ms idle
+same-board resolving and the identical old stamp grant no replay and retain the40 ms idle
 wait. Fresh authority, the real2.4-second announcement pacer, rejected/unknown
 receipts, mixed-seat failures, cancellation and lawful foreign-human waiting
 remain separate controls. A clock-only old-loop baseline preserves its
 unconditional40 ms wait while exposing the same existing operation clock. These
 authored transport checks establish scheduling and authority, not engine input
 consumption, throughput or a fix for a retained CI cutoff.
+
+The focused client command `--ai-host-loop-checks` runs that same regression;
+the ordinary client inventory and CI still include it. An additional control
+retains the initial40 ms wait, then delivers a new public board in an already
+bound two-AI game: it requires an independent fresh read at the same clock
+instant before a new exact owned prompt can produce one command. A mixed table
+can acquire that scheduling hint only after both humans are actually eliminated
+while all four original player IDs remain present. Negative controls preserve
+backoff for live humans, omitted/inconsistent rosters, unchanged or metadata-only
+boards, new/retired/reappearing scopes, one remaining player, rollback, faults
+and rejections. A shipping two-AI2.4-second pacing case with current priority
+observation frames admits no evaluation, command, ACK or grant through2399 ms;
+its later known-retired ACK cannot manufacture consent. A separate mutable
+pacing control closes during the board step and requires the final readiness
+check to suppress the hint. The45-second accepted-input watchdog and all source,
+operation and qualification limits remain unchanged. These deterministic checks
+prove the responsive-host behavior; the retained CI timing spans mix provider,
+automatic-control, scheduling and evidence work and do not identify a measured
+share of the cutoff attributable to this change.
 
 The fixture-backed `--smoke-headless-engine` lane also invokes
 `PolledFanoutEngineJourney`. Result format3 declares the new phase contract
