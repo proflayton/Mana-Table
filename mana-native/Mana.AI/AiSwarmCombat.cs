@@ -115,29 +115,63 @@ internal static class AiSwarmCombat
             defender = attack.DefendingPlayerId; assigned.Add(attack.CardId); staged.Add(card);
         }
         if (staged.Count > MaxCohort) return null;
-        // Treat all nominal return damage as coming from the most advanced
-        // commander. This needs no printed-name/source matching. Missing owner
-        // coverage is not evidence that previous commander damage was zero.
+        int commanderRows = actor.CommanderDamage.IsDefault ? 0 : actor.CommanderDamage.Length;
+        if (commanderRows > MaxCandidates) return null;
+        bool legacy = state.CommanderCombat == null;
+        // Only an entirely legacy bounded public roster may use the old pooled
+        // upper bound. Partial typed facts must not escape through this fallback.
+        int setupWork = commanderRows;
+        var legacyFields = Array.Empty<System.Collections.Immutable.ImmutableArray<Card>>();
+        if (legacy) {
+            if (state.Players.Length > MaxCandidates
+                || state.Players.Any(player => !player.CommanderDamage.IsDefault && player.CommanderDamage.Length > MaxCandidates)) return null;
+            legacyFields = state.Players.SelectMany(player => new[] {
+                player.Zone("Battlefield").Cards, player.Zone("Command").Cards
+            }).ToArray();
+            if (legacyFields.Any(cards => cards.Length > MaxPermanents)) return null;
+            setupWork = legacyFields.Sum(cards => cards.Length)
+                + state.Players.Sum(player => player.CommanderDamage.IsDefault ? 0 : player.CommanderDamage.Length)
+                + commanderRows * (alive.Length + 2);
+        }
+        if (!work.TrySpend(Math.Max(1, setupWork))) return null;
+        if (legacy && (legacyFields.Any(cards => cards.Any(card => card.CommanderId.Length > 0))
+            || state.Players.Any(player => !player.CommanderDamage.IsDefault
+                && player.CommanderDamage.Any(row => row == null || row.CommanderId.Length > 0)))) return null;
+        if (!legacy && (state.CommanderCombat!.DamageLimit is <= 0
+            || actor.CommanderDamage.IsDefault
+            || actor.CommanderDamage.Any(row => row == null || row.Damage < 0
+                || state.CommanderCombat.DamageLimit is { } limit && row.Damage >= limit))) return null;
+        // Retain the prior conservative bound only for genuinely legacy data.
         long? commanderRoom = null;
-        if (!actor.CommanderDamage.IsDefaultOrEmpty && actor.CommanderDamage.Length <= MaxCandidates
+        if (legacy && !actor.CommanderDamage.IsDefaultOrEmpty
             && actor.CommanderDamage.All(row => row is { Damage: >= 0 and < 21 })
             && alive.All(player => actor.CommanderDamage.Any(row => row.OwnerId == player.Id))) {
-            if (!work.TrySpend(actor.CommanderDamage.Length)) return null;
             commanderRoom = 21L - actor.CommanderDamage.Max(row => row.Damage);
         }
         var plans = new List<Elimination>();
         foreach (var enemy in opponents.OrderBy(player => player.Id)) {
             if (defender is { } locked && enemy.Id != locked) continue;
             long returning = 0; bool knownReturn = true;
+            var incoming = new List<AiCombatDamage>();
             foreach (var other in opponents.Where(player => player.Id != enemy.Id))
             foreach (var card in creatures[other.Id]) {
                 // Count tapped/sick and phased-out bodies too: they may untap
                 // or phase in before a later combat. Assume no own blockers.
                 if (!work.TrySpend() || !Ordinary(card)) { knownReturn = false; break; }
-                returning += CasualTableAssessment.UnblockedDamage(card);
+                long damage = CasualTableAssessment.UnblockedDamage(card);
+                returning += damage;
+                if (!legacy) incoming.Add(new(card, damage));
             }
             if (!knownReturn || returning >= actor.Life
-                || returning > 0 && (commanderRoom == null || returning >= commanderRoom.Value)) continue;
+                || legacy && returning > 0 && (commanderRoom == null || returning >= commanderRoom.Value)) continue;
+            if (!legacy) {
+                // Pay for full-amount validation, constructor source/prior scans
+                // and at most one risk channel per source. Excluded defenders supply no future
+                // attack; partners and stolen commanders keep their own lineage.
+                if (!work.TrySpend(Math.Max(1, commanderRows + 3 * incoming.Count))) return null;
+                var risk = AiCombatSurvival.NominalUnblockedReturn(state, actor, incoming);
+                if (risk.UnknownNominalChannels || risk.KnownDefeats != 0) continue;
+            }
             int capacity = 0; bool knownBlocks = true;
             foreach (var card in creatures[enemy.Id]) {
                 if (card.PhasedOut || card.Tapped) continue;
@@ -180,9 +214,9 @@ internal static class AiSwarmCombat
         // more than the entire episode before any declaration could begin.
         int options = combat.AttackOptions.Length;
         int totalCreatures = creatures.Values.Sum(cards => cards.Length);
-        int commanderRows = actor.CommanderDamage.IsDefaultOrEmpty || actor.CommanderDamage.Length > MaxCandidates
-            ? 0 : actor.CommanderDamage.Length;
-        long fixedStageWork = Math.Max(1, totalCreatures) + commanderRows + totalCreatures - creatures[actor.Id].Length;
+        int otherCreatures = totalCreatures - creatures[actor.Id].Length;
+        long fixedStageWork = Math.Max(1, totalCreatures) + Math.Max(1, setupWork) + otherCreatures
+            + (legacy ? 0 : Math.Max(1, commanderRows + 3 * otherCreatures));
         long futureWork = Math.Max(mechanicalReserve,
             Math.Max(64L, 2L * options + plan.Cohort.Count + combat.AttackRepair.Length + 1));
         for (int stagedCount = staged.Count + 1; stagedCount <= plan.Cohort.Count; stagedCount++) {

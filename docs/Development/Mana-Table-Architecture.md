@@ -72,6 +72,23 @@ bindings remain unknown. The AI shares one bounded nominal combat assessment
 between blocking and reserving defenders; it does not turn this forecast into
 rules authority or claim to simulate every prevention/replacement effect.
 
+The optional free-for-all elimination forecast uses that same assessment for
+ordinary return attacks by the other surviving players. Ordinary life damage
+stays aggregated; commander contributions join prior damage by `CommanderId`,
+including under changed control. Partner commanders never share a damage bill,
+and the defender being eliminated contributes no future attack. Unknown helper
+coverage declines the optional cohort. Its named risk-only unblocked-return
+query additionally recognizes exactly menace, protection and modular, which do
+not change full current-power player damage when no own blockers are credited.
+It requires each supplied amount to equal the source's full nominal damage;
+default current-damage, blocking and retention assessments keep their original
+coverage. Already-terminal prior damage also declines.
+The former pooled commander upper bound remains only for genuinely legacy
+frames: missing rules and no typed lineage in any retained player's bounded
+Battlefield, Command zone or damage rows. Partial typed data cannot enter that
+fallback. Those scans, assessment construction and risk channels are charged
+to the existing search slice and reserved again for later staged inputs.
+
 Standing Auto also separates desired policy from wire ownership. A retained
 `NoResponse` intent reserves the automatic progression route, but an available
 or unknown response does not become a pending grant or block the foreground
@@ -1353,15 +1370,23 @@ a fresh observation from a cycle with no current work. Acceptance skips the
 40 ms idle backoff before that read; it proves no input consumption or resolved
 effect. Same-board resolving, unchanged authority and presentation holds keep
 the backoff, and rejection or failure overrides another seat's refresh hint.
-An already-bound game can also request one fresh read when its public board
-advances and every remaining player is privately owned by this AI host. This
-requires at least two living players, identical complete player-ID rosters
-across the owned views and the retained game binding, monotonic per-seat
-revision/board watermarks, and current pacing readiness before and after the
-step. An omitted human cannot become an invented AI-only table. Initial,
-retired, regressed, metadata-only, mixed-human or unchanged scopes retain the
-ordinary backoff. Progress watermarks retain only active game/seat IDs and
-scalar revisions, and retire alongside the corresponding seat ownership.
+An already-bound game can also request one fresh read when a living privately
+owned view observes public board progress, including while humans remain. This
+requires at least two living players, one living private owner, identical
+complete player-ID/elimination rosters across the views and retained game
+binding, monotonic per-seat revision/board watermarks, and pacing readiness
+before and after the step. Private ownership comes only from the host port;
+player names cannot establish it. Every previously certified living owner must
+remain present. A missing private view is allowed only when the complete public
+roster proves that owner eliminated. New owners require a baseline. Incomplete
+or inconsistent batches retain the ownership certificate and scalar high-waters;
+lower restored boards cannot invent progress, and a complete catch-up baseline
+precedes the next hint. Command/session retirement remains independent. Initial,
+retired, regressed, metadata-only and unchanged scopes keep ordinary backoff.
+The initial private port cannot prove an unseen owner's existence. Retained
+read state is bounded by the game roster and cleared with game/whole-scope
+retirement and disposal. Staggered owned rows may advance independently; this
+is at most one hint per eligible advanced batch, not one per global board.
 This scheduling hint neither reuses a batch nor supplies an answer, observation
 credit, accepted receipt, rules consequence or renewed decision allowance.
 The existing operation clock schedules the idle wait; announcement pacing and

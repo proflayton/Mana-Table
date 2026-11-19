@@ -27,6 +27,21 @@ internal sealed class AiCombatSurvival
     private bool lifeKnown = true, commanderKnown = true, unknown;
 
     internal AiCombatSurvival(GameSnapshot state, Player defender, IReadOnlyList<AiCombatDamage> incoming)
+        : this(state, defender, incoming, AssessmentContext.CurrentDamage) { }
+
+    private enum AssessmentContext { CurrentDamage, NominalUnblockedReturn }
+
+    // A closed fixed-current-power/no-own-blockers query. Its expanded trait
+    // coverage cannot escape into a model used for Current or AfterBlock.
+    internal static AiNominalCombatRisk NominalUnblockedReturn(GameSnapshot state, Player defender,
+        IReadOnlyList<AiCombatDamage> incoming)
+    {
+        if (incoming.Count > MaximumSources || incoming.Any(source => source.Amount != CasualTableAssessment.UnblockedDamage(source.Attacker)))
+            return new(0, 0, true);
+        return new AiCombatSurvival(state, defender, incoming, AssessmentContext.NominalUnblockedReturn).Risk;
+    }
+
+    private AiCombatSurvival(GameSnapshot state, Player defender, IReadOnlyList<AiCombatDamage> incoming, AssessmentContext context)
     {
         this.defender = defender;
         commanderLimit = state.CommanderCombat?.DamageLimit;
@@ -41,6 +56,9 @@ internal sealed class AiCombatSurvival
             commanderKnown = false; unknown = true;
         }
         else if (commanderLimit != null) foreach (var row in defender.CommanderDamage) {
+            if (row == null) {
+                commanderKnown = false; unknown = true; continue;
+            }
             // A legacy or partial row cannot establish zero prior damage.
             if (row.CommanderId.Length == 0 || row.Damage < 0 || ambiguous.Contains(row.CommanderId)
                 || !prior.TryAdd(row.CommanderId, row.Damage)) {
@@ -65,9 +83,11 @@ internal sealed class AiCombatSurvival
             if (card.FaceDown || card.Power == null) { lifeKnown = false; unknown = true; }
             // The exchange model is deliberately narrower than all keywords.
             // Do not describe its nominal result as all-channel safety.
-            if (card.CombatKeywords.Any(keyword => !OrdinaryTraits.Contains(keyword))
+            bool KnownTrait(string trait) => OrdinaryTraits.Contains(trait)
+                || context == AssessmentContext.NominalUnblockedReturn && trait is "menace" or "protection" or "modular";
+            if (card.CombatKeywords.Any(keyword => !KnownTrait(keyword))
                 || card.States is { } states && states.Any(shown => shown.Kind == "ability"
-                    && shown.Value != 0 && !OrdinaryTraits.Contains(shown.Key))) unknown = true;
+                    && shown.Value != 0 && !KnownTrait(shown.Key))) unknown = true;
             if (commanderLimit == null || card.CommanderId.Length == 0) continue;
             if (!prior.ContainsKey(card.CommanderId) || card.FaceDown) { commanderKnown = false; unknown = true; }
             commanders[card.CommanderId] = commanders.GetValueOrDefault(card.CommanderId) + contribution.Amount;

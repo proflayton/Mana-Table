@@ -5,17 +5,24 @@ using Mana.Contracts;
 
 // Actual background host and provider boundaries. Authored immutable receipts
 // model admission/observation order, not game resolution or policy fulfillment.
-internal static class AiHostLoopRegression
+internal static partial class AiHostLoopRegression
 {
     internal static async Task RunAsync(Action<bool, string> check)
     {
+        await ControlledMixedPublicRead(check);
+        await StaticHumanModal(check);
+        await MixedOwnerRecovery(check);
+        await MixedOwnerRecovery(check, inconsistent: true);
+        await MixedOwnershipShapes(check);
+        await MixedReadWorkBound(check);
         await AcceptedRefresh(check);
         await NewAiOnlyPublicBoard(check);
         await NewBoardFindsCurrentDecision(check);
         await MixedTableBecomesAiOnly(check);
         await PacingClosesDuringBoardStep(check);
-        foreach (string mode in new[] { "unchanged", "metadata", "human", "omitted-roster", "inconsistent-roster",
-            "new-game", "missing-seat", "single-living", "rollback", "finished", "empty", "pacing", "fault", "rejected" })
+        await PacingClosesDuringBoardStep(check, mixed: true);
+        foreach (string mode in new[] { "unchanged", "metadata", "omitted-roster", "inconsistent-roster",
+            "new-game", "missing-seat", "single-living", "rollback", "finished", "empty", "pacing", "mixed-pacing", "fault", "rejected" })
             await NoPublicBoardHint(mode, check);
         foreach (string mode in new[] { "empty", "resolving", "superseded", "rejected", "unknown", "policy-failure" })
             await IdleOutcome(mode, check);
@@ -122,8 +129,9 @@ internal static class AiHostLoopRegression
 
     private static async Task NoPublicBoardHint(string mode, Action<bool, string> check)
     {
-        var clock = new Clock(); var policy = new Policy(mode == "pacing" ? AiPriorityAutomation.NoResponse : AiPriorityAutomation.FullControl) { Fail = mode == "fault" };
-        int humans = mode is "human" or "omitted-roster" ? 2 : 0;
+        var clock = new Clock(); var policy = new Policy(mode is "pacing" or "mixed-pacing" ? AiPriorityAutomation.NoResponse : AiPriorityAutomation.FullControl) { Fail = mode == "fault" };
+        int humans = mode is "human" or "omitted-roster" or "mixed-pacing" ? 2 : 0;
+        bool paced = mode is "pacing" or "mixed-pacing";
         long initialBoard = mode == "rollback" ? 2 : 1;
         var initial = BoardBatch(initialBoard, initialBoard, humans: humans);
         var next = BoardBatch(mode is "unchanged" or "metadata" ? 1 : 3,
@@ -143,13 +151,13 @@ internal static class AiHostLoopRegression
             "empty" => [],
             _ => next
         };
-        if (mode == "pacing") {
+        if (paced) {
             ImmutableArray<AutomatedSeatObservation> Announced(ImmutableArray<AutomatedSeatObservation> rows) => rows.Select(row => row with {
                 State = row.State with {
                     Stack = [new("New public spell", "", false, null) { Id = "paced-public-spell" }],
-                    Decision = row.SeatId == 0 ? new("paced-priority", new(), new PriorityPayload(new("Pass", true), CanAutoPass: true) {
+                    Decision = row.SeatId == humans ? new("paced-priority", new(), new PriorityPayload(new("Pass", true), CanAutoPass: true) {
                         ResponseAvailability = PriorityResponseAvailability.Absent }) : null,
-                    DecisionOwnerId = 0, PriorityPlayerId = 0, StackInterruptionVersion = 0,
+                    DecisionOwnerId = humans, PriorityPlayerId = humans, StackInterruptionVersion = 0,
                     PriorityContinuation = new(0, "", null, PriorityContinuationStatus.Idle, "", 0, []),
                     PriorityObservation = new(row.State.BoardRevision, 0, 0, 0, true, false)
                 }
@@ -158,8 +166,8 @@ internal static class AiHostLoopRegression
         }
         var provider = new Port(clock) { Reply = read => read == 1 ? initial
                 : read >= 3 && (mode is "empty" or "missing-seat" or "finished" or "new-game") ? BoardBatch(9, 9) : next,
-            Mode = mode == "rejected" ? "rejected" : "", SupportsPriority = mode == "pacing" };
-        var pacing = mode == "pacing" ? new TimedAiHostPacing(TimeSpan.FromSeconds(2.4), clock) : null;
+            Mode = mode == "rejected" ? "rejected" : "", SupportsPriority = paced };
+        var pacing = paced ? new TimedAiHostPacing(TimeSpan.FromSeconds(2.4), clock) : null;
         await using var host = new AiTableHost(provider, _ => policy, 42, pacing: pacing, operationClock: clock);
         await host.StartAsync(); await Until(() => clock.IdlePending == 1);
         clock.Advance(40); await Until(() => clock.IdlePending == 1);
@@ -170,7 +178,7 @@ internal static class AiHostLoopRegression
         clock.Advance(39);
         check(provider.Reads == 2,
             "The full 40 ms idle interval remains through39ms after the noneligible board: " + mode);
-        if (mode == "pacing") {
+        if (paced) {
             clock.Advance(2320); await Until(() => clock.IdlePending == 1);
             check(provider.Controls.IsEmpty && provider.Commands.IsEmpty && policy.Calls == 0,
                 "Both live AI rows retain the real 2.4 second announcement barrier through2399ms without an ACK, grant, command or evaluation");
@@ -186,10 +194,11 @@ internal static class AiHostLoopRegression
         }
     }
 
-    private static async Task PacingClosesDuringBoardStep(Action<bool, string> check)
+    private static async Task PacingClosesDuringBoardStep(Action<bool, string> check, bool mixed = false)
     {
         var clock = new Clock(); var pace = new ClosingPace(); var policy = new Policy();
-        var provider = new Port(clock) { Reply = read => read == 1 ? BoardBatch(1, 1) : BoardBatch(2, 2, ownPrompt: true) };
+        var provider = new Port(clock) { Reply = read => read == 1 ? BoardBatch(1, 1, humans: mixed ? 2 : 0)
+            : BoardBatch(2, 2, humans: mixed ? 2 : 0, ownPrompt: true) };
         await using var host = new AiTableHost(provider, _ => policy, 42, pacing: pace, operationClock: clock);
         await host.StartAsync(); await Until(() => clock.IdlePending == 1);
         clock.Advance(40); await Until(() => clock.IdlePending == 1);
