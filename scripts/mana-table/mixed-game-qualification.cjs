@@ -198,11 +198,14 @@ function assess({ sourceRevision, engineHash, harnessHash, policyHash, manifestH
       && Array.isArray(report.announcements) && report.announcements.some(item => item.Name === 'Shamanic Revelation'),
       'Replay must retain the cast and both real55-trigger groups without missing announcements or110 individual display beats.');
       const inspection = report.workloadInspection;
+      const finite = report.finiteCapturedAnnouncements;
       requireThat(inspection?.version === 1 && inspection.sourceQueueSize === 110
         && exactly(inspection.textScales, [1, 1.3]) && inspection.currentPrimaryValidated === true
         && inspection.protectedControlsValidated === true && Array.isArray(inspection.sources)
         && exactly(inspection.sources.map(source => source.name), FANOUT_SOURCES)
-        && exactly(report.finiteAnnouncementSources, FANOUT_SOURCES) && exactly(report.inspectedSources, FANOUT_SOURCES),
+        && exactly(report.finiteAnnouncementSources, FANOUT_SOURCES) && exactly(report.inspectedSources, FANOUT_SOURCES)
+        && Array.isArray(finite) && exactly(finite.map(item => item.Name), FANOUT_SOURCES)
+        && finite.every(item => identity(item.Id)) && new Set(finite.map(item => item.Id)).size === 2,
       'Both actual source cohorts need completed current-primary, enlarged-text, protected-control and pointer inspection evidence.');
       const sourceIds = new Set(), memberIds = new Set(), executionIds = new Set();
       for (const source of inspection.sources) {
@@ -213,9 +216,13 @@ function assess({ sourceRevision, engineHash, harnessHash, policyHash, manifestH
           && Array.isArray(source.executionIds) && source.executionIds.length === 55 && source.executionIds.every(identity)
           && new Set(source.executionIds).size === 55
           && source.memberIds.every(id => !memberIds.has(id)) && source.executionIds.every(id => !executionIds.has(id))
-          && report.announcements.some(item => item.Name === source.name && item.CapturedCount === 55
+          && finite.some(item => item.Name === source.name && item.CapturedCount === 55
             && item.exactCapturedSource === true && item.SourceId === source.sourceId
-            && identity(item.ExecutionId) && source.executionIds.includes(item.ExecutionId)),
+            && identity(item.ExecutionId) && source.executionIds.includes(item.ExecutionId)
+            && nonnegative(item.firstObservedTicks) && item.firstObservedTicks <= end)
+          && report.announcements.some(item => item.Name === source.name && item.SourceId === source.sourceId
+            && identity(item.ExecutionId) && (item.CapturedCount === 1
+              || item.CapturedCount === 55 && item.exactCapturedSource === true && source.executionIds.includes(item.ExecutionId))),
         'Each actual55-trigger source must preserve its own distinct physical members, finite announcement execution, full rules and exact fan inspection.');
         sourceIds.add(source.sourceId);
         for (const id of source.memberIds) memberIds.add(id);
@@ -223,6 +230,8 @@ function assess({ sourceRevision, engineHash, harnessHash, policyHash, manifestH
       }
       requireThat(memberIds.size === 110 && executionIds.size === 110,
         'The inspected source cohorts must account for all110 distinct stack and execution occurrences.');
+      requireThat(exactly(report.capturedCurrentEffectSources, [...sourceIds]),
+        'Both captured physical sources must actually paint their exact current-effect rules during continuous replay.');
     }
   }
   const paymentRuntime = manaOutput?.runtime;

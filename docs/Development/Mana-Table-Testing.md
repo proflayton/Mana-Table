@@ -1739,7 +1739,11 @@ rules and exact fan inspection, current-primary glyph checks and protected
 controls. A source name or the former floating-heading phrase cannot substitute
 for that completed semantic inspection. These remain authored reading checks
 over actual accepted snapshots, separate from original live input or human UX
-acceptance.
+acceptance. Exact55 finite-event bindings are recorded separately from painted
+notices; an ordinary earlier one-event notice cannot prove captured-work paint.
+Both captured physical sources must also paint their exact current primary
+effect during continuous replay, identified by captured execution and source
+membership with complete name/rules glyph bounds.
 
 Both
 private windows replay through production presentation at1000x740 and1540x980

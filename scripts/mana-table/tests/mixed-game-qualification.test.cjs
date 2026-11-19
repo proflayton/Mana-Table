@@ -61,6 +61,7 @@ function fixture() {
     ].map(viewport => ({ viewport, accepted: 150, AcceptedCallbacks: 450, IdenticalCallbacks: 300,
       frames: 700, terminalIds: 110, incomplete: 0, pendingAtRecordedEnd: 2, actualCallbackEndTicks: 1000,
       finiteAnnouncementSources: ['Toothy, Imaginary Friend', "Mind's Eye"], inspectedSources: ['Toothy, Imaginary Friend', "Mind's Eye"],
+      capturedCurrentEffectSources: ['source-0', 'source-1'],
       workloadInspection: { version: 1, sourceQueueSize: 110, textScales: [1, 1.3], currentPrimaryValidated: true,
         protectedControlsValidated: true, sources: ['Toothy, Imaginary Friend', "Mind's Eye"].map((name, source) => ({
           sourceId: `source-${source}`, name, fullRulesValidated: true, exactFanValidated: true,
@@ -69,8 +70,13 @@ function fixture() {
         })) },
       syntheticDisplayDrainTicks: 120000000, announcements: [
         { Name: 'Shamanic Revelation', CapturedCount: 1 },
-        { Name: 'Toothy, Imaginary Friend', CapturedCount: 55, exactCapturedSource: true, SourceId: 'source-0', ExecutionId: 'execution-0-0' },
-        { Name: "Mind's Eye", CapturedCount: 55, exactCapturedSource: true, SourceId: 'source-1', ExecutionId: 'execution-1-0' }
+        { Name: 'Toothy, Imaginary Friend', CapturedCount: 1, SourceId: 'source-0', ExecutionId: 'ordinary-source-0' },
+        { Name: "Mind's Eye", CapturedCount: 1, SourceId: 'source-1', ExecutionId: 'ordinary-source-1' }
+      ], finiteCapturedAnnouncements: [
+        { Id: 'finite-0', Name: 'Toothy, Imaginary Friend', CapturedCount: 55, exactCapturedSource: true,
+          SourceId: 'source-0', ExecutionId: 'execution-0-0', firstObservedTicks: 50 },
+        { Id: 'finite-1', Name: "Mind's Eye", CapturedCount: 55, exactCapturedSource: true,
+          SourceId: 'source-1', ExecutionId: 'execution-1-0', firstObservedTicks: 60 }
       ] })) })) };
   f.manaOutput = { scenario: 'ordinary-polled-consuming-output-payment', passed: true, failure: null, cleanupErrors: [],
     passing: 'FullControl', totalBudgetSeconds: 90, activeBudgetSeconds: 45, creditedTotalSeconds: 35, creditedActiveSeconds: 9,
@@ -131,6 +137,11 @@ test('semantic source inspection cannot be replaced with a heading, another sour
     ['coerced primary proof', report => { report.workloadInspection.currentPrimaryValidated = 'true'; }],
     ['unprotected control', report => { report.workloadInspection.protectedControlsValidated = false; }],
     ['missing inspected source', report => { report.inspectedSources.pop(); }],
+    ['missing current captured paint', report => { delete report.capturedCurrentEffectSources; }],
+    ['unpainted captured source', report => { report.capturedCurrentEffectSources.pop(); }],
+    ['duplicate captured source paint', report => { report.capturedCurrentEffectSources[1] = report.capturedCurrentEffectSources[0]; }],
+    ['another physical source paint', report => { report.capturedCurrentEffectSources[1] = 'earlier-unrelated-source'; }],
+    ['name-only captured source paint', report => { report.capturedCurrentEffectSources = report.inspectedSources; }],
     ['duplicate finite source', report => { report.finiteAnnouncementSources[1] = report.finiteAnnouncementSources[0]; }],
     ['duplicate source identity', report => { report.workloadInspection.sources[1].sourceId = report.workloadInspection.sources[0].sourceId; }],
     ['coerced source identity', report => { report.workloadInspection.sources[0].sourceId = ['source-0']; }],
@@ -142,11 +153,27 @@ test('semantic source inspection cannot be replaced with a heading, another sour
     ['missing execution', report => { report.workloadInspection.sources[0].executionIds.pop(); }],
     ['duplicate execution', report => { report.workloadInspection.sources[0].executionIds[1] = report.workloadInspection.sources[0].executionIds[0]; }],
     ['foreign source execution', report => { report.workloadInspection.sources[1].executionIds[1] = report.workloadInspection.sources[0].executionIds[0]; }],
-    ['another source announcement', report => { report.announcements[1].ExecutionId = report.workloadInspection.sources[1].executionIds[0]; }],
+    ['missing finite events', report => { delete report.finiteCapturedAnnouncements; }],
+    ['missing finite event', report => { report.finiteCapturedAnnouncements.pop(); }],
+    ['duplicate finite identity', report => { report.finiteCapturedAnnouncements[1].Id = report.finiteCapturedAnnouncements[0].Id; }],
+    ['empty finite identity', report => { report.finiteCapturedAnnouncements[0].Id = ''; }],
+    ['another source finite execution', report => { report.finiteCapturedAnnouncements[0].ExecutionId = report.workloadInspection.sources[1].executionIds[0]; }],
+    ['wrong physical finite source', report => { report.finiteCapturedAnnouncements[0].SourceId = report.workloadInspection.sources[1].sourceId; }],
+    ['unobserved finite timing', report => { report.finiteCapturedAnnouncements[0].firstObservedTicks = 120001001; }],
+    ['coerced finite timing', report => { report.finiteCapturedAnnouncements[0].firstObservedTicks = '50'; }],
+    ['missing painted source', report => { report.announcements.pop(); }],
+    ['empty painted execution', report => { report.announcements[1].ExecutionId = ''; }],
+    ['foreign captured painted execution', report => { report.announcements[1].CapturedCount = 55; report.announcements[1].exactCapturedSource = true; }],
     ['wrong physical announcement source', report => { report.announcements[1].SourceId = report.workloadInspection.sources[1].sourceId; }],
-    ['unrelated announcement', report => { report.announcements[2].ExecutionId = 'not-in-the-captured-cohort'; }],
-    ['coerced exact source', report => { report.announcements[1].exactCapturedSource = 'true'; }],
-    ['legacy heading only', report => { delete report.workloadInspection; report.announcements[1].capturedHeadingPainted = true; }]
+    ['unrelated finite execution', report => { report.finiteCapturedAnnouncements[1].ExecutionId = 'not-in-the-captured-cohort'; }],
+    ['coerced exact finite source', report => { report.finiteCapturedAnnouncements[0].exactCapturedSource = 'true'; }],
+    ['legacy heading only', report => { delete report.workloadInspection; report.announcements[1].capturedHeadingPainted = true; }],
+    ['painted labels cannot invent finite capture', report => {
+      delete report.finiteCapturedAnnouncements;
+      for (const [index, source] of report.workloadInspection.sources.entries()) Object.assign(report.announcements[index + 1], {
+        CapturedCount: 55, exactCapturedSource: true, ExecutionId: source.executionIds[0], capturedHeadingPainted: true
+      });
+    }]
   ]) {
     const f = fixture(); mutate(f.replays[0].reports[0]);
     assert.throws(() => assess(f), undefined, name);
@@ -156,10 +183,18 @@ test('semantic source inspection cannot be replaced with a heading, another sour
     report.workloadInspection.sources.reverse();
     report.workloadInspection.textScales.reverse();
     report.finiteAnnouncementSources.reverse(); report.inspectedSources.reverse();
+    report.capturedCurrentEffectSources.reverse();
     for (const source of report.workloadInspection.sources) { source.memberIds.reverse(); source.executionIds.reverse(); }
   }
   assert.equal(assess(reordered).actualFanoutTerminalsPerHuman, 110,
     'Physical source membership and validated scales do not depend on report array order.');
+  const paintedCaptured = fixture();
+  for (const replay of paintedCaptured.replays) for (const report of replay.reports)
+    for (const [index, source] of report.workloadInspection.sources.entries()) Object.assign(report.announcements[index + 1], {
+      CapturedCount: 55, exactCapturedSource: true, ExecutionId: source.executionIds[0]
+    });
+  assert.equal(assess(paintedCaptured).actualFanoutTerminalsPerHuman, 110,
+    'A captured source may also have a genuinely painted representative whose execution belongs to the exact55.');
 });
 
 test('four real natural rotations and the actual source-bound110-trigger UI workload admit scoped release evidence', () => {
@@ -346,7 +381,7 @@ test('stale source/package bytes, workload cutoffs, relaxed deadlines and incomp
     f => { f.fanout.projectionContinuityVerified = false; }, f => { f.replays[0].reports.pop(); },
     f => { f.replays[1].reports[0].terminalIds = 109; }, f => { f.replays[0].reports[0].pendingAtRecordedEnd = 110; },
     f => { f.replays[1].reports[1].announcements.pop(); }, f => { f.replays[0].reports[0].incomplete = 1; },
-    f => { f.replays[0].reports[0].announcements[1].exactCapturedSource = false; },
+    f => { f.replays[0].reports[0].finiteCapturedAnnouncements[0].exactCapturedSource = false; },
     f => { f.replays[0].reports[0].IdenticalCallbacks++; },
     f => { f.replays[0].archive.TotalCheckpoints = 1025; },
     f => { f.replays[1].archive.parts[0].Bytes = 64 * 1024 * 1024 + 1; },
