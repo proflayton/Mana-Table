@@ -383,6 +383,7 @@ internal sealed partial class TableApplication : IDisposable
         UpdateBoardView();
         PrepareStudyHudReservations();
         PrepareStudyAttentionArea();
+        PrepareStackWorkloadOverview();
         PrepareMatchPresentation();
         BeginCardReading(frameElapsed);
         keywordHelpTargets.Clear();

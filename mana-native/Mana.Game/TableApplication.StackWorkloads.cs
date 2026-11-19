@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Renderer;
+using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
 using Point = Microsoft.Xna.Framework.Point;
@@ -18,6 +19,7 @@ internal sealed partial class TableApplication
     private GameSnapshot? workloadSnapshot;
     private ImmutableArray<StackWorkload> cachedWorkloads = [];
     private readonly List<StackWorkloadPaint> stackWorkloadPaint = [];
+    private StackWorkloadOverviewLayout? stackWorkloadOverviewLayout;
     internal sealed record StackWorkloadPaint(string Key, Rectangle Bounds, ImmutableArray<string> MemberIds,
         ImmutableArray<int> Positions, bool IsNext)
     {
@@ -33,6 +35,9 @@ internal sealed partial class TableApplication
 
     private sealed record StackWorkloadRow(int Height, int NameHeight, int ControllerHeight,
         int EffectHeight, int PositionHeight, int CountWidth, int CountHeight, string Controller, string EffectPreview);
+    private sealed record StackWorkloadOverviewRow(StackWorkload Group, Rectangle Bounds, StackWorkloadRow Layout);
+    private sealed record StackWorkloadOverviewLayout(Rectangle Surface, string Summary, int HeadingHeight,
+        ImmutableArray<StackWorkloadOverviewRow> Rows);
 
     private ImmutableArray<StackWorkload> CurrentStackWorkloads
     {
@@ -53,64 +58,91 @@ internal sealed partial class TableApplication
     {
         if (match == null || CurrentStackWorkloads.IsEmpty
             || key != AllWorkloadsKey && !CurrentStackWorkloads.Any(group => group.Key == key)) return;
+        if (key == AllWorkloadsKey && stackWorkloadOverviewLayout == null) {
+            OpenStack();
+            expandedStackWorkload = "";
+            return;
+        }
         expandedStackWorkload = key;
     }
 
     private void DrawStackWorkloads(Rectangle area)
     {
-        var state = match!;
         var groups = CurrentStackWorkloads;
-        if (state.Decision is { Payload: not PriorityPayload }) expandedStackWorkload = "";
-        if (expandedStackWorkload == AllWorkloadsKey) { DrawStackWorkloadOverview(groups); return; }
+        if (expandedStackWorkload == AllWorkloadsKey && stackWorkloadOverviewLayout is { } overview) { DrawStackWorkloadOverview(overview); return; }
         var expanded = groups.FirstOrDefault(group => group.Key == expandedStackWorkload);
         if (expanded != null) { DrawStackWorkloadFan(expanded); return; }
-        expandedStackWorkload = "";
         int primaryHeight = MeasureStudyStackHeight(area.Width);
         DrawStudyStackEffect(new(area.X, area.Y, area.Width, primaryHeight));
         var bar = new Rectangle(area.X, area.Y + primaryHeight + 12, area.Width, MeasureStackWorkloadBarHeight(area.Width));
         PaintControlSurface("stack-workload-overview", bar, new(17, 29, 36), Muted * .55f);
-        canvas.Text(StackWorkloadSummary, bar.X + 12, bar.Y + 6, Ink, .55f, bar.Width - 24, 80, true);
-        hits.Add(new("stack-workload-overview", Scope, bar, new MatchIntent.OpenStackWorkload(AllWorkloadsKey)));
+        string label = StackWorkloadSummary + (stackWorkloadOverviewLayout == null ? " · Open full stack" : "");
+        canvas.Text(label, bar.X + 12, bar.Y + 6, Ink, .55f, bar.Width - 24, 80, true);
+        UiIntent action = stackWorkloadOverviewLayout == null ? new MatchIntent.OpenStack() : new MatchIntent.OpenStackWorkload(AllWorkloadsKey);
+        hits.Add(new("stack-workload-overview", Scope, bar, action));
     }
 
     private string StackWorkloadSummary => match!.Stack.Length + " pending · " + CurrentStackWorkloads.Length + " effects";
 
     private int MeasureStackWorkloadBarHeight(int width) => Math.Max(30,
-        canvas.TextSize(StackWorkloadSummary, .55f, width - 24, 80, true).Y + 12);
+        canvas.TextSize(StackWorkloadSummary + " · Open full stack", .55f, width - 24, 80, true).Y + 12);
 
     private int MeasureStackWorkloadsHeight(int width) => MeasureStudyStackHeight(width) + 12 + MeasureStackWorkloadBarHeight(width);
 
-    private void DrawStackWorkloadOverview(ImmutableArray<StackWorkload> groups)
+    private StackWorkloadOverviewLayout? MeasureStackWorkloadOverview()
     {
+        var groups = CurrentStackWorkloads;
         var visible = groups.Take(3).ToArray();
-        int shown = visible.Length, columns = Math.Min(2, shown);
-        const int width = 790, padding = 14, gap = 12;
+        int shown = visible.Length, columns = shown;
+        // Three sources use the available play space in one row, keeping each
+        // source's full reading width rather than growing over player controls.
+        int width = shown == 3 ? 1180 : 790;
+        const int padding = 14, gap = 12;
         int rowWidth = (width - padding * 2 - gap * (columns - 1)) / columns;
         var measured = visible.Select(group => MeasureStackWorkloadRow(group, rowWidth)).ToArray();
         int headingHeight = canvas.TextSize(StackWorkloadSummary, .8f, width - padding * 2, 80, true).Y;
-        const string instruction = "Grouped references · numbers are actual stack positions";
+        const string instruction = "Open a source group to read its complete effect";
         int instructionHeight = canvas.TextSize(instruction, .53f, width - padding * 2, 80).Y;
         int contentY = 126 + padding + headingHeight + 6 + instructionHeight + 12;
         int contentHeight = 0;
         for (int row = 0; row < shown; row += columns)
             contentHeight += measured.Skip(row).Take(columns).Max(item => item.Height) + gap;
-        var surface = new Rectangle(190, 126, width, contentY - 126 + contentHeight + 42 + padding);
+        var preferred = new Rectangle(190, 126, width, contentY - 126 + contentHeight + 42 + padding);
+        var protectedObjects = ReaderControlReservations.Concat(studyRequiredObjects)
+            .Concat(seatReadoutPlans.Values.SelectMany(plan => plan.Pieces))
+            .Append(HudPaint(combatBarArea)).Append(HudPaint(portraitPriorityPlan?.Area ?? Rectangle.Empty))
+            .Append(HudPaint(automaticModeArea)).Append(HudPaint(abilityPassingArea)).Where(area => !area.IsEmpty).ToArray();
+        var paint = HudPaint(preferred);
+        if (DecisionWorkspaceLayout.TranslateComplete([paint], new(12, 64, 1576, 696), protectedObjects) is not { } fitted) return null;
+        var surface = new Rectangle(preferred.X + fitted.X - paint.X, preferred.Y + fitted.Y - paint.Y, width, preferred.Height);
+        int y = contentY + surface.Y - preferred.Y;
+        var rows = ImmutableArray.CreateBuilder<StackWorkloadOverviewRow>();
+        for (int index = 0; index < shown; index++) {
+            rows.Add(new(visible[index], new(surface.X + padding + index % columns * (rowWidth + gap), y, rowWidth, measured[index].Height), measured[index]));
+            if (index % columns == columns - 1) y += measured.Skip(index - columns + 1).Take(columns).Max(item => item.Height) + gap;
+        }
+        return new(surface, StackWorkloadSummary, headingHeight, rows.ToImmutable());
+    }
+
+    private void DrawStackWorkloadOverview(StackWorkloadOverviewLayout overview)
+    {
+        const int padding = 14;
+        var surface = overview.Surface;
         canvas.Panel(surface, new(12, 23, 31), Gold * .55f, 6);
         hits.Add(new("stack-workload-overview-surface", Scope, surface, new UiIntent.Block(InteractionScopeKind.Current), ShowPointer: false));
-        canvas.Text(StackWorkloadSummary, surface.X + padding, surface.Y + padding, Gold, .8f, width - padding * 2, 80, true);
-        canvas.Text(instruction, surface.X + padding, surface.Y + padding + headingHeight + 6,
-            Muted, .53f, width - padding * 2, 80);
-        if (groups.Length > shown)
-            Button("stack-all-sources", "+" + (groups.Length - shown) + " effects", surface.X + padding,
+        canvas.Text(overview.Summary, surface.X + padding, surface.Y + padding, Gold, .8f, surface.Width - padding * 2, 80, true);
+        canvas.Text("Open a source group to read its complete effect", surface.X + padding, surface.Y + padding + overview.HeadingHeight + 6,
+            Muted, .53f, surface.Width - padding * 2, 80);
+        if (CurrentStackWorkloads.Length > overview.Rows.Length)
+            Button("stack-all-sources", "+" + (CurrentStackWorkloads.Length - overview.Rows.Length) + " effects", surface.X + padding,
                 surface.Bottom - padding - 42, 150, new MatchIntent.OpenStack(), height: 42);
         Button("stack-workload-close", "Back to table", surface.Right - padding - 150, surface.Bottom - padding - 42,
             150, new MatchIntent.CloseStackWorkload(), height: 42);
-        int y = contentY;
-        for (int index = 0; index < visible.Length; index++) {
-            var group = visible[index];
-            var row = measured[index];
+        foreach (var planned in overview.Rows) {
+            var group = planned.Group;
+            var row = planned.Layout;
             var first = group.First;
-            var bounds = new Rectangle(surface.X + padding + index % columns * (rowWidth + gap), y, rowWidth, row.Height);
+            var bounds = planned.Bounds;
             canvas.Panel(bounds, new(17, 29, 36), Muted * .55f, 3);
             var art = new Rectangle(bounds.X + 10, bounds.Y + 10, 42, first.Item.Ability ? 37 : 59);
             PaintWorkloadArt(first.Item, art);
@@ -138,7 +170,6 @@ internal sealed partial class TableApplication
                 PositionBounds = position, Name = first.Item.Name, Controller = row.Controller, EffectPreview = row.EffectPreview
             });
             PaintStackArrival(first.Item, bounds);
-            if (index % columns == columns - 1) y += measured.Skip(index - columns + 1).Take(columns).Max(item => item.Height) + gap;
         }
     }
 

@@ -40,6 +40,17 @@ When a full ability reader cannot fit beside the current controls, its source
 thumbnail can sit beside the measured name/type header. The header grows for
 long names; full rules, live footer and reading fonts retain their sizes. Printed
 permanent readers keep their existing card form.
+The complete opaque source overview is placed around the current owner readouts
+and response controls. Three sources use one wider row at the same source-row
+reading width; two sources keep their existing arrangement. If no complete
+overview fits, the pending-count control explicitly opens the existing full-stack
+inspector. An already-open overview transfers that same reading intent without
+an unpaused Auto frame; a fresh required choice takes precedence over this fallback.
+Ability readers can use the whole visible canvas while retaining every protected
+control and owner reservation. If a full ability face cannot fit beside an open
+overview, hover does not paint an unsafe face. Open that source group, then hover
+its exact member to read the complete effect at the same font. The overview states
+that gesture. Ordinary printed-card readers retain their existing behavior.
 Reading sends no gameplay command. Required choices and existing priority/Take
 control gestures retain their engine authority and reserved space. Unknown
 causality cannot be deduplicated by a matching card name or effect text.

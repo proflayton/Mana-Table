@@ -24,6 +24,7 @@ internal static class StackCombatLayoutChecks
     {
         CheckWorkspaceFit(profile, check);
         foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) }) {
+            CheckOverviewFallback(profile, size, check);
             foreach (float textScale in new[] { 1f, 1.3f })
             foreach (bool reducedMotion in new[] { false, true })
                 CheckExplore(profile, size, textScale, reducedMotion, check);
@@ -61,6 +62,53 @@ internal static class StackCombatLayoutChecks
     }
 
     private sealed record Painted(string Name, Rectangle Logical, Rectangle Physical);
+
+    private static void CheckOverviewFallback(string profile, Point size, Action<bool, string> check)
+    {
+        // Authored layout stress, not new provider facts or rules receipts. The
+        // oversized non-current source leaves the actual primary unchanged.
+        var state = Mana.Scenarios.ExploreTriggersScenario.Snapshot(1);
+        var overfull = state with { Revision = state.Revision + 1, BoardRevision = state.BoardRevision + 1,
+            Stack = state.Stack.SetItem(3, state.Stack[3] with {
+                Name = string.Join(" ", Enumerable.Repeat("Complete source name", 120)) }) };
+        using (var run = new Journey(profile, size, 1f, true, 4, "overview-active-no-fit", state)) {
+            run.Click("stack-workload-overview"); run.Tick();
+            run.View.SetAutomatic(true); run.Tick();
+            run.Record("overview-start", new { run.View.StackWorkloadInspectionActive, run.View.ZoneName, run.View.DecisionDock,
+                run.View.StackWorkloads, run.View.SeatReadouts, frame = run.Frame.Observe() });
+            check(run.View.StackWorkloadInspectionActive && run.View.DecisionDock?.PauseReason == DecisionDockPauseReason.Inspection,
+                run.Label + ": an explicit overview owns the current inspection pause before a no-fit transition");
+            run.Present(overfull); run.Tick();
+            check(!run.View.StackWorkloadInspectionActive && run.View.ZoneName == "Stack"
+                    && run.View.DecisionDock?.PauseReason is DecisionDockPauseReason.Inspection or DecisionDockPauseReason.Overlay
+                    && run.Commands.IsEmpty,
+                run.Label + ": a no-fit overview transfers its explicit reading intent atomically to the existing full-stack inspector");
+            run.Tick(advance: .7);
+            check(run.View.ZoneName == "Stack" && run.View.DecisionDock?.PauseReason == DecisionDockPauseReason.Overlay
+                    && run.View.Automatic && run.Commands.IsEmpty,
+                run.Label + ": the fallback retains enabled Auto behind an uninterrupted reading pause without dispatching a pass");
+        }
+        using (var run = new Journey(profile, size, 1.3f, true, 4, "overview-default-no-fit", overfull)) {
+            var bar = run.Hit("stack-workload-overview");
+            check(bar.Intent is MatchIntent.OpenStack && run.TryPoint(bar, out _),
+                run.Label + ": an unplaceable complete overview exposes the existing full-stack route as a reachable current control");
+            run.Click(bar.Id); run.Tick();
+            check(run.View.ZoneName == "Stack" && !run.View.StackWorkloadInspectionActive && run.Commands.IsEmpty,
+                run.Label + ": the no-fit queue control opens its declared inspector once without an invisible overview or gameplay command");
+        }
+        using (var run = new Journey(profile, size, 1f, true, 4, "overview-required-no-fit", state)) {
+            run.Click("stack-workload-overview"); run.Tick();
+            run.View.SetAutomatic(true);
+            var required = overfull with { Decision = new("required-overview-layout", new("Make the current required choice."),
+                new ConfirmationPayload(new("Continue", true))), ActionClass = "confirmation" };
+            var acceptedRequired = run.Present(required); run.Tick();
+            var answer = run.Hit("confirm");
+            check(!run.View.StackWorkloadInspectionActive && run.View.ZoneName == null
+                    && run.View.Match!.Decision?.Id == acceptedRequired.Decision!.Id && run.View.CurrentHit(answer)
+                    && run.TryPoint(answer, out _) && run.Commands.IsEmpty,
+                run.Label + ": a fresh required choice retires overview intent before no-fit fallback and keeps its exact answer exposed");
+        }
+    }
     private static Rectangle PanelPaint(Rectangle bounds) => Rectangle.Union(bounds,
         new(bounds.X + 2, bounds.Y + 5, bounds.Width, bounds.Height));
     private static string Normalize(string value) => Regex.Replace(value, @"\s+", " ").Trim();
@@ -85,6 +133,42 @@ internal static class StackCombatLayoutChecks
         check(groups.SelectMany(group => group.MemberIds).Distinct().Count() == 4
                 && groups.Count == 3 && groups.Single(group => group.IsNext).Positions.SequenceEqual([1, 3]),
             run.Label + ": land and nonland Explore effects remain separate even on the same physical Nicanzil");
+        foreach (var group in groups.ToArray()) {
+            var item = run.View.Match!.Stack.Single(item => item.Id == group.MemberIds[0]);
+            var sourceHit = run.Hit("stack-workload:" + item.Id);
+            run.Tick(run.Point(sourceHit)); run.Tick(advance: .4);
+            var overviewReader = run.View.ReferencePreviewBounds;
+            check(overviewReader == null && sourceHit.Intent is MatchIntent.OpenStackWorkload
+                    || overviewReader is { } clear && !run.View.SeatReadouts.Concat(run.Frame.Hits
+                        .Where(hit => hit.Id is "confirm" or "combat-review" or "stack-resolution-arm" or "stack-resolution-stop")
+                        .Select(hit => PanelPaint(hit.Bounds))).Any(clear.Intersects),
+                run.Label + ": source hover either fits beside the complete overview or preserves the explicit exact-member reading route without covering protected controls");
+            run.Tick(new Point(10, 60)); run.Tick();
+            run.Click(sourceHit.Id); run.Tick();
+            check(run.View.StackRows.Select(row => row.Id).SequenceEqual(group.MemberIds),
+                run.Label + ": each overview source opens only its complete exact current member group");
+            var member = run.Hit("stack-workload-member:" + item.Id);
+            run.Tick(run.Point(member)); run.Tick(advance: .4);
+            var reader = run.View.ReferencePreviewBounds;
+            var rules = run.Frame.Drawing.Commands.OfType<DrawCommand.Text>()
+                .Where(text => reader?.Contains(text.X, text.Y) == true && text.Size == CardRulesLayout.RulesFont).ToArray();
+            var protectedObjects = run.View.SeatReadouts.Concat(run.Frame.Hits
+                .Where(hit => hit.Id is "confirm" or "combat-review" or "stack-resolution-arm" or "stack-resolution-stop")
+                .Select(hit => PanelPaint(hit.Bounds))).ToArray();
+            run.Record("explore-overview-reader-" + item.Id, new { reader, run.View.PendingReaderReservations,
+                run.View.PendingReaderFits, protectedObjects, frame = run.Frame.Observe() });
+            check(reader != null && run.View.ReferencePreviewStackId == item.Id
+                    && run.View.ReferencePreviewCardId == CardViews.Identity(item.Card!)
+                    && Normalize(string.Join(" ", rules.Select(text => text.Value))).Contains(Normalize(item.Text), StringComparison.Ordinal)
+                    && rules.All(text => reader.Value.Contains(TextBounds(text, scale))),
+                run.Label + ": every source from the three-effect overview opens its exact full rules at the existing reading font");
+            check(new Rectangle(0, 0, 1600, run.View.DesignHeight).Contains(reader!.Value)
+                    && !protectedObjects.Any(reader.Value.Intersects) && run.Commands.IsEmpty,
+                run.Label + ": every complete Explore source reader fits the visible canvas without covering owner facts or current controls");
+            run.Tick(new Point(10, 60)); run.Tick();
+            run.Click("stack-workload-close"); run.Tick();
+            run.Click("stack-workload-overview"); run.Tick();
+        }
         var target = run.Hit("stack-workload:explore-land-0");
         run.Click(target.Id); run.Tick();
         check(run.Frame.Hits.Any(hit => hit.Id == "stack-workload-member:explore-land-2") && run.Commands.IsEmpty,
@@ -139,11 +223,12 @@ internal static class StackCombatLayoutChecks
 
         void CheckGroupGeometry()
         {
+            var state = run.View.Match ?? throw new InvalidOperationException("The current Explore group lost its match.");
             run.Record("explore-group-geometry-" + run.View.Now,
                 new { run.View.StackWorkloads, run.View.StackRows, frame = run.Frame.Observe(), commands = run.Commands.Count });
             var texts = run.Frame.Drawing.Commands.OfType<DrawCommand.Text>().ToArray();
             foreach (var group in run.View.StackWorkloads) {
-                var name = texts.Where(text => text.Value == run.View.Match.Stack.First(item => item.Id == group.MemberIds[0]).Name
+                var name = texts.Where(text => text.Value == state.Stack.First(item => item.Id == group.MemberIds[0]).Name
                     && group.Bounds.Contains(text.X, text.Y)).ToArray();
                 check(name.Length == 1 && group.Bounds.Contains(TextBounds(name[0], scale)),
                     run.Label + ": the complete source name fits its measured row backdrop");
@@ -445,7 +530,7 @@ internal static class StackCombatLayoutChecks
             app = new(TestTableServices.For(engine), DirectoryPath, engine.State, size);
             app.EnableLiveTableStudy(); Tick(); Tick(advance: .7);
         }
-        internal void Present(GameSnapshot state) { engine.Present(state); app.QueueObservation(engine.State); }
+        internal GameSnapshot Present(GameSnapshot state) { engine.Present(state); app.QueueObservation(engine.State); return engine.State; }
         internal void Tick(Point? physical = null, ButtonState left = ButtonState.Released, double advance = 1.0 / 60)
         {
             pointer = physical ?? pointer;

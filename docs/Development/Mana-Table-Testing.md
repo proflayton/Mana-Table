@@ -116,6 +116,15 @@ It checks actual composed glyph/panel geometry, scoped fan/reader gestures and
 zero gameplay commands while reading; it does not establish Explore rules or
 approve the visual experience.
 
+The same group checks complete three-source placement and exact full-rule
+reading through each source's member fan, including a no-space hover at 130%
+text. Oversized authored source furniture exercises the explicit full-stack
+fallback, uninterrupted Auto inspection, and required-choice precedence. The
+actual 110-trigger replay separately validates both ordinary audiences, both
+viewports and both text scales. Its report binds each inspected physical source
+to its 55 exact stack and execution IDs; it checks the new current-effect/source
+inspection surfaces rather than requiring the retired floating heading's words.
+
 After building the shipping app, review actual rendered checkpoints with its
 existing isolated Experience Lab:
 

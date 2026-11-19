@@ -15,4 +15,20 @@ internal sealed partial class TableApplication
             || expandedStackWorkload != AllWorkloadsKey && !CurrentStackWorkloads.Any(group => group.Key == expandedStackWorkload))
             expandedStackWorkload = "";
     }
+
+    // Current furniture is measured after StudyAttention, before composition.
+    // An existing inspection has already paused this update's Auto consumers.
+    // Open the fallback before retiring that intent so no update can unpause
+    // between two read-only views. Required/stale reconciliation wins first.
+    private void PrepareStackWorkloadOverview()
+    {
+        stackWorkloadOverviewLayout = null;
+        if (match is not { Status: "playing", Stack.IsEmpty: false }
+            || match.Decision is { Payload: not PriorityPayload } || !RepeatedStackWorkload) return;
+        stackWorkloadOverviewLayout = MeasureStackWorkloadOverview();
+        if (expandedStackWorkload == AllWorkloadsKey && stackWorkloadOverviewLayout == null) {
+            OpenStack();
+            expandedStackWorkload = "";
+        }
+    }
 }

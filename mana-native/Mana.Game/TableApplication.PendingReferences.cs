@@ -234,7 +234,7 @@ internal sealed partial class TableApplication
         bool CoversPendingContext(Rectangle candidate) => context.Any(candidate.Intersects);
         bool CoversCurrentObject(Rectangle candidate) => critical.Any(candidate.Intersects);
         var size = effect != null && stackReadLayout is { } layout ? new Point(layout.Width, layout.Height) : new Point(410, 574);
-        var viewport = new Rectangle(12, 64, 1576, 696);
+        var viewport = new Rectangle(12, 64, 1576, DesignHeight - 76);
         if (reference != previous || pendingPreviewBounds == null || pendingPreviewRequestedSize != size
             || !viewport.Contains(pendingPreviewBounds.Value) || CoversCurrentObject(pendingPreviewBounds.Value)) {
             var candidates = new[] { 1008, 12, 545, 1180 }.Select(x => new Rectangle(
@@ -265,6 +265,13 @@ internal sealed partial class TableApplication
             }
             else if (effect == null && DecisionWorkspaceLayout.Fit(candidates[0], viewport, critical, minimumWidth: 300) is { } fitted)
                 pendingPreviewBounds = fitted;
+            else if (effect is { Ability: true } && expandedStackWorkload == AllWorkloadsKey) {
+                // The source row retains its explicit exact-member inspection
+                // gesture. Never cover response controls to force a transient
+                // reader beside an already expanded complete source overview.
+                pendingPreviewBounds = null; pendingPreviewRequestedSize = null;
+                return;
+            }
             else {
                 // A measured rules face retains its full layout. Dense tables
                 // retain the existing context-first fallback without squeezing
