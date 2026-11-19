@@ -126,6 +126,9 @@ to its 55 exact stack and execution IDs; it checks the new current-effect/source
 inspection surfaces rather than requiring the retired floating heading's words.
 Finite captured events are reported separately from actually painted notices;
 pending work owning the reading surface does not manufacture a painted heading.
+Continuous playback also records a captured physical source only when its exact
+current stack/execution member paints the complete primary name and rules. Earlier
+ordinary events and separate inspection checks cannot substitute for that proof.
 
 After building the shipping app, review actual rendered checkpoints with its
 existing isolated Experience Lab:

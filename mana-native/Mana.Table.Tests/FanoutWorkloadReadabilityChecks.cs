@@ -33,7 +33,7 @@ internal static class FanoutWorkloadReadabilityChecks
             && PrimaryVisible(view, frame, top);
     }
 
-    private static bool PrimaryVisible(TableApplication.Probe view, PresentationFrame frame, StackItem top)
+    internal static bool PrimaryVisible(TableApplication.Probe view, PresentationFrame frame, StackItem top)
     {
         var body = view.StackRows.SingleOrDefault(row => row.Position == 1 && row.Id == top.Id);
         if (body == null) return false;

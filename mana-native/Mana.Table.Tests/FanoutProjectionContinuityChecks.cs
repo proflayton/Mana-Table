@@ -42,6 +42,7 @@ internal static class FanoutProjectionContinuityChecks
             var finiteCapturedAnnouncements = new Dictionary<string, object>(StringComparer.Ordinal);
             var announcedSources = new HashSet<string>(StringComparer.Ordinal);
             var groupedSources = new HashSet<string>(StringComparer.Ordinal);
+            var capturedCurrentEffectSources = new HashSet<string>(StringComparer.Ordinal);
             var sourceMembers = burst.Stack.GroupBy(item => CardViews.Identity(item.Card!))
                 .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
             var seenBattlefield = new HashSet<(string Id, int Owner)>();
@@ -52,6 +53,13 @@ internal static class FanoutProjectionContinuityChecks
                     throw new InvalidDataException("Replay replaced its recorded match scope.");
                 incomplete = Math.Max(incomplete, run.View.IncompleteAnnouncements);
                 maximumAnnouncements = Math.Max(maximumAnnouncements, run.View.AnnouncementCount);
+                if (run.View.Match?.Stack.FirstOrDefault() is { Card: { FaceDown: false } source } top
+                    && captured.Contains(top.ExecutionId)
+                    && sourceMembers.TryGetValue(CardViews.Identity(source), out var capturedMembers)
+                    && capturedMembers.Any(member => member.Id == top.Id && member.ExecutionId == top.ExecutionId
+                        && member.Card is { FaceDown: false } original && CardViews.Identity(original) == CardViews.Identity(source))
+                    && FanoutWorkloadReadabilityChecks.PrimaryVisible(run.View, frame, top))
+                    capturedCurrentEffectSources.Add(CardViews.Identity(source));
                 if (run.View.CurrentAnnouncement is { } announcement) {
                     bool painted = FanoutWorkloadReadabilityChecks.AnnouncementVisible(run.View, frame, announcement);
                     // The finite public event still owns all captured executions.
@@ -113,6 +121,7 @@ internal static class FanoutProjectionContinuityChecks
             check(incomplete == 0 && announcedSources.Contains("Shamanic Revelation")
                     && groupedSources.Contains("Toothy, Imaginary Friend") && groupedSources.Contains("Mind's Eye")
                     && readableSources.SetEquals(groupedSources)
+                    && capturedCurrentEffectSources.SetEquals(sourceMembers.Keys)
                     && run.View.AnnouncementCount == 0 && pendingAtRecordedEnd <= 4,
                 "The recorded cast and both exact55-trigger sources retain their finite public events and readable current-effect/queue inspection without a110-entry presentation backlog at " + viewport);
             check(run.Playback.ObservationRequests == 0 && run.Playback.RejectedCommands == 0 && run.View.Error.Length == 0,
@@ -121,6 +130,7 @@ internal static class FanoutProjectionContinuityChecks
                 window.AcceptedCallbacks, window.IdenticalCallbacks, terminalIds = acceptedTerminalIds.Count,
                 maximumAnnouncements, pendingAtRecordedEnd, incomplete, announcements = seenAnnouncements.Values,
                 finiteCapturedAnnouncements = finiteCapturedAnnouncements.Values,
+                capturedCurrentEffectSources,
                 finiteAnnouncementSources = groupedSources, inspectedSources = readableSources,
                 workloadInspection = inspection.Evidence,
                 finalRevision = final.Revision, expectedCounters, displayedCounters = settledToothy.Card.Counters,
