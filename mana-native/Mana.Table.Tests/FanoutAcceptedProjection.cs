@@ -22,6 +22,8 @@ internal sealed class FanoutAcceptedProjection
     private readonly Func<GameSnapshot, string> serialize;
     private long? origin, ended;
     private long accepted, identical, aliases, unretained, serializationCalls, serializationTicks, callbackTicks;
+    // Includes an entry just dequeued until the consumer obtains gate for its
+    // bookkeeping; highWater can therefore be channel capacity plus one.
     private int queued, highWater, retained;
     private string? failure;
     private GameSnapshot? lastEnqueued;

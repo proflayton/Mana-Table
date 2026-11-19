@@ -1697,6 +1697,8 @@ pending high-water, retained references, alias/duplicate callbacks, serializer
 calls/wall time, callback wall time and unretained callbacks on failure; archive
 part byte counts report the separate serialized footprint. These measurements
 do not establish CPU time, human latency or a causal explanation of older CI.
+The pending high-water includes a just-dequeued entry until the consumer updates
+its bookkeeping, so it can report65 for the64-entry channel plus that one entry.
 
 One per-human archive stores complete payloads once across both authored review
 viewports. Each page is independently validated within512 observations/64MiB;
