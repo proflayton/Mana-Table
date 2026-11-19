@@ -39,6 +39,7 @@ internal static class FanoutProjectionContinuityChecks
             string sizePath = Path.Combine(path, viewport.X.ToString()); Directory.CreateDirectory(sizePath);
             using var run = new ProjectionReplaySession(recording, Path.Combine(sizePath, "playback"), viewport);
             var seenAnnouncements = new Dictionary<string, object>(StringComparer.Ordinal);
+            var finiteCapturedAnnouncements = new Dictionary<string, object>(StringComparer.Ordinal);
             var announcedSources = new HashSet<string>(StringComparer.Ordinal);
             var groupedSources = new HashSet<string>(StringComparer.Ordinal);
             var sourceMembers = burst.Stack.GroupBy(item => CardViews.Identity(item.Card!))
@@ -60,7 +61,15 @@ internal static class FanoutProjectionContinuityChecks
                         && sourceMembers.TryGetValue(announcement.SourceId, out var members) && members.Length == 55
                         && members.All(item => captured.Contains(item.ExecutionId))
                         && members.Any(item => item.ExecutionId == announcement.ExecutionId && item.Name == announcement.Name);
-                    if (exactCapturedSource) groupedSources.Add(announcement.Name);
+                    if (exactCapturedSource) {
+                        groupedSources.Add(announcement.Name);
+                        // This is an actual finite event, separately from its
+                        // painted surface. Its current work may deliberately
+                        // own the primary/inspection surface instead of a notice.
+                        finiteCapturedAnnouncements.TryAdd(announcement.Id, new { announcement.Id,
+                            announcement.ExecutionId, announcement.SourceId, announcement.Name,
+                            announcement.CapturedCount, exactCapturedSource, firstObservedTicks = run.ElapsedTicks });
+                    }
                     if (painted && announcement.Name.Length > 0) {
                         announcedSources.Add(announcement.Name);
                         seenAnnouncements.TryAdd(announcement.Id, new { announcement.Id, announcement.ExecutionId, announcement.SourceId,
@@ -111,6 +120,7 @@ internal static class FanoutProjectionContinuityChecks
             reports.Add(new { viewport = new { width = viewport.X, height = viewport.Y }, frames, accepted = run.Accepted.Count,
                 window.AcceptedCallbacks, window.IdenticalCallbacks, terminalIds = acceptedTerminalIds.Count,
                 maximumAnnouncements, pendingAtRecordedEnd, incomplete, announcements = seenAnnouncements.Values,
+                finiteCapturedAnnouncements = finiteCapturedAnnouncements.Values,
                 finiteAnnouncementSources = groupedSources, inspectedSources = readableSources,
                 workloadInspection = inspection.Evidence,
                 finalRevision = final.Revision, expectedCounters, displayedCounters = settledToothy.Card.Counters,

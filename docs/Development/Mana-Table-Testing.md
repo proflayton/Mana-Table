@@ -124,6 +124,8 @@ actual 110-trigger replay separately validates both ordinary audiences, both
 viewports and both text scales. Its report binds each inspected physical source
 to its 55 exact stack and execution IDs; it checks the new current-effect/source
 inspection surfaces rather than requiring the retired floating heading's words.
+Finite captured events are reported separately from actually painted notices;
+pending work owning the reading surface does not manufacture a painted heading.
 
 After building the shipping app, review actual rendered checkpoints with its
 existing isolated Experience Lab:
