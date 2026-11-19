@@ -1710,6 +1710,23 @@ restarts presentation at a storage boundary. Controls include the actual513th
 checkpoint, same-identity payload changes, equal-time seams, stable physical
 owners, changed bytes, foreign paths, bounded pending/aggregate failures and
 cleanup cutoff. Overflow fails evidence rather than dropping a cast or trigger.
+The closed JavaScript release gate checks the same whole-stream and individual
+part limits independently. Its boundary controls admit513 checkpoints across
+two bounded files, reject513 in one file, and reject1025 total checkpoints,
+17 parts or an aggregate above512MiB. The original110 terminal receipts,
+90-second active limit,15-second stall limit and source/package hashes remain
+required.
+
+Projection reports also retain versioned `workloadInspection` evidence from the
+actual-pointer reading checks at100% and130% text in each review viewport.
+Admission requires the exact two physical sources, their110 disjoint stack and
+execution identities, the matching finite announcement source/execution, full
+rules and exact fan inspection, current-primary glyph checks and protected
+controls. A source name or the former floating-heading phrase cannot substitute
+for that completed semantic inspection. These remain authored reading checks
+over actual accepted snapshots, separate from original live input or human UX
+acceptance.
+
 Both
 private windows replay through production presentation at1000x740 and1540x980
 with normal motion. The explicit `ClientSessionAuthority.ObserveOnly` composition

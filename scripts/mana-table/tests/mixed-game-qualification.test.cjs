@@ -60,9 +60,17 @@ function fixture() {
       { width: 1000, height: 740 }, { width: 1540, height: 980 }
     ].map(viewport => ({ viewport, accepted: 150, AcceptedCallbacks: 450, IdenticalCallbacks: 300,
       frames: 700, terminalIds: 110, incomplete: 0, pendingAtRecordedEnd: 2, actualCallbackEndTicks: 1000,
+      finiteAnnouncementSources: ['Toothy, Imaginary Friend', "Mind's Eye"], inspectedSources: ['Toothy, Imaginary Friend', "Mind's Eye"],
+      workloadInspection: { version: 1, sourceQueueSize: 110, textScales: [1, 1.3], currentPrimaryValidated: true,
+        protectedControlsValidated: true, sources: ['Toothy, Imaginary Friend', "Mind's Eye"].map((name, source) => ({
+          sourceId: `source-${source}`, name, fullRulesValidated: true, exactFanValidated: true,
+          memberIds: Array.from({ length: 55 }, (_, index) => `stack-${source}-${index}`),
+          executionIds: Array.from({ length: 55 }, (_, index) => `execution-${source}-${index}`)
+        })) },
       syntheticDisplayDrainTicks: 120000000, announcements: [
-        { Name: 'Shamanic Revelation', CapturedCount: 1 }, { Name: 'Toothy, Imaginary Friend', CapturedCount: 55, capturedHeadingPainted: true },
-        { Name: "Mind's Eye", CapturedCount: 55, capturedHeadingPainted: true }
+        { Name: 'Shamanic Revelation', CapturedCount: 1 },
+        { Name: 'Toothy, Imaginary Friend', CapturedCount: 55, exactCapturedSource: true, SourceId: 'source-0', ExecutionId: 'execution-0-0' },
+        { Name: "Mind's Eye", CapturedCount: 55, exactCapturedSource: true, SourceId: 'source-1', ExecutionId: 'execution-1-0' }
       ] })) })) };
   f.manaOutput = { scenario: 'ordinary-polled-consuming-output-payment', passed: true, failure: null, cleanupErrors: [],
     passing: 'FullControl', totalBudgetSeconds: 90, activeBudgetSeconds: 45, creditedTotalSeconds: 35, creditedActiveSeconds: 9,
@@ -73,6 +81,86 @@ function fixture() {
       tappedWastes: 1, remainingPool: 0, committedCrystalVeinColorless: 2, committedWastesColorless: 1, committedManaSpent: 3 } };
   return f;
 }
+
+function withCheckpointPages(f, total, counts = [512, total - 512], bytes = 1024) {
+  for (const replay of f.replays) {
+    const archive = replay.archive;
+    archive.TotalCheckpoints = total;
+    archive.AcceptedCallbacks = total + archive.IdenticalCallbacks;
+    let ordinal = 0;
+    archive.parts = counts.map((count, index) => {
+      const part = { File: `part-${String(index).padStart(3, '0')}.json`, FirstOrdinal: ordinal,
+        EndOrdinal: ordinal + count, StartTicks: index === 0 ? 0 : index * 10,
+        EndTicks: index + 1 === counts.length ? 120001000 : (index + 1) * 10,
+        Bytes: bytes, Sha256: (index % 16).toString(16).repeat(64) };
+      ordinal += count;
+      return part;
+    });
+    for (const report of replay.reports) {
+      report.accepted = total;
+      report.AcceptedCallbacks = archive.AcceptedCallbacks;
+    }
+  }
+  return f;
+}
+
+test('a 513-checkpoint stream qualifies as two individually bounded continuous recording parts', () => {
+  const f = withCheckpointPages(fixture(), 513);
+  assert.equal(assess(f).actualFanoutTerminalsPerHuman, 110);
+  assert.equal(f.replays[0].archive.parts[0].EndOrdinal, 512);
+  assert.equal(f.replays[0].archive.parts[1].FirstOrdinal, 512);
+});
+
+test('paged checkpoint admission preserves per-file, whole-stream, part-count and aggregate-byte limits', () => {
+  assert.throws(() => assess(withCheckpointPages(fixture(), 513, [513])), /bounded|archive|recording/);
+  assert.throws(() => assess(withCheckpointPages(fixture(), 1025, [512, 512, 1])), /bounded|archive|recording/);
+  const seventeen = [...Array(16).fill(60), 64];
+  assert.throws(() => assess(withCheckpointPages(fixture(), 1024, seventeen)), /bounded|archive|recording/);
+  assert.throws(() => assess(withCheckpointPages(fixture(), 513, Array(9).fill(57), 60 * 1024 * 1024)), /bounded|archive|recording/);
+  assert.equal(assess(withCheckpointPages(fixture(), 1024, Array(8).fill(128), 64 * 1024 * 1024)).actualFanoutTerminalsPerHuman, 110,
+    'The declared whole-stream and aggregate-byte boundaries remain admissible through individually bounded parts.');
+});
+
+test('semantic source inspection cannot be replaced with a heading, another source execution or incomplete membership', () => {
+  for (const [name, mutate] of [
+    ['missing inspection', report => { delete report.workloadInspection; }],
+    ['missing enlarged text', report => { report.workloadInspection.textScales = [1]; }],
+    ['coerced enlarged text', report => { report.workloadInspection.textScales = [1, '1.3']; }],
+    ['coerced version', report => { report.workloadInspection.version = '1'; }],
+    ['wrong queue size', report => { report.workloadInspection.sourceQueueSize = 109; }],
+    ['coerced primary proof', report => { report.workloadInspection.currentPrimaryValidated = 'true'; }],
+    ['unprotected control', report => { report.workloadInspection.protectedControlsValidated = false; }],
+    ['missing inspected source', report => { report.inspectedSources.pop(); }],
+    ['duplicate finite source', report => { report.finiteAnnouncementSources[1] = report.finiteAnnouncementSources[0]; }],
+    ['duplicate source identity', report => { report.workloadInspection.sources[1].sourceId = report.workloadInspection.sources[0].sourceId; }],
+    ['coerced source identity', report => { report.workloadInspection.sources[0].sourceId = ['source-0']; }],
+    ['incomplete rules', report => { report.workloadInspection.sources[0].fullRulesValidated = false; }],
+    ['inexact fan', report => { report.workloadInspection.sources[1].exactFanValidated = false; }],
+    ['missing stack member', report => { report.workloadInspection.sources[0].memberIds.pop(); }],
+    ['duplicate stack member', report => { report.workloadInspection.sources[0].memberIds[1] = report.workloadInspection.sources[0].memberIds[0]; }],
+    ['foreign source stack member', report => { report.workloadInspection.sources[1].memberIds[1] = report.workloadInspection.sources[0].memberIds[0]; }],
+    ['missing execution', report => { report.workloadInspection.sources[0].executionIds.pop(); }],
+    ['duplicate execution', report => { report.workloadInspection.sources[0].executionIds[1] = report.workloadInspection.sources[0].executionIds[0]; }],
+    ['foreign source execution', report => { report.workloadInspection.sources[1].executionIds[1] = report.workloadInspection.sources[0].executionIds[0]; }],
+    ['another source announcement', report => { report.announcements[1].ExecutionId = report.workloadInspection.sources[1].executionIds[0]; }],
+    ['wrong physical announcement source', report => { report.announcements[1].SourceId = report.workloadInspection.sources[1].sourceId; }],
+    ['unrelated announcement', report => { report.announcements[2].ExecutionId = 'not-in-the-captured-cohort'; }],
+    ['coerced exact source', report => { report.announcements[1].exactCapturedSource = 'true'; }],
+    ['legacy heading only', report => { delete report.workloadInspection; report.announcements[1].capturedHeadingPainted = true; }]
+  ]) {
+    const f = fixture(); mutate(f.replays[0].reports[0]);
+    assert.throws(() => assess(f), undefined, name);
+  }
+  const reordered = fixture();
+  for (const replay of reordered.replays) for (const report of replay.reports) {
+    report.workloadInspection.sources.reverse();
+    report.workloadInspection.textScales.reverse();
+    report.finiteAnnouncementSources.reverse(); report.inspectedSources.reverse();
+    for (const source of report.workloadInspection.sources) { source.memberIds.reverse(); source.executionIds.reverse(); }
+  }
+  assert.equal(assess(reordered).actualFanoutTerminalsPerHuman, 110,
+    'Physical source membership and validated scales do not depend on report array order.');
+});
 
 test('four real natural rotations and the actual source-bound110-trigger UI workload admit scoped release evidence', () => {
   const result = assess(fixture());
@@ -258,10 +346,11 @@ test('stale source/package bytes, workload cutoffs, relaxed deadlines and incomp
     f => { f.fanout.projectionContinuityVerified = false; }, f => { f.replays[0].reports.pop(); },
     f => { f.replays[1].reports[0].terminalIds = 109; }, f => { f.replays[0].reports[0].pendingAtRecordedEnd = 110; },
     f => { f.replays[1].reports[1].announcements.pop(); }, f => { f.replays[0].reports[0].incomplete = 1; },
-    f => { f.replays[0].reports[0].announcements[1].capturedHeadingPainted = false; },
+    f => { f.replays[0].reports[0].announcements[1].exactCapturedSource = false; },
     f => { f.replays[0].reports[0].IdenticalCallbacks++; },
-    f => { f.replays[0].archive.TotalCheckpoints = 513; },
+    f => { f.replays[0].archive.TotalCheckpoints = 1025; },
     f => { f.replays[1].archive.parts[0].Bytes = 64 * 1024 * 1024 + 1; },
+    f => { f.replays[1].archive.parts[0].Sha256 = ['a'.repeat(64)]; },
     f => { f.replays[0].archive.parts[0].FirstOrdinal = 1; },
     f => { f.replays[1].archive.parts[0].EndTicks++; },
     f => { f.replays[0].archive.parts[0].File = '../foreign.json'; }
