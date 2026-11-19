@@ -234,7 +234,9 @@ internal sealed partial class TableApplication
         bool CoversPendingContext(Rectangle candidate) => context.Any(candidate.Intersects);
         bool CoversCurrentObject(Rectangle candidate) => critical.Any(candidate.Intersects);
         var size = effect != null && stackReadLayout is { } layout ? new Point(layout.Width, layout.Height) : new Point(410, 574);
-        var viewport = new Rectangle(12, 64, 1576, DesignHeight - 76);
+        // Only the measured ability face needs the extra visible reading space;
+        // printed pending-card readers retain their existing viewport geometry.
+        var viewport = new Rectangle(12, 64, 1576, effect is { Ability: true } ? DesignHeight - 76 : 696);
         if (reference != previous || pendingPreviewBounds == null || pendingPreviewRequestedSize != size
             || !viewport.Contains(pendingPreviewBounds.Value) || CoversCurrentObject(pendingPreviewBounds.Value)) {
             var candidates = new[] { 1008, 12, 545, 1180 }.Select(x => new Rectangle(
