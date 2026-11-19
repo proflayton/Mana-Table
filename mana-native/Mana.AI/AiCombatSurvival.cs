@@ -84,7 +84,9 @@ internal sealed class AiCombatSurvival
             // The exchange model is deliberately narrower than all keywords.
             // Do not describe its nominal result as all-channel safety.
             bool KnownTrait(string trait) => OrdinaryTraits.Contains(trait)
-                || context == AssessmentContext.NominalUnblockedReturn && trait is "menace" or "protection" or "modular";
+                // An attack restriction cannot increase this supplied full
+                // nominal damage; it never authorizes a defender to attack.
+                || context == AssessmentContext.NominalUnblockedReturn && trait is "menace" or "protection" or "modular" or "defender";
             if (card.CombatKeywords.Any(keyword => !KnownTrait(keyword))
                 || card.States is { } states && states.Any(shown => shown.Kind == "ability"
                     && shown.Value != 0 && !KnownTrait(shown.Key))) unknown = true;
