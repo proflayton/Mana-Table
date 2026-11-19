@@ -136,10 +136,10 @@ internal static class AiSwarmCombat
         if (!work.TrySpend(Math.Max(1, setupWork))) return null;
         if (legacy && (legacyFields.Any(cards => cards.Any(card => card.CommanderId.Length > 0))
             || state.Players.Any(player => !player.CommanderDamage.IsDefault
-                && player.CommanderDamage.Any(row => row.CommanderId.Length > 0)))) return null;
+                && player.CommanderDamage.Any(row => row == null || row.CommanderId.Length > 0)))) return null;
         if (!legacy && (state.CommanderCombat!.DamageLimit is <= 0
             || actor.CommanderDamage.IsDefault
-            || actor.CommanderDamage.Any(row => row.Damage < 0
+            || actor.CommanderDamage.Any(row => row == null || row.Damage < 0
                 || state.CommanderCombat.DamageLimit is { } limit && row.Damage >= limit))) return null;
         // Retain the prior conservative bound only for genuinely legacy data.
         long? commanderRoom = null;

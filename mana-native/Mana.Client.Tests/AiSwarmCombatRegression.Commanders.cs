@@ -62,6 +62,10 @@ internal static partial class AiSwarmCombatRegression
             "an inconsistent living actor already at the threshold, even for the excluded defender");
         await Declines(Rows(rows => rows.Where(row => row.CommanderId != "partner-b").ToImmutableArray()), "missing prior damage for a returning CommanderId");
         await Declines(Rows(rows => rows.Add(rows.Single(row => row.CommanderId == "partner-b"))), "duplicate typed prior lineage");
+        await Declines(Rows(rows => rows.Add(null!)), "a null typed actor damage row without throwing from the optional forecast");
+        check(new CommanderDamage("Legacy", 0, "Actor", 0) { CommanderId = null! }.CommanderId == ""
+            && new Card { CommanderId = null! }.CommanderId == "",
+            "Public damage rows and cards normalize null CommanderId to empty, independently of nullable row objects");
         await Declines(Rows(rows => rows.Select(row => row.CommanderId == "partner-b" ? row with { CommanderId = "" } : row).ToImmutableArray()),
             "a partial typed row instead of escaping to legacy arithmetic");
         await Declines(Change(baseline, baseline.State with { CommanderCombat = null }), "missing rules with retained typed lineage");
@@ -88,6 +92,8 @@ internal static partial class AiSwarmCombatRegression
             CheckReturnContext(check, knownReturn.State, trait);
         }
         var legacy = FfaFrame(3, [1]);
+        await Declines(Change(legacy, legacy.State with { Players = legacy.State.Players.Select(player => player.Id != 2 ? player
+            : player with { CommanderDamage = [null!] }).ToImmutableArray() }), "a null legacy damage row retained by another recipient");
         var legacyCommand = Change(legacy, legacy.State with { Players = legacy.State.Players.Select(player => player.Id != 2 ? player
             : player with { Zones = player.Zones.Add(new("Command", 1, [
                 Creature("command-only", 1, 1) with { CommanderId = "partial-command", BlockingCapacity = null }
@@ -97,6 +103,8 @@ internal static partial class AiSwarmCombatRegression
             CommanderDamage = [new("Retired", 9, "Retired", 0) { CommanderId = "partial-retired" }] };
         await Declines(Change(legacy, legacy.State with { Players = legacy.State.Players.Add(retired) }),
             "missing rules with typed lineage retained only by an eliminated recipient");
+        await Declines(Change(legacy, legacy.State with { Players = legacy.State.Players.Add(retired with { CommanderDamage = [null!] }) }),
+            "a null legacy damage row retained by an eliminated recipient");
 
         var reserved = new AiTurnPlan(baseline.State.Id, 0, baseline.State.Turn, 1, AiPlanPurpose.Defend, [],
             ["attacker-000", "attacker-001", "attacker-002", "attacker-003"]) { CreatedFrom = baseline.Stamp };
@@ -143,6 +151,11 @@ internal static partial class AiSwarmCombatRegression
         bool Unknown(object risk) => (bool)risk.GetType().GetProperty("UnknownNominalChannels")!.GetValue(risk)!;
         var full = Contributions(source.Power!.Value);
         var model = Activator.CreateInstance(type, instance, null, [state, state.Viewer!, full], null)!;
+        var malformedDefender = state.Viewer! with { CommanderDamage = state.Viewer!.CommanderDamage.Add(null!) };
+        var malformedModel = Activator.CreateInstance(type, instance, null, [state, malformedDefender, full], null)!;
+        check(Unknown(type.GetProperty("Risk", instance)!.GetValue(malformedModel)!)
+            && Unknown(type.GetMethod("AfterBlock", instance)!.Invoke(malformedModel, [source, 0L])!),
+            "A reachable null damage row remains unknown in the default model and AfterBlock without throwing");
         check(Unknown(type.GetProperty("Risk", instance)!.GetValue(model)!)
             && Unknown(type.GetMethod("AfterBlock", instance)!.Invoke(model, [source, 0L])!),
             "Default current-damage and AfterBlock coverage remain unknown for " + trait);

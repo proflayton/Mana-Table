@@ -56,6 +56,9 @@ internal sealed class AiCombatSurvival
             commanderKnown = false; unknown = true;
         }
         else if (commanderLimit != null) foreach (var row in defender.CommanderDamage) {
+            if (row == null) {
+                commanderKnown = false; unknown = true; continue;
+            }
             // A legacy or partial row cannot establish zero prior damage.
             if (row.CommanderId.Length == 0 || row.Damage < 0 || ambiguous.Contains(row.CommanderId)
                 || !prior.TryAdd(row.CommanderId, row.Damage)) {
