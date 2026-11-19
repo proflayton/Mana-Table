@@ -1170,6 +1170,21 @@ Their serializer reuses a UTF8 record buffer instead of allocating a UTF16
 string for every large replay. A failed serialization commits no partial row;
 the existing decoded records and order remain byte-compatible. Local capture
 allocation measurements do not establish a full-game throughput result.
+Returned-batch handoffs also retain a bounded private scalar digest of owned
+seat/revision/board state and public player IDs/elimination flags, constructed
+and serialized by the existing evidence owner. No cards, action/decision handles
+or consent tokens are duplicated. The test provider records one scalar control
+completion span with its start, return-cycle and captured completion time.
+This metadata never changes consent receipts or gameplay acceptance accounting;
+overflow or retirement latches an explicit evidence fault while preserving the
+original provider result/exception. The normal owner drain still fails incomplete
+qualification. The existing FIFO capacity and ordering remain unchanged.
+`--smoke-headless-presentation --presentation-group polled-evidence` focuses
+these checks; the full native inventory includes them. Its bounded recorder-only
+workload writes `polled-full-game-contracts/progress-cost/recorder-cost.json`
+inside the chosen profile, with actual raw/compressed bytes and owner-drain
+elapsed costs. These costs include serialization, validation/projection and I/O;
+they are neither CPU measurements nor a game-throughput comparison.
 Observer-lifetime regressions keep a viewer connected after actual elimination,
 publish history beyond the ordinary tail, and acknowledge only its consumed
 prefix. The delivery window must compact while surviving players continue.
@@ -1621,10 +1636,16 @@ The focused client command `--ai-host-loop-checks` runs that same regression;
 the ordinary client inventory and CI still include it. An additional control
 retains the initial40 ms wait, then delivers a new public board in an already
 bound two-AI game: it requires an independent fresh read at the same clock
-instant before a new exact owned prompt can produce one command. A mixed table
-can acquire that scheduling hint only after both humans are actually eliminated
-while all four original player IDs remain present. Negative controls preserve
-backoff for live humans, omitted/inconsistent rosters, unchanged or metadata-only
+instant before a new exact owned prompt can produce one command. A controlled
+mixed-table case with actual production policy likewise requires an independent
+current priority prompt; it is a scripted C# transport/clock control, not a rules
+game. Privately known living owners cannot disappear into a partial batch.
+Repeated partial/inconsistent batches followed by B50/B51 cannot erase a retained
+B100 high-water; complete catch-up baselines before strict later progress. A
+legitimate single living private owner may coexist with humans; proven-eliminated
+private viewers may retire. New bindings baseline, and a slow held read stays
+serial without timer-driven spinning. Negative controls preserve
+backoff for omitted/inconsistent rosters, unchanged or metadata-only
 boards, new/retired/reappearing scopes, one remaining player, rollback, faults
 and rejections. A shipping two-AI2.4-second pacing case with current priority
 observation frames admits no evaluation, command, ACK or grant through2399 ms;

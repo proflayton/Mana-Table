@@ -6,7 +6,7 @@ using Mana.Contracts;
 
 namespace Mana.Table;
 
-internal static class PolledEvidenceInboxChecks
+internal static partial class PolledEvidenceInboxChecks
 {
     internal static async Task RunAsync(string profile, Action<bool, string> check)
     {
@@ -15,6 +15,11 @@ internal static class PolledEvidenceInboxChecks
         await ReturnedIsNotProcessed(profile, check);
         await PregameIdleIsScalar(profile, check);
         await ActiveEmptyWithdrawsAuthority(profile, check);
+        await ProgressAndControlScalars(profile, check);
+        await ControlFailureKeepsPrimary(profile, check);
+        await SuccessfulControlKeepsReceipt(profile, check);
+        ProgressDigestBounds(profile, check);
+        ProgressRecorderCost(profile, check);
     }
 
     private static void OrderedCapture(string profile, Action<bool, string> check)

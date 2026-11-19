@@ -68,9 +68,19 @@ internal sealed class AiCampaignDiagnostics : IDisposable
         long? returnedBatchSequence = value switch {
             CampaignEvidenceEvent.Batch item => item.ReturnSequence,
             CampaignEvidenceEvent.StepCompleted item => item.ReturnedBatchSequence,
+            CampaignEvidenceEvent.PriorityControl item => item.ReturnedBatchSequence,
             _ => null
         };
-        decisions.Write(new { kind = "evidence-handoff", stamp, returnedBatchSequence });
+        // Construct/serialize only on this evidence owner, not in provider
+        // response serialization. No card, token or current input handle is copied.
+        var batchProgress = value is CampaignEvidenceEvent.Batch batch ? CampaignBatchProgress.Capture(batch.Observations) : null;
+        var controlSpan = value is CampaignEvidenceEvent.PriorityControl span ? span : null;
+        if (controlSpan is { } control && (control.GameId.Length > 256 || control.SeatId < 0
+            || control.StartedAt > stamp.MonotonicTicks || control.ReturnedBatchSequence < 0))
+            throw new InvalidDataException("Invalid private control-span evidence.");
+        if (batchProgress != null || controlSpan != null)
+            decisions.Write(new { kind = "evidence-handoff", stamp, returnedBatchSequence, batchProgress, controlSpan });
+        else decisions.Write(new { kind = "evidence-handoff", stamp, returnedBatchSequence });
         switch (value) {
             case CampaignEvidenceEvent.Owned item: ObserveCore(item.Observation); break;
             case CampaignEvidenceEvent.Batch item:
@@ -90,6 +100,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
                 decisions.Write(new { kind = "background-host-fault", item.Fault, item.Error });
                 break;
             case CampaignEvidenceEvent.StepCompleted: break;
+            case CampaignEvidenceEvent.PriorityControl: break;
             default: throw new InvalidDataException("Unknown campaign evidence handoff event.");
         }
     }
@@ -551,9 +562,22 @@ internal sealed class AiCampaignProvider(IAutomatedSeatProvider inner, AiCampaig
     {
         RequireHandoff();
         if (inner is not IAutomatedPriorityContinuation port) return new AutomatedPriorityControlResult.Retired();
+        var started = inbox?.ControlStart();
         Interlocked.Increment(ref controlsExecuting);
-        try { return await port.ExecuteAutomatedPriorityControlAsync(epoch, seatId, control, cancellation); }
-        finally { Interlocked.Decrement(ref controlsExecuting); }
+        string resultKind = "faulted";
+        try {
+            var result = await port.ExecuteAutomatedPriorityControlAsync(epoch, seatId, control, cancellation);
+            resultKind = result.GetType().Name;
+            return result;
+        } catch (Exception error) {
+            resultKind = error is OperationCanceledException ? "cancelled" : "faulted"; throw;
+        } finally {
+            Interlocked.Decrement(ref controlsExecuting);
+            if (started is { } start) {
+                inbox!.RecordControlCompletion(new CampaignEvidenceEvent.PriorityControl(start.Batch, start.StartedAt,
+                    control.GameId, seatId, control.GetType().Name, resultKind));
+            }
+        }
         // No Receipt/AcceptedBySeat: consent and observation metadata are not
         // gameplay commands or policy acceptance. Host certificates stay separate.
     }

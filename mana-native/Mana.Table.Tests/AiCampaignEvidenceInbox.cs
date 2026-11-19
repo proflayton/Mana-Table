@@ -22,6 +22,8 @@ internal abstract record CampaignEvidenceEvent
     internal sealed record StaleProbe(AiCampaignStaleProbe Result, DecisionCommand Command) : CampaignEvidenceEvent;
     internal sealed record HostFault(AiHostFault Fault, string? Error) : CampaignEvidenceEvent;
     internal sealed record StepCompleted(long ReturnedBatchSequence) : CampaignEvidenceEvent;
+    internal sealed record PriorityControl(long ReturnedBatchSequence, long StartedAt, string GameId, int SeatId,
+        string Control, string Result) : CampaignEvidenceEvent;
 }
 
 internal sealed record CampaignEvidenceStamp(long Sequence, DateTimeOffset CapturedAt, long MonotonicTicks, string Kind);
@@ -38,6 +40,7 @@ internal sealed record CampaignEvidenceHandoffStatus(int Capacity, int Pending, 
     public long SubstantiveProcessedBatches => ProcessedBatches - IdleProcessedBatches;
     public bool OwnedBatchSeen { get; init; }
     public bool MissingOwnedBatch { get; init; }
+    public long ControlSpanAdmissionFailures { get; init; }
     public string Bounds => "Pending event count, not a measured retained-byte limit; snapshots are private immutable values.";
 }
 
@@ -53,6 +56,7 @@ internal sealed class AiCampaignEvidenceInbox(AiCampaignDiagnostics owner, int c
     private ImmutableArray<AutomatedSeatObservation> returned = [], processed = [];
     private long enqueued, applied, returnedBatches, processedBatches, processedReturnSequence, discarded;
     private long idleReturnedBatches, idleProcessedBatches;
+    private long controlSpanAdmissionFailures;
     private int highWater, draining;
     private bool retired, faultRecorded;
     private bool ownedBatchSeen, lastReturnIdle;
@@ -62,7 +66,7 @@ internal sealed class AiCampaignEvidenceInbox(AiCampaignDiagnostics owner, int c
         enqueued, applied, returnedBatches, processedBatches, processedReturnSequence, discarded, retired, fault?.Message, accepted.ToImmutableDictionary()) {
             TimestampFrequency = time.TimestampFrequency, IdleReturnedBatches = idleReturnedBatches,
             IdleProcessedBatches = idleProcessedBatches, OwnedBatchSeen = ownedBatchSeen,
-            MissingOwnedBatch = ownedBatchSeen && returned.IsEmpty }; } }
+            MissingOwnedBatch = ownedBatchSeen && returned.IsEmpty, ControlSpanAdmissionFailures = controlSpanAdmissionFailures }; } }
     internal ImmutableArray<AutomatedSeatObservation> SnapshotObservations { get { lock (gate) return returned; } }
     internal ImmutableArray<AutomatedSeatObservation> ProcessedObservations { get { lock (gate) return processed; } }
     internal ImmutableDictionary<int, int> AcceptedBySeat { get { lock (gate) return accepted.ToImmutableDictionary(); } }
@@ -85,6 +89,25 @@ internal sealed class AiCampaignEvidenceInbox(AiCampaignDiagnostics owner, int c
     {
         ArgumentNullException.ThrowIfNull(value);
         lock (gate) PostInState(value);
+    }
+
+    internal (long Batch, long StartedAt) ControlStart()
+    {
+        lock (gate) { EnsureActive(); return (returnedBatches, time.GetTimestamp()); }
+    }
+
+    // Diagnostics can fail qualification, never rewrite an already completed
+    // provider control result. The owner later records/rethrows this latched
+    // failure; an unadmitted span is counted explicitly rather than hidden.
+    internal void RecordControlCompletion(CampaignEvidenceEvent.PriorityControl value)
+    {
+        lock (gate) {
+            try { PostInState(value); }
+            catch (Exception error) {
+                fault ??= error; controlSpanAdmissionFailures++;
+                queuedWork.TrySetResult();
+            }
+        }
     }
 
     internal void EnsureActive()

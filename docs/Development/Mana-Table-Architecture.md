@@ -1370,15 +1370,23 @@ a fresh observation from a cycle with no current work. Acceptance skips the
 40 ms idle backoff before that read; it proves no input consumption or resolved
 effect. Same-board resolving, unchanged authority and presentation holds keep
 the backoff, and rejection or failure overrides another seat's refresh hint.
-An already-bound game can also request one fresh read when its public board
-advances and every remaining player is privately owned by this AI host. This
-requires at least two living players, identical complete player-ID rosters
-across the owned views and the retained game binding, monotonic per-seat
-revision/board watermarks, and current pacing readiness before and after the
-step. An omitted human cannot become an invented AI-only table. Initial,
-retired, regressed, metadata-only, mixed-human or unchanged scopes retain the
-ordinary backoff. Progress watermarks retain only active game/seat IDs and
-scalar revisions, and retire alongside the corresponding seat ownership.
+An already-bound game can also request one fresh read when a living privately
+owned view observes public board progress, including while humans remain. This
+requires at least two living players, one living private owner, identical
+complete player-ID/elimination rosters across the views and retained game
+binding, monotonic per-seat revision/board watermarks, and pacing readiness
+before and after the step. Private ownership comes only from the host port;
+player names cannot establish it. Every previously certified living owner must
+remain present. A missing private view is allowed only when the complete public
+roster proves that owner eliminated. New owners require a baseline. Incomplete
+or inconsistent batches retain the ownership certificate and scalar high-waters;
+lower restored boards cannot invent progress, and a complete catch-up baseline
+precedes the next hint. Command/session retirement remains independent. Initial,
+retired, regressed, metadata-only and unchanged scopes keep ordinary backoff.
+The initial private port cannot prove an unseen owner's existence. Retained
+read state is bounded by the game roster and cleared with game/whole-scope
+retirement and disposal. Staggered owned rows may advance independently; this
+is at most one hint per eligible advanced batch, not one per global board.
 This scheduling hint neither reuses a batch nor supplies an answer, observation
 credit, accepted receipt, rules consequence or renewed decision allowance.
 The existing operation clock schedules the idle wait; announcement pacing and
