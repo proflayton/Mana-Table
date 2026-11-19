@@ -18,6 +18,9 @@ internal sealed partial class TableApplication
     private (string Game, int Viewer, string Id, string Name, string Text, string Type, string Cost, float Scale)? stackReadKey;
     private Card? stackReadFace;
     private CardRulesLayout? stackReadLayout;
+    private IReadOnlyList<Rectangle> pendingReaderReservations = [];
+    private readonly List<PendingReaderFit> pendingReaderFits = [];
+    internal sealed record PendingReaderFit(int IllustrationHeight, int Width, int Height, Rectangle? Placed, bool CompactSource = false);
 
     private Card? ResolvePendingReference(PendingCardReference reference)
     {
@@ -60,12 +63,13 @@ internal sealed partial class TableApplication
             var row = stackRows.FirstOrDefault(row => row.Id == item.Id);
             var area = row?.Bounds ?? (TableStudyEnabled ? StudyActionArea : new Rectangle(545, 319, 435, 220));
             bool header = row?.Position == 1;
-            var size = header ? new Vector2(TableStudyEnabled ? 42 : 52, TableStudyEnabled ? 59 : 73) : new Vector2(34, 48);
+            bool studyStack = TableStudyEnabled || RepeatedStackWorkload;
+            var size = header ? new Vector2(studyStack ? 42 : 52, studyStack ? 59 : 73) : new Vector2(34, 48);
             var center = header ? new Vector2(area.X + 10 + size.X / 2, area.Y + 8 + size.Y / 2)
                 : new Vector2(area.X - 28 - index * 8, area.Y + 28 + index * 12);
             var pose = new Pose(center, size);
             string owner = item.ControllerId is { } controller ? StateClarity.PlayerName(state, controller) : "Controller not reported";
-            int headerHeight = TableStudyEnabled ? Math.Max(75, 14 + canvas.TextSize(item.Name, .67f, area.Width - 78, 80, true).Y
+            int headerHeight = studyStack ? Math.Max(75, 14 + canvas.TextSize(item.Name, .67f, area.Width - 78, 80, true).Y
                 + canvas.TextSize(owner, .48f, area.Width - 78, 80).Y) : PendingEffectHeaderHeight(item, owner);
             var source = new PendingCardReference(item.Id, CardIdentity(card));
             if (ResolvePendingReference(source) is not { } current) continue;
@@ -183,6 +187,7 @@ internal sealed partial class TableApplication
         var boardCard = PendingConnectionCard(CardViews.Identity(card));
         if (boardCard != null) canvas.CardFocus(boardCard.Display, HoverAccent);
         var context = stackRows.Select(row => row.Bounds)
+            .Concat(stackWorkloadPaint.Select(row => row.Bounds))
             .Append(decisionPanelBounds).Append(targetingEffectBounds)
             .Concat(ReaderControlReservations)
             .Concat(TableStudyEnabled ? seatReadoutBounds : [])
@@ -224,10 +229,14 @@ internal sealed partial class TableApplication
             ProtectCounter(item.Effect);
         }
         var critical = context.Concat(objects).Distinct().Select(bounds => { bounds.Inflate(8, 8); return bounds; }).ToArray();
+        pendingReaderReservations = critical;
+        pendingReaderFits.Clear();
         bool CoversPendingContext(Rectangle candidate) => context.Any(candidate.Intersects);
         bool CoversCurrentObject(Rectangle candidate) => critical.Any(candidate.Intersects);
         var size = effect != null && stackReadLayout is { } layout ? new Point(layout.Width, layout.Height) : new Point(410, 574);
-        var viewport = new Rectangle(12, 64, 1576, 696);
+        // Only the measured ability face needs the extra visible reading space;
+        // printed pending-card readers retain their existing viewport geometry.
+        var viewport = new Rectangle(12, 64, 1576, effect is { Ability: true } ? DesignHeight - 76 : 696);
         if (reference != previous || pendingPreviewBounds == null || pendingPreviewRequestedSize != size
             || !viewport.Contains(pendingPreviewBounds.Value) || CoversCurrentObject(pendingPreviewBounds.Value)) {
             var candidates = new[] { 1008, 12, 545, 1180 }.Select(x => new Rectangle(
@@ -258,6 +267,13 @@ internal sealed partial class TableApplication
             }
             else if (effect == null && DecisionWorkspaceLayout.Fit(candidates[0], viewport, critical, minimumWidth: 300) is { } fitted)
                 pendingPreviewBounds = fitted;
+            else if (effect is { Ability: true } && expandedStackWorkload == AllWorkloadsKey) {
+                // The source row retains its explicit exact-member inspection
+                // gesture. Never cover response controls to force a transient
+                // reader beside an already expanded complete source overview.
+                pendingPreviewBounds = null; pendingPreviewRequestedSize = null;
+                return;
+            }
             else {
                 // A measured rules face retains its full layout. Dense tables
                 // retain the existing context-first fallback without squeezing
@@ -284,10 +300,26 @@ internal sealed partial class TableApplication
     private Rectangle? TryPlaceAbilityRules(Point preferred, Rectangle viewport, IReadOnlyList<Rectangle> occupied)
     {
         if (stackReadFace == null) return null;
+        // Abilities are source-art references, not another printed permanent.
+        // After trying the larger illustration, reclaim illustration height
+        // before ever covering a response or reducing the rules typography.
+        foreach (int illustrationHeight in new[] { 150, 90 })
         foreach (int width in new[] { 500, 590, 680, 770 }) {
-            var layout = CardRulesLayout.Measure(canvas, stackReadFace, 150, 0, width);
-            if (DecisionWorkspaceLayout.TranslateComplete([new(preferred.X, preferred.Y, layout.Width, layout.Height)], viewport, occupied) is not { } area)
+            var layout = CardRulesLayout.Measure(canvas, stackReadFace, illustrationHeight, 0, width);
+            var placed = DecisionWorkspaceLayout.TranslateComplete([new(preferred.X, preferred.Y, layout.Width, layout.Height)], viewport, occupied);
+            pendingReaderFits.Add(new(illustrationHeight, layout.Width, layout.Height, placed));
+            if (placed is not { } area)
                 continue;
+            stackReadLayout = layout;
+            return area;
+        }
+        // A compact ability header keeps recognizable source art BESIDE its
+        // full name/type. Rules and live footer keep the same reading fonts.
+        foreach (int width in new[] { 500, 590, 680, 770 }) {
+            var layout = CardRulesLayout.Measure(canvas, stackReadFace, 90, 0, width, compactSource: true);
+            var placed = DecisionWorkspaceLayout.TranslateComplete([new(preferred.X, preferred.Y, layout.Width, layout.Height)], viewport, occupied);
+            pendingReaderFits.Add(new(90, layout.Width, layout.Height, placed, true));
+            if (placed is not { } area) continue;
             stackReadLayout = layout;
             return area;
         }

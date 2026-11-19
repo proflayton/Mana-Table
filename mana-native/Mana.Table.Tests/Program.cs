@@ -9,11 +9,13 @@ internal static class Program
     private static int Main(string[] args)
     {
         try {
+            if (AiExperimentCommands.Handles(args)) return AiExperimentCommands.Run(args);
             if (args.Contains(TablePresenceWireChecks.Marker)) return TablePresenceWireChecks.Serve(args);
             if (args.Contains(EncounterStartProtocolProbe.Marker)) return EncounterStartProtocolProbe.Serve(args);
             if (args.Contains(ConfiguredSimulationProtocolProbe.Marker)) return ConfiguredSimulationProtocolProbe.Serve(args);
             if (args.Contains(AutomatedHistoryProtocolProbe.Marker)) return AutomatedHistoryProtocolProbe.Serve(args);
             if (args.Contains(ForgeRequestCancellationProtocolProbe.Marker)) return ForgeRequestCancellationProtocolProbe.Serve(args);
+            if (args.Contains(ForgeDiagnosticsProtocolProbe.Marker)) return ForgeDiagnosticsProtocolProbe.Serve(args);
             if (args.Contains(OwnedDecisionObservationProtocolProbe.Marker)) return OwnedDecisionObservationProtocolProbe.Serve(args);
             if (args.Contains(AutomatedPriorityProtocolProbe.Marker)) return AutomatedPriorityProtocolProbe.Serve(args);
             if (args.Contains(PriorityResponsesProtocolProbe.Marker)) return PriorityResponsesProtocolProbe.Serve(args);
@@ -40,6 +42,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-headless-engine");
         testRun |= args.Contains("--smoke-cooperative-encounter");
         testRun |= args.Contains("--smoke-configured-simulation");
+        testRun |= args.Contains("--ai-library-acquisition-journey");
         testRun |= args.Contains("--smoke-ai-team-goldens");
         testRun |= args.Contains("--smoke-ai-resources");
         testRun |= args.Contains("--smoke-polled-mixed");
@@ -48,6 +51,7 @@ internal static class Program
         testRun |= args.Contains("--check-polled-fanout-projection");
         testRun |= args.Contains("--smoke-whole-seat-ai");
         testRun |= args.Contains("--replay-ai-decision");
+        testRun |= args.Contains("--attachment-owned-checks");
         testRun |= args.Contains("--replay-projection");
         testRun |= args.Contains("--smoke-execution-journey");
         testRun |= args.Contains("--smoke-ai-repeated-cadence");
@@ -165,6 +169,11 @@ internal static class Program
                 test.Automation = new CardReadingSmoke(test.TestPort, scenario, selectionOnly: args.Contains("--smoke-compact-selection"), statesOnly: args.Contains("--smoke-card-states"));
                 test.Run(); return 0;
             }
+            if (args.Contains("--attachment-owned-checks")) {
+                string ownedDirectory = Arg("--attachment-owned-checks") ?? throw new ArgumentException("Attachment checks require the provider envelope directory.");
+                if (string.IsNullOrWhiteSpace(Arg("--profile"))) throw new ArgumentException("Attachment checks require an explicit --profile output directory.");
+                AttachmentOwnedChecks.RunAsync(ownedDirectory, profile).GetAwaiter().GetResult(); return 0;
+            }
             if (Arg("--replay-ai-decision") is { } decisionReplay) {
                 AiDecisionReplayCommand.RunAsync(decisionReplay, profile).GetAwaiter().GetResult(); return 0;
             }
@@ -179,6 +188,10 @@ internal static class Program
             var backend = Arg("--engine") ?? "forge";
             if (backend != "forge") throw new NotSupportedException($"Engine '{backend}' is not installed. Available: forge.");
             var paths = new ForgePaths(Path.Combine(bundle, "runtime", "bin", "java.exe"), Arg("--engine-jar") ?? Path.Combine(bundle, "forge-engine.jar"), Path.Combine(bundle, "forge-res"), profile);
+            if (args.Contains("--ai-library-acquisition-journey")) {
+                AiLibraryAcquisitionJourney.RunStandaloneAsync(paths, Arg("--fixture-mode") ?? "bundle",
+                    Arg("--production-engine-jar"), Arg("--source-revision"), Arg("--source-manifest")).GetAwaiter().GetResult(); return 0;
+            }
             if (args.Contains("--smoke-cooperative-encounter")) {
                 CooperativeEncounterEngineJourney.RunStandaloneAsync(paths).GetAwaiter().GetResult(); return 0;
             }

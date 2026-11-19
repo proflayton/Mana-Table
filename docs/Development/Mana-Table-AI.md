@@ -1,5 +1,79 @@
 # Multiplayer AI framework and investigation
 
+The [AI experiment framework](Mana-Table-AI-Experiments-Design.md)
+implements paired decision evaluation, balanced natural A/B scheduling and a
+separate casual-play scorecard. Its first runner produces descriptive private
+reports; confirmation statistics and human review remain separate. See the
+[runnable examples](../../mana-native/experiments/README.md).
+Current release qualification is not a policy-strength benchmark.
+
+## Experimental basic land acquisition
+
+`casual-commander.v7.library-acquisition.v1` is an explicit experimental candidate
+for mechanically certified acquisition of offered basic lands from its own
+library. The provider binds optional facts to the actual current zone-change
+choice; current keyless option faces and indices remain the entire authority.
+Supported direct and remembered-bundle shapes are described in the
+[frozen experiment plan](Mana-Table-AI-Library-Acquisition-Experiment.md).
+Default v6 stays available as the frozen baseline. Replay grades and actual
+rules continuations measure this component separately from Commander strength.
+
+A separate [punisher-choice design](Mana-Table-AI-Punisher-Choice-Design.md)
+records the reproduced Palantír failure: incomplete life-loss uncertainty can
+outrank a known opponent draw. That proposal requires narrowly qualified
+recipient/dependency facts and a separate risk-policy experiment.
+
+## Direct attachment capabilities: source candidate
+
+`casual-commander.v6` evaluates the shared
+[attachment capability subset](../../contracts/card-capabilities/README.md):
+literal signed P/T and a closed set of direct keyword grants on normal creature
+Auras. It compares the recipient's current public characteristics before and
+after the modifier, counts only newly effective keywords and applies the rules
+owned player relationship. Zero toughness and marked lethal damage can make a
+modifier harmful; indestructible prevents only the latter in this nominal
+comparison. Missing or overflowing characteristics remain unassessed.
+
+The policy does not assign the Aura a second permanent body, infer a direction
+from its name or prose, or credit Rancor's future return trigger. Dynamic,
+conditional or mixed unsupported continuous modifiers stay wholly unknown.
+Known positive attachment choices outrank unassessed fallback scores. An unknown
+non-cost target uses current cancellation when completion is unavailable;
+required prompts without cancellation retain a legal bounded answer. Unknown
+targeted casts no longer receive generic positive exploration value. Selection
+costs, existing partial damage evaluation and explicit optional completion keep
+their own handling. Work and command-scope limits remain enforced.
+
+The recorded v5 Rancor failure remains intact. Re-evaluating that old Unknown
+frame under v6 demonstrates safe cancellation, while controlled actual Forge
+observations exercise the new supported modifier path. These prove different
+properties; neither establishes that the earlier campaign timeout is fixed.
+Archive's first bridge consumes definition exports into potential graphs. Full
+strategy packages and a Mana Table strategy-package consumer remain future work.
+
+## Private failure provenance
+
+The source candidate retains an optional immutable `AiFailure` on seat views,
+decision history and host faults. It records the owned input, task, causal
+episode, remaining work and elapsed decision time, with a validated cause code.
+Capability gaps, corroborated local/episode work limits, active-time limits,
+route saturation, invalid output, policy exceptions, uncertain execution and
+accepted-command no-progress remain distinguishable in private evidence.
+
+Public Java fault reasons, terminal behavior, policy choices, budgets and
+command/observation timing are unchanged. A policy exception cannot contribute
+raw text or card data to the descriptor. Genuine owner cancellation and retired
+late results remain non-failures. An independently thrown policy cancellation
+retains its precise cause while preserving the existing coarse Cancelled
+disposition; that liveness limitation is recorded in the
+[reviewed reliability design](Mana-Table-AI-Reliability-Design.md).
+
+Replay format 1 accepts older records without this additive field and verifies
+that present evidence belongs to its original decision record. No work-budget
+object or executable command is retained by the descriptor. Recovery changes
+and qualification of deck versions keep their separate reproduction and
+gameplay gates.
+
 ## Response preparation is independent of pass consent
 
 An external controller previously requested its availability scan only after a

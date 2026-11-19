@@ -30,20 +30,21 @@ internal static class FanoutProjectionContinuityChecks
             .Single(card => CardViews.Identity(card) == toothy).Counters.GetValueOrDefault("+1/+1");
         string archive = Path.Combine(path, "accepted-checkpoints");
         var archived = FanoutProjectionArchive.Write(archive, sourceRevision, window);
-        var stored = FanoutProjectionArchive.Read(archive, new(1000, 740));
         var reports = new List<object>();
         foreach (var viewport in new[] { new Point(1000, 740), new Point(1540, 980) }) {
             // Final display-only dwell is declared separately. It cannot add a
             // rules outcome or extend the actual fixture's completion budget.
             long drain = FanoutProjectionArchive.DisplayDrainTicks;
-            var recording = new ProjectionRecording(1, stored.ProviderId, stored.SourceRevision, stored.Observations,
-                new(stored.Timeline!.AcceptedAtTicks, stored.Timeline.EndTicks,
-                    new(false, 1, true, viewport.X, viewport.Y)));
+            var recording = FanoutProjectionArchive.Read(archive, viewport);
             string sizePath = Path.Combine(path, viewport.X.ToString()); Directory.CreateDirectory(sizePath);
             using var run = new ProjectionReplaySession(recording, Path.Combine(sizePath, "playback"), viewport);
             var seenAnnouncements = new Dictionary<string, object>(StringComparer.Ordinal);
+            var finiteCapturedAnnouncements = new Dictionary<string, object>(StringComparer.Ordinal);
             var announcedSources = new HashSet<string>(StringComparer.Ordinal);
             var groupedSources = new HashSet<string>(StringComparer.Ordinal);
+            var capturedCurrentEffectSources = new HashSet<string>(StringComparer.Ordinal);
+            var sourceMembers = burst.Stack.GroupBy(item => CardViews.Identity(item.Card!))
+                .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
             var seenBattlefield = new HashSet<(string Id, int Owner)>();
             int frames = 0, incomplete = 0, maximumAnnouncements = 0;
             void Presented(PresentationFrame frame) {
@@ -52,25 +53,35 @@ internal static class FanoutProjectionContinuityChecks
                     throw new InvalidDataException("Replay replaced its recorded match scope.");
                 incomplete = Math.Max(incomplete, run.View.IncompleteAnnouncements);
                 maximumAnnouncements = Math.Max(maximumAnnouncements, run.View.AnnouncementCount);
+                if (run.View.Match?.Stack.FirstOrDefault() is { Card: { FaceDown: false } source } top
+                    && captured.Contains(top.ExecutionId)
+                    && sourceMembers.TryGetValue(CardViews.Identity(source), out var capturedMembers)
+                    && capturedMembers.Any(member => member.Id == top.Id && member.ExecutionId == top.ExecutionId
+                        && member.Card is { FaceDown: false } original && CardViews.Identity(original) == CardViews.Identity(source))
+                    && FanoutWorkloadReadabilityChecks.PrimaryVisible(run.View, frame, top))
+                    capturedCurrentEffectSources.Add(CardViews.Identity(source));
                 if (run.View.CurrentAnnouncement is { } announcement) {
-                    bool painted = frame.Drawing.Commands.Any(command => command switch {
-                        DrawCommand.Text text => text.Value?.Contains(announcement.Name, StringComparison.Ordinal) == true,
-                        DrawCommand.CenterText text => text.Value?.Contains(announcement.Name, StringComparison.Ordinal) == true,
-                        _ => false
-                    });
-                    bool capturedHeadingPainted = announcement.CapturedCount == 55 && frame.Drawing.Commands.Any(command => command switch {
-                        DrawCommand.Text text => text.Value?.Contains("55 captured", StringComparison.Ordinal) == true
-                            && text.Value.Contains(announcement.Name, StringComparison.Ordinal),
-                        DrawCommand.CenterText text => text.Value?.Contains("55 captured", StringComparison.Ordinal) == true
-                            && text.Value.Contains(announcement.Name, StringComparison.Ordinal),
-                        _ => false
-                    });
+                    bool painted = FanoutWorkloadReadabilityChecks.AnnouncementVisible(run.View, frame, announcement);
+                    // The finite public event still owns all captured executions.
+                    // Its former floating heading is deliberately suppressed when
+                    // that exact work has the current effect/queue reading surface.
+                    bool exactCapturedSource = announcement.CapturedCount == 55
+                        && sourceMembers.TryGetValue(announcement.SourceId, out var members) && members.Length == 55
+                        && members.All(item => captured.Contains(item.ExecutionId))
+                        && members.Any(item => item.ExecutionId == announcement.ExecutionId && item.Name == announcement.Name);
+                    if (exactCapturedSource) {
+                        groupedSources.Add(announcement.Name);
+                        // This is an actual finite event, separately from its
+                        // painted surface. Its current work may deliberately
+                        // own the primary/inspection surface instead of a notice.
+                        finiteCapturedAnnouncements.TryAdd(announcement.Id, new { announcement.Id,
+                            announcement.ExecutionId, announcement.SourceId, announcement.Name,
+                            announcement.CapturedCount, exactCapturedSource, firstObservedTicks = run.ElapsedTicks });
+                    }
                     if (painted && announcement.Name.Length > 0) {
                         announcedSources.Add(announcement.Name);
-                        if (capturedHeadingPainted) groupedSources.Add(announcement.Name);
-                        if (announcement.CapturedCount != 55 || capturedHeadingPainted)
-                            seenAnnouncements.TryAdd(announcement.Id, new { announcement.Id, announcement.ExecutionId,
-                                announcement.Name, announcement.EventKind, announcement.CapturedCount, capturedHeadingPainted, firstRenderedTicks = run.ElapsedTicks });
+                        seenAnnouncements.TryAdd(announcement.Id, new { announcement.Id, announcement.ExecutionId, announcement.SourceId,
+                            announcement.Name, announcement.EventKind, announcement.CapturedCount, exactCapturedSource, firstRenderedTicks = run.ElapsedTicks });
                     }
                 }
                 if (frame.Scene is { } scene) {
@@ -94,6 +105,10 @@ internal static class FanoutProjectionContinuityChecks
             var final = run.View.Match!;
             var acceptedTerminalIds = Terminals(run.Accepted.Select(item => item.State), captured);
             var settledToothy = run.Frame.Cards.Single(card => card.Zone == "Battlefield" && card.Id == toothy);
+            var actualBurst = window.Observations.First(state => state.Stack.Length == captured.Count
+                && state.Stack.Select(item => item.ExecutionId).ToImmutableHashSet(StringComparer.Ordinal).SetEquals(captured));
+            var inspection = FanoutWorkloadReadabilityChecks.Run(sizePath, actualBurst, viewport, check);
+            var readableSources = inspection.Names;
             check(run.Accepted.Count == window.Observations.Length
                     && run.Accepted.Select(item => item.State.Revision).SequenceEqual(window.Observations.Select(item => item.Revision))
                     && run.Accepted.Select(item => item.At.Ticks).SequenceEqual(window.AcceptedAtTicks)
@@ -105,13 +120,19 @@ internal static class FanoutProjectionContinuityChecks
                 "Actual fanout replay preserves physical card owners and identities, completed finite state and the settled Toothy counters at " + viewport);
             check(incomplete == 0 && announcedSources.Contains("Shamanic Revelation")
                     && groupedSources.Contains("Toothy, Imaginary Friend") && groupedSources.Contains("Mind's Eye")
+                    && readableSources.SetEquals(groupedSources)
+                    && capturedCurrentEffectSources.SetEquals(sourceMembers.Keys)
                     && run.View.AnnouncementCount == 0 && pendingAtRecordedEnd <= 4,
-                "The recorded cast and both55-trigger sources remain readable as finite announcements without a110-entry presentation backlog at " + viewport);
+                "The recorded cast and both exact55-trigger sources retain their finite public events and readable current-effect/queue inspection without a110-entry presentation backlog at " + viewport);
             check(run.Playback.ObservationRequests == 0 && run.Playback.RejectedCommands == 0 && run.View.Error.Length == 0,
                 "Grant-bearing replay has no provider reads, attempted commands, consent adoption or presentation error at " + viewport);
             reports.Add(new { viewport = new { width = viewport.X, height = viewport.Y }, frames, accepted = run.Accepted.Count,
                 window.AcceptedCallbacks, window.IdenticalCallbacks, terminalIds = acceptedTerminalIds.Count,
                 maximumAnnouncements, pendingAtRecordedEnd, incomplete, announcements = seenAnnouncements.Values,
+                finiteCapturedAnnouncements = finiteCapturedAnnouncements.Values,
+                capturedCurrentEffectSources,
+                finiteAnnouncementSources = groupedSources, inspectedSources = readableSources,
+                workloadInspection = inspection.Evidence,
                 finalRevision = final.Revision, expectedCounters, displayedCounters = settledToothy.Card.Counters,
                 sourceQueueSize = burst.Stack.Length, actualCallbackEndTicks = window.EndTicks, syntheticDisplayDrainTicks = drain });
         }

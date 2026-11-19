@@ -123,6 +123,13 @@ counters, re-equipping, detachment, a tapped host and a crowded mixed battlefiel
 Visible faces preload, and the selected local deck warms the artwork cache before
 and during play. Reading takes precedence over background downloads; hidden
 opponent cards are never requested. A first uncached image can still need network.
+The source-only residency change bounds decoded artwork to 224 MiB and 1,024
+textures, with a separate 256 MiB logical upload peak. Paintable frames retain
+their textures; unused faces can be evicted and downloaded again. PNG and JPEG
+inputs are limited to 4 MiB encoded, 4,096 pixels per side and 4,194,304 pixels.
+An unsupported, damaged or pressure-denied image keeps the existing readable
+card fallback. These logical payload limits do not measure total process or
+physical GPU memory.
 Source-only priority redesign: Auto waits through quiet opponent priority windows
 even with an instant available. A new spell, ability, public action or combat
 declaration returns an available response to the player. A refreshed prompt or
@@ -397,6 +404,12 @@ differences are accepted only when all file contents match. The SDK cache retain
 a full base package and needs additional temporary preparation space; transfer
 savings do not imply equally small disk use. `Updates` can recover a verified
 prepared package after an ordinary restart without downloading it again.
+The source-only retained workflow belongs to window composition. Retiring a
+view keeps an accepted download running, but revokes that view's pending restart
+intent. A new view must explicitly choose restart, with blockers checked again
+after verification. Closing the window cancels and joins actual provider work
+before Program disposes the provider; noncooperative SDK work can delay shutdown.
+This change preserves the explicit restart update flow.
 
 Flat Inno installations use the existing protocol1 installer path for their
 one-time migration; the canonical setup remains a genuine Inno bridge. Managed

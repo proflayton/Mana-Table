@@ -38,7 +38,10 @@
                         <configuration>
                             <finalName>forge-engine</finalName>
                             <classifier>fixtures</classifier>
-                            <includes><include>forge/api/AiReleaseFixtureEngine*.class</include></includes>
+                            <includes>
+                                <include>forge/api/AiReleaseFixtureEngine*.class</include>
+                                <include>forge/api/LibraryAcquisitionFixtureEngine*.class</include>
+                            </includes>
                             <archive>
                                 <addMavenDescriptor>false</addMavenDescriptor>
                                 <manifest><mainClass>forge.api.AiReleaseFixtureEngine</mainClass></manifest>

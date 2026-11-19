@@ -120,7 +120,7 @@ final class SpectatorObservation {
     }
     private static Map<String, Object> combat(MatchTable table) {
         var combat = table.game.getCombat();
-        if (combat == null) return null;
+        if (combat == null || table.game.isGameOver()) return null;
         var attackers = new ArrayList<Object>();
         for (Card attacker : combat.getAttackers()) {
             var blockers = combat.getBlockers(attacker).stream().map(card -> id(table, card.getView())).toList();

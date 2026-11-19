@@ -6,9 +6,13 @@ const DECKS = ['rhys-token-equipment.v1', 'pir-toothy-counter-ramp.v1', 'balmor-
 const AUTOMATED_PRIORITY_FIELDS = ['GameId', 'SeatId', 'Epoch', 'AcceptedAcknowledgements', 'AcceptedGrants',
   'AcceptedWithdrawals', 'CertifiedAutomaticPasses', 'LastSequence', 'LastAcknowledgedBoardRevision',
   'LastAcknowledgedPublicActivitySequence', 'Retired'];
+const FANOUT_SOURCES = ['Toothy, Imaginary Friend', "Mind's Eye"];
+const CHECKPOINTS_PER_PART = 512, CHECKPOINTS_PER_STREAM = 2 * CHECKPOINTS_PER_PART;
+const MAXIMUM_PARTS = 16, MAXIMUM_PART_BYTES = 64 * 1024 * 1024, MAXIMUM_STREAM_BYTES = 512 * 1024 * 1024;
 function requireThat(value, message) { if (!value) throw new Error(message); }
 function positive(value) { return Number.isSafeInteger(value) && value > 0; }
 function nonnegative(value) { return Number.isSafeInteger(value) && value >= 0; }
+function identity(value) { return typeof value === 'string' && value.length > 0 && !/\p{Cc}/u.test(value); }
 function sameHash(left, right) { return /^[a-f0-9]{64}$/i.test(left || '') && left.toLowerCase() === right?.toLowerCase(); }
 function exactly(values, expected) {
   if (!Array.isArray(values) || values.length !== expected.length) return false;
@@ -163,33 +167,72 @@ function assess({ sourceRevision, engineHash, harnessHash, policyHash, manifestH
       && exactly(replay.reports?.map(report => `${report.viewport?.width}x${report.viewport?.height}`), ['1000x740', '1540x980']),
     'Production replay must cover both declared viewports for each ordinary viewer.');
     const archive = replay.archive;
-    requireThat(positive(archive?.TotalCheckpoints) && archive.TotalCheckpoints <= 512
+    requireThat(positive(archive?.TotalCheckpoints) && archive.TotalCheckpoints <= CHECKPOINTS_PER_STREAM
       && Number.isSafeInteger(archive.IdenticalCallbacks) && archive.IdenticalCallbacks >= 0
       && Number.isSafeInteger(archive.AcceptedCallbacks) && archive.AcceptedCallbacks - archive.TotalCheckpoints === archive.IdenticalCallbacks
-      && Array.isArray(archive.parts) && archive.parts.length > 0 && archive.parts.length <= archive.TotalCheckpoints,
+      && Array.isArray(archive.parts) && archive.parts.length > 0 && archive.parts.length <= MAXIMUM_PARTS
+      && archive.parts.length <= archive.TotalCheckpoints,
     'Each ordinary audience needs one bounded shared checkpoint archive across both review viewports.');
-    let next = 0, end = 0;
+    let next = 0, end = 0, bytes = 0;
     archive.parts.forEach((part, index) => {
       requireThat(part.File === `part-${String(index).padStart(3, '0')}.json` && part.FirstOrdinal === next
         && positive(part.EndOrdinal) && part.EndOrdinal > next && part.EndOrdinal <= archive.TotalCheckpoints
+        && part.EndOrdinal - part.FirstOrdinal <= CHECKPOINTS_PER_PART
         && Number.isSafeInteger(part.StartTicks) && part.StartTicks === end
         && Number.isSafeInteger(part.EndTicks) && part.EndTicks >= part.StartTicks
-        && positive(part.Bytes) && part.Bytes <= 64 * 1024 * 1024 && /^[a-f0-9]{64}$/i.test(part.Sha256 || ''),
+        && positive(part.Bytes) && part.Bytes <= MAXIMUM_PART_BYTES
+        && typeof part.Sha256 === 'string' && /^[a-f0-9]{64}$/i.test(part.Sha256),
       'Shared recording parts must preserve bounded files, complete ordinals, exact time seams and byte hashes.');
-      next = part.EndOrdinal; end = part.EndTicks;
+      next = part.EndOrdinal; end = part.EndTicks; bytes += part.Bytes;
     });
-    requireThat(next === archive.TotalCheckpoints, 'The shared recording archive omitted its final checkpoint.');
-    for (const report of replay.reports) requireThat(positive(report.accepted) && positive(report.frames) && report.terminalIds === 110
+    requireThat(next === archive.TotalCheckpoints && bytes <= MAXIMUM_STREAM_BYTES,
+      'The shared recording archive omitted its final checkpoint or exceeded its aggregate byte bound.');
+    for (const report of replay.reports) {
+      requireThat(positive(report.accepted) && positive(report.frames) && report.terminalIds === 110
       && Number.isSafeInteger(report.IdenticalCallbacks) && report.IdenticalCallbacks >= 0
       && report.AcceptedCallbacks === report.accepted + report.IdenticalCallbacks
       && report.accepted === archive.TotalCheckpoints && report.AcceptedCallbacks === archive.AcceptedCallbacks
       && Number.isSafeInteger(report.actualCallbackEndTicks) && report.actualCallbackEndTicks >= 0
       && report.actualCallbackEndTicks + report.syntheticDisplayDrainTicks === end
       && report.incomplete === 0 && nonnegative(report.pendingAtRecordedEnd) && report.pendingAtRecordedEnd <= 4 && report.syntheticDisplayDrainTicks === 120000000
-      && report.announcements?.some(item => item.Name === 'Shamanic Revelation')
-      && ['Toothy, Imaginary Friend', "Mind's Eye"].every(name => report.announcements.some(item => item.Name === name
-        && item.CapturedCount === 55 && item.capturedHeadingPainted === true)),
-    'Replay must retain the cast and both real55-trigger groups without missing announcements or110 individual display beats.');
+      && Array.isArray(report.announcements) && report.announcements.some(item => item.Name === 'Shamanic Revelation'),
+      'Replay must retain the cast and both real55-trigger groups without missing announcements or110 individual display beats.');
+      const inspection = report.workloadInspection;
+      const finite = report.finiteCapturedAnnouncements;
+      requireThat(inspection?.version === 1 && inspection.sourceQueueSize === 110
+        && exactly(inspection.textScales, [1, 1.3]) && inspection.currentPrimaryValidated === true
+        && inspection.protectedControlsValidated === true && Array.isArray(inspection.sources)
+        && exactly(inspection.sources.map(source => source.name), FANOUT_SOURCES)
+        && exactly(report.finiteAnnouncementSources, FANOUT_SOURCES) && exactly(report.inspectedSources, FANOUT_SOURCES)
+        && Array.isArray(finite) && exactly(finite.map(item => item.Name), FANOUT_SOURCES)
+        && finite.every(item => identity(item.Id)) && new Set(finite.map(item => item.Id)).size === 2,
+      'Both actual source cohorts need completed current-primary, enlarged-text, protected-control and pointer inspection evidence.');
+      const sourceIds = new Set(), memberIds = new Set(), executionIds = new Set();
+      for (const source of inspection.sources) {
+        requireThat(identity(source.sourceId) && !sourceIds.has(source.sourceId)
+          && source.fullRulesValidated === true && source.exactFanValidated === true
+          && Array.isArray(source.memberIds) && source.memberIds.length === 55 && source.memberIds.every(identity)
+          && new Set(source.memberIds).size === 55
+          && Array.isArray(source.executionIds) && source.executionIds.length === 55 && source.executionIds.every(identity)
+          && new Set(source.executionIds).size === 55
+          && source.memberIds.every(id => !memberIds.has(id)) && source.executionIds.every(id => !executionIds.has(id))
+          && finite.some(item => item.Name === source.name && item.CapturedCount === 55
+            && item.exactCapturedSource === true && item.SourceId === source.sourceId
+            && identity(item.ExecutionId) && source.executionIds.includes(item.ExecutionId)
+            && nonnegative(item.firstObservedTicks) && item.firstObservedTicks <= end)
+          && report.announcements.some(item => item.Name === source.name && item.SourceId === source.sourceId
+            && identity(item.ExecutionId) && (item.CapturedCount === 1
+              || item.CapturedCount === 55 && item.exactCapturedSource === true && source.executionIds.includes(item.ExecutionId))),
+        'Each actual55-trigger source must preserve its own distinct physical members, finite announcement execution, full rules and exact fan inspection.');
+        sourceIds.add(source.sourceId);
+        for (const id of source.memberIds) memberIds.add(id);
+        for (const id of source.executionIds) executionIds.add(id);
+      }
+      requireThat(memberIds.size === 110 && executionIds.size === 110,
+        'The inspected source cohorts must account for all110 distinct stack and execution occurrences.');
+      requireThat(exactly(report.capturedCurrentEffectSources, [...sourceIds]),
+        'Both captured physical sources must actually paint their exact current-effect rules during continuous replay.');
+    }
   }
   const paymentRuntime = manaOutput?.runtime;
   requireThat(manaOutput?.scenario === 'ordinary-polled-consuming-output-payment' && manaOutput.passed === true

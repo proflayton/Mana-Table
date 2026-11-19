@@ -11,7 +11,7 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private sealed record PublicAnnouncementPlan(StackArrivalPresentation.Announcement Announcement, string Heading,
-        int HeadingHeight, int DetailHeight, int Height, Rectangle Area);
+        int HeadingHeight, int NameHeight, int DetailHeight, int Height, Rectangle Area);
     private PublicAnnouncementPlan? publicAnnouncementPlan;
     private string StackHeading(StackItem item)
     {
@@ -43,10 +43,16 @@ internal sealed partial class TableApplication
     {
         if (OverlayOpen || readingId != null || expandedStackWorkload.Length > 0 || match?.Decision is { Payload: not PriorityPayload }
             || matchPresentation.Announcement(now) is not { } announcement) return null;
-        // An ordinary single-entry surface already shows its source and effect.
-        // Repeated piles and off-turn actions need a readable current announcement.
-        if (!RepeatedStackWorkload && announcement.StackId is { } id && (TableStudyEnabled
-                ? match!.Stack.FirstOrDefault()?.Id == id : stackRows.Any(row => row.Id == id))) return null;
+        // Current work has one reading surface. This applies to repeated and
+        // interleaved triggers too; exact occurrence IDs, never names or prose,
+        // establish that the announcement belongs to the live stack.
+        if (match!.Stack.Any(item => announcement.StackId is { Length: > 0 } id && item.Id == id
+                || announcement.ExecutionId.Length > 0 && item.ExecutionId == announcement.ExecutionId)) return null;
+        // Identified earlier stack events stay in History while current work
+        // needs this space. Their settled board changes still paint in place.
+        // Unbound live events retain their separate conservative notice.
+        if (match.Stack.Length > 0 && (announcement.StackId is { Length: > 0 }
+                || announcement.EventKind is "resolved" or "cancelled" or "declined" or "countered" or "failed" or "completed")) return null;
         string actor = announcement.ControllerId is { } controller ? StateClarity.PlayerName(match!, controller) : "A player";
         string verb = announcement.EventKind switch { "resolved" => "Resolved", "cancelled" => "Cancelled", "declined" => "Declined",
             "countered" => "Countered", "failed" => "Interrupted", "completed" => "Completed", _ => announcement.Kind switch { StackActionKind.Spell => "Cast", StackActionKind.ActivatedAbility => "Activated",
@@ -56,26 +62,38 @@ internal sealed partial class TableApplication
             && announcement.Kind == StackActionKind.TriggeredAbility && announcement.StackId != match!.Stack.FirstOrDefault()?.Id)
             verb = match.Stack.Any(item => item.Id == announcement.StackId) ? "Pending trigger" : "Earlier trigger";
         if (announcement.CapturedCount > 1) verb = announcement.CapturedCount + " captured \u00b7 " + verb;
-        string heading = verb + " · " + actor + " · " + announcement.Name;
-        int headingHeight = canvas.TextSize(heading, .65f, width, 80, true).Y;
-        int detailHeight = canvas.TextSize(announcement.Text, .62f, width, 3, true).Y;
+        string heading = verb + " · " + actor;
+        int textWidth = width - 24;
+        int headingHeight = canvas.TextSize(heading, .52f, textWidth, 80, true).Y;
+        int nameHeight = canvas.TextSize(announcement.Name, .67f, textWidth, 80, true).Y;
+        int detailHeight = canvas.TextSize(announcement.Text, .62f, textWidth, 3, true).Y;
         int incompleteHeight = matchPresentation.IncompleteAnnouncements > 0
-            ? canvas.TextSize("Earlier action history is incomplete", .46f, width, 1).Y + 3 : 0;
-        return new(announcement, heading, headingHeight, detailHeight, headingHeight + 3 + detailHeight + incompleteHeight + 12, Rectangle.Empty);
+            ? canvas.TextSize("Earlier action history is incomplete", .46f, textWidth, 1).Y + 3 : 0;
+        return new(announcement, heading, headingHeight, nameHeight, detailHeight,
+            headingHeight + nameHeight + detailHeight + incompleteHeight + 30, Rectangle.Empty);
     }
 
     private void DrawPublicAnnouncement()
     {
-        var plan = TableStudyEnabled ? publicAnnouncementPlan : MeasurePublicAnnouncement(435);
+        var plan = TableStudyEnabled ? publicAnnouncementPlan : MeasurePublicAnnouncement(PendingStackWidth);
         if (plan == null) return;
         var announcement = plan.Announcement;
-        var area = TableStudyEnabled ? plan.Area : new Rectangle(545, 231, 435, plan.Height);
-        var heading = new Rectangle(area.X, area.Y, area.Width, plan.HeadingHeight);
-        canvas.Text(plan.Heading, heading.X, heading.Y, Gold, .65f, heading.Width, 80, true);
-        var detail = new Rectangle(heading.X, heading.Bottom + 3, heading.Width, plan.DetailHeight);
+        var area = plan.Area;
+        if (!TableStudyEnabled) {
+            var occupied = stackRows.Select(row => HudPaint(row.Bounds)).ToList();
+            if (match!.Stack.Length > 0) occupied.Add(new(PendingStackLeft - 2, 281, PendingStackWidth + 6, 42));
+            area = PlaceStudyHud(new(PendingStackLeft, 100, PendingStackWidth, plan.Height), occupied, new(12, 64, 1576, 696));
+            publicAnnouncementPlan = plan with { Area = area };
+        }
+        canvas.Panel(area, new(17, 29, 36), Muted * .65f, 5);
+        var heading = new Rectangle(area.X + 12, area.Y + 10, area.Width - 24, plan.HeadingHeight);
+        canvas.Text(plan.Heading, heading.X, heading.Y, Gold, .52f, heading.Width, 80, true);
+        int nameY = heading.Bottom + 3;
+        canvas.Text(announcement.Name, heading.X, nameY, Ink, .67f, heading.Width, 80, true);
+        var detail = new Rectangle(heading.X, nameY + plan.NameHeight + 5, heading.Width, plan.DetailHeight);
         canvas.Text(announcement.Text, detail.X, detail.Y, Ink, .62f, detail.Width, 3, true);
-        if (announcement.StackId is { } stack && match!.Stack.Any(item => item.Id == stack))
-            hits.Add(new("stack-announcement:" + stack, Scope, Rectangle.Union(heading, detail), new MatchIntent.InspectPendingEffect(stack)));
+        // Historical notices are context only. The current stack and its exact
+        // references retain all inspection and gameplay authority.
         if (announcement.SourceId.Length > 0 && PendingConnectionCard(announcement.SourceId) is { } physical)
             canvas.CardFocus(physical.Display, Gold);
         if (matchPresentation.IncompleteAnnouncements > 0)

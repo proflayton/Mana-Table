@@ -9,6 +9,30 @@ Use the package's `SOURCE.txt`/`build.json` and release notes to identify its be
 The [native development guide](../../mana-native/README.md) is the build/run entry
 point for the Windows client.
 
+The [gameplay reliability program](Mana-Table-Reliability-Program.md) records the
+reviewed artwork, process diagnostics, AI failure, history presentation and
+update-operation designs. Its implementation and qualification states are
+tracked separately from the larger cooperative and live-update milestones.
+
+The first Archive/Mana Table capability bridge shares a versioned, MIT-licensed
+[definition contract](../../contracts/card-capabilities/README.md) for direct
+Aura modifiers. Forge extracts a closed structural subset, Archive maps exports
+into potential graphs, and native AI consumes current bound modifier facts.
+Definition coverage, live binding, legal commands and strategic evaluation stay
+separate. A current prompt's read-only source portrait can supply attachment
+provenance without entering the target/resource occurrence catalog. Full
+strategy packages and broad interaction discovery remain unimplemented.
+
+Rules-process diagnostics have a process-owned bounded stderr drain and an
+independent optional file worker. A slow or failed `engine.log` sink cannot
+backpressure the child through that drain. Fixed queue/tail storage, explicit
+omission accounting and one half-second retirement grace bound optional work.
+After a noncooperative file worker is abandoned, that engine instance suppresses
+later file workers while continuing each process's drain. Retired status is
+text-free and immutable; diagnostics never acquire command or failure authority.
+See the [diagnostics design](Mana-Table-Engine-Diagnostics-Design.md) for the
+retention limits and process-liveness evidence.
+
 The [3 November boundary audit](Mana-Table-Boundary-Audit-2026-11-03.md) follows
 recent regressions across published source facts, client audience lifetimes and
 current native composition. Those values have separate invalidation rules:
@@ -264,9 +288,16 @@ while malformed responses remain errors rather than unsupported fallbacks.
 game/audience generation. It owns deduplication, gaps and the immutable
 `MatchHistoryReadModel`; it cannot issue a gameplay command. Historical identities
 never enter the live action catalog. The renderer's existing feedback consumers
-are not yet migrated to this new reader. `Mana.Game` owns selected play, measured
-reading, current disclosure checks and archive navigation, with no rules inference
-from nearby observations or payment pool differences.
+are not yet migrated to this new reader. The source-only P1 extraction places
+selection, pages, retained detail formatting and archive requests in
+`HistoryPresentationSession`. It publishes one immutable view after measured
+page reconciliation. Composition retains global overlay and current disclosure
+checks, recording and archive closure; historical identities grant no commands.
+One actual storage pipeline and one replaceable pending read bound outstanding
+work. Logical cancellation or the ten-second UI limit revokes results without
+freeing a still-running I/O slot. Export is explicit and never queued for replay.
+An in-progress destination write can finish after the reader closes. Actual I/O
+settlement alone does not prove private callbacks have drained for future unload.
 
 Composition constructs `MatchHistoryArchive` and injects it through `TableServices`.
 Accepted history batches feed its bounded background writer. Archives use local
@@ -1320,8 +1351,19 @@ automated input still receives a fresh observation and policy evaluation.
 The background loop separately distinguishes an accepted submission that needs
 a fresh observation from a cycle with no current work. Acceptance skips the
 40 ms idle backoff before that read; it proves no input consumption or resolved
-effect. Resolving, unchanged authority and presentation holds keep the backoff,
-and rejection or failure overrides another seat's accepted-submission hint.
+effect. Same-board resolving, unchanged authority and presentation holds keep
+the backoff, and rejection or failure overrides another seat's refresh hint.
+An already-bound game can also request one fresh read when its public board
+advances and every remaining player is privately owned by this AI host. This
+requires at least two living players, identical complete player-ID rosters
+across the owned views and the retained game binding, monotonic per-seat
+revision/board watermarks, and current pacing readiness before and after the
+step. An omitted human cannot become an invented AI-only table. Initial,
+retired, regressed, metadata-only, mixed-human or unchanged scopes retain the
+ordinary backoff. Progress watermarks retain only active game/seat IDs and
+scalar revisions, and retire alongside the corresponding seat ownership.
+This scheduling hint neither reuses a batch nor supplies an answer, observation
+credit, accepted receipt, rules consequence or renewed decision allowance.
 The existing operation clock schedules the idle wait; announcement pacing and
 all current actor, offer and command permissions remain separate gates.
 
@@ -3652,6 +3694,27 @@ remains an open design problem.
 `TextureFiltering` builds GPU mipmaps once per loaded image; anisotropic card
 sampling handles angled minification, and table surfaces request 4x MSAA.
 Full-resolution artwork and rendered rules text remain available for inspection.
+
+The source-only artwork residency policy admits checked PNG/JPEG dimensions and
+encoded lengths before GPU decoding. `CardArt` accounts complete RGBA mip chains,
+evicts unpinned LRU entries and bounds resident payload, transient upload peak,
+texture count, queued bytes and metadata. `DrawingFrame` inventories its texture
+references. Window composition pins the exact completed frame before releasing
+the previous one, and Draw consumes that retained frame/lease pair. Mandatory
+roles and optional captures have separate fixed quotas. Shutdown revokes every
+lease before disposing textures. Queue, source-held and device-upload byte
+counters exclude decoder/source copy buffers and driver allocations; they are
+not total CPU/VRAM measurements. See the [residency design](Mana-Table-Artwork-Residency-Design.md).
+
+The source-only U1 update workflow belongs to `TableWindow` composition through
+`AppUpdateSession`. `TableApplication` borrows one revocable `AppUpdateViewBinding`;
+retiring it cannot cancel an accepted download or retain restart authority.
+One completion slot and one coalesced progress slot feed a composition pump after
+application update, using fresh install blockers. Byte-only progress preserves
+control scope. Close fences commands and joins actual provider work independently
+of Game/session callbacks; Program retains provider disposal. This preserves the
+existing possibly indefinite join for a noncooperative SDK. It supplies no live
+assembly loading or authenticated live-update store.
 
 Native updates are separate from engine commands. Supported managed installations
 use `IncrementalAppUpdates` and the pinned Velopack SDK for selected full/delta

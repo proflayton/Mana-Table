@@ -368,6 +368,22 @@ test('a closed two-suite matrix preserves every controlled and real-engine check
     'The four-client TCP/mixed-lobby journey must use the verified production engine, not the fixture launcher, and fail the same required job.');
   assert.ok(runs[0].indexOf('--profile dist/headless-engine-checks') < runs[0].indexOf('--profile dist/mixed-lobby-checks'),
     'The existing headless suite remains required before the additional mixed-lobby command.');
+  const acquisition = [...runs[0].matchAll(/^\s+dotnet \.\/dist\/ci-inputs\/harness\/Mana.Table.Tests.dll --ai-library-acquisition-journey[^\n]+$/gm)];
+  assert.equal(acquisition.length, 1, 'One actual baseline/candidate acquisition journey must run in the required engine suite.');
+  assert.match(acquisition[0][0], /--fixture-mode bundle --engine-jar \$env:MANA_NATIVE_FIXTURE_LAUNCHER/);
+  assert.match(acquisition[0][0], /--production-engine-jar \(Join-Path \$env:MANA_NATIVE_PACKAGE 'engine\/forge-engine.jar'\)/);
+  assert.match(acquisition[0][0], /--engine-resources \(Join-Path \$env:MANA_NATIVE_PACKAGE 'engine'\)/);
+  assert.match(acquisition[0][0], /--source-revision \$env:GITHUB_SHA --source-manifest dist\/ci-inputs\/ci-engine-manifest.json --profile dist\/library-acquisition-checks$/);
+  assert.match(runs[0], /--profile dist\/library-acquisition-checks\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw 'Actual baseline\/candidate library acquisition continuation failed\.' \}/,
+    'A failed actual acquisition must stop verification before the mixed-lobby and campaign checks.');
+  assert.ok(runs[0].indexOf('--profile dist/headless-engine-checks') < acquisition[0].index
+    && acquisition[0].index < runs[0].indexOf('--profile dist/mixed-lobby-checks'),
+  'Actual acquisition must follow headless engine checks and precede the mixed-lobby command.');
+  const acquisitionEvidence = steps.find(step => /name: mana-native-verification-evidence-/.test(step));
+  assert.ok(acquisitionEvidence, 'The acquisition journey must retain evidence through the existing native verification upload.');
+  assert.match(acquisitionEvidence, /if: always\(\)/, 'Failed acquisition evidence must also be retained.');
+  for (const extension of ['json', 'log', 'jsonl.gz']) assert.ok(acquisitionEvidence.includes(`dist/*-checks/**/*.${extension}`),
+    `The existing ${extension} artifact glob must cover the acquisition check's unique profile.`);
   assert.match(runs[0], /\$prefixPath = 'dist\/mixed-lobby-checks\/mixed-lobby\/prefix-results.json'/);
   assert.match(runs[0], /\$prefixFile.Length -le 0 -or \$prefixFile.Length -gt 1048576/);
   assert.match(runs[0], /\$prefix.PSObject.Properties.Name -cnotcontains 'failure' -or \$null -ne \$prefix.failure/);

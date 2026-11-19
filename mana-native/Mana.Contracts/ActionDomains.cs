@@ -12,7 +12,7 @@ public enum ActionEffectKind
     CounterSpell, AddCounters, RemoveCounters, LifeGain, LifeLoss, Token,
     Tap, Untap, Search, Discard, Mill, ChangeControl,
     Scry, Proliferate, MultiplyCounters, Choose, Conditional, Repeat, Cleanup, MoveCard, Amass,
-    LoseGame, WinGame
+    LoseGame, WinGame, Attach
 }
 public enum ActionCostKind
 {

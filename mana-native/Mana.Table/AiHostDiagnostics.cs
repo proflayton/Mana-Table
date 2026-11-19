@@ -1,4 +1,5 @@
 using Mana.AI;
+using System.Text.Json;
 
 namespace Mana.Table;
 
@@ -13,7 +14,8 @@ internal sealed class AiHostDiagnostics(string profile) : IAiHostDiagnostics
             string directory = Path.Combine(profile, "diagnostics");
             Directory.CreateDirectory(directory);
             File.AppendAllText(Path.Combine(directory, "ai-host.log"),
-                $"{DateTimeOffset.UtcNow:O} game={fault.GameId} seat={fault.SeatId} reason={fault.ReasonCode}{Environment.NewLine}"
+                $"{DateTimeOffset.UtcNow:O} game={fault.GameId} seat={fault.SeatId} reason={fault.ReasonCode}"
+                + (fault.Failure == null ? "" : " failure=" + JsonSerializer.Serialize(fault.Failure)) + Environment.NewLine
                 + (error == null ? "" : error + Environment.NewLine));
         }
     }

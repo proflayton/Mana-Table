@@ -1,0 +1,26 @@
+{
+  "attachment": {
+    "knowledge": "Unknown",
+    "powerDelta": null,
+    "toughnessDelta": null,
+    "grantedKeywords": []
+  },
+  "kind": "attachment_capability",
+  "source": {
+    "extractorVersion": "forge-attachment/1",
+    "provider": "forge",
+    "definitionFingerprint": "30e57ac3c867bb9a621b85577ae47ac407225dbcf1b662b589147233717bde40"
+  },
+  "coverage": {
+    "status": "partial",
+    "declaredFeatures": [
+      "signed_pt",
+      "keyword_grants"
+    ],
+    "unsupportedFeatures": [
+      "unsupported_continuous_definition"
+    ]
+  },
+  "schemaVersion": "1.0",
+  "scope": "direct_continuous_modifiers"
+}

@@ -4,7 +4,10 @@ namespace Mana.AI;
 
 public enum AiSeatStatus { Idle, Thinking, Ready, Submitted, WaitingForObservation, Unavailable, Invalid, Cancelled, BudgetExceeded, NeedsRecovery, Closed }
 public enum AiExecutionReceipt { Accepted, Rejected, Unknown }
-public sealed record AiSeatView(AiDecisionStamp? Stamp, AiSeatStatus Status, string Detail = "");
+public sealed record AiSeatView(AiDecisionStamp? Stamp, AiSeatStatus Status, string Detail = "")
+{
+    public AiFailure? Failure { get; init; }
+}
 
 /// <summary>Only the session can create this one-shot handoff. Acceptance is not effect resolution.</summary>
 public sealed class AiSubmission
@@ -23,6 +26,8 @@ public sealed class AiSubmission
         long seed, int remainingWork, TimeSpan elapsed, AiTurnRoute? route, string episodeId, AiPlanTransition? planTransition)
         => (Stamp, Task, Command, ReasonCode, Seed, RemainingWork, Elapsed, Route, EpisodeId, PlanTransition)
             = (stamp, task, command, reason, seed, remainingWork, elapsed, route, episodeId, planTransition);
+    internal AiFailure FailureEvidence(AiFailureKind kind, string code)
+        => new(kind, code, Stamp, Task, EpisodeId, RemainingWork, Elapsed);
 }
 
 /// <summary>
@@ -208,9 +213,12 @@ public sealed class AiSeatSession : IDisposable
             var current = frame;
             TimeSpan remaining = limits.DecisionTime - Elapsed;
             if (remaining <= TimeSpan.Zero || work.Remaining == 0 || history.RouteLimitReached) {
-                Record(current, AiDecisionOutcome.BudgetExceeded, null, "episode-budget");
+                var failure = CaptureFailure(current, remaining <= TimeSpan.Zero ? AiFailureKind.TimeLimit
+                    : work.Remaining == 0 ? AiFailureKind.WorkLimit : AiFailureKind.RouteLimit,
+                    remaining <= TimeSpan.Zero ? "time-budget" : work.Remaining == 0 ? "work-budget" : "route-limit");
+                Record(current, AiDecisionOutcome.BudgetExceeded, null, "episode-budget", failure: failure);
                 completedStamp = current.Stamp;
-                return Task.FromResult(view = new(current.Stamp, AiSeatStatus.BudgetExceeded, "Decision budget exhausted."));
+                return Task.FromResult(view = new(current.Stamp, AiSeatStatus.BudgetExceeded, "Decision budget exhausted.") { Failure = failure });
             }
             var cancel = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
             evaluationCancellation = cancel; evaluatingStamp = current.Stamp;
@@ -228,6 +236,9 @@ public sealed class AiSeatSession : IDisposable
     {
         AiProposal? proposal = null;
         AiSeatStatus failure = AiSeatStatus.Invalid;
+        AiFailureKind failureKind = AiFailureKind.InvalidPolicyOutput;
+        string failureCode = "missing-proposal";
+        bool policyCancellation = false;
         string detail = "The policy failed.", reason = "policy-failed";
         try {
             // The policy may ignore cancellation; its late result still has no
@@ -236,15 +247,31 @@ public sealed class AiSeatSession : IDisposable
             token.ThrowIfCancellationRequested();
             var remaining = request.RemainingTime - time.GetElapsedTime(scheduledAt);
             if (remaining <= TimeSpan.Zero) throw new TimeoutException();
-            var computation = Task.Run(() => policy.EvaluateAsync(request, token));
+            var computation = Task.Run(() => EvaluatePolicyAsync(request, token));
             _ = computation.ContinueWith(task => { _ = task.Exception; }, CancellationToken.None,
                 TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-            proposal = await computation.WaitAsync(remaining, time, token).ConfigureAwait(false);
+            var evaluated = await computation.WaitAsync(remaining, time, token).ConfigureAwait(false);
+            proposal = evaluated.Proposal;
+            if (evaluated.Failure is { } status) {
+                failure = status; failureKind = AiFailureKind.PolicyException; failureCode = evaluated.Code;
+                policyCancellation = status == AiSeatStatus.Cancelled && evaluated.PolicyFault;
+                (detail, reason) = status switch {
+                    AiSeatStatus.BudgetExceeded => ("Decision time exhausted.", "time-budget"),
+                    AiSeatStatus.Cancelled => ("Evaluation cancelled.", "cancelled"),
+                    _ => ("The policy failed.", "policy-failed")
+                };
+            }
         } catch (TimeoutException) {
             failure = AiSeatStatus.BudgetExceeded; detail = "Decision time exhausted."; reason = "time-budget";
+            failureKind = AiFailureKind.TimeLimit;
+            failureCode = "time-budget";
         } catch (OperationCanceledException) {
             failure = AiSeatStatus.Cancelled; detail = "Evaluation cancelled."; reason = "cancelled";
-        } catch (Exception) { /* Provider/model diagnostics must not expose private cards through exception messages. */ }
+        } catch (Exception) {
+            // Retain the category only. A policy exception may name private cards.
+            failureKind = AiFailureKind.PolicyException;
+            failureCode = "policy-failed";
+        }
         finally { Cancel(cancellation); cancellation.Dispose(); }
         lock (gate) {
             if (closed || frame?.Stamp != request.Frame.Stamp || !ReferenceEquals(evaluationCancellation, cancellation))
@@ -254,32 +281,54 @@ public sealed class AiSeatSession : IDisposable
             completedStamp = request.Frame.Stamp;
             if (Elapsed >= limits.DecisionTime) {
                 proposal = null; failure = AiSeatStatus.BudgetExceeded; detail = "Decision time exhausted."; reason = "time-budget";
+                failureKind = AiFailureKind.TimeLimit;
+                failureCode = "time-budget";
             }
             if (proposal is AiProposal.Unavailable unavailable) {
-                if (!ValidCode(unavailable.Capability)) {
-                    Record(frame, AiDecisionOutcome.Invalid, null, "invalid-capability");
-                    return view = new(frame.Stamp, AiSeatStatus.Invalid, "Missing-capability results require a stable identifier.");
+                if (!AiFailure.ValidCode(unavailable.Capability)) {
+                    var cause = CaptureFailure(frame, AiFailureKind.InvalidPolicyOutput, "invalid-capability");
+                    Record(frame, AiDecisionOutcome.Invalid, null, "invalid-capability", failure: cause);
+                    return view = new(frame.Stamp, AiSeatStatus.Invalid, "Missing-capability results require a stable identifier.") { Failure = cause };
                 }
-                Record(frame, AiDecisionOutcome.Unavailable, null, "missing-capability");
-                return view = new(frame.Stamp, AiSeatStatus.Unavailable, unavailable.Capability);
+                bool limited = unavailable.LimitedWork is { WasExceeded: true } budget && budget.BelongsTo(work);
+                var unavailableCause = CaptureFailure(frame, limited ? AiFailureKind.WorkLimit : AiFailureKind.CapabilityUnavailable,
+                    limited && !ReferenceEquals(unavailable.LimitedWork, work) ? "local-work-budget" : unavailable.Capability);
+                Record(frame, AiDecisionOutcome.Unavailable, null, "missing-capability", failure: unavailableCause);
+                return view = new(frame.Stamp, AiSeatStatus.Unavailable, unavailable.Capability) { Failure = unavailableCause };
             }
             if (proposal is AiProposal.Answer answer) {
-                if (!ValidCode(answer.ReasonCode) || answer.Command == null || !frame.Allows(answer.Command)) {
-                    Record(frame, AiDecisionOutcome.Invalid, null, "unoffered-answer");
-                    return view = new(frame.Stamp, AiSeatStatus.Invalid, "The answer is outside the current offers or constraints.");
+                if (!AiFailure.ValidCode(answer.ReasonCode) || answer.Command == null || !frame.Allows(answer.Command)) {
+                    var cause = CaptureFailure(frame, AiFailureKind.InvalidPolicyOutput, "unoffered-answer");
+                    Record(frame, AiDecisionOutcome.Invalid, null, "unoffered-answer", failure: cause);
+                    return view = new(frame.Stamp, AiSeatStatus.Invalid, "The answer is outside the current offers or constraints.") { Failure = cause };
                 }
                 if (!AiPlanValidation.IsTransitionValid(answer.PlanTransition, planVersion, frame, plan)) {
-                    Record(frame, AiDecisionOutcome.Invalid, null, "invalid-plan-transition");
-                    return view = new(frame.Stamp, AiSeatStatus.Invalid, "The proposed plan is stale or references unavailable resources.");
+                    var cause = CaptureFailure(frame, AiFailureKind.InvalidPolicyOutput, "invalid-plan-transition");
+                    Record(frame, AiDecisionOutcome.Invalid, null, "invalid-plan-transition", failure: cause);
+                    return view = new(frame.Stamp, AiSeatStatus.Invalid, "The proposed plan is stale or references unavailable resources.") { Failure = cause };
                 }
                 ready = answer;
                 Record(frame, AiDecisionOutcome.Offered, answer.Command, answer.ReasonCode, answer.PlanTransition);
                 return view = new(frame.Stamp, AiSeatStatus.Ready);
             }
+            var failureCause = failure == AiSeatStatus.Cancelled && !policyCancellation ? null : CaptureFailure(frame, failureKind, failureCode);
             Record(frame, failure switch { AiSeatStatus.BudgetExceeded => AiDecisionOutcome.BudgetExceeded,
-                AiSeatStatus.Cancelled => AiDecisionOutcome.Cancelled, _ => AiDecisionOutcome.Invalid }, null, reason);
-            return view = new(frame.Stamp, failure, detail);
+                AiSeatStatus.Cancelled => AiDecisionOutcome.Cancelled, _ => AiDecisionOutcome.Invalid }, null, reason, failure: failureCause);
+            return view = new(frame.Stamp, failure, detail) { Failure = failureCause };
         }
+    }
+
+    // Distinguish an exception produced by the policy from our own WaitAsync
+    // deadline. Keep the legacy coarse status/reason and discard private text.
+    private readonly record struct PolicyEvaluation(AiProposal? Proposal, AiSeatStatus? Failure = null,
+        string Code = "", bool PolicyFault = false);
+    private async Task<PolicyEvaluation> EvaluatePolicyAsync(AiDecisionRequest request, CancellationToken token)
+    {
+        try { return new(await policy.EvaluateAsync(request, token).ConfigureAwait(false)); }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { return new(null, AiSeatStatus.Cancelled, "cancelled"); }
+        catch (OperationCanceledException) { return new(null, AiSeatStatus.Cancelled, "policy-cancelled", true); }
+        catch (TimeoutException) { return new(null, AiSeatStatus.BudgetExceeded, "policy-timeout", true); }
+        catch (Exception) { return new(null, AiSeatStatus.Invalid, "policy-failed", true); }
     }
 
     public AiSubmission? TakeCommand()
@@ -287,8 +336,11 @@ public sealed class AiSeatSession : IDisposable
         lock (gate) {
             if (closed || view.Status != AiSeatStatus.Ready || frame == null || ready == null || submitted != null) return null;
             if (Elapsed >= limits.DecisionTime || !frame.Allows(ready.Command)) {
-                Record(frame, AiDecisionOutcome.BudgetExceeded, ready.Command, "handoff-budget");
-                ready = null; view = new(frame.Stamp, AiSeatStatus.BudgetExceeded); return null;
+                bool timedOut = Elapsed >= limits.DecisionTime;
+                var failure = CaptureFailure(frame, timedOut ? AiFailureKind.TimeLimit : AiFailureKind.InvalidPolicyOutput,
+                    timedOut ? "handoff-time-budget" : "handoff-authority");
+                Record(frame, AiDecisionOutcome.BudgetExceeded, ready.Command, "handoff-budget", failure: failure);
+                ready = null; view = new(frame.Stamp, AiSeatStatus.BudgetExceeded) { Failure = failure }; return null;
             }
             AiTurnRoute? route = null;
             if (ready.Command is UseOfferedAction offered) {
@@ -316,6 +368,8 @@ public sealed class AiSeatSession : IDisposable
             if (closed || !ReferenceEquals(submitted, submission)) return false;
             var outcome = receipt switch { AiExecutionReceipt.Accepted => AiDecisionOutcome.Accepted,
                 AiExecutionReceipt.Rejected => AiDecisionOutcome.Rejected, _ => AiDecisionOutcome.ExecutionUnknown };
+            var failure = receipt == AiExecutionReceipt.Unknown
+                ? submission.FailureEvidence(AiFailureKind.ExecutionUncertain, "execution-unknown") : null;
             history.Receipt(submission.Route, receipt);
             bool applied = false;
             if (receipt == AiExecutionReceipt.Accepted && !submittedPlanRevoked && frame != null
@@ -329,19 +383,22 @@ public sealed class AiSeatSession : IDisposable
                 submission.Command, submission.ReasonCode, submission.Seed, submission.RemainingWork, submission.Elapsed) {
                     Route = submission.Route, EpisodeId = submission.EpisodeId,
                     RetainedPlan = plan, PlanVersion = planVersion, ProposedPlanTransition = submission.PlanTransition,
-                    PlanTransitionApplied = applied });
+                    PlanTransitionApplied = applied, Failure = failure });
             submitted = null;
             submittedPlanRevoked = false;
-            view = receipt == AiExecutionReceipt.Unknown ? new(frame?.Stamp, AiSeatStatus.NeedsRecovery, "Execution acknowledgement is uncertain.")
+            view = receipt == AiExecutionReceipt.Unknown ? new(frame?.Stamp, AiSeatStatus.NeedsRecovery, "Execution acknowledgement is uncertain.") { Failure = failure }
                 : new(frame?.Stamp, frame?.Stamp == submission.Stamp ? AiSeatStatus.WaitingForObservation : AiSeatStatus.Idle);
             return true;
         }
     }
 
+    private AiFailure CaptureFailure(AiDecisionFrame current, AiFailureKind kind, string code)
+        => new(kind, code, current.Stamp, current.Task, current.EpisodeId, work.Remaining, Elapsed);
+
     private void Record(AiDecisionFrame current, AiDecisionOutcome outcome, DecisionCommand? command, string reason,
-        AiPlanTransition? transition = null) => history.Record(
+        AiPlanTransition? transition = null, AiFailure? failure = null) => history.Record(
         new(current.Stamp, current.Task, policyId, outcome, command, reason, episodeSeed, work.Remaining, Elapsed) {
-            EpisodeId = current.EpisodeId, RetainedPlan = plan, PlanVersion = planVersion, ProposedPlanTransition = transition });
+            EpisodeId = current.EpisodeId, RetainedPlan = plan, PlanVersion = planVersion, ProposedPlanTransition = transition, Failure = failure });
 
     // Offline replay restores already-retained memory before the first policy
     // evaluation; it receives the same validation as live observed resources.
@@ -377,7 +434,8 @@ public sealed class AiSeatSession : IDisposable
             if (submitted is { } handoff)
                 history.Record(new(handoff.Stamp, handoff.Task, policyId, AiDecisionOutcome.ExecutionUnknown,
                     handoff.Command, handoff.ReasonCode, handoff.Seed, handoff.RemainingWork, handoff.Elapsed) {
-                        Route = handoff.Route, EpisodeId = handoff.EpisodeId, RetainedPlan = plan, PlanVersion = planVersion, ProposedPlanTransition = handoff.PlanTransition });
+                        Route = handoff.Route, EpisodeId = handoff.EpisodeId, RetainedPlan = plan, PlanVersion = planVersion, ProposedPlanTransition = handoff.PlanTransition,
+                        Failure = handoff.FailureEvidence(AiFailureKind.ExecutionUncertain, "seat-closed-with-submission") });
             if (submitted != null) history.Receipt(submitted.Route, AiExecutionReceipt.Unknown);
             ready = null; frame = null; submitted = null;
             plan = null;
@@ -390,6 +448,4 @@ public sealed class AiSeatSession : IDisposable
     {
         try { cancellation?.Cancel(); } catch (ObjectDisposedException) { } catch (AggregateException) { }
     }
-    private static bool ValidCode(string? code) => !string.IsNullOrWhiteSpace(code) && code.Length <= 96
-        && code.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '_');
 }

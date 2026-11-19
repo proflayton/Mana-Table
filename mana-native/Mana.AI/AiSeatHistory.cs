@@ -22,6 +22,8 @@ public sealed record AiDecisionRecord
     public long PlanVersion { get; init; }
     public AiPlanTransition? ProposedPlanTransition { get; init; }
     public bool PlanTransitionApplied { get; init; }
+    // Additive private evidence; absent in older replay JSON.
+    public AiFailure? Failure { get; init; }
     // Historical commands are immutable evidence, never executable authority.
     // Persist these same facts for live policy requests and offline comparisons.
     public string Command { get; init; }

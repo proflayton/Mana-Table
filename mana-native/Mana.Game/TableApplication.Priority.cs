@@ -65,7 +65,7 @@ internal sealed partial class TableApplication
         var state = match!;
         if (state.Stack.Length == 0) return;
         if (TableStudyEnabled) { DrawStudyStackFlow(); return; }
-        if (RepeatedStackWorkload) { DrawStackWorkloads(new(PendingStackLeft, 319, PendingStackWidth, 165)); return; }
+        if (RepeatedStackWorkload) { DrawStackWorkloads(StudyActionArea); return; }
         const int capacity = 3;
         int page = Math.Clamp(stackQueuePage, 0, (state.Stack.Length - 1) / capacity);
         const string status = "Pending effects";

@@ -1,5 +1,165 @@
 # Testing Mana Table
 
+The [AI experiment framework](Mana-Table-AI-Experiments-Design.md) separates
+behavioral comparisons from release qualification and implements immutable
+identity, balanced A/B scheduling, outcome denominators and descriptive analysis.
+[Runnable examples](../../mana-native/experiments/README.md) use the built native
+harness and Node coordinator. Existing release budgets and gates are unchanged.
+
+Client regressions include the closed registry, preserved default v6 behavior
+and experimental attachment ablation; `--ai-experiment-checks` selects them.
+The native `ai-experiments` headless group covers exact replay grading,
+reservation/artifact boundaries and the natural worker's typed outcome, privacy,
+bounded queue and accepted-receipt controls. It also runs in the full headless
+inventory. Coordinator, quota, orphan/resume, fixed-denominator, family-weighting
+and retained-analysis tests run with the ordinary repository Node test inventory.
+These controls include synthetic workers and fixture states; real experiment
+results remain separately identified by their actual locks and receipts.
+
+## Basic land acquisition checks
+
+The client suite includes 95 focused policy checks for the experimental
+`casual-commander.v7.library-acquisition.v1` factory. Full v6 remains the default.
+The native `ai-experiments` group also grades the four pinned authentic owned
+acquisition captures, compares repeated candidate proposals, validates malformed
+wire contexts and checks private fixture isolation. Its independent usefulness
+grader does not grant credit to a legal empty selection.
+
+Java `LibraryAcquisitionOfferTest` and `LibraryAcquisitionJourneyTest` exercise
+structural qualification, scoped controller offers and actual rules movement.
+The [experiment examples](../../mana-native/experiments/README.md#basic-land-acquisition-candidate)
+document the separate native real-provider continuation command and four modes.
+The required Windows engine verification runs the staged `bundle` pair with the
+matching source-bound private fixture and production JARs. Assertions require
+accepted choices, resolved execution, actual acquired identities and destinations;
+an acknowledgement or count increase alone is insufficient. Bounded private Hand
+audit admission has negative controls in the ordinary headless inventory.
+
+## Shared attachment capability checks
+
+After building `Mana.Table.Tests`, the `attachment-capabilities` headless group
+exercises actual IPC admission using authored envelopes, malformed/hidden/stale
+controls and the four real definition exports under `contracts/card-capabilities`.
+It also runs in the full headless inventory. Read-only announcing portraits must
+remain unavailable as targets, resources and action handles. The ordinary client
+suite includes attachment valuation/selection checks; `--ai-attachment-checks`
+selects that group. These tests include negative modifiers, duplicate effective
+keywords, partial target knowledge, required versus cancellable prompts,
+scope retirement and finite work.
+
+Java `AttachmentCapabilitiesTest` checks the structural extractor and offline/live
+parity. `AuraAttachmentJourneyTest` drives actual owned observations, payment,
+stack targeting and resolution for supported and unsupported examples. Keep its
+raw owned envelopes distinct from authored native wire controls. The actual
+owned-envelope diagnostic runs `Mana.Table.Tests --attachment-owned-checks
+<directory> --profile <fresh-directory>`: unchanged provider bytes cross native
+admission and a bounded v6 policy replay, with exact current-key/controller and
+permission assertions. Its empty diagnostic seat history is not captured campaign
+history, and replay never submits a gameplay command.
+
+Archive's `test_attachment_capabilities.py` validates the identical schema,
+coverage semantics, bounded local JSON reads and potential graph conversion.
+Neither conversion nor a definition fingerprint certifies current legality or
+resolution. Supported real-engine journeys, historical replay, natural campaign
+completion and whole-deck qualification remain separate evidence.
+
+## Reliability ownership checks
+
+The source-only [reliability program](Mana-Table-Reliability-Program.md) adds
+regressions to the existing runners and CI lanes. `Mana.Client.Tests` includes
+bounded artwork source reads and retained update ownership; `--app-update-checks`
+selects the latter. `--smoke-presentation` includes pure artwork accounting,
+history ownership and retained updater controls. After the native test build,
+`--smoke-headless-presentation --presentation-group history-owner` or
+`--presentation-group updates-owner` selects each production ownership journey
+with an isolated `--profile`. Updater controls also run in the full headless
+inventory; history-owner controls run in the ordinary presentation inventory.
+
+The existing GPU card-reading journey at 1000x740 and 1540x980 now exercises
+real PNG, baseline/progressive JPEG decoding, protected frame/capture leases,
+pressure fallback, eviction/reload and owner-close disposal ordering. Its local
+2,000-face fixture soak reports logical payload/counters separately from process
+working set. It does not establish physical VRAM usage or a frame-rate budget.
+Malformed/oversized source and fixed total header/body deadline controls avoid
+live-network timing. These fixtures establish resource and input ownership,
+not Magic rules, complete-game progress or human visual acceptance.
+
+## Reliability workstream checks
+
+The [reliability program](Mana-Table-Reliability-Program.md) records reviewed
+designs, implementation scope and baseline evidence. The focused AI provenance
+checks run in the normal client suite and can also be selected directly:
+
+```powershell
+dotnet run --project mana-native/Mana.Client.Tests/Mana.Client.Tests.csproj -c Release -- --ai-failure-provenance-checks
+```
+
+They cover private-cause retention, public fault/dispatch compatibility,
+corroborated budgets, exception redaction, cancellation, original receipt scope,
+no-progress and older replay JSON. These checks do not qualify a deck or replace
+natural mixed-game and human gameplay review.
+
+After building `Mana.Table.Tests`, select process-diagnostic checks with
+`--smoke-headless-presentation --presentation-group engine-diagnostics` and a
+fresh `--profile`. They also run in the existing configured-simulation group and
+full headless inventory. Authored child replies establish actual pipe/storage
+liveness under failed or blocked sinks, bounded output and A-to-B-to-C process
+replacement. They do not simulate Magic rules or qualify complete games.
+## Mixed Explore trigger readability
+
+The existing `pending-effects` native headless group includes the authored
+`explore-triggers.v1` journey: Nicanzil's different land/nonland effects, an
+interleaved cohort, a changed stack top, an opposing response and 110 retained
+occurrences. It runs at 1000x740 and 1540x980, normal/enlarged text and both motion
+settings. The group also runs in the ordinary full headless inventory and CI.
+It checks actual composed glyph/panel geometry, scoped fan/reader gestures and
+zero gameplay commands while reading; it does not establish Explore rules or
+approve the visual experience.
+
+The same group checks complete three-source placement and exact full-rule
+reading through each source's member fan, including a no-space hover at 130%
+text. Oversized authored source furniture exercises the explicit full-stack
+fallback, uninterrupted Auto inspection, and required-choice precedence. The
+actual 110-trigger replay separately validates both ordinary audiences, both
+viewports and both text scales. Its report binds each inspected physical source
+to its 55 exact stack and execution IDs; it checks the new current-effect/source
+inspection surfaces rather than requiring the retired floating heading's words.
+Finite captured events are reported separately from actually painted notices;
+pending work owning the reading surface does not manufacture a painted heading.
+Continuous playback also records a captured physical source only when its exact
+current stack/execution member paints the complete primary name and rules. Earlier
+ordinary events and separate inspection checks cannot substitute for that proof.
+
+After building the shipping app, review actual rendered checkpoints with its
+existing isolated Experience Lab:
+
+```powershell
+ManaTable.exe --experience-lab explore-triggers.v1 --stage 1 --table-study --size 1000x740 --text-scale 1.3 --reduced-motion --capture C:\review\explore.png
+```
+
+`--text-scale` accepts 1 through 1.3 and `--reduced-motion` changes only the
+disposable lab preferences. Omit `--capture` to inspect and navigate the scenario,
+or use `--capture-replay <directory>` for the authored transition keyframes.
+Review the larger window too. These flags start no Forge game and alter no saved
+player settings. Keep human acceptance separate from agent captures and checks.
+
+## Background automatic progress
+
+After building the native harness, `--smoke-headless-presentation
+--presentation-group background-input --profile <fresh-directory>` runs the
+existing inactive-input checks and a production application/session witness:
+already enabled Auto sends its current automatic pass while inactive, accepts
+the continuation's actual fresh required choice and waits there. Auto off, Hold,
+own-turn phase stops, response windows and deliberate pinned reading remain
+boundaries. Background keys and held activation inputs cannot become commands.
+The full headless inventory runs this group in CI as well.
+
+The existing server-managed Auto checks cover the modern acknowledged policy and
+observation-credit path separately. These tests use controlled current
+permissions and receipts; they do not simulate Commander rules or establish a
+natural complete game. Human review should switch applications during Auto,
+return at the fresh prompt and confirm that no activation click is replayed.
+
 ## Current target restriction feedback
 
 `--smoke-headless-presentation --presentation-group target-restrictions` runs the
@@ -685,6 +845,17 @@ bounded host shutdown against providers that deliberately ignore
 their tokens, late execution remaining an unknown receipt, no replay, and recovery
 only through an independently observed fresh scope. The first baseline failures
 are retained separately from the corrected candidate's passing invocation.
+
+The ordinary connected-player and trigger-fanout owners wake immediately after
+`ClientSession.Completed`, matching the shipping application's existing handler.
+Quiet idle polls retain their 50/120 ms cadence. The focused native
+`owner-command-wake` group and the existing configured-simulation/full inventory
+prove that a completed foreground command does not leave the owner waiting for
+an obsolete poll deadline, while the next exact current decision is prepared
+before an idle poll. This changes test-driver scheduling, not production pacing,
+policy, command authority or the 90/180-second qualification limits. Controlled
+clock fixtures drain legitimate in-flight observations before advancing time or
+publishing another authored state; they retain all recovery/authority assertions.
 
 Accepted-input progress regressions cover opening, required payment, selection
 and combat, closed presentation pacing, stale snapshots and regressed offer
@@ -1418,13 +1589,32 @@ single composition owner.
 
 `AiHostLoopRegression` drives the real background loop with timer-controlled
 provider replies. An accepted submission immediately requests a new observation;
-resolving and the identical old stamp grant no replay and retain the40 ms idle
+same-board resolving and the identical old stamp grant no replay and retain the40 ms idle
 wait. Fresh authority, the real2.4-second announcement pacer, rejected/unknown
 receipts, mixed-seat failures, cancellation and lawful foreign-human waiting
 remain separate controls. A clock-only old-loop baseline preserves its
 unconditional40 ms wait while exposing the same existing operation clock. These
 authored transport checks establish scheduling and authority, not engine input
 consumption, throughput or a fix for a retained CI cutoff.
+
+The focused client command `--ai-host-loop-checks` runs that same regression;
+the ordinary client inventory and CI still include it. An additional control
+retains the initial40 ms wait, then delivers a new public board in an already
+bound two-AI game: it requires an independent fresh read at the same clock
+instant before a new exact owned prompt can produce one command. A mixed table
+can acquire that scheduling hint only after both humans are actually eliminated
+while all four original player IDs remain present. Negative controls preserve
+backoff for live humans, omitted/inconsistent rosters, unchanged or metadata-only
+boards, new/retired/reappearing scopes, one remaining player, rollback, faults
+and rejections. A shipping two-AI2.4-second pacing case with current priority
+observation frames admits no evaluation, command, ACK or grant through2399 ms;
+its later known-retired ACK cannot manufacture consent. A separate mutable
+pacing control closes during the board step and requires the final readiness
+check to suppress the hint. The45-second accepted-input watchdog and all source,
+operation and qualification limits remain unchanged. These deterministic checks
+prove the responsive-host behavior; the retained CI timing spans mix provider,
+automatic-control, scheduling and evidence work and do not identify a measured
+share of the cutoff attributable to this change.
 
 The fixture-backed `--smoke-headless-engine` lane also invokes
 `PolledFanoutEngineJourney`. Result format3 declares the new phase contract
@@ -1515,23 +1705,66 @@ composition, not natural-game completion, strategy quality, all interactions or
 human gameplay approval.
 
 The ordinary human clients retain every distinct complete accepted immutable
-playing payload from before the cast, with first-callback monotonic offsets and a
-hard512-checkpoint bound. Only adjacent byte-equivalent complete payloads with
-the same publication identity share one checkpoint; their callbacks are counted
-and actual later time gaps/final dwell remain. Fresh same-ID private faces,
-activity or execution changes remain separate checkpoints, covered by controls.
-One per-human archive stores those complete payloads once across both authored
-review viewports. Streaming byte measurement divides it into recording files
-within the unchanged64MiB file ceiling; the archive still has at most512 total
-distinct checkpoints. Its private manifest binds each part's ordinal range,
-global start/end offsets, byte length and SHA256. Playback verifies those parts
-and feeds their original global offsets into one continuous production session;
-a storage seam cannot restart the camera, card identities or announcement state.
-Round-trip controls cover equal-time seams, changed bytes, moved ordinals/offsets,
-foreign paths and attempts to exceed the total checkpoint bound. The new CI
-qualification artifact uses compression level1 for repetitive private JSON; it
-does not change the existing artifact jobs or publish these observations.
-Overflow fails evidence rather than dropping an early cast or trigger. Both
+playing payload from before the cast, with its original first-callback monotonic
+offset. The receipt callback only queues the reference/time into a64-entry pending
+journal; a separate consumer compares fresh same-identity payloads. Reference-equal
+adjacent callbacks need no comparison. Other adjacent callbacks share a checkpoint
+only when the complete serialized payload is equal; changed private faces,
+activity or execution correlations remain separate, even at the same revision.
+The consumer caches the previous comparison payload to avoid serializing both
+sides again on every duplicate. The pending journal cannot block receipt delivery.
+Overload, comparison failure or whole-stream exhaustion records an explicit
+capture fault, surfaced by the journey owner's next guard. A fault cannot become
+a passing truncated replay. Admission freezes when the rules clock stops, before
+consumer draining, persistence, display replay or cleanup.
+
+This finite fanout now has an explicit whole-stream quota of two512-checkpoint
+windows per human (1024 distinct references), at most16 storage parts and512MiB
+of serialized recording files. Two windows are the smallest page allocation that
+retains the observed513th checkpoint; these are evidence resource limits, not
+more rules work or more completion time. The generic ProjectionRecording and
+ProjectionTimeline remain limited to512 observations and64MiB per file.
+A reference quota bounds object retention, not exact process memory: payload
+shape and shared immutable structures affect RAM. Capture diagnostics report
+pending high-water, retained references, alias/duplicate callbacks, serializer
+calls/wall time, callback wall time and unretained callbacks on failure; archive
+part byte counts report the separate serialized footprint. These measurements
+do not establish CPU time, human latency or a causal explanation of older CI.
+The pending high-water includes a just-dequeued entry until the consumer updates
+its bookkeeping, so it can report65 for the64-entry channel plus that one entry.
+
+One per-human archive stores complete payloads once across both authored review
+viewports. Each page is independently validated within512 observations/64MiB;
+its private manifest binds contiguous ordinals, original global timing, byte
+lengths and SHA256. Playback reads pages sequentially through one unchanged
+observation-only connection, application and display clock, validating monotonic
+scope/execution seams. It never reconstructs an oversized generic recording or
+restarts presentation at a storage boundary. Controls include the actual513th
+checkpoint, same-identity payload changes, equal-time seams, stable physical
+owners, changed bytes, foreign paths, bounded pending/aggregate failures and
+cleanup cutoff. Overflow fails evidence rather than dropping a cast or trigger.
+The closed JavaScript release gate checks the same whole-stream and individual
+part limits independently. Its boundary controls admit513 checkpoints across
+two bounded files, reject513 in one file, and reject1025 total checkpoints,
+17 parts or an aggregate above512MiB. The original110 terminal receipts,
+90-second active limit,15-second stall limit and source/package hashes remain
+required.
+
+Projection reports also retain versioned `workloadInspection` evidence from the
+actual-pointer reading checks at100% and130% text in each review viewport.
+Admission requires the exact two physical sources, their110 disjoint stack and
+execution identities, the matching finite announcement source/execution, full
+rules and exact fan inspection, current-primary glyph checks and protected
+controls. A source name or the former floating-heading phrase cannot substitute
+for that completed semantic inspection. These remain authored reading checks
+over actual accepted snapshots, separate from original live input or human UX
+acceptance. Exact55 finite-event bindings are recorded separately from painted
+notices; an ordinary earlier one-event notice cannot prove captured-work paint.
+Both captured physical sources must also paint their exact current primary
+effect during continuous replay, identified by captured execution and source
+membership with complete name/rules glyph bounds.
+
+Both
 private windows replay through production presentation at1000x740 and1540x980
 with normal motion. The explicit `ClientSessionAuthority.ObserveOnly` composition
 validates original snapshots while owning no commands, source discovery,

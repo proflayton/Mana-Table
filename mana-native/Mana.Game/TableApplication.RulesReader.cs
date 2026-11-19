@@ -109,19 +109,31 @@ internal sealed partial class TableApplication
                 PaintSourceActionLine(text, line, x, y + line * text.LineHeight, ink, font, bold);
             y += text.Height;
         }
-        Paint(layout.Name, CardRulesLayout.NameFont, true);
-        if (layout.IllustrationHeight > 0) {
-            y += 12;
-            var art = new Rectangle(x, y, face.Width - 40, layout.IllustrationHeight);
+        void PaintIllustration(Rectangle art) {
             if (illustration != null && resources.Card(illustration) is { } image) {
                 var crop = new Rectangle((int)(image.Width * .12f), (int)(image.Height * .14f),
                     (int)(image.Width * .76f), (int)(image.Height * .38f));
                 canvas.Sprite(image, art.Center.ToVector2(), art.Size.ToVector2(), 0, Color.White, crop);
             } else canvas.Fill(art, new(43, 58, 64));
-            y += layout.IllustrationHeight;
         }
-        if (card.ManaCost.Length > 0) { y += 6; Paint(layout.Mana, CardRulesLayout.ManaFont, false); }
-        y += 8; Paint(layout.Type, CardRulesLayout.TypeFont, true);
+        if (layout.SideIllustrationWidth > 0) {
+            int headerY = y, rulesX = x;
+            PaintIllustration(new(x, y, layout.SideIllustrationWidth, layout.IllustrationHeight));
+            x += layout.SideIllustrationWidth + 14;
+            Paint(layout.Name, CardRulesLayout.NameFont, true);
+            if (card.ManaCost.Length > 0) { y += 6; Paint(layout.Mana, CardRulesLayout.ManaFont, false); }
+            y += 8; Paint(layout.Type, CardRulesLayout.TypeFont, true);
+            x = rulesX; y = Math.Max(y, headerY + layout.IllustrationHeight);
+        } else {
+            Paint(layout.Name, CardRulesLayout.NameFont, true);
+            if (layout.IllustrationHeight > 0) {
+                y += 12;
+                PaintIllustration(new(x, y, face.Width - 40, layout.IllustrationHeight));
+                y += layout.IllustrationHeight;
+            }
+            if (card.ManaCost.Length > 0) { y += 6; Paint(layout.Mana, CardRulesLayout.ManaFont, false); }
+            y += 8; Paint(layout.Type, CardRulesLayout.TypeFont, true);
+        }
         y += 8; canvas.Line(new(x, y), new(face.Right - 20, y), new(114, 115, 99), 1); y += 12;
         for (int index = 0; index < layout.Paragraphs.Count; index++) {
             var paragraph = layout.Paragraphs[index];

@@ -64,6 +64,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             QueueSlowGalleryHandoff();
             return;
         }
+        Step(0, () => ArtworkResidencyGpuChecks.Run(view.GraphicsDevice, Check, view.Profile));
         Step(0, () => Publish(FocusedSeed(scenario.State, readingOnly: true)));
         Prepared(InitialHandReady, 1.5, () => MoveCard("hand-3"), "The fresh hand and artwork must be ready before the initial pointer gesture");
         Step(.4, () => {

@@ -1,5 +1,10 @@
 namespace Mana.Contracts;
 
+public static class ArtImageLimits
+{
+    public const int MaximumEncodedBytes = 4 * 1024 * 1024;
+}
+
 public sealed record ArtRequest(string Name, string Face, string Set = "", string CollectorNumber = "")
 {
     public bool ExactPrinting => !string.IsNullOrWhiteSpace(Set) && !string.IsNullOrWhiteSpace(CollectorNumber) && CollectorNumber != "N.A.";

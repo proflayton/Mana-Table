@@ -4,7 +4,7 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private AppUpdateSession updateSession = null!;
+    private readonly AppUpdateViewBinding updateView;
     private void HandleUpdateIntent(ShellIntent.Update intent)
     {
         switch (intent) {
@@ -21,26 +21,24 @@ internal sealed partial class TableApplication
     private static readonly Uri AppReleasesPage = new("https://github.com/proflayton/Mana-Table/releases");
     private bool updatesOpen;
     private int updateModalGeneration;
-    private AppUpdateView UpdateView => updateSession.View;
-    private string UpdateScope => $"updates:{updatesOpen}:{updateModalGeneration}:{UpdateView.Generation}";
-    private string CurrentAppVersion => updateSession.Build?.Version is { Length: > 0 } version ? version : "Development build";
-    private bool AutomaticUpdateCheckAllowed => updateSession.CheckOnStartup && updateSession.Build?.CanCheck == true && fixture == null && initialState == null
+    private AppUpdateView UpdateView => updateView.View;
+    private string UpdateScope => $"updates:{updateView.Scope}:{updateView.Current}:{closing}:{updatesOpen}:{updateModalGeneration}:{UpdateView.Generation}";
+    private string CurrentAppVersion => updateView.Build?.Version is { Length: > 0 } version ? version : "Development build";
+    private bool UpdateStartupAllowed => fixture == null && initialState == null
         && allowAutomaticChecks && !Automated && loaded && !StartupVisible && !closing;
-    private void InitializeAppUpdates(IAppUpdates? service, Action<PreparedUpdate>? install)
-        => updateSession = new(service, profile, session.Post, UpdateInstallBlocker, install, RequestExit);
-    private void UpdateAppUpdates() => updateSession.Tick(
-        fixture == null && initialState == null && allowAutomaticChecks && !Automated && loaded && !StartupVisible && !closing,
+    private bool AutomaticUpdateCheckAllowed => updateView.CheckOnStartup && updateView.Build?.CanCheck == true && UpdateStartupAllowed;
+    internal AppUpdateInstallContext ReadUpdateInstallContext() => new(UpdateInstallBlocker(), UpdateStartupAllowed,
         restartedAfterUpdate && loaded && !StartupVisible && !closing);
-    private void ToggleStartupUpdateCheck() => updateSession.ToggleStartupCheck();
+    private void ToggleStartupUpdateCheck() => updateView.ToggleStartupCheck();
     private void OpenAppUpdates()
     {
         if (!loaded || ActivityOpen) return;
         updatesOpen = true; updateModalGeneration++; ClearExperienceInput();
     }
     private void CloseAppUpdates() { updatesOpen = false; updateModalGeneration++; pressed = null; }
-    private void CheckAppUpdates() => updateSession.Check();
-    private void DownloadAppUpdate() => updateSession.Download();
-    private void CancelAppUpdateDownload() => updateSession.CancelDownload();
+    private void CheckAppUpdates() => updateView.Check();
+    private void DownloadAppUpdate() => updateView.Download();
+    private void CancelAppUpdateDownload() => updateView.CancelDownload();
     private string UpdateInstallBlocker()
     {
         if (match != null) return "Return to setup from your game before updating. Your update is ready.";
@@ -52,14 +50,13 @@ internal sealed partial class TableApplication
         if (CaptureMode) return "Finish the current capture before updating.";
         return "";
     }
-    private void InstallAppUpdate() => updateSession.Install();
+    private void InstallAppUpdate() => updateView.Install(ReadUpdateInstallContext());
     private void OpenUpdateLocation(bool folder = false)
     {
         try {
             string target = folder && UpdateView.Prepared != null ? Path.GetDirectoryName(UpdateView.Prepared.InstallerPath)!
                 : (UpdateView.Release?.PageUrl ?? AppReleasesPage).AbsoluteUri;
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target) { UseShellExecute = true });
-        } catch (Exception error) { updateSession.ReportLocationFailure(error); }
+        } catch (Exception error) { updateView.ReportLocationFailure(error); }
     }
-    private void CloseUpdateRequests() => updateSession.Close();
 }
