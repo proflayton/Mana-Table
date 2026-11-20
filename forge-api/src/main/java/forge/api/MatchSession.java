@@ -2965,7 +2965,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var targets = new ArrayList<StackTargetProjection.Reference>();
         for (var item = root; item != null; item = item.getSubInstance()) {
             if (item.getTargetCards() != null) for (var card : item.getTargetCards()) {
-                targets.add(StackTargetProjection.card(game, card, activity::visualId));
+                targets.add(StackTargetProjection.card(game, card, combatIds::id));
             }
             if (item.getTargetPlayers() != null) for (var player : item.getTargetPlayers())
                 targets.add(StackTargetProjection.player(player, player.equals(viewer) ? "You" : player.getName()));
