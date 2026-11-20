@@ -5,7 +5,9 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import forge.game.card.Card;
 import forge.game.mana.Mana;
+import forge.game.undo.UndoManager;
 import forge.game.zone.ZoneType;
+import forge.player.PlayerControllerHuman;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
@@ -31,6 +33,7 @@ public class CertifiedUndoTest {
     public void oneCompleteActivationRestoresItsPoolAndInternalLedgers(String name, String color, int amount) throws Exception {
         try (var game = new RulesScenario("certified-undo-" + color, Map.of(0, List.of(name)))) {
             var initial = main(game);
+            assertGeneralUndoDisabled(game);
             var rulesSource = source(game, name);
             var before = footprint(game, rulesSource);
             var active = activate(game, initial, name);
@@ -44,6 +47,7 @@ public class CertifiedUndoTest {
             assertEquals(text(offer, "sourceCardId"), text(card(active.state(), name), "visualId"));
             assertEquals(text(offer, "sourceName"), name);
             assertNotEquals(footprint(game, rulesSource), before, "A real mana activation changed its rules ledgers");
+            assertGeneralUndoDisabled(game);
 
             HeadlessPlatform.query(game.table, () -> null);
             var read = JSON.toJsonTree(game.session(0).sourceActions(request(active,
@@ -54,6 +58,7 @@ public class CertifiedUndoTest {
             var request = undo(offer);
             assertTrue(game.answer(active, request));
             var restored = freshPriority(game, active);
+            assertGeneralUndoDisabled(game);
             // An ordinary publication can supersede a captured restoration frame
             // without another rules action. Compare audiences from one cohort.
             game.table.publish();
@@ -251,6 +256,18 @@ public class CertifiedUndoTest {
         return game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputPassPriority")
                 && text(input.state(), "phaseKey").equals("MAIN1"));
     }
+    private static void assertGeneralUndoDisabled(RulesScenario game) {
+        HeadlessPlatform.query(game.table, () -> {
+            var actual = game.table.game;
+            assertFalse(actual.getRules().isGeneralUndoAllowed());
+            assertEquals(actual.getUndoManager().mode(), UndoManager.Mode.OFF);
+            assertEquals(actual.getUndoManager().depth(), 0, "Native prompts must not accumulate general undo history");
+            var controller = (PlayerControllerHuman) actual.getRegisteredPlayers().get(0).getController();
+            assertFalse(controller.canUndoLastAction(), "Certified mana Undo does not enable the general controller route");
+            return null;
+        });
+    }
+
     private static Input freshPriority(RulesScenario game, Input previous) throws Exception {
         return game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputPassPriority")
                 && !text(input.prompt(), "id").equals(text(previous.prompt(), "id")));
