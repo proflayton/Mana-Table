@@ -7,8 +7,14 @@ import forge.game.zone.ZoneType;
 import org.testng.annotations.Test;
 
 import java.nio.file.Files;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static forge.api.RulesScenario.*;
 import static forge.api.CardDataRules.*;
@@ -57,12 +63,10 @@ public class ReplicatorRulesJourneyTest {
             assertTrue(original.get("selectable").getAsBoolean());
             assertFalse(foreign.get("selectable").getAsBoolean(), "The opponent-controlled token is not a legal target");
             assertFalse(nontoken.get("selectable").getAsBoolean(), "An owned nontoken is not a legal target");
-            for (var rejected : List.of(foreign, nontoken)) {
-                assertFalse(text(rejected, "key").isEmpty(), "Use only an actually published current card key for the negative");
-                var before = footprint(targets.state(), actor, sourceId);
-                game.rejected(targets, Map.of("action", "card", "key", text(rejected, "key")), "That card cannot be selected for this choice");
-                assertEquals(footprint(game.state(0), actor, sourceId), before, "A rejected target cannot pay/tap/change the board");
-            }
+            var targetIds = List.of(originalId, foreignId, text(nontoken, "visualId"));
+            targets = rejectAtFrontier(game, targets, actor, sourceId, foreignId, targetIds, true);
+            targets = rejectAtFrontier(game, targets, actor, sourceId, text(nontoken, "visualId"), targetIds, false);
+            original = occurrence(targets.state(), originalId);
             save(game, "02-current-targets.json", targets.state());
             assertTrue(game.answer(targets, Map.of("action", "card", "key", text(original, "key"))));
             var copied = settle(game, 0);
@@ -92,6 +96,149 @@ public class ReplicatorRulesJourneyTest {
             assertTrue(occurrence(spectator, text(copy, "visualId")).get("tapped").getAsBoolean());
             save(game, "04-public-copy.json", spectator);
         }
+    }
+
+    private static Input rejectAtFrontier(RulesScenario game, Input input, int actor, String sourceId,
+                                         String rejectedId, List<String> targetIds, boolean controlled) throws Exception {
+        var captured = new AtomicReference<Input>(input);
+        var proof = new AtomicReference<Map<String, Object>>();
+        var producerFailure = new AtomicReference<Throwable>();
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var bodyExited = new CountDownLatch(1);
+        var started = new CountDownLatch(1);
+        var call = new FutureTask<Input>(() -> {
+            started.countDown(); // Does not claim the caller is physically parked.
+            return rejectUnchanged(game, captured.get(), actor, sourceId, rejectedId, targetIds, controlled, proof);
+        });
+        var caller = new Thread(call, "Replicator rejection caller");
+        caller.setDaemon(true);
+        Throwable failure = null;
+        boolean enqueued = false, launched = false;
+        try {
+            if (controlled) {
+                // Identify the real owner while enqueueing, then release its
+                // state lock before waiting for the ordinary UI callback.
+                game.table.inState(() -> HeadlessPlatform.later(() -> {
+                    try {
+                        var state = game.state(input.seat());
+                        captured.set(sameTargets(input, state, targetIds));
+                        entered.countDown();
+                        assertTrue(release.await(10, TimeUnit.SECONDS), "Coordinator releases the ordinary callback");
+                    } catch (Throwable error) {
+                        producerFailure.set(error);
+                        if (error instanceof InterruptedException) Thread.currentThread().interrupt();
+                    } finally {
+                        entered.countDown();
+                        bodyExited.countDown(); // BODY exit, not trailing publication completion.
+                    }
+                }));
+                enqueued = true;
+                assertTrue(entered.await(10, TimeUnit.SECONDS), "The ordinary callback captured the current target input");
+                if (producerFailure.get() != null) throwFailure(producerFailure.get());
+            }
+            caller.start(); launched = true;
+            assertTrue(started.await(10, TimeUnit.SECONDS), "The rejection caller started");
+            release.countDown();
+            // The callback's normal trailing publishInput still owns state,
+            // so the caller's readState can enter only after that publication.
+            var after = call.get(10, TimeUnit.SECONDS);
+            if (producerFailure.get() != null) throwFailure(producerFailure.get());
+            return after;
+        } catch (Throwable error) {
+            failure = error instanceof ExecutionException && error.getCause() != null ? error.getCause() : error;
+            throwFailure(failure);
+            throw new AssertionError("unreachable");
+        } finally {
+            release.countDown();
+            try {
+                if (launched) {
+                    caller.join(TimeUnit.SECONDS.toMillis(10));
+                    assertFalse(caller.isAlive(), "The rejection caller terminates before fixture teardown");
+                }
+                if (enqueued) assertTrue(bodyExited.await(10, TimeUnit.SECONDS), "The producer callback body terminates");
+            } catch (Throwable cleanup) {
+                if (failure != null) failure.addSuppressed(cleanup);
+                else { failure = cleanup; throwFailure(cleanup); }
+            } finally {
+                var record = new LinkedHashMap<String, Object>();
+                record.put("controlled", controlled);
+                record.put("capturedBefore", captured.get().state());
+                record.put("transaction", proof.get());
+                record.put("producerFailure", producerFailure.get() == null ? null : producerFailure.get().toString());
+                record.put("failure", failure == null ? null : failure.toString());
+                record.put("progress", Map.of("entered", entered.getCount() == 0, "started", started.getCount() == 0,
+                        "bodyExited", bodyExited.getCount() == 0));
+                record.put("latchScope", "Progress only: started does not mean physically parked; bodyExited does not mean trailing publication completed");
+                record.put("scope", "Controlled legal publication schedule; not attribution of the historical missing170 observation");
+                try { save(game, controlled ? "02a-controlled-rejection.json" : "02b-nontoken-rejection.json", record); }
+                catch (Throwable diagnostic) {
+                    if (failure != null) failure.addSuppressed(diagnostic);
+                    else throwFailure(diagnostic);
+                }
+            }
+        }
+    }
+
+    private static Input rejectUnchanged(RulesScenario game, Input captured, int actor, String sourceId,
+                                         String rejectedId, List<String> targetIds, boolean controlled,
+                                         AtomicReference<Map<String, Object>> proof) {
+        return game.table.game.getAction().readState(() -> {
+            var record = new LinkedHashMap<String, Object>(); proof.set(record);
+            var current = sameTargets(captured, game.state(captured.seat()), targetIds);
+            record.put("currentBefore", current.state());
+            if (controlled) assertTrue(current.state().get("boardRevision").getAsLong() > captured.state().get("boardRevision").getAsLong(),
+                    "The normal callback tail publishes before rejection validation owns the state boundary");
+            assertEquals(player(current.state(), actor).get("mana"), player(captured.state(), actor).get("mana"),
+                    "Publication before rejection cannot change the captured mana pool");
+            assertEquals(occurrence(current.state(), sourceId).get("tapped"), occurrence(captured.state(), sourceId).get("tapped"),
+                    "Publication before rejection cannot change the captured source tap state");
+            var rejected = occurrence(current.state(), rejectedId);
+            assertFalse(text(rejected, "key").isEmpty(), "Use only an actually published current card key for the negative");
+            assertFalse(rejected.get("selectable").getAsBoolean());
+            var request = request(current, Map.of("action", "card", "key", text(rejected, "key")));
+            record.put("request", request);
+            IllegalArgumentException error = null;
+            JsonObject after;
+            try {
+                error = expectThrows(IllegalArgumentException.class, () -> game.session(current.seat()).action(request));
+            } finally {
+                after = new GsonBuilder().serializeNulls().create().toJsonTree(game.session(current.seat()).state()).getAsJsonObject();
+                record.put("error", error == null ? null : error.toString());
+                record.put("after", after);
+            }
+            assertEquals(error.getMessage(), "That card cannot be selected for this choice");
+            var next = sameTargets(current, after, targetIds);
+            assertEquals(footprint(after, actor, sourceId), footprint(current.state(), actor, sourceId),
+                    "The actual rejected transaction preserves board, mana and source tap state");
+            // Keep the baseline explicit: the witness records both the earlier
+            // captured input and the transaction's actual current-before.
+            var before = footprint(captured.state(), actor, sourceId);
+            assertEquals(footprint(after, actor, sourceId), before, "A rejected target cannot pay/tap/change the board");
+            return next;
+        });
+    }
+
+    private static Input sameTargets(Input expected, JsonObject state, List<String> targetIds) {
+        assertEquals(text(state, "status"), "playing");
+        assertEquals(state.get("id"), expected.state().get("id"));
+        assertEquals(state.get("viewerId"), expected.state().get("viewerId"));
+        assertTrue(state.has("prompt") && !state.get("prompt").isJsonNull(), "A rejected action cannot consume the prompt asynchronously");
+        var prompt = state.getAsJsonObject("prompt");
+        assertEquals(text(prompt, "id"), text(expected.prompt(), "id"));
+        assertEquals(text(prompt, "inputType"), "InputSelectTargets");
+        for (String id : targetIds) {
+            var actual = occurrence(state, id); var prior = occurrence(expected.state(), id);
+            assertEquals(text(actual, "key"), text(prior, "key"));
+            assertEquals(actual.get("selectable"), prior.get("selectable"));
+        }
+        return new Input(expected.seat(), state, prompt);
+    }
+
+    private static void throwFailure(Throwable failure) throws Exception {
+        if (failure instanceof Error error) throw error;
+        if (failure instanceof Exception error) throw error;
+        throw new AssertionError(failure);
     }
 
     private static List<JsonObject> food(JsonObject state, int playerId) {
