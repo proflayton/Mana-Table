@@ -42,14 +42,25 @@ public class MyRandomThreadLocalTest {
     public void testSpawnedThreadInheritsSeededStream() throws Exception {
         MyRandom.setRandom(new Random(42));
         Random parentStream = MyRandom.getRandom();
+        long before = MyRandom.callCount();
         AtomicReference<Random> childSees = new AtomicReference<>();
-        Thread child = new Thread(() -> childSees.set(MyRandom.getRandom()));
+        AtomicLong childDraw = new AtomicLong();
+        Thread child = new Thread(() -> {
+            childSees.set(MyRandom.getRandom());
+            childDraw.set(MyRandom.getRandom().nextLong());
+        });
         child.start();
         child.join();
 
         // inheritable: the child continues the parent's seeded stream rather
         // than silently falling back to a fresh unseeded SecureRandom
         AssertJUnit.assertSame(parentStream, childSees.get());
+        Random expected = new Random(42);
+        AssertJUnit.assertEquals(expected.nextLong(), childDraw.get());
+        long afterChild = MyRandom.callCount();
+        AssertJUnit.assertTrue(afterChild > before);
+        AssertJUnit.assertEquals(expected.nextLong(), parentStream.nextLong());
+        AssertJUnit.assertTrue(MyRandom.callCount() > afterChild);
     }
 
     @Test
