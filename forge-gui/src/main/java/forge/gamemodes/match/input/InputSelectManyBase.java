@@ -165,7 +165,6 @@ public abstract class InputSelectManyBase<T extends GameEntity> extends InputSyn
         // A remote press must obey the same minimum as the enabled OK button.
         if (!hasEnoughTargets()) return;
         setFinished();
-        resetUsedToPay();
         this.stop();
     }
 

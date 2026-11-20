@@ -93,7 +93,7 @@ public class InputBlock extends InputSyncronizedBase {
     boolean assign(Card attacker, Card blocker) {
         if (attacker == null || blocker == null || blocker.getController() != defender || !combat.isAttacking(attacker)
                 || !combat.isBlocking(blocker, attacker) && !CombatUtil.canBlock(attacker, blocker, combat)) return false;
-        setCurrentAttacker(attacker);
+        currentAttacker = attacker;
         return onCardSelected(blocker, null, null);
     }
 

@@ -2,6 +2,7 @@ package forge.gamemodes.tutorial;
 
 import java.util.List;
 
+import forge.game.GameEntityView;
 import forge.game.card.CardView;
 import forge.game.player.PlayerView;
 import forge.game.spellability.SpellAbilityView;
@@ -77,6 +78,21 @@ final class TutorialGameController implements IGameController {
         if (!locked) {
             real.selectButtonOk();
         }
+    }
+
+    @Override
+    public boolean passPriorityIfNoResponse(final long inputSequence) {
+        return !locked && real.passPriorityIfNoResponse(inputSequence);
+    }
+
+    @Override
+    public boolean assignAttack(final long inputSequence, final CardView attacker, final GameEntityView defender) {
+        return !locked && real.assignAttack(inputSequence, attacker, defender);
+    }
+
+    @Override
+    public boolean assignBlock(final long inputSequence, final CardView attacker, final CardView blocker) {
+        return !locked && real.assignBlock(inputSequence, attacker, blocker);
     }
 
     @Override
