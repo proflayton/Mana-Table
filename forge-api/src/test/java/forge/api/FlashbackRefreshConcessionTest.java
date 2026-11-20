@@ -5,6 +5,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import forge.game.card.Card;
 import forge.game.card.CardView;
+import forge.game.event.GameEventCardChangeZone;
 import forge.game.event.GameEventGameFinished;
 import forge.game.event.GameEventZone;
 import forge.game.phase.PhaseHandler;
@@ -39,22 +40,31 @@ public class FlashbackRefreshConcessionTest {
             var callbackFailure = new AtomicReference<Throwable>();
             var finished = new CountDownLatch(1);
             var listener = new Object() {
-                @Subscribe public void zoneChanged(GameEventZone event) {
+                @Subscribe public void cardMoved(GameEventCardChangeZone event) {
+                    if (event.from() == null || event.to() == null
+                            || event.from().zoneType() != ZoneType.Library || event.to().zoneType() != ZoneType.Graveyard
+                            || event.to().player() == null || event.to().player().getId() != initialPlayers.get(0)
+                            || scenario.table.game.getPhaseHandler().getPlayerTurn() != null) return;
                     try {
-                        if (event.zoneType() == ZoneType.Graveyard
-                                && event.player().getId() == initialPlayers.get(0)
-                                && scenario.table.game.getPhaseHandler().getPlayerTurn() == null) {
-                            var graveyard = scenario.table.game.getRegisteredPlayers().get(0).getCardsIn(ZoneType.Graveyard);
-                            assertEquals(graveyard.size(), 1, "The real setup script mills exactly one Forest");
-                            var forest = graveyard.get(0);
-                            assertEquals(forest.getName(), "Forest");
-                            assertFalse(event.player().getFlashback().contains(forest.getView()),
-                                    "Muldrotha grants no graveyard access before a turn belongs to its controller");
-                            if (!milledForest.compareAndSet(null, forest)) {
-                                assertSame(milledForest.get(), forest, "Any repeated publication refers to the same one milled card");
-                            }
+                        var graveyard = scenario.table.game.getRegisteredPlayers().get(0).getCardsIn(ZoneType.Graveyard);
+                        assertEquals(graveyard.size(), 1, "The real setup script mills exactly one Forest");
+                        var forest = graveyard.get(0);
+                        assertEquals(event.card().getId(), forest.getId(), "The movement identifies that exact graveyard card");
+                        assertEquals(forest.getName(), "Forest");
+                        assertFalse(event.to().player().getFlashback().contains(forest.getView()),
+                                "Muldrotha grants no graveyard access before a turn belongs to its controller");
+                        if (!milledForest.compareAndSet(null, forest)) {
+                            assertSame(milledForest.get(), forest, "Any repeated publication refers to the same one milled card");
                         }
-                        if (event.zoneType() != ZoneType.Flashback || capturedRefresh.get() || !insidePhaseRefresh()) return;
+                    } catch (Throwable failure) {
+                        callbackFailure.compareAndSet(null, failure);
+                    }
+                }
+
+                @Subscribe public void zoneChanged(GameEventZone event) {
+                    if (event.zoneType() != ZoneType.Flashback || capturedRefresh.get() || !insidePhaseRefresh()) return;
+                    try {
+                        assertNotNull(event.player(), "A changed computed Flashback view identifies its owner");
                         assertEquals(event.player().getId(), initialPlayers.get(0).intValue());
                         assertNotNull(milledForest.get(), "The changed view follows the actual pre-turn mill");
                         assertTrue(event.player().getFlashback().contains(milledForest.get().getView()),
