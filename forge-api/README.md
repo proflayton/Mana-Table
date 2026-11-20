@@ -2058,6 +2058,23 @@ The new host, protocol, and renderer live in their own modules. Preserve
 the repository's existing license and attribution. Forge's existing resources
 remain the source of truth for card definitions and rules.
 
+**Source candidate:** the full upstream integration pins
+[Forge 24b9d9660371331996bd8e8b897072e05f9962cc](https://github.com/Card-Forge/forge/commit/24b9d9660371331996bd8e8b897072e05f9962cc),
+with common ancestor `789bda3c2a03a09ff519e822c8729c157721f725`. Build the rules
+engine and its card, token, printing and supporting resources from the same
+source revision; replacing only a running installation's card files does not
+qualify new mechanics. The native package's existing source and archive checks
+remain required.
+
+Native API games explicitly disable upstream's general history Undo before game
+creation. The existing certified reversible-mana Undo retains its separate
+ownership and information barriers; legacy Forge games keep their normal Undo
+preference. Upstream `IGuiGame.Selection` marks are projected through the native
+bridge while the actual current input and its legal domain remain authoritative.
+Catalog sticker sheets retain the `sticker_sheet` game-piece identity. The hidden
+auxiliary `StickerSheets` zone is not relabeled as Command or added to spectator
+inspection; engine-owned sticker dialogs use the existing current-choice path.
+
 The [architecture guide](../docs/Development/Mana-Table-Architecture.md) maps the
 desktop modules and explains how to extend prompts, snapshots, and host commands.
 

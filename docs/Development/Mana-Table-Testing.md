@@ -16,6 +16,36 @@ and retained-analysis tests run with the ordinary repository Node test inventory
 These controls include synthetic workers and fixture states; real experiment
 results remain separately identified by their actual locks and receipts.
 
+## Upstream card and engine integration checks
+
+**Source candidate:** `BundledCardDataImportTest` loads the actual bundled Forge
+catalog and imports the frozen public Archidekt deck `28555340` (Homer). Its 79
+rows contain 100 cards, including one foil. Every requested name, edition,
+collector number and finish must map without substitutions. The committed
+fixture keeps only import-relevant public fields; CI does not fetch or modify the
+live deck. Separate unavailable-printing and unknown-name controls retain honest
+warnings and refusal behavior. Tests stage and apply only in disposable profiles.
+
+`ReplicatorRulesJourneyTest` casts actual Replicators to create both players' Food
+tokens, rejects foreign/nontoken targets, pays the activation and observes its
+distinct tapped copy. `HomerLandfallJourneyTest` covers two chosen players and a
+legal zero-target resolution, counting a multi-type creature once.
+`UpstreamCardMechanicsJourneyTest` exercises the changed Station threshold and
+actual graveyard Assimilate ownership, control, counters and types. These API
+tests use ordinary current inputs and rules resolution; they do not inject live
+tokens, counters or outcomes. The existing source-bound headless engine smoke
+also checks the formerly missing printings and sticker-sheet catalog identity
+through the packaged JVM/resources, then imports a disposable Replicator deck.
+
+The existing `ExecutionJourneyTest` includes a genuine mandatory landfall loop
+and a non-looping control. A rules-driven draw must cancel the prepared addition
+before terminal publication without inventing a stack entry or cast announcement.
+Run these alongside current-input, cleanup, payment, visibility and certified
+Undo regressions, and the upstream sticker/Undo/network tests in their reactors.
+Catalog coverage, named rules journeys, native AI performance and human gameplay
+acceptance are separate evidence. The existing release limits and exact-source
+CI gates are unchanged.
+
 ## Basic land acquisition checks
 
 The client suite includes 95 focused policy checks for the experimental
