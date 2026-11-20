@@ -213,7 +213,7 @@ public class ReplicatorRulesJourneyTest {
                     "The actual rejected transaction preserves board, mana and source tap state");
             // Keep the baseline explicit: the witness records both the earlier
             // captured input and the transaction's actual current-before.
-            var before = footprint(captured.state(), actor, sourceId);
+            var before = footprint(current.state(), actor, sourceId);
             assertEquals(footprint(after, actor, sourceId), before, "A rejected target cannot pay/tap/change the board");
             return next;
         });
