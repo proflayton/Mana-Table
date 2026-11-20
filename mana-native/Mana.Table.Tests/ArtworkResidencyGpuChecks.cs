@@ -94,11 +94,22 @@ internal static class ArtworkResidencyGpuChecks
             var pixels = new Color[64]; target.GetData(pixels);
             check(pixels.Any(pixel => pixel.R > 0 && pixel.A > 0), "A retained old frame still paints real pixels after eviction pressure");
         }
+        // The window advances artwork before composing/preloading the next frame.
+        // Retire C's preceding-frame Get rather than preserving it as current demand.
+        art.Update(device);
         art.Preload([a, b]);
         var reloaded = Await(art, device, b);
         var mipPixels = new Color[4]; reloaded.GetData(2, null, mipPixels, 0, mipPixels.Length);
-        check(source.Reads(b.Name) == 2 && !ReferenceEquals(second, reloaded) && !reloaded.IsDisposed && mipPixels.Any(pixel => pixel.A > 0),
-            "Revisiting an actually evicted face reloads a different live GPU texture with populated mip levels");
+        int sourceReads = source.Reads(b.Name);
+        bool differentInstance = !ReferenceEquals(second, reloaded), live = !reloaded.IsDisposed;
+        bool populatedMips = mipPixels.Any(pixel => pixel.A > 0);
+        bool reloadedCorrectly = sourceReads == 2 && differentInstance && live && populatedMips;
+        string reloadDescription = "Revisiting an actually evicted face reloads a different live GPU texture with populated mip levels";
+        if (!reloadedCorrectly) reloadDescription += ": " + JsonSerializer.Serialize(new {
+            sourceReads, differentInstance, live, populatedMips,
+            mipAlpha = mipPixels.Select(pixel => pixel.A).ToArray(), metrics = art.Metrics
+        });
+        check(reloadedCorrectly, reloadDescription);
         current.Dispose(); art.Dispose(); art.Dispose();
         check(first.IsDisposed && reloaded.IsDisposed && art.Metrics is { Residents: 0, ResidentBytes: 0, QueuedBytes: 0, Captures: 0 },
             "Owner shutdown and duplicate lease disposal release all resident payload exactly once without stale upload membership");
