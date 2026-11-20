@@ -1,6 +1,7 @@
 package forge.gamesimulationtests.priority;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertSame;
 import static org.testng.Assert.assertTrue;
 
 import java.util.List;
@@ -8,6 +9,7 @@ import java.util.List;
 import org.testng.annotations.Test;
 
 import forge.game.card.Card;
+import forge.game.keyword.Keyword;
 import forge.game.phase.PhaseType;
 import forge.game.zone.ZoneType;
 
@@ -112,9 +114,23 @@ public class EndTurnCleanupPriorityTest extends PriorityTestBase {
     public void endingTheTurnDuringCleanupStartsANewCleanup() {
         setUpGame();
         final Card sundial = addCard(SUNDIAL, a);
+        // Ultima destroys artifacts too. Protect only Sundial, leaving the Hammer
+        // unprotected so the Traveler still dies during the end-the-turn process.
+        lands("Plains", a, 4);
+        cast("Indestructibility", a, sundial);
+        resolveAll();
+        assertTrue(sundial.hasKeyword(Keyword.INDESTRUCTIBLE), "the normally paid Aura protects Sundial\n" + log);
         travelerDiesInTheProcess();
         // added after the casts so that only Sundial uses it
         lands("Plains", a, 1);
+        runUntil(() -> turn() == 1 && game.getPhaseHandler().getPhase() == PhaseType.CLEANUP,
+                "Ultima starting the first cleanup step");
+        assertTrue(sundial.isInZone(ZoneType.Battlefield), "Sundial survived the actual Ultima destruction\n" + log);
+        assertSame(game.getCardState(sundial), sundial, "the queued source is the actual surviving rules occurrence");
+        assertTrue(sundial.hasKeyword(Keyword.INDESTRUCTIBLE));
+        final var endTurn = firstAbility(sundial);
+        endTurn.setActivatingPlayer(a);
+        assertTrue(endTurn.canPlay(), "Sundial is currently legal before the first cleanup priority is consumed\n" + log);
         ctrl(a).actIn = PhaseType.CLEANUP;
         activate(sundial, a);
         runUntilPhase(2, PhaseType.UPKEEP);
@@ -122,6 +138,7 @@ public class EndTurnCleanupPriorityTest extends PriorityTestBase {
         assertTrue(cleanup.size() >= 2, "a got priority for the dies trigger and activated Sundial\n" + log);
         assertEquals(cleanup.get(cleanup.size() - 1).stackTop(), SUNDIAL,
                 "nobody may get priority after Sundial resolved\n" + log);
+        assertTrue(sundial.isTapped(), "the real Sundial activation paid its tap cost\n" + log);
         assertEquals(spirits(), 0, "Sundial exiled the dies trigger\n" + log);
     }
 
