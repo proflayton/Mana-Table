@@ -101,7 +101,7 @@ public final class InputSelectCardsForConvokeOrImprovise extends InputSelectMany
         if (entityWasSelected) {
             final ManaCostShard color = this.chosenCards.remove(card);
             remainingCost.increaseShard(color, 1);
-            onSelectStateChanged(card, false);
+            showSelection();
         }
         else {
             if (maxSelectable != null && chosenCards.size() >= maxSelectable) {
@@ -132,7 +132,7 @@ public final class InputSelectCardsForConvokeOrImprovise extends InputSelectMany
             final ManaCostShard shard = remainingCost.payManaViaConvoke(chosenColor);
             if (shard != null) {
                 chosenCards.put(card, shard);
-                onSelectStateChanged(card, true);
+                showSelection();
             }
             else {
                 showMessage("The colors provided by " + card.toString() + " you've chosen cannot be used to pay the manacost of " + remainingCost.toString());
