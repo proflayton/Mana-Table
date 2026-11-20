@@ -2,6 +2,7 @@
 const fs = require('node:fs');
 const { githubRead } = require('./github-read.cjs');
 const REPO = 'proflayton/Mana-Table';
+const COMPARE_PAGE_SIZE = 100, MAX_COMPARE_COMMITS = 10000;
 const WORKFLOWS = [
   { file: 'test-build.yaml', jobs: ['Test with Java 17', 'Test with Java 21'], required: true },
   // Keep the established required context while it checks shared tooling only.
@@ -36,6 +37,58 @@ function validateComparison(comparison, before, sha) {
     && comparison.total_commits === comparison.commits.length, 'Source comparison commit history is incomplete.');
   assert(comparison.status === 'identical' ? before === sha && comparison.total_commits === 0
     : comparison.total_commits > 0 && comparison.commits.at(-1)?.sha === sha, 'Source comparison belongs to another head.');
+}
+async function readComparison({ api, repo, before, sha, deadline, now = Date.now }) {
+  validateSource(repo, sha);
+  assert(/^[a-f0-9]{40}$/.test(before || '') && !/^0{40}$/.test(before), 'A full lowercase nonzero comparison base SHA is required.');
+  assert(Number.isFinite(deadline), 'A shared comparison deadline is required.');
+  const commits = [], seen = new Set();
+  let first, metadata, pages = 1;
+  for (let page = 1; page <= pages; page++) {
+    assert(now() < deadline, 'Source comparison deadline expired; publication remains blocked.');
+    const response = await api('/repos/' + REPO + '/compare/' + before + '...' + sha
+      + '?per_page=' + COMPARE_PAGE_SIZE + '&page=' + page, { deadline });
+    assert(now() < deadline, 'Source comparison deadline expired; publication remains blocked.');
+    assert(response?.base_commit?.sha === before, 'Source comparison belongs to another base.');
+    assert(response.merge_base_commit?.sha === before, 'Source comparison belongs to another merge base.');
+    assert(response.status === 'ahead' || response.status === 'identical', 'Cannot prove iOS applicability from a diverged source range.');
+    assert(Number.isSafeInteger(response.total_commits) && response.total_commits >= 0
+      && response.total_commits <= MAX_COMPARE_COMMITS, 'Source comparison exceeds its bounded commit history.');
+    assert(response.ahead_by === response.total_commits && response.behind_by === 0,
+      'Source comparison has inconsistent ahead/behind metadata.');
+    const current = { base: response.base_commit.sha, mergeBase: response.merge_base_commit.sha,
+      status: response.status, total: response.total_commits, ahead: response.ahead_by, behind: response.behind_by };
+    if (page === 1) {
+      metadata = current;
+      pages = Math.max(1, Math.ceil(metadata.total / COMPARE_PAGE_SIZE));
+      assert(Array.isArray(response.files) && response.files.length <= 300, 'Missing or oversized source comparison files.');
+      for (const file of response.files)
+        assert(file && typeof file.filename === 'string' && file.filename.length > 0
+          && (file.previous_filename === undefined || typeof file.previous_filename === 'string' && file.previous_filename.length > 0),
+        'Invalid changed-file response.');
+      // Only page one carries the whole comparison's capped changed-file list.
+      first = { base_commit: response.base_commit, status: response.status, total_commits: metadata.total, files: response.files };
+    } else {
+      assert(Object.keys(metadata).every(key => current[key] === metadata[key]), 'Source comparison metadata changed between pages.');
+      assert(response.files === undefined || response.files === null || Array.isArray(response.files) && response.files.length === 0,
+        'Later source comparison page unexpectedly includes changed files.');
+    }
+    const expected = Math.min(COMPARE_PAGE_SIZE, metadata.total - commits.length);
+    assert(Array.isArray(response.commits) && response.commits.length === expected,
+      'Source comparison page commit history is incomplete or oversized.');
+    for (const commit of response.commits) {
+      assert(/^[a-f0-9]{40}$/.test(commit?.sha || '') && commit.sha !== before,
+        'Source comparison contains an invalid commit identity.');
+      assert(!seen.has(commit.sha), 'Source comparison contains duplicate commit identities.');
+      seen.add(commit.sha);
+      // Preserve GitHub's page order. Merge histories need no invented linear
+      // parent or timestamp ordering, and full commit payloads need not survive.
+      commits.push({ sha: commit.sha });
+    }
+  }
+  const comparison = { ...first, commits };
+  validateComparison(comparison, before, sha);
+  return comparison;
 }
 function assessRuns(spec, response, context) {
   assert(response && Array.isArray(response.workflow_runs) && Number.isInteger(response.total_count), 'Invalid workflow-run response.');
@@ -140,8 +193,7 @@ async function main(env = process.env) {
     const event = JSON.parse(fs.readFileSync(env.GITHUB_EVENT_PATH, 'utf8'));
     assert(event.repository?.full_name === REPO && event.ref === 'refs/heads/master' && event.after === sha
       && /^[a-f0-9]{40}$/.test(event.before || '') && !/^0{40}$/.test(event.before), 'Cannot establish the exact master push change range.');
-    const comparison = await api('/repos/' + REPO + '/compare/' + event.before + '...' + sha, { deadline });
-    validateComparison(comparison, event.before, sha);
+    const comparison = await readComparison({ api, repo, before: event.before, sha, deadline });
     iosRequired = iosApplicability(comparison);
   } else {
     assert(env.GITHUB_EVENT_NAME === 'workflow_dispatch', 'Unsupported publication event.');
@@ -154,5 +206,5 @@ async function main(env = process.env) {
   console.log('All required exact-source CI passed; existing publication guards may proceed.');
   return result;
 }
-module.exports = { REPO, WORKFLOWS, validateSource, validateComparison, iosPath, iosApplicability, assessRuns, assessJobs, inspect, waitForCI, main };
+module.exports = { REPO, WORKFLOWS, validateSource, validateComparison, readComparison, iosPath, iosApplicability, assessRuns, assessJobs, inspect, waitForCI, main };
 if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
