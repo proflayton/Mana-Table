@@ -100,7 +100,11 @@ public class InputPassPriority extends InputSyncronizedBase {
     }
 
     public boolean canPassTurn() {
-        return isPriorityActive() && pendingSuggestion == null && !getController().canUndoLastAction();
+        if (!isPriorityActive() || pendingSuggestion != null || getController().canUndoLastAction()) return false;
+        final Game game = getController().getGame();
+        // Native games opt out of general history. Their existing mana-action
+        // ledger must still prevent an unavailable Undo from becoming End turn.
+        return game.getRules().isGeneralUndoAllowed() || !game.getStack().canUndo(getController().getPlayer());
     }
 
     public boolean passTurn() {

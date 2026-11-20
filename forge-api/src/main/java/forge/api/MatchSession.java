@@ -3277,8 +3277,16 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 actionable.clear();
                 actionable.addAll(selection.actionable());
                 highlighted.clear();
-                for (var chosen : selection.chosen()) {
-                    if (chosen instanceof GameEntityView entity) highlighted.add(entity);
+                var currentInput = human.getInputQueue().getInput();
+                if (selection.max() > 0 && currentInput instanceof InputSelectManyBase<?> many && many.isSelectionActive()) {
+                    // Upstream marks also retain the spell's earlier targets.
+                    // Native cost/selection highlights identify this part's
+                    // actual chosen entities, independently of those targets.
+                    for (var chosen : many.getSelected()) highlighted.add(chosen.getView());
+                } else {
+                    for (var chosen : selection.chosen()) {
+                        if (chosen instanceof GameEntityView entity) highlighted.add(entity);
+                    }
                 }
                 yield null;
             }
