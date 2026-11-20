@@ -1393,6 +1393,11 @@ inbox paths, including held reads, source queries, rejection and retirement.
 Public checkpoints compare exact game/board cohorts across all audiences,
 including turn/phase, identities and attachments, graveyard/exile contents,
 stack order/controllers/targets, and combat assignments. Hidden hand/library
+contents stay private. `StackTargetProjectionTest` uses a real Manifest setup
+effect and paid Path to Exile to compare anonymous target references across all
+four seats and the spectator. It also exercises actual departure reveals/search,
+hidden-zone exclusions and the retired-target guard without rebinding a moved
+card to its new occurrence. Hidden hand/library
 contents, private offers, prose and source portraits are excluded. A bounded
 cohort cache also catches contradictions between repeated observations of one
 audience. The comparer processes each accepted immutable frame once, skipping

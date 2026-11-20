@@ -1062,6 +1062,13 @@ legacy null identities without creating authority; scoped decision portraits
 still reject explicitly malformed identity fields. A finished table may retain
 exact cards from registered players' final rules zones for reading, with no
 pending choice or action domain.
+
+**Source candidate:** current stack target references can identify a public
+face-down battlefield occurrence through its existing anonymous `combatId` and
+the label `Face-down card`. This display link supplies no printed face, response
+key or action permission. Hidden hand/library cards, face-down exile cards and
+retired occurrences remain excluded. Historical announcement receipts retain
+their separate event-time disclosure rules.
 The original
 `GameStateMapper` excludes stack
 entries, combat assignments, attachments, counters, mana pools, temporary reveal
