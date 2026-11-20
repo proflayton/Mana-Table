@@ -352,6 +352,10 @@ public class GameAction {
             if (c.hasPerpetual()) {
                 copied.setPerpetual(c);
             }
+            // CR 123.5
+            if (c.isStickered() && !zoneTo.getZoneType().isHidden()) {
+                copied.setStickers(c);
+            }
         }
 
         // ensure that any leftover keyword/type changes are cleared in the state view
@@ -443,6 +447,7 @@ public class GameAction {
                     }
                 } else if (toBattlefield && !c.isInPlay()) {
                     // was replaced with another Zone Change
+                    cleanStaticEffect(staticEff, copied);
                     if (c.removeChangedState()) {
                         c.updateStateForView();
                     }
@@ -481,29 +486,35 @@ public class GameAction {
         // Handle merged permanent here so all replacement effects are already applied.
         CardCollection mergedCards = null;
         if (fromBattlefield && !toBattlefield && c.hasMergedCard()) {
-            CardCollection cards = new CardCollection(c.getMergedCards());
-            // replace top card with copied card for correct name for human to choose.
-            cards.set(cards.indexOf(c), copied);
-            // 725.3b
+            mergedCards = new CardCollection(c.getMergedCards());
+            // replace top card with copied card for correct name for human to choose
+            mergedCards.set(mergedCards.indexOf(c), copied);
+            // CR 725.3b
             if (cause != null && zoneTo.getZoneType() == ZoneType.Exile) {
-                cards = (CardCollection) cause.getHostCard().getController().getController().orderMoveToZoneList(cards, zoneTo.getZoneType(), cause);
+                mergedCards = (CardCollection) cause.getHostCard().getController().getController().orderMoveToZoneList(mergedCards, zoneTo.getZoneType(), cause);
             } else {
-                cards = (CardCollection) c.getOwner().getController().orderMoveToZoneList(cards, zoneTo.getZoneType(), cause);
+                mergedCards = (CardCollection) c.getOwner().getController().orderMoveToZoneList(mergedCards, zoneTo.getZoneType(), cause);
             }
-            cards.set(cards.indexOf(copied), c);
-            mergedCards = cards;
+            // CR 123.5c
+            if (copied.isStickered()) {
+                Card keeper = c.getOwner().getController().chooseCardToKeepStickers(mergedCards);
+                if (keeper != copied) {
+                    keeper.takeStickersFrom(copied);
+                }
+            }
+            mergedCards.set(mergedCards.indexOf(copied), c);
             if (cause != null) {
                 // Replace sa targeting cards
                 final SpellAbility saTargeting = cause.getSATargetingCard();
                 if (saTargeting != null) {
-                    saTargeting.getTargets().replaceTargetCard(c, cards);
+                    saTargeting.getTargets().replaceTargetCard(c, mergedCards);
                 }
                 // Replace host remembered cards
                 // But not replace RememberLKI, since it wants to refer to the last known info.
                 Card hostCard = cause.getHostCard();
                 if (!cause.hasParam("RememberLKI") && hostCard.isRemembered(c)) {
                     hostCard.removeRemembered(c);
-                    hostCard.addRemembered(cards);
+                    hostCard.addRemembered(mergedCards);
                 }
             }
         }
@@ -665,6 +676,10 @@ public class GameAction {
             c.cleanupExiledWith();
         }
 
+        if (c.isStickered() || copied.isStickered()) {
+            Card.refreshSheetViews(copied.getOwner());
+        }
+
         // play the change zone sound
         game.fireEvent(new GameEventCardChangeZone(c, zoneFrom, zoneTo, origin, movementCause, departingControllerId));
 
@@ -724,7 +739,13 @@ public class GameAction {
                     // Ask controller if it wants to be on top or bottom of other meld.
                     unmeldPosition++;
                 }
+                // CR 123.5c
+                boolean unmeldKeepsStickers = copied.isStickered() && c.getOwner().getController()
+                        .chooseCardToKeepStickers(new CardCollection(List.of(copied, unmeld))) == unmeld;
                 unmeld = changeZone(null, zoneTo, unmeld, position, cause, params, Origin.OTHER);
+                if (unmeldKeepsStickers && unmeld != null) {
+                    unmeld.takeStickersFrom(copied);
+                }
                 storeChangesZoneAll(unmeld, zoneFrom, zoneTo, params);
             }
         } else if (toBattlefield) {
@@ -1166,6 +1187,9 @@ public class GameAction {
         checkStaticAbilities(runEvents, Sets.newHashSet(), CardCollection.EMPTY);
     }
     public final void checkStaticAbilities(final boolean runEvents, final Set<Card> affectedCards, final CardCollectionView preList) {
+        checkStaticAbilities(runEvents, affectedCards, preList, null);
+    }
+    public final void checkStaticAbilities(final boolean runEvents, final Set<Card> affectedCards, final CardCollectionView preList, final Set<Card> enteringWith) {
         if (isCheckingStaticAbilitiesOnHold()) {
             return;
         }
@@ -1229,7 +1253,7 @@ public class GameAction {
                 final CardCollectionView previouslyAffected = affectedPerAbility.get(stAb);
                 final CardCollectionView affectedHere;
                 if (previouslyAffected == null) {
-                    affectedHere = stAb.applyContinuousAbilityBefore(layer, preList);
+                    affectedHere = stAb.applyContinuousAbilityBefore(layer, enteringWith != null && enteringWith.contains(stAb.getHostCard()) ? CardCollection.EMPTY : preList);
                     if (affectedHere != null) {
                         affectedPerAbility.put(stAb, affectedHere);
                     }
@@ -1246,7 +1270,7 @@ public class GameAction {
                         for (final StaticAbility st2 : c.getStaticAbilities()) {
                             if (!staticAbilities.contains(st2) && st2.checkMode(StaticAbilityMode.Continuous) && st2.zonesCheck()) {
                                 toAdd.add(st2);
-                                CardCollectionView newAffected = st2.applyContinuousAbilityBefore(layer, preList);
+                                CardCollectionView newAffected = st2.applyContinuousAbilityBefore(layer, enteringWith != null && enteringWith.contains(st2.getHostCard()) ? CardCollection.EMPTY : preList);
                                 if (newAffected != null) {
                                     affectedPerLayer.computeIfAbsent(layer, l -> Sets.newHashSet()).addAll(newAffected);
                                 }
@@ -1673,7 +1697,6 @@ public class GameAction {
                 orderedNoRegCreats = true;
             }
             for (Card c : noRegCreats) {
-                c.updateWasDestroyed(true);
                 sacrificeDestroy(c, null, mapParams);
             }
 
@@ -2031,7 +2054,8 @@ public class GameAction {
             // then the rest have lost!
             reason = GameEndReason.WinsGameSpellEffect;
             for (Player pl : allPlayers.threadSafeIterable()) {
-                if (pl.equals(p)) {
+                // CR 810.8a: the winner's teammates win with them
+                if (p.getSharedTeam().contains(pl)) {
                     continue;
                 }
 
@@ -2054,6 +2078,24 @@ public class GameAction {
                         losers = Lists.newArrayListWithCapacity(3);
                     }
                     losers.add(p);
+                }
+            }
+        }
+
+        // CR 810.8a: a player who loses takes their team out with them
+        if (losers != null) {
+            for (Player p : Lists.newArrayList(losers)) {
+                for (Player mate : p.getSharedTeam()) {
+                    if (losers.contains(mate) || mate.hasLost()) {
+                        continue;
+                    }
+                    // CR 810.8b: a concession takes the team out at once
+                    if (p.conceded()) {
+                        mate.concede();
+                        losers.add(mate);
+                    } else if (mate.loseConditionMet(p.getOutcome().lossState, p.getOutcome().loseConditionSpell)) {
+                        losers.add(mate);
+                    }
                 }
             }
         }
@@ -2216,8 +2258,6 @@ public class GameAction {
             c.getController().addSacrificedThisTurn(lkiCopy, source);
             lki.put(c.getController(), lkiCopy);
 
-            c.updateWasDestroyed(true);
-
             Card changed = sacrificeDestroy(c, source, params);
             if (changed != null) {
                 result.add(changed);
@@ -2256,8 +2296,6 @@ public class GameAction {
             activator = sa.getActivatingPlayer();
         }
 
-        //for animation
-        c.updateWasDestroyed(true);
         // Play the Destroy sound
         game.fireEvent(new GameEventCardDestroyed());
 
@@ -2471,6 +2509,11 @@ public class GameAction {
             if (game.isGameOver()) { break; } // conceded during "mulligan" prompt
             first = survivingStartingPlayer(first);
 
+            // after the mulligans, which shuffle the hand away and redraw up to the maximum hand size
+            for (final Player p1 : game.getPlayers()) {
+                p1.runStartGameScripts();
+            }
+
             game.setAge(GameStage.Play);
 
             //<THIS CODE WILL WORK WITH PHASE = NULL>
@@ -2537,7 +2580,6 @@ public class GameAction {
 
         boolean isFirstGame = lastGameOutcome == null;
         if (isFirstGame) {
-            game.fireEvent(new GameEventFlipCoin()); // Play the Flip Coin sound
             goesFirst = Aggregates.random(game.getPlayers());
         } else {
             for (Player p : game.getPlayers()) {
@@ -2552,6 +2594,10 @@ public class GameAction {
             // This happens in hotseat matches when 2 equal lobbyplayers play.
             // No one of them has lost, so cannot decide who goes first .
             goesFirst = game.getPlayers().get(0); // does not really matter who plays first - it's controlled from the same computer.
+        }
+
+        if (isFirstGame) {
+            game.fireEvent(new GameEventFlipCoin(goesFirst.getView(), true, true));
         }
 
         for (Player p : game.getPlayers()) {
@@ -2728,6 +2774,7 @@ public class GameAction {
 
             if (p.hasLost()) { // the person who should take initiative is gone, it goes to next player
                 takeInitiative(game.getNextPlayerAfter(p), set);
+                return;
             }
 
             game.setHasInitiative(p);
@@ -2757,10 +2804,9 @@ public class GameAction {
             switch (game.getReplacementHandler().run(ReplacementType.Scry, repParams)) {
                 case NotReplaced:
                     break;
-                case Updated: {
+                case Updated:
                     playerScry = (int) repParams.get(AbilityKey.Num);
                     break;
-                }
                 default:
                     continue;
             }

@@ -390,7 +390,7 @@ public class ManyPublicationTest {
                 assertEquals(cards.getSelected().size(), 1);
                 var cleanup = new ArrayList<JsonObject>(); var originalGui = fixture.controller().getGui();
                 fixture.controller().setGui(intercept(originalGui, (name, args) -> {
-                    if (name.equals("clearSelectables") || name.equals("setHighlighted") && Boolean.FALSE.equals(args[1])) {
+                    if (name.equals("setSelection") && ((forge.gamemodes.match.Selection)args[0]).max() == 0) {
                         assertFalse(cards.isSelectionActive(), "The real owner must retire before any cleanup callback can publish");
                         fixture.session().publishInput();
                         cleanup.add(JSON.toJsonTree(fixture.session().state()).getAsJsonObject());

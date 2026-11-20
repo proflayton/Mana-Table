@@ -16,6 +16,58 @@ and retained-analysis tests run with the ordinary repository Node test inventory
 These controls include synthetic workers and fixture states; real experiment
 results remain separately identified by their actual locks and receipts.
 
+## Upstream card and engine integration checks
+
+**Source candidate:** `BundledCardDataImportTest` loads the actual bundled Forge
+catalog and imports the frozen public Archidekt deck `28555340` (Homer). Its 79
+rows contain 100 cards, including one foil. Every requested name, edition,
+collector number and finish must map without substitutions. The committed
+fixture keeps only import-relevant public fields; CI does not fetch or modify the
+live deck. Separate unavailable-printing and unknown-name controls retain honest
+warnings and refusal behavior. Tests stage and apply only in disposable profiles.
+
+`ReplicatorRulesJourneyTest` casts actual Replicators to create both players' Food
+tokens, rejects foreign/nontoken targets, pays the activation and observes its
+distinct tapped copy. `HomerLandfallJourneyTest` covers two chosen players and a
+legal zero-target resolution, counting a multi-type creature once.
+`UpstreamCardMechanicsJourneyTest` exercises the changed Station threshold and
+actual graveyard Assimilate ownership, control, counters and types. These API
+tests use ordinary current inputs and rules resolution; they do not inject live
+tokens, counters or outcomes. The existing source-bound headless engine smoke
+also checks the formerly missing printings and sticker-sheet catalog identity
+through the packaged JVM/resources, then imports a disposable Replicator deck.
+
+`CardCatalogIndexTest` protects printing/foil ordering, distinct face/type/rules
+search, Unicode aliases and fresh constructor inputs while normalization reuses
+equal raw text within one catalog build. Equal names alone never authorize
+reusing different face descriptors. `AiPodSelectionTest` retains its existing
+45-second method limits and guest-catalog disclosure checks.
+
+The existing `ExecutionJourneyTest` includes a genuine mandatory landfall loop
+and a non-looping control. A rules-driven draw must cancel the prepared addition
+before terminal publication without inventing a stack entry or cast announcement.
+Run these alongside current-input, cleanup, payment, visibility and certified
+Undo regressions, and the upstream sticker/Undo/network tests in their reactors.
+Catalog coverage, named rules journeys, native AI performance and human gameplay
+acceptance are separate evidence. The existing release limits and exact-source
+CI gates are unchanged.
+
+The imported `GameEventSerializationTest` enforces the legacy event transport
+contract. `WireDeserializationTest` round-trips all four cause-bearing event
+types through the actual object streams and wrapped-event route, using separate
+sender and public-only receiver trackers. Public fields and event counts remain
+intact; private cause views and sentinel strings never reach the receiver.
+The original local cause remains available. `MatchActivityTest`,
+`MatchHistoryTest` and `PublicCounterCausesTest` retain native activity disclosure
+and hidden-source coverage.
+
+`EndTurnCleanupPriorityTest` pays for a real Indestructibility Aura so Sundial
+survives Ultima while the unprotected Hammer is destroyed and the Traveler dies
+during state-based checks. It verifies the surviving current source, legal
+cleanup activation, actual tap payment and strict absence of extra cleanup
+priority or a resolved dies trigger. Its neighboring priority tests retain
+turn-based, state-based, mana and resolution-time casting coverage.
+
 ## Basic land acquisition checks
 
 The client suite includes 95 focused policy checks for the experimental
@@ -1213,6 +1265,10 @@ The independent required `mixed-game-qualification` CI job additionally runs all
 four `natural` rotations against the exact immutable package and source-bound
 harness, then the actual110-trigger rules/presentation workload described below
 and the ordinary consuming-source payment witness.
+That witness authors one manual Crystal Vein activation while the real Auto
+button remains offered. The normal ordinary source reader and client dispatch
+must accept its current route without an explicit output; all other decisions
+delegate to production policy. It is a manual-path regression, not a policy-strength assertion.
 Its20-minute job limit does not change the existing20-minute engine matrix or
 either scenario's original limits. `scripts/mana-table/mixed-game-qualification.cjs`
 checks retained outcomes, four distinct physical roles/deck rotation, public
@@ -1359,6 +1415,11 @@ inbox paths, including held reads, source queries, rejection and retirement.
 Public checkpoints compare exact game/board cohorts across all audiences,
 including turn/phase, identities and attachments, graveyard/exile contents,
 stack order/controllers/targets, and combat assignments. Hidden hand/library
+contents stay private. `StackTargetProjectionTest` uses a real Manifest setup
+effect and paid Path to Exile to compare anonymous target references across all
+four seats and the spectator. It also exercises actual departure reveals/search,
+hidden-zone exclusions and the retired-target guard without rebinding a moved
+card to its new occurrence. Hidden hand/library
 contents, private offers, prose and source portraits are excluded. A bounded
 cohort cache also catches contradictions between repeated observations of one
 audience. The comparer processes each accepted immutable frame once, skipping
@@ -2359,8 +2420,10 @@ five Forests. It retains timing-legal source offers, checks query resource purit
 and follows the actual payment/cancellation and stack outcome before checking
 the current private funding cue. An intervening mana event and unverified input
 withdraw cached evidence; a completed current scan can establish it again.
-Another case retains a known funded route while an unrelated manual payment
-leaves the full scan incomplete; that does not certify absence for Auto. Other
+Another case retains a known funded route while Prismite's real manual payment
+route remains outside the automatic planner and leaves the full scan incomplete.
+It checks that the omitted route can activate and produce a color useful to the
+actual unpaid bill; that does not certify absence for Auto. Other
 audiences cannot borrow this viewer's funding fact.
 Native hand/source presentation checks distinguish a legal manual action and
 hover focus from positive affordable-card paint. Legacy, invalid, stale and
@@ -2878,6 +2941,9 @@ withdrawn permission. Unchanged observations and invalid commands remain errors;
 a replacement required payment is never answered implicitly. The original
 `FlashbackRefreshConcessionTest` and `CardQueryConcessionTest` retain their traversal,
 privacy, continued-play and terminal assertions and deadlines.
+The Flashback journey uses a real setup mill and Muldrotha's first-turn graveyard
+permission to admit a concession during an actual changed view. Unchanged player
+views may refresh without emitting a zone event.
 
 ## Native headless checks
 
@@ -3432,6 +3498,12 @@ class coverage, executed class bytes, receipt/journal equality, report ownership
 and real overlapping class execution. Failed, skipped, incomplete or foreign
 evidence cannot certify the run. This finalizer runs in the test phase, including
 an extended `mvn test`; no second API test execution is added.
+
+Manual extended and timing-trial dispatches skip the early Java17 engine package
+and shared-engine upload. Their selected test reactors and source-bound JDK
+reports remain required; these dispatches provide test evidence rather than a
+consumable native engine artifact. Normal PR/push runs and quick manual dispatches
+with both options disabled retain the existing package and upload steps.
 
 Normal accounting trusts TestNG to execute the selected classes, as serial CI
 does. It validates every retained invocation and does not claim an independent

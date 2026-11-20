@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import forge.StaticData;
+import forge.ai.ComputerUtilMana;
 import forge.card.mana.ManaAtom;
 import forge.game.card.Card;
 import forge.game.mana.Mana;
@@ -121,7 +122,7 @@ public class UltimaPlayabilityExperienceTest {
     @Test(groups = "canonical-interaction", timeOut = 90000)
     public void aFundedCardKeepsItsPositiveWitnessWhenAnUnrelatedManualRouteMakesTheScanIncomplete() throws Exception {
         try (var game = new RulesScenario("ultima-origin-positive-in-incomplete-scan",
-                Map.of(0, List.of("Forest", "Forest", "Forest", "Forest", "Forest", "Victory Chimes")), ULTIMA, "Progenitus")) {
+                Map.of(0, List.of("Forest", "Forest", "Forest", "Forest", "Forest", "Prismite")), ULTIMA, "Progenitus")) {
             game.until(next -> next.seat() == 0 && priority(next) && text(next.state(), "phaseKey").equals("MAIN1"));
             var observed = HeadlessPlatform.query(game.table, () -> {
                 var actor = game.table.game.getRegisteredPlayers().get(0);
@@ -132,6 +133,22 @@ public class UltimaPlayabilityExperienceTest {
                 var giant = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Giant Adephage"), actor);
                 actor.getZone(ZoneType.Hand).add(giant);
                 assertTrue(controller.refreshRestoredPriority(input));
+                // Unlike the now-supported ChoosePlayer root on Victory Chimes,
+                // Prismite's two-mana activation produces only one mana and is
+                // deliberately excluded from the planner's supported filters.
+                var prismite = actor.getCardsIn(ZoneType.Battlefield).stream()
+                        .filter(card -> card.getName().equals("Prismite")).findFirst().orElseThrow();
+                var manual = prismite.getManaAbilities().get(0);
+                assertFalse(ComputerUtilMana.getAIPlayableMana(prismite).contains(manual),
+                        "The real source must remain outside the current automatic payment planner");
+                assertTrue(manual.canPlay(), "The current player can actually activate the manual route");
+                assertTrue(manual.canProduce("G"));
+                var giantSpell = giant.getFirstSpellAbility();
+                var bill = ComputerUtilMana.calculateManaCost(giantSpell.getPayCosts(), giantSpell, actor, true, 0, false);
+                var quote = actor.getManaPool().quoteFixedPayment(bill, giantSpell);
+                assertNotNull(quote.remainingBill(), "The current unpaid seven-mana bill is a supported fixed quote");
+                assertTrue(quote.canUseColor(ManaAtom.fromName("G")),
+                        "The omitted route produces a color relevant to that exact remaining bill");
                 game.table.publish();
                 assertTrue(input.isPriorityActive());
                 assertSame(controller.getInputQueue().getInput(), input);
@@ -144,7 +161,7 @@ public class UltimaPlayabilityExperienceTest {
             assertEquals(affordability(card(state, "Hand", "Giant Adephage")), "Unknown", "A relevant manual route is not a complete seven-mana funding witness");
             assertFalse(state.getAsJsonObject("prompt").get("canAutoPass").getAsBoolean());
             assertEquals(tapped(state, "Forest"), 0L);
-            assertEquals(tapped(state, "Victory Chimes"), 0L);
+            assertEquals(tapped(state, "Prismite"), 0L);
             assertEquals(pool(state), 0);
             assertTrue(state.getAsJsonArray("stack").isEmpty());
         }

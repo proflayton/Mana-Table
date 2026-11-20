@@ -2965,7 +2965,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var targets = new ArrayList<StackTargetProjection.Reference>();
         for (var item = root; item != null; item = item.getSubInstance()) {
             if (item.getTargetCards() != null) for (var card : item.getTargetCards()) {
-                targets.add(StackTargetProjection.card(game, card, activity::visualId));
+                targets.add(StackTargetProjection.card(game, card, combatIds::id));
             }
             if (item.getTargetPlayers() != null) for (var player : item.getTargetPlayers())
                 targets.add(StackTargetProjection.player(player, player.equals(viewer) ? "You" : player.getName()));
@@ -3268,6 +3268,28 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 yield null;
             }
             case "updateButtons" -> { ok = (String)a[1]; cancel = (String)a[2]; okEnabled = (boolean)a[3]; cancelEnabled = (boolean)a[4]; yield null; }
+            case "setSelection" -> {
+                var selection = (forge.gamemodes.match.Selection)a[0];
+                // Marks describe this publication. They do not grant authority
+                // beyond the actual still-owned input and its legal domain.
+                selectable.clear();
+                if (selection.max() > 0) selectable.addAll(selection.cards());
+                actionable.clear();
+                actionable.addAll(selection.actionable());
+                highlighted.clear();
+                var currentInput = human.getInputQueue().getInput();
+                if (selection.max() > 0 && currentInput instanceof InputSelectManyBase<?> many && many.isSelectionActive()) {
+                    // Upstream marks also retain the spell's earlier targets.
+                    // Native cost/selection highlights identify this part's
+                    // actual chosen entities, independently of those targets.
+                    for (var chosen : many.getSelected()) highlighted.add(chosen.getView());
+                } else {
+                    for (var chosen : selection.chosen()) {
+                        if (chosen instanceof GameEntityView entity) highlighted.add(entity);
+                    }
+                }
+                yield null;
+            }
             case "setSelectables" -> { selectable.clear(); ((Iterable<CardView>)a[0]).forEach(selectable::add); yield null; }
             case "clearSelectables" -> { selectable.clear(); yield null; }
             case "setWeaklySelectable" -> { actionable.clear(); ((Iterable<CardView>)a[0]).forEach(actionable::add); yield null; }

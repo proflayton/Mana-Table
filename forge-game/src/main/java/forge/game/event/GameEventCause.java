@@ -5,10 +5,20 @@ import forge.game.player.PlayerView;
 import forge.game.spellability.SpellAbility;
 import forge.game.trigger.WrappedAbility;
 
+import java.io.Serial;
+import java.io.Serializable;
+
 /** The actual effect supplied by a rules mutation, copied before its ability is reused.
  * This is engine event context, not a public wire view: each viewer must authorize
  * disclosure of the source before publishing its name, description or identity. */
-public record GameEventCause(CardView card, String ability, PlayerView controller, String kind, String instanceId) {
+public record GameEventCause(CardView card, String ability, PlayerView controller, String kind, String instanceId) implements Serializable {
+    /** Legacy event transport omits private provenance before traversing its graph.
+     * Local API observers still authorize the original immutable context per viewer. */
+    @Serial
+    private Object writeReplace() {
+        return null;
+    }
+
     public static GameEventCause from(SpellAbility ability) {
         if (ability == null || ability.getHostCard() == null) return null;
         SpellAbility root = unwrap(ability.getRootAbility());

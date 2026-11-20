@@ -56,13 +56,13 @@ jobs:
       # Native packaging can start while the complete Java matrix runs.
       # Tests are still mandatory below and publication requires both Java jobs.
       - name: Produce the shared source-bound engine
-        if: matrix.java == '17' && !(github.event_name == 'workflow_dispatch' && inputs.api_test_trial)
+        if: matrix.java == '17' && !(github.event_name == 'workflow_dispatch' && (inputs.api_test_trial || inputs.extended))
         run: |
           xvfb-run -a mvn -B -ntp -pl forge-api -am package -DskipTests
           node scripts/mana-table/ci-engine-artifact.cjs create
 
       - name: Share the exact engine build
-        if: matrix.java == '17' && !(github.event_name == 'workflow_dispatch' && inputs.api_test_trial)
+        if: matrix.java == '17' && !(github.event_name == 'workflow_dispatch' && (inputs.api_test_trial || inputs.extended))
         uses: actions/upload-artifact@v7
         with:
           name: engine-${{ github.sha }}
@@ -135,6 +135,52 @@ jobs:
           name: api-test-trial-java-${{ matrix.java }}-${{ github.run_attempt }}
           path: forge-api/target/api-test-trials/
           if-no-files-found: error
+          retention-days: 14
+
+      # A reactor failure can stop before later modules. Keep reached reports
+      # with their actual outcome; missing reports are incomplete evidence.
+      - name: Bind extended reactor reports to this source and JDK
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.extended && !inputs.api_test_trial
+        env:
+          MATRIX_JAVA: ${{ matrix.java }}
+          MAVEN_OUTCOME: ${{ steps.java_tests.outcome }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const { execFileSync } = require('node:child_process');
+          const env = process.env;
+          const git = (...args) => execFileSync('git', ['-c', 'core.excludesfile=', ...args], { encoding: 'utf8' }).trim();
+          if (env.GITHUB_EVENT_NAME !== 'workflow_dispatch' || !['17', '21'].includes(env.MATRIX_JAVA)
+              || !/^[1-9][0-9]*$/.test(env.GITHUB_RUN_ID || '') || !/^[1-9][0-9]*$/.test(env.GITHUB_RUN_ATTEMPT || '')
+              || !['success', 'failure', 'cancelled', 'skipped'].includes(env.MAVEN_OUTCOME))
+            throw new Error('Invalid extended test run context.');
+          if (!/^[0-9a-f]{40}$/.test(env.GITHUB_SHA || '') || git('rev-parse', 'HEAD') !== env.GITHUB_SHA
+              || git('status', '--porcelain=v1', '--untracked-files=normal'))
+            throw new Error('Extended reports require the exact committed source and a clean checkout.');
+          const javaVersion = execFileSync('java', ['--version'], { encoding: 'utf8', maxBuffer: 65536 }).trim();
+          if (/^(?:openjdk|java) ([0-9]+)(?:[.\s]|$)/.exec(javaVersion)?.[1] !== env.MATRIX_JAVA)
+            throw new Error('Extended reports belong to another JDK.');
+          const manifest = { schemaVersion: 1, kind: 'extended-java-test-reports', sourceRevision: env.GITHUB_SHA,
+            sourceTree: git('rev-parse', 'HEAD^{tree}'), recordedAtUtc: new Date().toISOString(), repository: env.GITHUB_REPOSITORY,
+            workflowRef: env.GITHUB_WORKFLOW_REF, event: env.GITHUB_EVENT_NAME, ref: env.GITHUB_REF,
+            runId: env.GITHUB_RUN_ID, runAttempt: env.GITHUB_RUN_ATTEMPT, matrixJava: env.MATRIX_JAVA, javaVersion,
+            apiRunId: `github-${env.GITHUB_RUN_ID}-${env.GITHUB_RUN_ATTEMPT}-jdk${env.MATRIX_JAVA}`,
+            mavenOutcome: env.MAVEN_OUTCOME };
+          fs.mkdirSync('forge-api/target/extended-test-reports', { recursive: true });
+          fs.writeFileSync('forge-api/target/extended-test-reports/manifest.json', JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' });
+          NODE
+
+      - name: Save extended reactor test reports on every outcome
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.extended && !inputs.api_test_trial
+        uses: actions/upload-artifact@v7
+        with:
+          name: extended-java-${{ matrix.java }}-reports-${{ github.run_attempt }}
+          path: |
+            forge-api/target/extended-test-reports/manifest.json
+            forge-*/target/surefire-reports/**/TEST-*.xml
+            forge-*/target/surefire-reports/**/testng-results.xml
+            forge-*/target/surefire-reports/**/testng-failed.xml
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Save failed test reports and decision traces

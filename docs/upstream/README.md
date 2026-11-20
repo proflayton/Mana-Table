@@ -1,6 +1,6 @@
 # Upstream Forge
 
-This is the upstream project overview retained for reference. For Mana Table, see the [repository README](../../README.md).
+Retained from [upstream Forge 24b9d9660371331996bd8e8b897072e05f9962cc](https://github.com/Card-Forge/forge/blob/24b9d9660371331996bd8e8b897072e05f9962cc/README.md). For Mana Table, follow the [repository README](../../README.md).
 
 Join the **Forge community** on [Discord](https://discord.gg/HcPJNyD66a)!
 
@@ -37,7 +37,7 @@ Join the **Forge community** on [Discord](https://discord.gg/HcPJNyD66a)!
 
 ### 📱 iOS (early stage)
 - Build the **IPA** according to Wiki
-- No jailbreak needed, only developer mode and iOS 16-26
+- No jailbreak needed, only developer mode and iOS 16-27
 - Connect your device to a PC to self-sign and upload the app file, multiple tools exist e.g. [Sideloadly](https://sideloadly.io)
 
 ---

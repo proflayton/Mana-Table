@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { REPO, WORKFLOWS, validateSource, validateComparison, iosApplicability, assessJobs, inspect, waitForCI } = require('../wait-release-ci.cjs');
+const { REPO, WORKFLOWS, validateSource, validateComparison, readComparison, iosApplicability, assessJobs, inspect, waitForCI } = require('../wait-release-ci.cjs');
 const SHA = 'a'.repeat(40), OTHER = 'b'.repeat(40);
 function fixture(options = {}) {
   const calls = [], observed = new Map();
@@ -144,6 +144,121 @@ test('identical compare is accepted only for the exact same source and empty his
   const comparison = { base_commit: { sha: SHA }, status: 'identical', total_commits: 0, commits: [] };
   validateComparison(comparison, SHA, SHA);
   assert.throws(() => validateComparison(comparison, SHA, OTHER), /another head/);
+});
+
+function comparisonPages(total = 1215, alter = page => page) {
+  const calls = [], files = [{ filename: 'README.md' }];
+  const commits = Array.from({ length: total }, (_, index) => ({ sha: index === total - 1 ? SHA : (index + 1).toString(16).padStart(40, '0') }));
+  const api = async (resource, options) => {
+    calls.push({ resource, deadline: options.deadline });
+    const match = resource.match(new RegExp('^/repos/' + REPO + '/compare/' + OTHER + '\\.\\.\\.' + SHA + '\\?per_page=100&page=([1-9][0-9]*)$'));
+    assert.ok(match, 'Every page must pin the exact repository, base, head and page size.');
+    const page = Number(match[1]);
+    return alter({ base_commit: { sha: OTHER }, merge_base_commit: { sha: OTHER }, status: 'ahead',
+      total_commits: total, ahead_by: total, behind_by: 0,
+      commits: commits.slice((page - 1) * 100, page * 100), ...(page === 1 ? { files } : {}) }, page);
+  };
+  return { api, calls, files, commits, repo: REPO, before: OTHER, sha: SHA, deadline: 500, now: () => 100 };
+}
+
+test('1215 compared commits are read once in API page order with one shared deadline and the first file list', async () => {
+  const f = comparisonPages();
+  const comparison = await readComparison(f);
+  assert.deepEqual(comparison.commits, f.commits);
+  assert.equal(comparison.files, f.files);
+  assert.equal(comparison.total_commits, 1215);
+  assert.equal(f.calls.length, 13);
+  assert.deepEqual(f.calls.map(call => Number(call.resource.match(/page=(\d+)$/)[1])), Array.from({ length: 13 }, (_, i) => i + 1));
+  assert.ok(f.calls.every(call => call.deadline === 500));
+  assert.equal(iosApplicability(comparison), false);
+});
+
+test('capped first-page files still require iOS when all later pages omit files', async () => {
+  const f = comparisonPages(201, (data, page) => page === 1 ? { ...data, files: Array.from({ length: 300 }, () => ({ filename: 'README.md' })) } : data);
+  assert.equal(iosApplicability(await readComparison(f)), true);
+  assert.equal(f.calls.length, 3);
+});
+
+test('comparison requires exact source inputs and a shared deadline before its first request', async () => {
+  for (const patch of [{ repo: 'else/repo' }, { sha: SHA.toUpperCase() }, { before: 'short' },
+    { before: '0'.repeat(40) }, { deadline: NaN }]) {
+    const f = comparisonPages();
+    await assert.rejects(readComparison({ ...f, ...patch }), /restricted|SHA|deadline/);
+    assert.equal(f.calls.length, 0);
+  }
+});
+
+test('the maximum admitted history uses exactly100 pages and a failed page never yields partial readiness', async () => {
+  const maximum = comparisonPages(10000);
+  assert.equal((await readComparison(maximum)).commits.length, 10000);
+  assert.equal(maximum.calls.length, 100);
+  const failed = comparisonPages();
+  await assert.rejects(readComparison({ ...failed, api: async (...args) => {
+    const page = await failed.api(...args);
+    if (failed.calls.length === 2) throw new Error('HTTP 403');
+    return page;
+  } }), /HTTP 403/);
+  assert.equal(failed.calls.length, 2);
+});
+
+test('comparison reads the last full page once and handles a genuinely identical source', async () => {
+  const full = comparisonPages(200); await readComparison(full); assert.equal(full.calls.length, 2);
+  const calls = [];
+  const identical = await readComparison({ repo: REPO, before: SHA, sha: SHA, deadline: 500, now: () => 100,
+    api: async (resource, options) => { calls.push({ resource, options }); return {
+      base_commit: { sha: SHA }, merge_base_commit: { sha: SHA }, status: 'identical', total_commits: 0,
+      ahead_by: 0, behind_by: 0, commits: [], files: [] }; } });
+  assert.equal(calls.length, 1); assert.equal(identical.commits.length, 0);
+});
+
+test('a missing, short, oversized, duplicate or malformed comparison page fails closed', async () => {
+  const variants = [
+    data => ({ ...data, commits: undefined }),
+    data => ({ ...data, commits: data.commits.slice(1) }),
+    data => ({ ...data, commits: [...data.commits, { sha: 'c'.repeat(40) }] }),
+    data => ({ ...data, commits: [{ sha: '1'.padStart(40, '0') }, ...data.commits.slice(1)] }),
+    data => ({ ...data, commits: [{ sha: 'not-a-full-sha' }, ...data.commits.slice(1)] }),
+    data => ({ ...data, commits: [{ sha: OTHER }, ...data.commits.slice(1)] }),
+  ];
+  for (const variant of variants) {
+    const f = comparisonPages(201, (data, page) => page === 2 ? variant(data) : data);
+    await assert.rejects(readComparison(f), /history|duplicate|identity/);
+    assert.equal(f.calls.length, 2, 'No later page may hide the first invalid page.');
+  }
+});
+
+test('every page binds the same base, merge base, status, totals and ahead/behind metadata', async () => {
+  for (const patch of [{ base_commit: { sha: SHA } }, { merge_base_commit: { sha: SHA } }, { status: 'diverged' },
+    { status: 'identical' }, { total_commits: 202, ahead_by: 202 }, { ahead_by: 202 }, { behind_by: 1 }]) {
+    const f = comparisonPages(201, (data, page) => page === 2 ? { ...data, ...patch } : data);
+    await assert.rejects(readComparison(f), /base|diverged|metadata/);
+    assert.equal(f.calls.length, 2);
+  }
+});
+
+test('the final page cannot invent, omit or substitute the requested head', async () => {
+  const f = comparisonPages(201, (data, page) => page === 3 ? { ...data, commits: [{ sha: 'c'.repeat(40) }] } : data);
+  await assert.rejects(readComparison(f), /another head/);
+  const duplicate = comparisonPages(201, (data, page) => page === 1 ? { ...data, commits: [data.commits[0], data.commits[0], ...data.commits.slice(2)] } : data);
+  await assert.rejects(readComparison(duplicate), /duplicate/);
+});
+
+test('comparison bounds reject excessive history, invalid files and deadline expiry without reading onward', async () => {
+  for (const total of [10001, -1, 1.5]) {
+    const f = comparisonPages(201, data => ({ ...data, total_commits: total, ahead_by: total }));
+    await assert.rejects(readComparison(f), /bounded/); assert.equal(f.calls.length, 1);
+  }
+  for (const files of [undefined, [{ filename: 3 }], Array.from({ length: 301 }, () => ({ filename: 'README.md' }))]) {
+    const f = comparisonPages(201, (data, page) => page === 1 ? { ...data, files } : data);
+    await assert.rejects(readComparison(f), /files|changed-file/); assert.equal(f.calls.length, 1);
+  }
+  const lateFiles = comparisonPages(201, (data, page) => page === 2 ? { ...data, files: [{ filename: 'late.java' }] } : data);
+  await assert.rejects(readComparison(lateFiles), /Later/);
+  const expired = comparisonPages();
+  await assert.rejects(readComparison({ ...expired, now: () => 500 }), /deadline/); assert.equal(expired.calls.length, 0);
+  let tick = 100; const during = comparisonPages();
+  await assert.rejects(readComparison({ ...during, now: () => tick, api: async (...args) => { const data = await during.api(...args); tick = 500; return data; } }), /deadline/);
+  assert.equal(during.calls.length, 1);
 });
 test('master advancing blocks before checks and immediately before returning ready', async () => {
   await assert.rejects(inspect(fixture({ master: OTHER })), /Master advanced/);

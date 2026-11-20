@@ -78,7 +78,7 @@ public class CostTap extends CostPart {
         // the activation was offered. A failed precondition cannot pay {T}.
         if (!canPay(ability, payer, effect)) return false;
         Card hostCard = ability.getHostCard();
-        if (hostCard.tap(true, ability, payer)) {
+        if (hostCard.tap(ability, payer)) {
             final Map<AbilityKey, Object> runParams = AbilityKey.newMap();
             runParams.put(AbilityKey.Cards, new CardCollection(hostCard));
             payer.getGame().getTriggerHandler().runTrigger(TriggerType.TapAll, runParams, false);

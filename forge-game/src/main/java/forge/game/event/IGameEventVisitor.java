@@ -22,6 +22,7 @@ public interface IGameEventVisitor<T> {
     T visit(GameEventGameFinished event);
     T visit(GameEventGameOutcome event);
     T visit(GameEventFlipCoin event);
+    T visit(GameEventFlipOntoBattlefield event);
     T visit(GameEventGameStarted event);
     T visit(GameEventGameRestarted event);
     T visit(GameEventLandPlayed event);
@@ -39,6 +40,7 @@ public interface IGameEventVisitor<T> {
     T visit(GameEventPlayerStatsChanged event);
     T visit(GameEventRandomLog event);
     T visit(GameEventRollDie event);
+    T visit(GameEventRollDice event);
     T visit(GameEventScry event);
     T visit(GameEventShuffle event);
     T visit(GameEventSpeedChanged event);
@@ -83,6 +85,7 @@ public interface IGameEventVisitor<T> {
         public T visit(GameEventGameFinished event) { return null; }
         public T visit(GameEventGameOutcome event) { return null; }
         public T visit(GameEventFlipCoin event) { return null; }
+        public T visit(GameEventFlipOntoBattlefield event) { return null; }
         public T visit(GameEventGameStarted event) { return null; }
         public T visit(GameEventGameRestarted event) { return null; }
         public T visit(GameEventLandPlayed event) { return null; }
@@ -99,6 +102,7 @@ public interface IGameEventVisitor<T> {
         public T visit(GameEventPlayerStatsChanged event) { return null; }
         public T visit(GameEventRandomLog event) { return null; }
         public T visit(GameEventRollDie event) { return null; }
+        public T visit(GameEventRollDice event) { return null; }
         public T visit(GameEventScry event) { return null; }
         public T visit(GameEventShuffle event) { return null; }
         public T visit(GameEventSpeedChanged event) { return null; }

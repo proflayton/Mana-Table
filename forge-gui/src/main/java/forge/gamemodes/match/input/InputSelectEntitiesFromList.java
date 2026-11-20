@@ -1,22 +1,27 @@
 package forge.gamemodes.match.input;
 
 import forge.game.GameEntity;
+import forge.game.GameEntityView;
 import forge.game.ability.AbilityUtils;
 import forge.game.ability.ApiType;
 import forge.game.card.Card;
 import forge.game.card.CardLists;
+import forge.game.card.CardView;
 import forge.game.cost.CostExile;
 import forge.game.cost.CostTapType;
 import forge.game.keyword.Keyword;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
+import forge.gamemodes.match.Selection;
 import forge.player.PlayerControllerHuman;
+import forge.trackable.TrackableObject;
 import forge.util.ITriggerEvent;
 import forge.util.Localizer;
 import forge.util.TextUtil;
 import forge.util.collect.FCollection;
 import forge.util.collect.FCollectionView;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
@@ -49,6 +54,18 @@ public class InputSelectEntitiesFromList<T extends GameEntity> extends InputSele
     }
 
     @Override
+    protected Selection getSelection() {
+        final List<CardView> cards = new ArrayList<>();
+        final List<TrackableObject> players = new ArrayList<>();
+        for (T choice : validChoices) {
+            if (choice instanceof Card card) cards.add(card.getView());
+            else if (choice instanceof Player player) players.add(player.getView());
+        }
+        return new Selection(cards, min, max, players,
+                new ArrayList<>(GameEntityView.getEntityCollection(selected)), List.of());
+    }
+
+    @Override
     protected boolean onCardSelected(final Card c, final List<Card> otherCardsToSelect, final ITriggerEvent triggerEvent) {
         if (!selectEntity(c)) {
             return false;
@@ -58,6 +75,7 @@ public class InputSelectEntitiesFromList<T extends GameEntity> extends InputSele
                 selectEntity(other);
             }
         }
+        showSelection();
         refresh();
         return true;
     }
@@ -78,6 +96,7 @@ public class InputSelectEntitiesFromList<T extends GameEntity> extends InputSele
         if (!selectEntity(p)) {
             return;
         }
+        showSelection();
         refresh();
     }
 
@@ -102,7 +121,6 @@ public class InputSelectEntitiesFromList<T extends GameEntity> extends InputSele
         } else {
             selected.add((T)c);
         }
-        onSelectStateChanged(c, !entityWasSelected);
 
         return true;
     }
@@ -186,9 +204,6 @@ public class InputSelectEntitiesFromList<T extends GameEntity> extends InputSele
             massSelectMode = massSelectMode.next();
             updateMassSelectButton();
             // Remove all current selections
-            this.getSelected().forEach(selected -> {
-                onSelectStateChanged(selected, false);
-            });
             this.getSelected().clear();
             if (massSelectMode == MassSelectMode.MINE) { // Select all valid targets owned by player
                 for (T v : validChoices) {
@@ -198,7 +213,6 @@ public class InputSelectEntitiesFromList<T extends GameEntity> extends InputSele
                     if (v instanceof Card c) {
                         if (c.getController().equals(getController().getPlayer())) {
                             selected.add(v);
-                            onSelectStateChanged(v, true);
                         }
                     }
                 }
@@ -208,9 +222,9 @@ public class InputSelectEntitiesFromList<T extends GameEntity> extends InputSele
                         break;
                     }
                     selected.add(c);
-                    onSelectStateChanged(c, true);
                 }
             }
+            showSelection();
         }
     }
 }

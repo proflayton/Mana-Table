@@ -4,6 +4,10 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.common.eventbus.Subscribe;
 import forge.game.ExecutionTracker;
+import forge.game.GameEndReason;
+import forge.game.event.GameEventGameOutcome;
+import forge.game.event.GameEventSpellAbilityCast;
+import forge.game.event.StackAnnouncementReceipt;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
@@ -17,6 +21,142 @@ import static org.testng.Assert.*;
 public class ExecutionJourneyTest {
     private static final Gson JSON = new Gson();
     private static final String MARE = "Loch Mare";
+
+    @DataProvider(name = "mandatoryLandfallCycle")
+    public Object[][] mandatoryLandfallCycle() { return new Object[][] { { false }, { true } }; }
+
+    @Test(dataProvider = "mandatoryLandfallCycle", groups = "canonical-interaction", timeOut = 90000)
+    public void aRuleLoopDrawRetiresOnlyTheUnstackedTriggerWhileAnOrdinaryLandfallResolves(boolean loop) throws Exception {
+        var setup = loop ? List.of("Sporemound", "Life and Limb") : List.of("Sporemound");
+        try (var game = new RulesScenario("execution-landfall-cycle-" + loop, Map.of(0, setup))) {
+            var main = main(game);
+            var transitions = new java.util.concurrent.CopyOnWriteArrayList<ExecutionTracker.Transition>();
+            var announcements = new java.util.concurrent.CopyOnWriteArrayList<StackAnnouncementReceipt>();
+            var castIds = new java.util.concurrent.CopyOnWriteArrayList<String>();
+            var atOutcome = new java.util.concurrent.CopyOnWriteArrayList<ExecutionTracker.Occurrence>();
+            var listener = new Object() {
+                @Subscribe public void transitioned(ExecutionTracker.Transition value) { transitions.add(value); }
+                @Subscribe public void announced(StackAnnouncementReceipt value) { announcements.add(value); }
+                @Subscribe public void cast(GameEventSpellAbilityCast value) {
+                    String id = game.table.game.getExecutions().currentId();
+                    if (id != null) castIds.add(id);
+                }
+                @Subscribe public void outcome(GameEventGameOutcome value) {
+                    atOutcome.addAll(game.table.game.getExecutions().occurrences());
+                }
+            };
+            game.table.game.subscribeToEvents(listener);
+            try {
+                // This ordinary offered land play starts the real landfall chain.
+                // No repeat counter, trigger list or game outcome is modified by the test.
+                var forest = zone(viewer(main.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
+                start(game, main, forest, "");
+                var settled = settleLandfallCycle(game, loop, transitions);
+                var landfall = transitions.stream().filter(value -> value.occurrence().kind().equals("trigger")
+                        && "Sporemound".equals(value.occurrence().sourceName())).toList();
+                var cancelled = landfall.stream().filter(value -> "cancelled".equals(value.occurrence().outcome())).toList();
+                var resolved = landfall.stream().filter(value -> "resolved".equals(value.occurrence().outcome())).toList();
+                assertFalse(landfall.isEmpty(), "The actual Forest must produce a rules-owned landfall occurrence");
+                assertTrue(landfall.stream().noneMatch(value -> "failed".equals(value.occurrence().outcome())),
+                        "A rule draw is not an execution exception");
+                if (loop) {
+                    // The imported engine permits 50 repetitions, then refuses the next addition.
+                    assertEquals(resolved.size(), 50, "Actual mandatory triggers reach the existing repeat bound");
+                    assertEquals(cancelled.size(), 1, "The refused prepared addition receives exactly one terminal transition");
+                    String id = cancelled.get(0).occurrence().id();
+                    var steps = landfall.stream().filter(value -> value.occurrence().id().equals(id))
+                            .map(value -> value.occurrence().step()).toList();
+                    assertEquals(steps.get(0), "preparation");
+                    assertEquals(steps.get(steps.size() - 1), "complete");
+                    assertFalse(steps.contains("stack") || steps.contains("resolution"),
+                            "Preparation or cost staging does not pretend that the refused addition stacked or resolved");
+                    assertTrue(announcements.stream().noneMatch(value -> value.executionId().equals(id)),
+                            "A refused addition never announces a stack entry");
+                    assertFalse(castIds.contains(id), "A refused addition never emits the actual stack-cast event");
+                    assertEquals(atOutcome.stream().filter(value -> value.id().equals(id)).map(ExecutionTracker.Occurrence::outcome)
+                            .toList(), List.of("cancelled"), "The terminal game publication already contains the retired occurrence");
+                    assertTrue(game.table.game.getOutcome().isDraw());
+                    assertEquals(game.table.game.getOutcome().getWinCondition(), GameEndReason.Draw);
+                    assertEquals(text(settled.getAsJsonObject("outcome"), "kind"), "draw");
+                } else {
+                    assertEquals(resolved.size(), 1, "The same ordinary landfall without Life and Limb resolves once");
+                    assertTrue(cancelled.isEmpty());
+                    assertTrue(atOutcome.isEmpty());
+                    assertFalse(game.table.game.isGameOver());
+                    String id = resolved.get(0).occurrence().id();
+                    assertEquals(announcements.stream().filter(value -> value.executionId().equals(id)).count(), 1L);
+                    assertEquals(castIds.stream().filter(id::equals).count(), 1L);
+                    assertEquals(zone(viewer(settled), "Battlefield").getAsJsonArray("cards").asList().stream()
+                            .map(value -> value.getAsJsonObject()).filter(value -> text(value, "type").contains("Saproling")).count(), 1L,
+                            "The control produces its actual single token instead of an artificial terminal result");
+                }
+            } finally {
+                var proof = new LinkedHashMap<String, Object>();
+                proof.put("loop", loop);
+                proof.put("transitions", transitions.stream().map(value -> {
+                    var row = new LinkedHashMap<String, Object>();
+                    var occurrence = value.occurrence();
+                    row.put("id", occurrence.id()); row.put("kind", occurrence.kind());
+                    row.put("source", occurrence.sourceName()); row.put("step", occurrence.step());
+                    row.put("outcome", occurrence.outcome()); return row;
+                }).toList());
+                proof.put("announcedExecutionIds", announcements.stream().map(StackAnnouncementReceipt::executionId).toList());
+                proof.put("castExecutionIds", castIds);
+                proof.put("terminalViews", game.table.testViews());
+                try { Files.writeString(game.evidence.resolve("landfall-cycle-proof.json"), JSON.toJson(proof)); }
+                finally { game.table.game.unsubscribeFromEvents(listener); }
+            }
+        }
+    }
+
+    private static JsonObject settleLandfallCycle(RulesScenario game, boolean loop,
+            List<ExecutionTracker.Transition> transitions) throws Exception {
+        // Keep the fixture's usual 45-second driver ceiling. Read the raw
+        // terminal projections: RulesScenario.state deliberately rejects finished
+        // games, and catching that assertion would not prove a draw.
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(45);
+        long terminalDeadline = Long.MAX_VALUE;
+        var submitted = new HashMap<Integer, String>();
+        var projectionJson = new com.google.gson.GsonBuilder().serializeNulls().create();
+        while (System.nanoTime() < Math.min(deadline, terminalDeadline)) {
+            var views = game.table.testViews();
+            var states = views.stream().map(value -> projectionJson.toJsonTree(value).getAsJsonObject()).toList();
+            for (var state : states) assertEquals(text(state, "error"), "", "The rules fixture must not fail while approaching its real outcome");
+            if (states.stream().allMatch(state -> text(state, "status").equals("finished") && state.get("prompt").isJsonNull())) {
+                assertTrue(loop, "The ordinary single-trigger control must not end its game");
+                for (var state : states) {
+                    assertEquals(text(state.getAsJsonObject("outcome"), "kind"), "draw");
+                    assertEquals(text(state, "result"), "Draw");
+                }
+                return states.get(0);
+            }
+            if (game.table.game.isGameOver()) {
+                if (terminalDeadline == Long.MAX_VALUE)
+                    terminalDeadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+                Thread.sleep(1);
+                continue;
+            }
+            var actor = states.get(0);
+            boolean resolved = transitions.stream().anyMatch(value -> "Sporemound".equals(value.occurrence().sourceName())
+                    && "resolved".equals(value.occurrence().outcome()));
+            if (!loop && resolved && actor.getAsJsonArray("stack").isEmpty() && !actor.get("prompt").isJsonNull()
+                    && text(actor.getAsJsonObject("prompt"), "inputType").equals("InputPassPriority")) return actor;
+            for (int seat = 0; seat < states.size(); seat++) {
+                var state = states.get(seat);
+                if (state.get("prompt").isJsonNull()) continue;
+                var prompt = state.getAsJsonObject("prompt");
+                String id = text(prompt, "id");
+                if (id.equals(submitted.get(seat))) continue;
+                assertEquals(text(prompt, "inputType"), "InputPassPriority",
+                        "A new required choice must receive an explicit fixture journey");
+                assertTrue(prompt.get("okEnabled").getAsBoolean());
+                if (game.answer(new Input(seat, state, prompt), Map.of("action", "ok"))) submitted.put(seat, id);
+            }
+            Thread.sleep(5);
+        }
+        fail("The actual landfall chain did not settle under the existing driver and terminal-publication ceilings");
+        return null;
+    }
 
     @Test(groups = "canonical-interaction", timeOut = 90000)
     public void consumingANestedManaSourceResumesItsActualUnfinishedPayment() throws Exception {

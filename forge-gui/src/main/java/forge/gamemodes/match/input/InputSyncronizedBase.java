@@ -1,6 +1,7 @@
 package forge.gamemodes.match.input;
 
 import forge.util.IHasForgeLog;
+import forge.gamemodes.match.Selection;
 import forge.gui.FThreads;
 import forge.gui.error.BugReporter;
 import forge.player.PlayerControllerHuman;
@@ -22,7 +23,7 @@ public abstract class InputSyncronizedBase extends InputBase implements InputSyn
         FThreads.assertExecutedByEdt(false);
         netLog.trace("awaitLatchRelease() starting on {}, thread = {}", this.getClass().getSimpleName(), Thread.currentThread().getName());
         try (var suspended = getController().getGame().getAction().suspendState()) {
-            cdlDone.await();
+            getController().getGui().awaitInput(cdlDone);
         } catch (final InterruptedException e) {
             BugReporter.reportException(e);
         }
@@ -41,18 +42,17 @@ public abstract class InputSyncronizedBase extends InputBase implements InputSyn
 
     @Override
     public final void stop() {
-        netLog.trace("stop() called on {}, latch count before = {}", this.getClass().getSimpleName(), cdlDone.getCount());
         onStop();
-
-        // ensure input won't accept any user actions.
-        FThreads.invokeInEdtNowOrLater(this::setFinished);
+        // Retire the input before a selection cleanup can publish a new frame.
+        // The callback may inspect this input before queue removal completes.
+        setFinished();
+        getController().getGui().setSelection(Selection.ofChosen(getController().getKeptMarks()));
 
         // thread irrelevant
         if (getController().getInputQueue().getInput() != null) {
             getController().getInputQueue().removeInput(InputSyncronizedBase.this);
         }
         cdlDone.countDown();
-        netLog.trace("stop() done, latch count after = {}", cdlDone.getCount());
     }
 
     protected void onStop() { }

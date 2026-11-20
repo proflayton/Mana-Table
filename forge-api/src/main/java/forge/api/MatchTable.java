@@ -108,6 +108,9 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         presence = new MatchPresence(id, monotonicMillis);
         this.format = format;
         var rules = new GameRules(GameType.Constructed);
+        // Native Undo is the certified reversible-mana capability, not general
+        // history rewind. Configure this game before any upstream checkpoint.
+        rules.setGeneralUndoAllowed(false);
         if (format.equals("Commander")) rules.addAppliedVariant(GameType.Commander);
         rules.setGamesPerMatch(1);
         rules.setWarnAboutAICards(false);
