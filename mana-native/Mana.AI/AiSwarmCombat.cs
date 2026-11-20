@@ -157,7 +157,7 @@ internal static class AiSwarmCombat
             foreach (var card in creatures[other.Id]) {
                 // Count tapped/sick and phased-out bodies too: they may untap
                 // or phase in before a later combat. Assume no own blockers.
-                if (!work.TrySpend() || !Ordinary(card)) { knownReturn = false; break; }
+                if (!work.TrySpend() || (legacy ? !Ordinary(card) : !KnownNominalReturnBody(card))) { knownReturn = false; break; }
                 long damage = CasualTableAssessment.UnblockedDamage(card);
                 returning += damage;
                 if (!legacy) incoming.Add(new(card, damage));
@@ -242,6 +242,11 @@ internal static class AiSwarmCombat
 
     private static bool Lethal(List<Card> cohort, int capacity, int life)
         => cohort.Count > capacity && cohort.Select(CasualTableAssessment.UnblockedDamage).OrderDescending().Skip(capacity).Sum() >= life;
+
+    // Typed return-channel/trait coverage belongs to NominalUnblockedReturn.
+    // Keep the source shape known without applying the attack/block whitelist.
+    private static bool KnownNominalReturnBody(Card card) => !card.FaceDown && card.Power is >= 0 && card.Toughness is > 0
+        && card.States is { } states && !states.IsDefault && !card.CombatKeywords.IsDefault;
 
     private static bool Ordinary(Card card) => !card.FaceDown && card.Power is >= 0 && card.Toughness is > 0
         && card.States is { } states && states.Where(state => state.Kind == "ability").All(state => OrdinaryKeywords.Contains(state.Key))

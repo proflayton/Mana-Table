@@ -6,6 +6,8 @@ internal static partial class AiSwarmCombatRegression
 {
     internal static async Task RunAsync(Action<bool, string> check)
     {
+        await TypedNominalReturnCoverage(check);
+        await TypedNominalReturnControls(check);
         await TypedCommanderReturns(check);
         await Stage(check, Enumerable.Repeat(2, 8).ToArray(), 2, 9, expected: 7);
         await Stage(check, [2, 2, .. Enumerable.Repeat(1, 32)], 7, 23, expected: 30,

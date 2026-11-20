@@ -965,6 +965,23 @@ replies must not change the provider's current authority. Invalid commands do
 not retire a current read; genuinely superseded post-command readbacks still
 fail with typed uncertainty and exactly one command dispatch.
 
+The same authored pipe probe holds a poll's lobby discovery until an explicit
+command has dispatched and begun its real readback. The obsolete poll must not
+then invoke Forge match observation: only the initial read and command readback
+enter the pipe, and the command is sent once. On the unfenced client this
+controlled schedule admitted a newer poll revision and produced same-admission
+`RevisionBehind` uncertainty for the command readback. This reproduces a possible
+schedule, not the missing raw reply from the original release smoke failure or
+a Magic game. The independent genuine post-command competition control still
+expects typed uncertainty, no cache substitution and no hidden discovery retry.
+`PollInvocationRegression` runs inside the existing operation-reservation and
+full client suites. It covers ordinary polls with and without lobby discovery,
+plus held-lobby reset, game/viewer handoff, restoration and lobby-owner
+replacement. The no-lobby branch shares the invocation fence; these controls do
+not inject a Task.Run scheduler or claim to force its late-start interleaving.
+Existing post-invocation Close controls retain the command and metadata wire
+lifetime coverage; a closed session does not pump its queued poll-finally action.
+
 `OperationReservationRegression` holds a quiet reading acknowledgement while a
 foreground gesture and ordinary poll arrive. A valid newer poll must remain
 admissible until the gesture actually owns the lane. Controlled wire and owner
@@ -1445,6 +1462,31 @@ require one named starting creature to receive the counter or survive unrelated
 combat. Receipt regressions reject foreign seats, non-allies, cost selections
 and missing owner, execution, target or baseline facts. The enemy-removal golden
 keeps its declared lethal target and surviving ally/nonlethal enemy checks.
+
+The AI release evaluation retains those thirteen goldens in their original order
+and appends `typed-return-vigilance-elimination` as the fourteenth. Its test-only
+pregame fixture supplies six printed 2/2 vigilance creatures, Crossroads haste,
+Power Play's first turn, three single blockers, and a remaining prowess creature
+and zero-power defender. Normal policy inputs must stage six exact current
+attackers, commit three real blocks, and produce attributed combat damage and
+the target's elimination. Authorized actor activity supplies combat impacts;
+the independent spectator supplies board, blocks, elimination and untapped
+survivor proof, with spectator activity remaining empty. This controlled partial
+game supplies no natural-game or campaign-deck qualification credit.
+Attack and block declaration IDs remain separate owned input scopes. Exact
+cohort and block pairs, the first actor turn and the declared fixture's absence
+of extra-combat/extra-turn effects delimit this combat; the test does not invent
+a shared spectator or engine-wide combat identifier.
+Diagnostic errors, policy review findings and evidence capture failures prevent
+a pass. Graphics-free controls require empty diagnostic evidence and preserve
+the original provider exception when a secondary report write fails.
+
+The required CI engine suite also runs `--ai-typed-return-golden` against the
+verified fixture launcher, production dependency, packaged resources and exact
+source manifest. Its private `typed-return-golden-checks` evidence is retained on
+failure through the existing JSON/log/gzip artifact rules. The 30-second golden,
+10-second/4096-unit policy allowance, existing thirteen cases, four natural
+160-turn/180-second release games, and CI job limits remain required.
 
 For varied team play, run the compiled native test driver with the normal fresh
 profile/runtime/resource arguments and:
@@ -1946,7 +1988,7 @@ uses these same provenance checks.
 
 The wrapper is a test-only launcher for controlled positions using the exact
 production engine. It is checked against the shipping JAR and never supplies a
-shipping scenario API. The existing process initializes one JVM for the ten
+shipping scenario API. The existing process initializes one JVM for the declared
 controlled native goldens and subsequent games. The release campaign uses four
 cyclic seat rotations, each bounded by 160 global turns and 180 seconds. This is
 at most twelve minutes of nominal game budget, separate from fast CI. Limits are
@@ -1957,6 +1999,36 @@ draw can pass; the driver does not invent individual loss reasons which the
 provider omits. It records the public state and outcome before its only
 `StopSimulation` cleanup call. Forced cleanup, aborts and automation faults cannot
 manufacture a finish.
+
+The manual all-AI driver keeps its original one-millisecond idle timer. After
+the existing independent spectator/privacy/parity checks and all stop checks,
+strict public board progress can instead use `Task.Yield`. A per-Match helper
+binds the actual game and original public roster, baselines the first validated
+spectator read, and retains revision/board/restoration ceilings through invalid,
+foreign or rolled-back input. Catch-up first baselines; metadata-only or
+unchanged reads restore the timer. This changes no policy, private ownership,
+provider request, consent, watchdog, presentation beat or qualification limit.
+The next host step still obtains its own current scoped observation.
+
+`--presentation-group ai-campaign-wait` exercises that shared wait boundary with
+the actual manual host, production policy and authored independent spectator
+stream. The behavior-preserving extracted timer baseline blocks at two reads;
+the identical valid fixture with active yielding reaches its third independent
+read and one current command without advancing the fake driver timer. An
+unchanged follow-up waits again. Separate controls cover static metadata,
+public roster/identity changes, B100/rollback/catch-up recovery, restoration
+epochs, bounded yield counts, original wait exceptions and scalar summaries.
+They reuse existing continuation/profile grading checks, not a new deadline API.
+These are scheduling controls, not a rules-game result or proof of a cutoff fix.
+
+Each game adds a constant-size `Scheduling` result with branch counts and actual
+Stopwatch elapsed around the awaited timer/yield. These durations include
+continuation dispatch and are neither CPU nor pure blocked time; no threshold
+affects qualification. The first frozen d55 cutoff did not contain these spans.
+Separate timer calibration and sparse checkpoints cannot establish its saved
+time, and all previous first-attempt evidence stays unchanged.
+`Scheduling` is optional additive test-report data: older reports may omit it;
+persisted player profiles and IPC protocols are unchanged.
 
 The initial real-provider conformance driver discards explicitly expired source
 reads and requires a strictly newer observation of the same game before querying

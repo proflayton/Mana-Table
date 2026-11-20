@@ -9,6 +9,7 @@ internal static class OperationReservationRegression
     private static readonly TimeSpan HangGuard = TimeSpan.FromSeconds(5);
     internal static async Task RunAsync(Action<bool, string> check)
     {
+        await PollInvocationRegression.RunAsync(check);
         await QueuedGestureRetainsCurrentPollAsync(check);
         await SameDecisionDispatchesAfterOwnerApplyAsync(check);
         await RetireUnsentAsync(check);

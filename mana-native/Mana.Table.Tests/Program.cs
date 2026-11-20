@@ -44,6 +44,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-configured-simulation");
         testRun |= args.Contains("--ai-library-acquisition-journey");
         testRun |= args.Contains("--smoke-ai-team-goldens");
+        testRun |= args.Contains("--ai-typed-return-golden");
         testRun |= args.Contains("--smoke-ai-resources");
         testRun |= args.Contains("--smoke-polled-mixed");
         testRun |= args.Contains("--smoke-polled-fanout");
@@ -201,6 +202,13 @@ internal static class Program
             if (args.Contains("--smoke-ai-team-goldens")) {
                 AiReleaseGoldens.RunCooperativeStandaloneAsync(paths, Arg("--production-engine-jar")
                     ?? throw new ArgumentException("Team goldens require the actual production engine dependency.")).GetAwaiter().GetResult(); return 0;
+            }
+            if (args.Contains("--ai-typed-return-golden")) {
+                AiReleaseGoldens.RunTypedReturnStandaloneAsync(paths, Arg("--production-engine-jar")
+                    ?? throw new ArgumentException("Typed return golden requires the production engine dependency."),
+                    Arg("--source-revision") ?? throw new ArgumentException("Typed return golden requires its source revision."),
+                    Arg("--source-manifest") ?? throw new ArgumentException("Typed return golden requires its source manifest."))
+                    .GetAwaiter().GetResult(); return 0;
             }
             if (args.Contains("--smoke-ai-resources")) {
                 AiResourceQualificationJourney.RunStandaloneAsync(paths, Arg("--production-engine-jar")

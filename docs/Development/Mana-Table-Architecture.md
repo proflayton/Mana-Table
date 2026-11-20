@@ -1392,6 +1392,19 @@ credit, accepted receipt, rules consequence or renewed decision allowance.
 The existing operation clock schedules the idle wait; announcement pacing and
 all current actor, offer and command permissions remain separate gates.
 
+The separate manual all-AI campaign has no background host timer or configured
+presentation pacing. Its test-driver wait follows the existing independent
+spectator checks and natural/turn/time stop checks. A small per-Match helper may
+cooperatively yield after validated strict public board progress, while its
+original one-millisecond timer remains for baseline, idle, metadata-only,
+foreign or invalid input. Bound game/roster and scalar revision, board and
+restoration high-waters prevent rollback from manufacturing progress; recovery
+first requires a complete baseline. This helper never inspects private scopes
+or changes a command, provider call, policy allowance, consent or grade. It
+records only aggregate wait counts/elapsed ticks through the existing result
+writer. Await elapsed includes continuation scheduling and supplies no CPU or
+historical throughput claim.
+
 The source implementation after 0.2.292 separates announcement timing from
 cohort validity. With complete typed public progress, a phase, action-version or
 owned-choice-version change alone ends a captured cohort without restarting its
@@ -1432,6 +1445,20 @@ poll. The current replica and its synchronization timestamp remain unchanged;
 the next ordinary poll can discover fresh authority. A command or post-command
 readback still uses the normal uncertain-receipt failure path. Catching a safe
 read at this owner must not turn a possibly executed command into a retry.
+
+Before a poll worker invokes match observation, it rechecks its captured session
+epoch, bootstrap audience and lobby owner under the same session gate used by
+command admission. This check follows the optional awaited lobby discovery and
+also covers a late-starting poll without lobby discovery. The shipping Forge
+adapter captures its provider read lease synchronously during that invocation;
+the returned task is awaited outside the session gate. Thus an obsolete worker
+cannot acquire a post-command Forge lease and race the actual command readback.
+Already-invoked reads retain their existing provider and publication fences.
+This adds no observation retry, command replay or timeout extension. It does not
+impose synchronous lease capture on arbitrary `IMatchConnection` implementations:
+a wrapper that delays its underlying invocation must preserve its own ownership.
+`BindLobby` remains an owner-thread operation with the existing reply-side owner
+reference check; this gate is not a general concurrent lobby-writer contract.
 
 The Forge provider also fences its own command-authority cache. An ordinary or
 owned read captures its audience, command-admission sequence and observed anchor

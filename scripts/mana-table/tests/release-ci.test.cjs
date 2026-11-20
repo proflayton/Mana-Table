@@ -380,6 +380,13 @@ test('a closed two-suite matrix preserves every controlled and real-engine check
     && acquisition[0].index < runs[0].indexOf('--profile dist/mixed-lobby-checks'),
   'Actual acquisition must follow headless engine checks and precede the mixed-lobby command.');
   const acquisitionEvidence = steps.find(step => /name: mana-native-verification-evidence-/.test(step));
+  const typedReturn = [...runs[0].matchAll(/^\s+dotnet \.\/dist\/ci-inputs\/harness\/Mana.Table.Tests.dll --ai-typed-return-golden[^\n]+$/gm)];
+  assert.equal(typedReturn.length, 1, 'The required engine suite runs the typed return real-engine regression exactly once.');
+  assert.match(typedReturn[0][0], /--engine-jar \$env:MANA_NATIVE_FIXTURE_LAUNCHER --production-engine-jar \(Join-Path \$env:MANA_NATIVE_PACKAGE 'engine\/forge-engine.jar'\)/);
+  assert.match(typedReturn[0][0], /--engine-resources \(Join-Path \$env:MANA_NATIVE_PACKAGE 'engine'\) --source-revision \$env:GITHUB_SHA --source-manifest dist\/ci-inputs\/ci-engine-manifest.json --profile dist\/typed-return-golden-checks$/);
+  assert.match(runs[0], /--profile dist\/typed-return-golden-checks\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw 'Actual typed return vigilance elimination golden failed\.' \}/);
+  assert.ok(acquisition[0].index < typedReturn[0].index && typedReturn[0].index < runs[0].indexOf('--profile dist/mixed-lobby-checks'),
+    'The typed return check follows verified engine/acquisition inputs and precedes the mixed-lobby journey.');
   assert.ok(acquisitionEvidence, 'The acquisition journey must retain evidence through the existing native verification upload.');
   assert.match(acquisitionEvidence, /if: always\(\)/, 'Failed acquisition evidence must also be retained.');
   for (const extension of ['json', 'log', 'jsonl.gz']) assert.ok(acquisitionEvidence.includes(`dist/*-checks/**/*.${extension}`),

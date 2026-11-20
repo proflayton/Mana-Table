@@ -400,15 +400,26 @@ public sealed partial class ClientSession
         var context = ClientFailureContext.Capture(epoch, State);
         var lobbyOwner = lobbyReplica;
         ObservationAudience? audience = State is { } current ? new(current) : null;
-        // Called only by posted owner callbacks. A bootstrap read can bind an
-        // empty replica, but cannot replace an audience accepted while it waited.
+        // Checked by the worker under observationGate and by posted owner
+        // callbacks. Bootstrap cannot replace an audience accepted while waiting.
         bool OwnsObservation() => epoch == replica.Epoch && (audience != null || State == null)
             && (!withLobby || ReferenceEquals(lobbyOwner, lobbyReplica));
         _ = Task.Run(async () => {
             try {
                 var lobby = withLobby ? await (setup ?? throw new InvalidOperationException("No lobby connection")).LobbyAsync() : null;
                 GameSnapshot? state;
-                try { state = !withLobby || lobby?.MatchActive == true ? await connection.ObserveAsync() : null; }
+                try {
+                    Task<GameSnapshot?> observation;
+                    lock (observationGate) {
+                        if (Closed || !OwnsObservation()) return;
+                        // Forge captures its provider read lease synchronously.
+                        // An old worker must not begin that read after a command
+                        // advances the session epoch under this same gate.
+                        observation = !withLobby || lobby?.MatchActive == true
+                            ? connection.ObserveAsync() : Task.FromResult<GameSnapshot?>(null);
+                    }
+                    state = await observation;
+                }
                 // Discovery produced no observation or command receipt. Keep the
                 // current replica and let the next ordinary poll read afresh.
                 catch (EngineObservationSupersededException) { return; }
