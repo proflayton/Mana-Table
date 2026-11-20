@@ -223,6 +223,8 @@ public class ReversibleManaActionTest {
             // generating its own pair would discard that cache and draw again.
             MyRandom.setRandom(provider);
             var wrapped = MyRandom.getRandom();
+            assertEquals(f.game.getReversibleManaAction().current(), offered,
+                    "Installing the provider preserves the same pending offer before the cached result is consumed");
             f.game.getAction().withState(() -> assertEquals(wrapped.nextGaussian(), expected.nextGaussian()));
             assertEquals(f.restore(offered), ReversibleManaAction.Result.REJECTED,
                     "A cached random result is new information even when it consumes no fresh entropy");
