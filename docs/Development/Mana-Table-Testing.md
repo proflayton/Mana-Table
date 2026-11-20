@@ -37,6 +37,12 @@ tokens, counters or outcomes. The existing source-bound headless engine smoke
 also checks the formerly missing printings and sticker-sheet catalog identity
 through the packaged JVM/resources, then imports a disposable Replicator deck.
 
+`CardCatalogIndexTest` protects printing/foil ordering, distinct face/type/rules
+search, Unicode aliases and fresh constructor inputs while normalization reuses
+equal raw text within one catalog build. Equal names alone never authorize
+reusing different face descriptors. `AiPodSelectionTest` retains its existing
+45-second method limits and guest-catalog disclosure checks.
+
 The existing `ExecutionJourneyTest` includes a genuine mandatory landfall loop
 and a non-looping control. A rules-driven draw must cancel the prepared addition
 before terminal publication without inventing a stack entry or cast announcement.
