@@ -1,0 +1,1506 @@
+{
+  "id": 28555340,
+  "name": "Homer",
+  "deckFormat": 3,
+  "updatedAt": "2026-11-20T05:36:13.591026Z",
+  "_manaSource": {
+    "url": "https://archidekt.com/decks/28555340/hermit",
+    "retrievedUtc": "2026-11-20T05:43:51.7755905Z",
+    "originalResponseSha256": "98a55348df3f1f92d85c9718a00e14d0f52cb5dd29908afe300162336da497db",
+    "scope": "Minimal public import snapshot; owner/profile/image/price data omitted. No live network in tests."
+  },
+  "categories": [
+    {
+      "name": "Tokens",
+      "includedInDeck": true
+    },
+    {
+      "name": "Copy",
+      "includedInDeck": true
+    },
+    {
+      "name": "Ramp",
+      "includedInDeck": true
+    },
+    {
+      "name": "Recursion",
+      "includedInDeck": true
+    },
+    {
+      "name": "Landfall",
+      "includedInDeck": true
+    },
+    {
+      "name": "Commander",
+      "includedInDeck": true
+    },
+    {
+      "name": "Artifact",
+      "includedInDeck": true
+    },
+    {
+      "name": "Draw",
+      "includedInDeck": true
+    },
+    {
+      "name": "Land",
+      "includedInDeck": true
+    },
+    {
+      "name": "Removal",
+      "includedInDeck": true
+    },
+    {
+      "name": "Mill",
+      "includedInDeck": true
+    },
+    {
+      "name": "Creature",
+      "includedInDeck": true
+    },
+    {
+      "name": "Untap",
+      "includedInDeck": true
+    },
+    {
+      "name": "Counters",
+      "includedInDeck": true
+    },
+    {
+      "name": "Protection",
+      "includedInDeck": true
+    },
+    {
+      "name": "Enchantment",
+      "includedInDeck": true
+    },
+    {
+      "name": "Proliferate",
+      "includedInDeck": true
+    }
+  ],
+  "cards": [
+    {
+      "quantity": 1,
+      "categories": [
+        "Commander"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "40",
+        "edition": {
+          "editioncode": "mbc"
+        },
+        "oracleCard": {
+          "name": "Homer, the Hermit"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Removal"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "222",
+        "edition": {
+          "editioncode": "rvr"
+        },
+        "oracleCard": {
+          "name": "Sharktocrab"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Ramp"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "21",
+        "edition": {
+          "editioncode": "c20"
+        },
+        "oracleCard": {
+          "name": "Cryptic Trilobite"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Draw"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "64",
+        "edition": {
+          "editioncode": "mmq"
+        },
+        "oracleCard": {
+          "name": "Chambered Nautilus"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Land"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "365",
+        "edition": {
+          "editioncode": "tdc"
+        },
+        "oracleCard": {
+          "name": "Foreboding Landscape"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Removal"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "7",
+        "edition": {
+          "editioncode": "j25"
+        },
+        "oracleCard": {
+          "name": "Gilded Scuttler"
+        }
+      }
+    },
+    {
+      "quantity": 9,
+      "categories": [
+        "Land"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "301",
+        "edition": {
+          "editioncode": "mdd"
+        },
+        "oracleCard": {
+          "name": "Forest"
+        }
+      }
+    },
+    {
+      "quantity": 12,
+      "categories": [
+        "Land"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "294",
+        "edition": {
+          "editioncode": "mdd"
+        },
+        "oracleCard": {
+          "name": "Island"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Mill"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "155",
+        "edition": {
+          "editioncode": "tdc"
+        },
+        "oracleCard": {
+          "name": "Hedron Crab"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Counters"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "206",
+        "edition": {
+          "editioncode": "clu"
+        },
+        "oracleCard": {
+          "name": "Scuttlegator"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Creature"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "58",
+        "edition": {
+          "editioncode": "lci"
+        },
+        "oracleCard": {
+          "name": "Hermitic Nautilus"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Ramp"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "49",
+        "edition": {
+          "editioncode": "mbc"
+        },
+        "oracleCard": {
+          "name": "Rikala, Homarid King"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Untap"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "55",
+        "edition": {
+          "editioncode": "dmr"
+        },
+        "oracleCard": {
+          "name": "Horseshoe Crab"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Recursion"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "233",
+        "edition": {
+          "editioncode": "tle"
+        },
+        "oracleCard": {
+          "name": "Purple Pentapus"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Protection"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "356",
+        "edition": {
+          "editioncode": "j25"
+        },
+        "oracleCard": {
+          "name": "Shorecomber Crab"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Mill"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "140",
+        "edition": {
+          "editioncode": "mkc"
+        },
+        "oracleCard": {
+          "name": "Sinister Starfish"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Draw"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "347",
+        "edition": {
+          "editioncode": "j25"
+        },
+        "oracleCard": {
+          "name": "Purple-Crystal Crab"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Counters"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "193",
+        "edition": {
+          "editioncode": "gtc"
+        },
+        "oracleCard": {
+          "name": "Shambleshark"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Draw"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "357",
+        "edition": {
+          "editioncode": "j25"
+        },
+        "oracleCard": {
+          "name": "Sigiled Starfish"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Tokens"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "35",
+        "edition": {
+          "editioncode": "all"
+        },
+        "oracleCard": {
+          "name": "Spiny Starfish"
+        }
+      }
+    },
+    {
+      "quantity": 3,
+      "categories": [
+        "Land"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "296",
+        "edition": {
+          "editioncode": "mdd"
+        },
+        "oracleCard": {
+          "name": "Swamp"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Land"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "527",
+        "edition": {
+          "editioncode": "trc"
+        },
+        "oracleCard": {
+          "name": "Evolving Wilds"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Land"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "571",
+        "edition": {
+          "editioncode": "trc"
+        },
+        "oracleCard": {
+          "name": "Terramorphic Expanse"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Land"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "306",
+        "edition": {
+          "editioncode": "trk"
+        },
+        "oracleCard": {
+          "name": "Watery Grave"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Copy"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "258",
+        "edition": {
+          "editioncode": "lci"
+        },
+        "oracleCard": {
+          "name": "Roaming Throne"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Land"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "279",
+        "edition": {
+          "editioncode": "trk"
+        },
+        "oracleCard": {
+          "name": "Breeding Pool"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Ramp"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "66",
+        "edition": {
+          "editioncode": "spm"
+        },
+        "oracleCard": {
+          "name": "The Soul Stone"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Tokens"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "216",
+        "edition": {
+          "editioncode": "fdn"
+        },
+        "oracleCard": {
+          "name": "Doubling Season"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Removal"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "103",
+        "edition": {
+          "editioncode": "ltr"
+        },
+        "oracleCard": {
+          "name": "Orcish Bowmasters"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Ramp"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "192",
+        "edition": {
+          "editioncode": "eoe"
+        },
+        "oracleCard": {
+          "name": "Icetill Explorer"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Land"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "289",
+        "edition": {
+          "editioncode": "trk"
+        },
+        "oracleCard": {
+          "name": "Overgrown Tomb"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Land"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "540",
+        "edition": {
+          "editioncode": "trc"
+        },
+        "oracleCard": {
+          "name": "Morphic Pool"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Protection"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "465",
+        "edition": {
+          "editioncode": "trc"
+        },
+        "oracleCard": {
+          "name": "Heroic Intervention"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Ramp"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "499",
+        "edition": {
+          "editioncode": "trc"
+        },
+        "oracleCard": {
+          "name": "Sol Ring"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Ramp"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "106",
+        "edition": {
+          "editioncode": "fra"
+        },
+        "oracleCard": {
+          "name": "Hexhaven Invigorator"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Ramp"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "485",
+        "edition": {
+          "editioncode": "trc"
+        },
+        "oracleCard": {
+          "name": "Arcane Signet"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Ramp"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "306",
+        "edition": {
+          "editioncode": "fic"
+        },
+        "oracleCard": {
+          "name": "Gyre Sage"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Draw"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "43",
+        "edition": {
+          "editioncode": "fra"
+        },
+        "oracleCard": {
+          "name": "The Theorist, Jace Beleren"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Land"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "260",
+        "edition": {
+          "editioncode": "blb"
+        },
+        "oracleCard": {
+          "name": "Three Tree City"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Mill"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "309",
+        "edition": {
+          "editioncode": "rvr"
+        },
+        "oracleCard": {
+          "name": "Bruvac the Grandiloquent"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Ramp"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "176",
+        "edition": {
+          "editioncode": "dsk"
+        },
+        "oracleCard": {
+          "name": "Enduring Vitality"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Draw"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "46",
+        "edition": {
+          "editioncode": "eld"
+        },
+        "oracleCard": {
+          "name": "Folio of Fancies"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Ramp"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "152",
+        "edition": {
+          "editioncode": "mh3"
+        },
+        "oracleCard": {
+          "name": "Fanatic of Rhonas"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Tokens"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "199",
+        "edition": {
+          "editioncode": "isd"
+        },
+        "oracleCard": {
+          "name": "Parallel Lives"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Artifact"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "267",
+        "edition": {
+          "editioncode": "trk"
+        },
+        "oracleCard": {
+          "name": "Replicator"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Removal"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "46",
+        "edition": {
+          "editioncode": "eoc"
+        },
+        "oracleCard": {
+          "name": "Swan Song"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Landfall"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "171",
+        "edition": {
+          "editioncode": "mh3"
+        },
+        "oracleCard": {
+          "name": "Springheart Nantuko"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Tokens"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "118",
+        "edition": {
+          "editioncode": "fra"
+        },
+        "oracleCard": {
+          "name": "Verdant Kraken"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Ramp"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "106",
+        "edition": {
+          "editioncode": "hoc"
+        },
+        "oracleCard": {
+          "name": "Thranduil the Strategist"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Mill"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "158",
+        "edition": {
+          "editioncode": "gtc"
+        },
+        "oracleCard": {
+          "name": "Duskmantle Guildmage"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Draw"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "181",
+        "edition": {
+          "editioncode": "m3c"
+        },
+        "oracleCard": {
+          "name": "Drown in Dreams"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Mill"
+      ],
+      "modifier": "Foil",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "652",
+        "edition": {
+          "editioncode": "clb"
+        },
+        "oracleCard": {
+          "name": "Zellix, Sanity Flayer"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Land"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "391",
+        "edition": {
+          "editioncode": "soc"
+        },
+        "oracleCard": {
+          "name": "Oran-Rief, the Vastwood"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Copy"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "200",
+        "edition": {
+          "editioncode": "msc"
+        },
+        "oracleCard": {
+          "name": "Helm of the Host"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Mill"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "722",
+        "edition": {
+          "editioncode": "clb"
+        },
+        "oracleCard": {
+          "name": "Fractured Sanity"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Mill"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "57",
+        "edition": {
+          "editioncode": "xln"
+        },
+        "oracleCard": {
+          "name": "Fleet Swallower"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Mill"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "57",
+        "edition": {
+          "editioncode": "one"
+        },
+        "oracleCard": {
+          "name": "Jace, the Perfected Mind"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Mill"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "77",
+        "edition": {
+          "editioncode": "m14"
+        },
+        "oracleCard": {
+          "name": "Traumatize"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Mill"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "57",
+        "edition": {
+          "editioncode": "dft"
+        },
+        "oracleCard": {
+          "name": "Riverchurn Monument"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Mill"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "67",
+        "edition": {
+          "editioncode": "znr"
+        },
+        "oracleCard": {
+          "name": "Maddening Cacophony"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Proliferate"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "105",
+        "edition": {
+          "editioncode": "ecc"
+        },
+        "oracleCard": {
+          "name": "Evolution Sage"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Mill"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "CM2-45",
+        "edition": {
+          "editioncode": "plst"
+        },
+        "oracleCard": {
+          "name": "Memory Erosion"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Mill"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "850",
+        "edition": {
+          "editioncode": "clb"
+        },
+        "oracleCard": {
+          "name": "Nemesis of Reason"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Creature"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "40",
+        "edition": {
+          "editioncode": "akh"
+        },
+        "oracleCard": {
+          "name": "Ancient Crab"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Removal"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "63",
+        "edition": {
+          "editioncode": "neo"
+        },
+        "oracleCard": {
+          "name": "Mirrorshell Crab"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Mill"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "85",
+        "edition": {
+          "editioncode": "fin"
+        },
+        "oracleCard": {
+          "name": "The Water Crystal"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Ramp"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "19",
+        "edition": {
+          "editioncode": "ecc"
+        },
+        "oracleCard": {
+          "name": "Springleaf Parade"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Draw"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "155",
+        "edition": {
+          "editioncode": "msc"
+        },
+        "oracleCard": {
+          "name": "Black Market Connections"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Tokens"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "132",
+        "edition": {
+          "editioncode": "drc"
+        },
+        "oracleCard": {
+          "name": "Maskwood Nexus"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Tokens"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "XLN-46",
+        "edition": {
+          "editioncode": "plst"
+        },
+        "oracleCard": {
+          "name": "Arcane Adaptation"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Landfall"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "470",
+        "edition": {
+          "editioncode": "trc"
+        },
+        "oracleCard": {
+          "name": "Scute Swarm"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Ramp"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "255",
+        "edition": {
+          "editioncode": "ecl"
+        },
+        "oracleCard": {
+          "name": "Firdoch Core"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Draw"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "150",
+        "edition": {
+          "editioncode": "msc"
+        },
+        "oracleCard": {
+          "name": "Kindred Discovery"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Ramp"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "262",
+        "edition": {
+          "editioncode": "tla"
+        },
+        "oracleCard": {
+          "name": "White Lotus Tile"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Mill"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "ZNR-75",
+        "edition": {
+          "editioncode": "plst"
+        },
+        "oracleCard": {
+          "name": "Ruin Crab"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Copy"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "198",
+        "edition": {
+          "editioncode": "mkm"
+        },
+        "oracleCard": {
+          "name": "Doppelgang"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Tokens"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "145",
+        "edition": {
+          "editioncode": "mh3"
+        },
+        "oracleCard": {
+          "name": "Basking Broodscale"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Counters"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "149",
+        "edition": {
+          "editioncode": "sos"
+        },
+        "oracleCard": {
+          "name": "Germination Practicum"
+        }
+      }
+    },
+    {
+      "quantity": 1,
+      "categories": [
+        "Ramp"
+      ],
+      "modifier": "Normal",
+      "notes": "",
+      "card": {
+        "displayName": null,
+        "collectorNumber": "182",
+        "edition": {
+          "editioncode": "eoe"
+        },
+        "oracleCard": {
+          "name": "Famished Worldsire"
+        }
+      }
+    }
+  ]
+}

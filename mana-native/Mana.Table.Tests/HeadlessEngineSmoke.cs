@@ -59,6 +59,7 @@ internal static class HeadlessEngineSmoke
                 File.WriteAllText(Path.Combine(paths.Profile, "ai-verified-runtime.json"), JsonSerializer.Serialize(verifiedRuntime, json));
             }
             await engine.InitializeAsync();
+            await CheckBundledCardPrintings(engine, Check);
             var deck = await engine.ImportAsync("Headless production composition", "Deck\n99 Forest\nCommander\n1 Rhys the Redeemed");
             var setup = await engine.PrepareSoloAsync(deck.Id);
             Check(setup.Opponents.Any(opponent => opponent.Id == "green") && setup.Opponents.Any(opponent => opponent.Id == "red"),
@@ -581,4 +582,38 @@ internal static class HeadlessEngineSmoke
     // including current cost and resource metadata, to remain unchanged.
     internal static bool SameSourceActions(ImmutableArray<SourceAction> first, ImmutableArray<SourceAction> second)
         => JsonNode.DeepEquals(JsonSerializer.SerializeToNode(first), JsonSerializer.SerializeToNode(second));
+    private static async Task CheckBundledCardPrintings(ForgeEngine engine, Action<bool, string> check)
+    {
+        // These exact requests came from the frozen public Homer snapshot.
+        // Run through the production JVM and packed resources, independently of
+        // the Java test's loose-source catalog and offline importer fixture.
+        (string Name, string Set, string Number, bool Foil)[] requests = [
+            ("Replicator", "TRK", "267", false),
+            ("Forest", "MDD", "301", false), ("Island", "MDD", "294", false), ("Swamp", "MDD", "296", false),
+            ("Evolving Wilds", "TRC", "527", false), ("Terramorphic Expanse", "TRC", "571", false),
+            ("Morphic Pool", "TRC", "540", false), ("Heroic Intervention", "TRC", "465", false),
+            ("Sol Ring", "TRC", "499", false), ("Arcane Signet", "TRC", "485", false), ("Scute Swarm", "TRC", "470", false),
+            ("Zellix, Sanity Flayer", "CLB", "652", true)
+        ];
+        foreach (var request in requests) {
+            var search = await engine.SearchCardsAsync(new(request.Name));
+            var card = search.Cards.FirstOrDefault(item => item.Card.Name == request.Name);
+            check(card != null, "The packaged catalog contains " + request.Name);
+            var page = await engine.CardPrintingsAsync(card!.Id, 0, 200, request.Set, request.Foil ? "foil" : "nonfoil");
+            check(page.Cards.Any(item => item.Card.Name == request.Name && item.Edition == request.Set
+                    && item.Card.CollectorNumber == request.Number && item.Card.Foil == request.Foil),
+                $"The packaged catalog retains exact {request.Name} {request.Set} #{request.Number}, foil={request.Foil}");
+        }
+        var sheets = await engine.SearchCardsAsync(new("Eldrazi Guacamole Tightrope"));
+        var sheet = sheets.Cards.FirstOrDefault(item => item.Card.Name == "Eldrazi Guacamole Tightrope");
+        check(sheet is { Section: "Stickers", Edition: "SUNF", Card.CollectorNumber: "1", Card.GamePieceType: "sticker_sheet" },
+            "The packaged SUNF sheet retains its Stickers deck section and sticker_sheet physical kind without becoming a Command-zone card");
+        var imported = await engine.ImportAsync("Packaged Replicator printing regression",
+            "Deck\n98 Wastes\n1 Replicator (TRK) 267\nCommander\n1 Rhys the Redeemed");
+        var opened = await engine.OpenDeckAsync(imported.Id);
+        check(opened.Entries.Sum(item => item.Quantity) == 100
+                && opened.Entries.SingleOrDefault(item => item.Card.Name == "Replicator") is
+                    { Quantity: 1, Edition: "TRK", Card.CollectorNumber: "267", Card.Foil: false },
+            "The production text importer preserves Replicator's actual TRK267 printing in a disposable deck");
+    }
 }
