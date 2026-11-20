@@ -161,10 +161,13 @@ public class ReplicatorRulesJourneyTest {
                 if (failure != null) failure.addSuppressed(cleanup);
                 else { failure = cleanup; throwFailure(cleanup); }
             } finally {
+                boolean callerAlive = caller.isAlive();
                 var record = new LinkedHashMap<String, Object>();
                 record.put("controlled", controlled);
                 record.put("capturedBefore", captured.get().state());
-                record.put("transaction", proof.get());
+                record.put("callerAlive", callerAlive);
+                record.put("transactionIncomplete", callerAlive);
+                if (!callerAlive) record.put("transaction", proof.get());
                 record.put("producerFailure", producerFailure.get() == null ? null : producerFailure.get().toString());
                 record.put("failure", failure == null ? null : failure.toString());
                 record.put("progress", Map.of("entered", entered.getCount() == 0, "started", started.getCount() == 0,
@@ -211,8 +214,7 @@ public class ReplicatorRulesJourneyTest {
             var next = sameTargets(current, after, targetIds);
             assertEquals(footprint(after, actor, sourceId), footprint(current.state(), actor, sourceId),
                     "The actual rejected transaction preserves board, mana and source tap state");
-            // Keep the baseline explicit: the witness records both the earlier
-            // captured input and the transaction's actual current-before.
+            // Compare the actual rejection transaction under its existing state boundary.
             var before = footprint(current.state(), actor, sourceId);
             assertEquals(footprint(after, actor, sourceId), before, "A rejected target cannot pay/tap/change the board");
             return next;
