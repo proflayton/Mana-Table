@@ -18,8 +18,11 @@ import static org.testng.Assert.*;
 public class ReplicatorRulesJourneyTest {
     @Test(timeOut = 90000)
     public void entersCreatesFoodAndOnlyControlledTokensCanBeCopiedTapped() throws Exception {
+        // The inert seats must survive a normal first-turn draw/cleanup while
+        // this journey waits for the actor's next own sorcery-speed window.
         try (var game = new RulesScenario("replicator-food-copy", Map.of(
-                0, List.of("Wastes", "Wastes", "Spellbook"), 1, List.of("Wastes", "Wastes")),
+                0, List.of("Wastes", "Wastes", "Spellbook"), 1, List.of("Wastes", "Wastes"),
+                2, List.of("Spellbook"), 3, List.of("Spellbook")),
                 "Replicator", "Rhys the Redeemed")) {
             var main = main(game, 0, 1);
             int actor = main.state().get("viewerId").getAsInt();
@@ -107,6 +110,7 @@ final class CardDataRules {
     static boolean priority(Input input) { return text(input.prompt(), "inputType").equals("InputPassPriority"); }
     static Input main(RulesScenario game, int seat, int minimumTurn) throws Exception {
         return game.until(input -> input.seat() == seat && priority(input) && text(input.state(), "phaseKey").equals("MAIN1")
+                && input.state().get("viewerId").equals(input.state().get("activePlayerId"))
                 && input.state().get("turn").getAsInt() >= minimumTurn && input.state().getAsJsonArray("stack").isEmpty());
     }
     static List<JsonObject> cards(JsonObject player, String zone, String name) {
