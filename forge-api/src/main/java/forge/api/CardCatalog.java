@@ -13,6 +13,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
@@ -21,6 +22,7 @@ import java.util.stream.Collectors;
 
 /** A stable, printing-aware catalog. Construct after Forge's card database has loaded. */
 public final class CardCatalog {
+    private static final Pattern COMBINING_MARKS = Pattern.compile("\\p{M}+");
     public record CardInfo(String id, String name, String edition, int artIndex, boolean foil,
                            String manaCost, int manaValue, String type, String oracleText,
                            int colors, int colorIdentity, String rarity, String collectorNumber,
@@ -69,22 +71,26 @@ public final class CardCatalog {
     public CardCatalog(Collection<PaperCard> source) {
         cards = source.stream().collect(Collectors.toUnmodifiableMap(CardCatalog::id,
                 Function.identity(), (first, duplicate) -> first));
-        index = cards.values().stream().map(CardCatalog::indexCard)
+        // Repeated printings can share exact text, but names alone do not prove
+        // equal faces, types or rules. Retain this memo only during this snapshot.
+        var normalizedText = new HashMap<String, String>();
+        Function<String, String> normalizer = text -> normalizedText.computeIfAbsent(text, CardCatalog::normalize);
+        index = cards.values().stream().map(card -> indexCard(card, normalizer))
                 .sorted(Comparator.comparing((IndexedCard card) -> card.info().name(), String.CASE_INSENSITIVE_ORDER)
                         .thenComparing(card -> card.info().id())).toList();
         uniqueCount = (int) index.stream().map(card -> card.info().name()).distinct().count();
         byPrintingName = index.stream().map(IndexedCard::info).collect(Collectors.groupingBy(
-                card -> normalize(card.name()), Collectors.toUnmodifiableList()));
+                card -> normalizer.apply(card.name()), Collectors.toUnmodifiableList()));
         byName = byPrintingName.entrySet().stream().collect(Collectors.toUnmodifiableMap(
                 Map.Entry::getKey, entry -> entry.getValue().get(0)));
     }
 
     private static String normalize(String text) {
-        return Normalizer.normalize(text, Normalizer.Form.NFD).replaceAll("\\p{M}+", "")
+        return COMBINING_MARKS.matcher(Normalizer.normalize(text, Normalizer.Form.NFD)).replaceAll("")
                 .toLowerCase(Locale.ROOT).replace('’', '\'').replace("æ", "ae").replace("œ", "oe");
     }
 
-    private static IndexedCard indexCard(PaperCard card) {
+    private static IndexedCard indexCard(PaperCard card, Function<String, String> normalizer) {
         var info = describe(card);
         var text = new StringBuilder(info.name());
         var types = new StringBuilder(info.type());
@@ -94,7 +100,7 @@ public final class CardCatalog {
                     .append('\n').append(Objects.requireNonNullElse(face.getFlavorName(), ""));
             types.append('\n').append(face.getType());
         }
-        return new IndexedCard(info, normalize(text.toString()), normalize(types.toString()));
+        return new IndexedCard(info, normalizer.apply(text.toString()), normalizer.apply(types.toString()));
     }
 
     public Page search(Query query) {
