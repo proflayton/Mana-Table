@@ -1217,6 +1217,11 @@ Neither field is reconstructed from the source's later board position or owner.
 Undisclosed sources retain no source identity/controller; an unknown producing
 ability stays unknown rather than borrowing the nearest stack entry.
 
+Engine-local `GameEventCause` remains attached to the original local event.
+Forge's legacy Java event transport replaces this private context with `null`
+before serializing its source/controller graph. Native JSON activity continues
+to disclose an admitted cause through the existing per-viewer authorization.
+
 `kind: zone` reports one actual movement (`amount: 1`) with `fromZone`/`toZone`
 among `Battlefield`, `Stack`, `Graveyard`, `Exile`, `Command`, `Hand` and `Library`;
 one endpoint is the battlefield. `recipientControllerId` retains the departing

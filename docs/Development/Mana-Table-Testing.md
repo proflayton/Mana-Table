@@ -46,6 +46,22 @@ Catalog coverage, named rules journeys, native AI performance and human gameplay
 acceptance are separate evidence. The existing release limits and exact-source
 CI gates are unchanged.
 
+The imported `GameEventSerializationTest` enforces the legacy event transport
+contract. `WireDeserializationTest` round-trips all four cause-bearing event
+types through the actual object streams and wrapped-event route, using separate
+sender and public-only receiver trackers. Public fields and event counts remain
+intact; private cause views and sentinel strings never reach the receiver.
+The original local cause remains available. `MatchActivityTest`,
+`MatchHistoryTest` and `PublicCounterCausesTest` retain native activity disclosure
+and hidden-source coverage.
+
+`EndTurnCleanupPriorityTest` pays for a real Indestructibility Aura so Sundial
+survives Ultima while the unprotected Hammer is destroyed and the Traveler dies
+during state-based checks. It verifies the surviving current source, legal
+cleanup activation, actual tap payment and strict absence of extra cleanup
+priority or a resolved dies trigger. Its neighboring priority tests retain
+turn-based, state-based, mana and resolution-time casting coverage.
+
 ## Basic land acquisition checks
 
 The client suite includes 95 focused policy checks for the experimental
