@@ -189,6 +189,26 @@ test('honest completed receipts cannot replace a missing test-phase finalizer', 
 });
 
 const workflow = fs.readFileSync(path.join(__dirname, '../../../.github/workflows/test-build.yaml'), 'utf8').replaceAll('\r\n', '\n');
+test('only manual extended or trial runs skip both duplicate engine producer steps', () => {
+  const names = ['Produce the shared source-bound engine', 'Share the exact engine build'];
+  const headings = [...workflow.matchAll(/^      - (?:name|uses):.+$/gm)];
+  const steps = headings.map((heading, index) => workflow.slice(heading.index, headings[index + 1]?.index));
+  for (const name of names) {
+    const matching = steps.filter(step => step.startsWith('      - name: ' + name + '\n'));
+    assert.equal(matching.length, 1, 'Exercise each actual producer condition exactly once.');
+    const expression = matching[0].match(/^        if: (.+)$/m)[1];
+    for (const event of ['push', 'pull_request', 'workflow_dispatch']) for (const java of ['17', '21']) {
+      // An empty inputs context models inputs unavailable on push/PR events.
+      for (const inputs of [{}, { extended: false, api_test_trial: false }, { extended: true, api_test_trial: false },
+        { extended: false, api_test_trial: true }, { extended: true, api_test_trial: true }]) {
+        const actual = vm.runInNewContext(expression, { github: { event_name: event }, matrix: { java }, inputs });
+        const expected = java === '17' && !(event === 'workflow_dispatch' && (inputs.extended || inputs.api_test_trial));
+        assert.equal(Boolean(actual), Boolean(expected), JSON.stringify({ name, event, java, inputs }));
+      }
+    }
+  }
+});
+
 test('manual trials cannot cancel or impersonate the required normal Java run', () => {
   const expression = workflow.match(/^  group: \$\{\{ (.+) \}\}$/m)[1];
   const format = (pattern, ...args) => pattern.replace(/\{(\d+)\}/g, (_, n) => args[n]);

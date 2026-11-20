@@ -3477,6 +3477,12 @@ and real overlapping class execution. Failed, skipped, incomplete or foreign
 evidence cannot certify the run. This finalizer runs in the test phase, including
 an extended `mvn test`; no second API test execution is added.
 
+Manual extended and timing-trial dispatches skip the early Java17 engine package
+and shared-engine upload. Their selected test reactors and source-bound JDK
+reports remain required; these dispatches provide test evidence rather than a
+consumable native engine artifact. Normal PR/push runs and quick manual dispatches
+with both options disabled retain the existing package and upload steps.
+
 Normal accounting trusts TestNG to execute the selected classes, as serial CI
 does. It validates every retained invocation and does not claim an independent
 enumeration of all possible data-provider rows. Same-source serial/parallel

@@ -56,13 +56,13 @@ jobs:
       # Native packaging can start while the complete Java matrix runs.
       # Tests are still mandatory below and publication requires both Java jobs.
       - name: Produce the shared source-bound engine
-        if: matrix.java == '17' && !(github.event_name == 'workflow_dispatch' && inputs.api_test_trial)
+        if: matrix.java == '17' && !(github.event_name == 'workflow_dispatch' && (inputs.api_test_trial || inputs.extended))
         run: |
           xvfb-run -a mvn -B -ntp -pl forge-api -am package -DskipTests
           node scripts/mana-table/ci-engine-artifact.cjs create
 
       - name: Share the exact engine build
-        if: matrix.java == '17' && !(github.event_name == 'workflow_dispatch' && inputs.api_test_trial)
+        if: matrix.java == '17' && !(github.event_name == 'workflow_dispatch' && (inputs.api_test_trial || inputs.extended))
         uses: actions/upload-artifact@v7
         with:
           name: engine-${{ github.sha }}
