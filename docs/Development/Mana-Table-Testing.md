@@ -2389,8 +2389,10 @@ five Forests. It retains timing-legal source offers, checks query resource purit
 and follows the actual payment/cancellation and stack outcome before checking
 the current private funding cue. An intervening mana event and unverified input
 withdraw cached evidence; a completed current scan can establish it again.
-Another case retains a known funded route while an unrelated manual payment
-leaves the full scan incomplete; that does not certify absence for Auto. Other
+Another case retains a known funded route while Prismite's real manual payment
+route remains outside the automatic planner and leaves the full scan incomplete.
+It checks that the omitted route can activate and produce a color useful to the
+actual unpaid bill; that does not certify absence for Auto. Other
 audiences cannot borrow this viewer's funding fact.
 Native hand/source presentation checks distinguish a legal manual action and
 hover focus from positive affordable-card paint. Legacy, invalid, stale and
@@ -2908,6 +2910,9 @@ withdrawn permission. Unchanged observations and invalid commands remain errors;
 a replacement required payment is never answered implicitly. The original
 `FlashbackRefreshConcessionTest` and `CardQueryConcessionTest` retain their traversal,
 privacy, continued-play and terminal assertions and deadlines.
+The Flashback journey uses a real setup mill and Muldrotha's first-turn graveyard
+permission to admit a concession during an actual changed view. Unchanged player
+views may refresh without emitting a zone event.
 
 ## Native headless checks
 
