@@ -44,11 +44,11 @@ public class FlashbackRefreshConcessionTest {
                         if (event.zoneType() == ZoneType.Graveyard
                                 && event.player().getId() == initialPlayers.get(0)
                                 && scenario.table.game.getPhaseHandler().getPlayerTurn() == null) {
-                            var graveyard = event.player().getCardsIn(ZoneType.Graveyard);
+                            var graveyard = scenario.table.game.getRegisteredPlayers().get(0).getCardsIn(ZoneType.Graveyard);
                             assertEquals(graveyard.size(), 1, "The real setup script mills exactly one Forest");
                             var forest = graveyard.get(0);
                             assertEquals(forest.getName(), "Forest");
-                            assertFalse(event.player().getView().getFlashback().contains(forest.getView()),
+                            assertFalse(event.player().getFlashback().contains(forest.getView()),
                                     "Muldrotha grants no graveyard access before a turn belongs to its controller");
                             if (!milledForest.compareAndSet(null, forest)) {
                                 assertSame(milledForest.get(), forest, "Any repeated publication refers to the same one milled card");
@@ -57,7 +57,7 @@ public class FlashbackRefreshConcessionTest {
                         if (event.zoneType() != ZoneType.Flashback || capturedRefresh.get() || !insidePhaseRefresh()) return;
                         assertEquals(event.player().getId(), initialPlayers.get(0).intValue());
                         assertNotNull(milledForest.get(), "The changed view follows the actual pre-turn mill");
-                        assertTrue(event.player().getView().getFlashback().contains(milledForest.get().getView()),
+                        assertTrue(event.player().getFlashback().contains(milledForest.get().getView()),
                                 "The actual first-turn permission exposes that exact milled Forest");
                         if (departed.compareAndSet(false, true)) {
                             // Runs synchronously inside the first refresh event, after
