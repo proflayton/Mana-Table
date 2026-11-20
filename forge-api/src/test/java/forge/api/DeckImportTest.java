@@ -52,10 +52,19 @@ public class DeckImportTest {
         assertTrue(preview.problems().isEmpty(), preview.problems().toString());
         assertEquals(preview.entries().size(), 95);
         assertEquals(preview.entries().stream().mapToInt(DeckEditor.Entry::quantity).sum(), 100);
-        assertEquals(preview.warnings().size(), 3);
-        assertTrue(preview.warnings().stream().allMatch(warning -> warning.kind().equals("PRINTING_SUBSTITUTED")));
+        assertTrue(preview.warnings().isEmpty(), preview.warnings().toString());
         assertEquals(entry(preview, "Forest").quantity(), 4);
         assertEquals(entry(preview, "Mountain").quantity(), 3);
+        assertEquals(entry(preview, "Plains").quantity(), 1);
+        // MDD was absent from the old bundle. These requested printings now
+        // exist, so a silent fallback would be a regression rather than success.
+        for (var request : Map.of("Forest", "301", "Mountain", "298", "Plains", "292").entrySet()) {
+            var selected = entry(preview, request.getKey());
+            assertEquals(selected.section(), "Main");
+            assertEquals(selected.card().edition(), "MDD");
+            assertEquals(selected.card().collectorNumber(), request.getValue());
+            assertFalse(selected.card().foil());
+        }
         var foil = entry(preview, "Force of Vigor").card();
         assertEquals(foil.edition(), "H1R");
         assertEquals(foil.collectorNumber(), "21");
@@ -154,6 +163,7 @@ public class DeckImportTest {
     }
 
     @Test public void annotationsAreLocalAndPreserveFoilsAndPrintingFallbackWarnings() {
+        assertNull(StaticData.instance().getEditions().get("ZZZZZZ"), "This negative deliberately requests an unavailable edition");
         var preview = DeckImport.preview("\uFEFFDeck\r\n1x Toph, the First Metalbender (tla) 247 [Commander{top}{noPrice}]\r\n"
                 + "SB: 2x Lightning Bolt (ZZZZZZ) 1 *E* [Removal]\r\n4 x Forest [Land]\r\n1000x Mountain [Land]");
         assertTrue(preview.problems().isEmpty(), preview.problems().toString());
@@ -165,6 +175,7 @@ public class DeckImportTest {
         assertEquals(entry(preview, "Forest").quantity(), 4);
         assertEquals(entry(preview, "Mountain").quantity(), 1000);
         assertEquals(preview.warnings().size(), 1);
+        assertEquals(preview.warnings().get(0).kind(), "PRINTING_SUBSTITUTED");
         assertEquals(preview.warnings().get(0).line(), 3);
         assertTrue(preview.warnings().get(0).text().contains("ZZZZZZ is not in the library; using"));
     }
