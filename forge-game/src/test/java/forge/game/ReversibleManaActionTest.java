@@ -212,6 +212,50 @@ public class ReversibleManaActionTest {
         } finally { MyRandom.setRandom(previous); }
     }
 
+    @Test public void aProviderGaussianCachedBeforeWrappingIsForwardedAndStillFencesUndo() {
+        var previous = MyRandom.getRandom();
+        try {
+            var f = new Fixture(false, "2"); var offered = f.activate();
+            var expected = new java.util.Random(63017);
+            var provider = new java.util.Random(63017);
+            assertEquals(provider.nextGaussian(), expected.nextGaussian());
+            // Both providers already retain the second Gaussian. A wrapper
+            // generating its own pair would discard that cache and draw again.
+            MyRandom.setRandom(provider);
+            var wrapped = MyRandom.getRandom();
+            f.game.getAction().withState(() -> assertEquals(wrapped.nextGaussian(), expected.nextGaussian()));
+            assertEquals(f.restore(offered), ReversibleManaAction.Result.REJECTED,
+                    "A cached random result is new information even when it consumes no fresh entropy");
+            assertEquals(provider.nextLong(), expected.nextLong(),
+                    "Forwarding the cached Gaussian must leave the provider's next draw untouched");
+            assertEquals(wrapped.nextGaussian(3.5, 1.25), expected.nextGaussian(3.5, 1.25));
+            assertEquals(wrapped.nextLong(-900, 700), expected.nextLong(-900, 700));
+        } finally { MyRandom.setRandom(previous); }
+    }
+
+    @Test public void customProviderDirectOverridesAreNotReconstructedFromRandomBits() {
+        var previous = MyRandom.getRandom();
+        try {
+            MyRandom.setRandom(new java.util.Random(1) {
+                @Override protected int next(int bits) { throw new AssertionError("Use the supplied direct operation"); }
+                @Override public long nextLong() { return 0x1122334455667788L; }
+                @Override public double nextGaussian() { return -8.25; }
+                @Override public double nextGaussian(double mean, double deviation) { return mean + deviation * 7.5; }
+                @Override public double nextExponential() { return 12.5; }
+                @Override public float nextFloat(float origin, float bound) { return origin + .5f; }
+                @Override public void nextBytes(byte[] bytes) { java.util.Arrays.fill(bytes, (byte)91); }
+            });
+            var wrapped = MyRandom.getRandom();
+            assertEquals(wrapped.nextLong(), 0x1122334455667788L);
+            assertEquals(wrapped.nextGaussian(), -8.25);
+            assertEquals(wrapped.nextGaussian(2, .5), 5.75);
+            assertEquals(wrapped.nextExponential(), 12.5);
+            assertEquals(wrapped.nextFloat(10, 20), 10.5f);
+            byte[] bytes = new byte[3]; wrapped.nextBytes(bytes);
+            assertEquals(bytes, new byte[] {91, 91, 91});
+        } finally { MyRandom.setRandom(previous); }
+    }
+
     @Test public void pureCommandPermissionIsRebuiltNormallyThenRestoredWithItsOriginalOwnerObjects() {
         var f = new Fixture(false, "2");
         Card commander = f.add("Command permanent", "Artifact", ZoneType.Command, 102); commander.setCommander(true);
