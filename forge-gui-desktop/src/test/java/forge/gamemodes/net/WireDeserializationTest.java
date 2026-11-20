@@ -86,7 +86,7 @@ public class WireDeserializationTest {
         Assert.assertEquals(decoded, graph, "Allowlisted traffic must still round-trip");
     }
 
-    private record CausalFixture(Tracker tracker, GameEventCause cause, List<GameEvent> events) { }
+    private record CausalFixture(Tracker tracker, Tracker receiver, GameEventCause cause, List<GameEvent> events) { }
 
     private static CausalFixture causalFixture() {
         final Tracker tracker = new Tracker();
@@ -101,6 +101,18 @@ public class WireDeserializationTest {
         tracker.putObj(TrackableTypes.CardViewType, recipient.getId(), recipient);
         tracker.putObj(TrackableTypes.CardViewType, source.getId(), source);
         tracker.putObj(TrackableTypes.PlayerViewType, player.getId(), player);
+        final Tracker receiver = new Tracker();
+        for (final CardView publicCard : List.of(recipient, source)) {
+            final CardView copy = new CardView(publicCard.getId(), receiver, publicCard.getName());
+            copy.set(TrackableProperty.Zone, ZoneType.Battlefield);
+            copy.getCurrentState().set(TrackableProperty.ImageKey, publicCard.getCurrentState().getTrackableImageKey());
+            receiver.putObj(TrackableTypes.CardViewType, copy.getId(), copy);
+            Assert.assertNotSame(copy, publicCard, "The peer's public views are independent of sender memory");
+        }
+        final PlayerView receivedPlayer = new PlayerView(201, receiver);
+        receivedPlayer.set(TrackableProperty.Name, "public-player");
+        receiver.putObj(TrackableTypes.PlayerViewType, receivedPlayer.getId(), receivedPlayer);
+        Assert.assertNotSame(receivedPlayer, player);
         // These real views belong only to engine-local provenance, never to the
         // public event fields or receiver's tracker.
         final CardView privateCard = new CardView(91001, tracker, "private-cause-card-sentinel");
@@ -113,7 +125,7 @@ public class WireDeserializationTest {
         Assert.assertFalse(privateCard.canBeShownTo(player), "The cause-only source is actually hidden from the public event's player");
         final GameEventCause cause = new GameEventCause(privateCard, "private-cause-ability-sentinel",
                 privateController, "private-cause-kind-sentinel", "private-cause-execution-sentinel");
-        return new CausalFixture(tracker, cause, List.of(
+        return new CausalFixture(tracker, receiver, cause, List.of(
                 new GameEventCardDamaged(recipient, source, 3, GameEventCardDamaged.DamageType.Deathtouch,
                         201, 202, cause, true),
                 new GameEventCardCounters(recipient, CounterEnumType.CHARGE, 2, 5, cause),
@@ -151,6 +163,11 @@ public class WireDeserializationTest {
     }
 
     private static void assertLocalCauseRetained(final CausalFixture fixture) throws Exception {
+        Assert.assertNotSame(fixture.receiver(), fixture.tracker());
+        Assert.assertNull(fixture.receiver().getObj(TrackableTypes.CardViewType, 91001),
+                "The receiver never obtains the engine-private source view");
+        Assert.assertNull(fixture.receiver().getObj(TrackableTypes.PlayerViewType, 92001),
+                "The receiver never obtains the engine-private controller view");
         for (final GameEvent event : fixture.events()) Assert.assertSame(cause(event), fixture.cause());
         Assert.assertEquals(fixture.cause().card().getName(), "private-cause-card-sentinel");
         Assert.assertEquals(fixture.cause().card().getCurrentState().getTrackableImageKey(), "private-cause-image-sentinel");
@@ -172,7 +189,7 @@ public class WireDeserializationTest {
                 }
                 assertNoPrivateCauseBytes(bytes.toByteArray());
                 try (CObjectInputStream in = new CObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()),
-                        ClassResolvers.cacheDisabled(null), fixture.tracker())) {
+                        ClassResolvers.cacheDisabled(null), fixture.receiver())) {
                     assertPublicEvent(event, (GameEvent) in.readObject());
                 }
                 assertLocalCauseRetained(fixture);
@@ -194,7 +211,7 @@ public class WireDeserializationTest {
         assertNoPrivateCauseBytes(outerFrame);
         final List<?> carried = (List<?>) decode(outerFrame);
         final List<Object> items = new ArrayList<>(carried);
-        final List<GameEvent> received = TrackableSerializer.unwrapEvents(items, fixture.tracker());
+        final List<GameEvent> received = TrackableSerializer.unwrapEvents(items, fixture.receiver());
         Assert.assertEquals(received.size(), 4, "The actual wrapped-event receiver must retain all four events");
         for (int index = 0; index < received.size(); index++) assertPublicEvent(fixture.events().get(index), received.get(index));
         assertLocalCauseRetained(fixture);
