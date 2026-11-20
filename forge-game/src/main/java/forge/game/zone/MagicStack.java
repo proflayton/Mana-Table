@@ -225,6 +225,9 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
             for (Player p : game.getPlayers()) {
                 p.intentionalDraw();
             }
+            // This prepared addition never reached the stack. Retire it before
+            // the terminal game publication; the rule draw is not an execution fault.
+            game.getExecutions().complete(sp, CANCELLED);
             game.setGameOver(GameEndReason.Draw);
             return;
         }
