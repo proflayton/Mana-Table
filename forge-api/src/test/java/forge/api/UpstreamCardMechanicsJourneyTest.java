@@ -78,14 +78,39 @@ public class UpstreamCardMechanicsJourneyTest {
             assertTrue(cards(player(killed.state(), opponent), "Battlefield", "Grizzly Bears").isEmpty());
             assertEquals(cards(player(killed.state(), opponent), "Graveyard", "Grizzly Bears").size(), 1);
             save(game, "00-real-bolt-graveyard.json", killed.state());
+            String targetId = text(cards(player(killed.state(), opponent), "Graveyard", "Grizzly Bears").get(0), "visualId");
+            String sourceId = text(cards(viewer(killed.state()), "Battlefield", "Death Is Irrelevant").get(0), "visualId");
             var trigger = game.until(current -> current.seat() == 0 && text(current.state(), "phaseKey").equals("END_OF_TURN")
-                    && text(current.prompt(), "inputType").equals("InputSelectTargets"));
-            assertEquals(text(trigger.prompt().getAsJsonObject("sourceCard"), "name"), "Death Is Irrelevant");
-            var graveyardBear = cards(player(trigger.state(), opponent), "Graveyard", "Grizzly Bears").get(0);
-            assertTrue(graveyardBear.get("selectable").getAsBoolean());
+                    && (text(current.prompt(), "inputType").equals("InputSelectTargets")
+                        || priority(current) && deathTrigger(current.state(), sourceId, actor) != null));
+            if (text(trigger.prompt(), "inputType").equals("InputSelectTargets")) {
+                assertEquals(text(trigger.prompt().getAsJsonObject("sourceCard"), "visualId"), sourceId);
+                var graveyardBear = cards(player(trigger.state(), opponent), "Graveyard", "Grizzly Bears").get(0);
+                assertEquals(text(graveyardBear, "visualId"), targetId);
+                assertTrue(graveyardBear.get("selectable").getAsBoolean());
+                save(game, "01-manual-assimilate-target.json", trigger.state());
+                assertTrue(game.answer(trigger, Map.of("action", "card", "key", text(graveyardBear, "key"))));
+                trigger = game.until(current -> current.seat() == 0 && priority(current)
+                        && text(current.state(), "phaseKey").equals("END_OF_TURN") && deathTrigger(current.state(), sourceId, actor) != null);
+            }
+            // Human TargetSelection legally auto-selects a sole card target for
+            // a triggered ability. Either path must commit this exact source,
+            // controller, execution and graveyard target before resolution.
+            var announced = deathTrigger(trigger.state(), sourceId, actor);
+            assertNotNull(announced);
+            String executionId = text(announced, "executionId");
+            assertFalse(executionId.isEmpty());
+            assertEquals(announced.getAsJsonArray("targets").size(), 1);
+            var announcedTarget = announced.getAsJsonArray("targets").get(0).getAsJsonObject();
+            assertEquals(text(announcedTarget, "kind"), "card");
+            assertEquals(text(announcedTarget, "id"), targetId);
+            assertEquals(announcedTarget.get("playerId").getAsInt(), opponent);
             save(game, "01-actual-assimilate-target.json", trigger.state());
-            assertTrue(game.answer(trigger, Map.of("action", "card", "key", text(graveyardBear, "key"))));
             var resolved = settle(game, 0);
+            assertTrue(resolved.state().getAsJsonObject("executions").getAsJsonArray("occurrences").asList().stream()
+                    .map(value -> value.getAsJsonObject()).anyMatch(item -> text(item, "id").equals(executionId)
+                        && text(item, "sourceCardId").equals(sourceId) && item.get("actorPlayerId").getAsInt() == actor
+                        && text(item, "outcome").equals("resolved")), "The same actual source/controller execution resolves");
             var assimilated = cards(viewer(resolved.state()), "Battlefield", "Grizzly Bears").get(0);
             assertTrue(cards(player(resolved.state(), opponent), "Graveyard", "Grizzly Bears").isEmpty());
             String type = text(assimilated, "type");
@@ -109,6 +134,13 @@ public class UpstreamCardMechanicsJourneyTest {
     }
     private static boolean keyword(JsonObject card, String name) {
         return card.getAsJsonArray("combatKeywords").asList().stream().anyMatch(value -> value.getAsString().equals(name));
+    }
+    private static JsonObject deathTrigger(JsonObject state, String sourceId, int actor) {
+        return state.getAsJsonArray("stack").asList().stream().map(value -> value.getAsJsonObject())
+                .filter(item -> text(item, "kind").equals("triggered") && item.get("controllerId").getAsInt() == actor
+                    && item.has("card") && item.get("card").isJsonObject()
+                    && text(item.getAsJsonObject("card"), "visualId").equals(sourceId))
+                .findFirst().orElse(null);
     }
     private static Input settleStation(RulesScenario game) throws Exception {
         for (int count = 0; count < 8; count++) {
