@@ -4788,7 +4788,6 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
         numberGameActivations.restore(state.game());
         numberAbilityResolved.restore(state.resolved());
         setTapped(state.tapped());
-        view.updateNeedsTapAnimation(false);
     }
     public final void setTapped(boolean tapped0) {
         if (tapped == tapped0) { return; }
@@ -7709,13 +7708,6 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
                 }
             }
         }
-
-        abilities.removeIf(sa -> {
-            sa.setActivatingPlayer(player);
-            // fix things like retrace
-            // check only if SA can't be cast normally
-            return !sa.canPlay(true) && (removeUnplayable || !sa.isPossible());
-        });
 
         return abilities;
     }

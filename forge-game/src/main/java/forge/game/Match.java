@@ -260,7 +260,7 @@ public class Match {
             rules.getGameType().getDeckFormat().equals(DeckFormat.Constructed);
         playedMains.clear();
         if (canSideBoard) {
-            for (final RegisteredPlayer rp : playersConditions) {
+            for (final RegisteredPlayer rp : this.players) {
                 if (rp.getDeck() != null) {
                     playedMains.put(rp, new ArrayList<>(rp.getDeck().getMain().toFlatList()));
                 }
