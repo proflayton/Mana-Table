@@ -1243,6 +1243,10 @@ The independent required `mixed-game-qualification` CI job additionally runs all
 four `natural` rotations against the exact immutable package and source-bound
 harness, then the actual110-trigger rules/presentation workload described below
 and the ordinary consuming-source payment witness.
+That witness authors one manual Crystal Vein activation while the real Auto
+button remains offered. The normal ordinary source reader and client dispatch
+must accept its current route without an explicit output; all other decisions
+delegate to production policy. It is a manual-path regression, not a policy-strength assertion.
 Its20-minute job limit does not change the existing20-minute engine matrix or
 either scenario's original limits. `scripts/mana-table/mixed-game-qualification.cjs`
 checks retained outcomes, four distinct physical roles/deck rotation, public
