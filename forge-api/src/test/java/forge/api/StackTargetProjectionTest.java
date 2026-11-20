@@ -75,7 +75,7 @@ public class StackTargetProjectionTest {
             var stacked = payAndStack(scenario);
             assertTrue(card(stacked.state(), caster, "Plains").get("tapped").getAsBoolean(),
                     "The actual white source paid for Path before its committed target was projected");
-            HeadlessPlatform.query(scenario.table, () -> {
+            String pathExecutionId = HeadlessPlatform.query(scenario.table, () -> {
                 var json = new GsonBuilder().serializeNulls().setPrettyPrinting().create();
                 var states = new ArrayList<JsonObject>();
                 for (int seat = 0; seat < 4; seat++) states.add(json.toJsonTree(scenario.table.seat(seat).state()).getAsJsonObject());
@@ -112,9 +112,38 @@ public class StackTargetProjectionTest {
                     }
                     Files.writeString(scenario.evidence.resolve("anonymous-target-seat-" + state.get("viewerId").getAsInt() + ".json"), json.toJson(state));
                 }
-                return null;
+                String execution = text(states.get(0).getAsJsonArray("stack").get(0).getAsJsonObject(), "executionId");
+                assertFalse(execution.isBlank(), "The real committed Path has a retained execution identity");
+                return execution;
             });
-            var search = scenario.until(input -> input.seat() == 1 && text(input.prompt(), "inputType").equals("InputConfirm"));
+            Input search = null;
+            int revealAcknowledgments = 0;
+            for (int continuation = 0; continuation < 8 && search == null; continuation++) {
+                var next = scenario.until(input -> text(input.prompt(), "kind").equals("reveal")
+                        || input.seat() == 1 && text(input.prompt(), "inputType").equals("InputConfirm"));
+                if (!text(next.prompt(), "kind").equals("reveal")) {
+                    search = next;
+                    break;
+                }
+                var choices = next.prompt().getAsJsonArray("choices");
+                assertEquals(choices.size(), 1, "The real face-down departure reveals only its one moved card");
+                var face = choices.get(0).getAsJsonObject().getAsJsonObject("card");
+                assertEquals(text(face, "name"), "Willbender");
+                assertFalse(face.get("faceDown").getAsBoolean());
+                assertFalse(face.has("key"), "The rules reveal is reading material, not card response authority");
+                assertEquals(text(next.prompt(), "executionId"), pathExecutionId);
+                assertEquals(text(next.prompt(), "executionStep"), "resolution");
+                assertTrue(zone(player(next.state(), owner), "Battlefield").getAsJsonArray("cards").isEmpty());
+                var moved = zone(player(next.state(), owner), "Exile").getAsJsonArray("cards");
+                assertEquals(moved.size(), 1, "Only the departed target is now face up; the other exile stays hidden");
+                assertEquals(text(moved.get(0).getAsJsonObject(), "name"), "Willbender");
+                assertFalse(moved.get(0).getAsJsonObject().get("faceDown").getAsBoolean());
+                assertNotEquals(text(moved.get(0).getAsJsonObject(), "combatId"), recipientId);
+                assertTrue(scenario.answer(next, Map.of("action", "ok")), "Acknowledge the exact current rules reveal");
+                revealAcknowledgments++;
+            }
+            assertTrue(revealAcknowledgments > 0, "The real face-down departure requires a reveal before Path's search");
+            assertNotNull(search, "The actual optional search must follow within the bounded reveal continuations");
             assertTrue(scenario.answer(search, Map.of("action", "cancel")), "The real target controller declines Path's optional search");
             var settled = scenario.until(input -> text(input.prompt(), "inputType").equals("InputPassPriority")
                     && input.state().getAsJsonArray("stack").isEmpty());
