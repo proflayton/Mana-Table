@@ -4,19 +4,22 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import forge.game.GameEntity;
-import forge.game.GameEntityView;
 import forge.game.GameObject;
 import forge.game.ability.ApiType;
 import forge.game.card.Card;
 import forge.game.card.CardView;
 import forge.game.keyword.Keyword;
 import forge.game.player.Player;
+import forge.game.player.PlayerView;
 import forge.game.spellability.SpellAbility;
+import forge.game.spellability.SpellAbilityStackInstance;
 import forge.game.spellability.TargetRestrictions;
+import forge.gamemodes.match.Selection;
 import forge.localinstance.properties.ForgeConstants;
 import forge.localinstance.properties.ForgePreferences;
 import forge.model.FModel;
 import forge.player.PlayerControllerHuman;
+import forge.trackable.TrackableObject;
 import forge.util.*;
 
 import java.util.ArrayList;
@@ -33,6 +36,8 @@ public final class InputSelectTargets extends InputSyncronizedBase {
     private final TargetRestrictions tgt;
     private final SpellAbility sa;
     private final Integer numTargets;
+    private final int initialMin;
+    private final int initialMax;
     private final Collection<Integer> divisionValues;
     private Card lastTarget = null;
     private boolean bCancel = false;
@@ -67,21 +72,47 @@ public final class InputSelectTargets extends InputSyncronizedBase {
             lastTarget = card;
         }
 
+        initialMin = numTargets != null ? numTargets : sa.getMinTargets();
+        initialMax = numTargets != null ? numTargets : sa.getMaxTargets();
+    }
+
+    /** The valid cards, the players that can still be picked, and what this spell's steps have chosen so far. */
+    @Override
+    protected Selection getSelection() {
+        final List<Player> valid = new ArrayList<>();
+        if (!mustTargetFiltered) { // same checks as onPlayerSelected
+            for (final Player p : getController().getGame().getPlayers()) {
+                if (targets.contains(p) || p.hasLost() || !sa.canTarget(p)) { continue; }
+                if (sa.isSpell() && sa.getHostCard().isAura() && !p.canBeAttached(sa.getHostCard(), sa)) { continue; }
+                if (filter != null && !filter.test(p)) { continue; }
+                valid.add(p);
+            }
+        }
+        final List<TrackableObject> offered = new ArrayList<>(PlayerView.getCollection(valid));
+        final List<TrackableObject> chosen = TargetingProgress.chosenTargets(sa);
+        // spells on the stack that are valid Card targets: make their stack entries tappable
+        for (final SpellAbilityStackInstance si : getController().getGame().getStack()) {
+            final SpellAbility onStack = si.getSpellAbility();
+            final Card host = onStack.getHostCard();
+            if (!onStack.isSpell() || host == null || !choices.contains(host)) { continue; }
+            offered.add(si.getView());
+            if (targets.contains(host)) {
+                chosen.add(si.getView());
+            }
+        }
+        final List<Card> currentChoices = new ArrayList<>(choices);
+        for (GameEntity selected : targets) {
+            if (selected instanceof Card card && !currentChoices.contains(card)) currentChoices.add(card);
+        }
+        return new Selection(new ArrayList<>(CardView.getCollection(
+                currentChoices.stream().filter(this::canSelectCard).toList())),
+                initialMin, initialMax, offered, chosen, List.of());
     }
 
     @Override
     public void showMessage() {
         // Publish after the input transition clears the previous input's targets.
-        final int initialMin = numTargets != null ? numTargets : sa.getMinTargets();
-        final int initialMax = numTargets != null ? numTargets : sa.getMaxTargets();
-        var currentChoices = new ArrayList<>(choices);
-        for (GameEntity selected : targets) if (selected instanceof Card card && !currentChoices.contains(card)) currentChoices.add(card);
-        getController().getGui().setSelectables(CardView.getCollection(currentChoices.stream().filter(this::canSelectCard).toList()), initialMin, initialMax);
-        final List<GameEntityView> views = new ArrayList<>();
-        for (final GameEntity c : targets) {
-            if (c instanceof Card) views.add(GameEntityView.get(c));
-        }
-        getController().getGui().setHighlighted(views, true);
+        showSelection();
         // Display targeting card in cardDetailPane in case it's not obviously visible.
         getController().getGui().setCard(CardView.get(sa.getHostCard()));
         final StringBuilder sb = new StringBuilder();
@@ -360,6 +391,14 @@ public final class InputSelectTargets extends InputSyncronizedBase {
     }
 
     @Override
+    public boolean selectAbility(final SpellAbility ab) {
+        final Card host = ab == null ? null : ab.getHostCard();
+        if (isFinished() || ab == null || !ab.isSpell()) { return false; }
+        if (host == null || !choices.contains(host)) { return false; }
+        return onCardSelected(host, null, null);
+    }
+
+    @Override
     public String getActivateAction(final Card card) {
         if (!tgt.isUniqueTargets() && targets.contains(card)) {
             return null;
@@ -452,7 +491,7 @@ public final class InputSelectTargets extends InputSyncronizedBase {
         if (ge instanceof Card c) {
             lastTarget = c;
         }
-        getController().getGui().setHighlighted(List.of(GameEntityView.get(ge)), true);
+        showSelection();
 
         if (hasAllTargets()) {
             bOk = true;
@@ -477,17 +516,13 @@ public final class InputSelectTargets extends InputSyncronizedBase {
             // try to get last selected card
             lastTarget = Iterables.getLast(IterableUtil.filter(targets, Card.class), null);
         }
-        getController().getGui().setHighlighted(List.of(GameEntityView.get(ge)), false);
+        showSelection();
 
         this.showMessage();
     }
 
     private void done() {
         setFinished();
-        final List<GameEntityView> views = new ArrayList<>(targets.size());
-        for (final GameEntity ge : targets) views.add(GameEntityView.get(ge));
-        getController().getGui().setHighlighted(views, false);
-
         this.stop();
     }
 
@@ -501,7 +536,7 @@ public final class InputSelectTargets extends InputSyncronizedBase {
         // Cleanup can publish before InputSyncronizedBase.stop schedules its
         // finished callback. Retire this same flag before that publication.
         setFinished();
-        getController().getGui().clearSelectables();
+        getController().getGui().setSelection(Selection.NONE);
         super.onStop();
     }
 

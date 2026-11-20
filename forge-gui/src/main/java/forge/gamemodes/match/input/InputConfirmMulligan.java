@@ -45,6 +45,7 @@ public class InputConfirmMulligan extends InputSyncronizedBase {
     private static final long serialVersionUID = -8112954303001155622L;
 
     boolean keepHand = false;
+    private boolean usedSerumPowder = false;
 
     private final CardCollection selected = new CardCollection();
     private final Player player;
@@ -108,14 +109,11 @@ public class InputConfirmMulligan extends InputSyncronizedBase {
         stop();
     }
 
-    volatile boolean cardSelectLocked = false;
-
     /**
      * When a card selected at the time of mulligan (currently affects just Serum Powder).
      */
     @Override
-    protected boolean onCardSelected(final Card c0, final List<Card> otherCardsToSelect, final ITriggerEvent triggerEvent) { // the only place that would cause troubles - input is supposed only to confirm, not to fire abilities
-        if (cardSelectLocked) { return false; }
+    protected boolean onCardSelected(final Card c0, final List<Card> otherCardsToSelect, final ITriggerEvent triggerEvent) {
         final boolean fromHand = player.getZone(ZoneType.Hand).contains(c0);
         final boolean isSerumPowder = c0.getName().equals("Serum Powder");
         if (!isSerumPowder || !fromHand) {
@@ -125,22 +123,18 @@ public class InputConfirmMulligan extends InputSyncronizedBase {
         final CardView cView = c0.getView();
         //pfps leave this as is for now - it is confirming during another confirm so it might need the popup
         if (getController().getGui().confirm(cView, "Use " + cView + "'s ability?")) {
-            cardSelectLocked = true;
-            player.getGame().getAction().invoke(() -> {
-                final CardCollectionView hand = c0.getController().getCardsIn(ZoneType.Hand);
-                final int handSize = hand.size();
-                for (final Card c : hand.threadSafeIterable()) {
-                    player.getGame().getAction().exile(c, null, null);
-                }
-                c0.getController().drawCards(handSize);
-                cardSelectLocked = false;
-            });
+            usedSerumPowder = true;
+            done();
         }
         return true;
     }
 
     public final boolean isKeepHand() {
         return keepHand;
+    }
+
+    public final boolean hasUsedSerumPowder() {
+        return usedSerumPowder;
     }
 
     public CardCollectionView getSelectedCards() {

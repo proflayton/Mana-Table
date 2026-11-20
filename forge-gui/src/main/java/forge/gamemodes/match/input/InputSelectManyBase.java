@@ -5,10 +5,13 @@ import forge.game.GameEntity;
 import forge.game.GameEntityView;
 import forge.game.card.Card;
 import forge.game.card.CardView;
+import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
+import forge.gamemodes.match.Selection;
 import forge.localinstance.properties.ForgePreferences;
 import forge.model.FModel;
 import forge.player.PlayerControllerHuman;
+import forge.trackable.TrackableObject;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -107,13 +110,7 @@ public abstract class InputSelectManyBase<T extends GameEntity> extends InputSyn
     public final void showMessage() {
         // Publish after this input owns the UI, never while constructing it.
         // Every concrete selection input must provide its engine candidates.
-        final List<CardView> cards = new ArrayList<>();
-        for (T entity : getSelectableEntities()) {
-            if (entity instanceof Card selectableCard) {
-                cards.add(selectableCard.getView());
-            }
-        }
-        getController().getGui().setSelectables(cards, min, max);
+        showSelection();
         if (FModel.getPreferences().getPrefBoolean(ForgePreferences.FPref.UI_DETAILED_SPELLDESC_IN_PROMPT) &&
                 card != null) {
             final StringBuilder sb = new StringBuilder();
@@ -144,7 +141,7 @@ public abstract class InputSelectManyBase<T extends GameEntity> extends InputSyn
     @Override
     protected final void onStop() {
         setFinished();
-        getController().getGui().clearSelectables();
+        getController().getGui().setSelection(Selection.NONE);
         super.onStop();
     }
 
@@ -152,7 +149,6 @@ public abstract class InputSelectManyBase<T extends GameEntity> extends InputSyn
     protected void onCancel() {
         setFinished();
         bCancelled = true;
-        resetUsedToPay();
         this.getSelected().clear();
         this.stop();
     }
@@ -166,6 +162,8 @@ public abstract class InputSelectManyBase<T extends GameEntity> extends InputSyn
 
     @Override
     protected final void onOk() {
+        // A remote press must obey the same minimum as the enabled OK button.
+        if (!hasEnoughTargets()) return;
         setFinished();
         resetUsedToPay();
         this.stop();
@@ -175,14 +173,16 @@ public abstract class InputSelectManyBase<T extends GameEntity> extends InputSyn
         this.message = message0;
     }
 
-    protected void onSelectStateChanged(final GameEntity ge, final boolean newState) {
-        getController().getGui().setHighlighted(List.of(GameEntityView.get(ge)), newState);
-    }
-
-    private void resetUsedToPay() {
-        final List<GameEntityView> views = new ArrayList<>();
-        for (final GameEntity ge : getSelected()) views.add(GameEntityView.get(ge));
-        getController().getGui().setHighlighted(views, false);
+    @Override
+    protected Selection getSelection() {
+        final List<CardView> cards = new ArrayList<>();
+        final List<TrackableObject> players = new ArrayList<>();
+        for (T entity : getSelectableEntities()) {
+            if (entity instanceof Card card) cards.add(card.getView());
+            else if (entity instanceof Player player) players.add(player.getView());
+        }
+        return new Selection(cards, min, max, players,
+                new ArrayList<>(GameEntityView.getEntityCollection(getSelected())), List.of());
     }
 
     public final void setCancelAllowed(boolean allow) {

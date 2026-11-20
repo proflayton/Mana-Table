@@ -3268,6 +3268,20 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 yield null;
             }
             case "updateButtons" -> { ok = (String)a[1]; cancel = (String)a[2]; okEnabled = (boolean)a[3]; cancelEnabled = (boolean)a[4]; yield null; }
+            case "setSelection" -> {
+                var selection = (forge.gamemodes.match.Selection)a[0];
+                // Marks describe this publication. They do not grant authority
+                // beyond the actual still-owned input and its legal domain.
+                selectable.clear();
+                if (selection.max() > 0) selectable.addAll(selection.cards());
+                actionable.clear();
+                actionable.addAll(selection.actionable());
+                highlighted.clear();
+                for (var chosen : selection.chosen()) {
+                    if (chosen instanceof GameEntityView entity) highlighted.add(entity);
+                }
+                yield null;
+            }
             case "setSelectables" -> { selectable.clear(); ((Iterable<CardView>)a[0]).forEach(selectable::add); yield null; }
             case "clearSelectables" -> { selectable.clear(); yield null; }
             case "setWeaklySelectable" -> { actionable.clear(); ((Iterable<CardView>)a[0]).forEach(actionable::add); yield null; }

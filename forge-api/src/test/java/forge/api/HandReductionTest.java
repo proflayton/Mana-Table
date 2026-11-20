@@ -66,7 +66,8 @@ public class HandReductionTest {
                 if (name.equals("awaitNextInput")) {
                     assertFalse(actual.isSelectionActive(), "The batch retires before the waiting transition"); waits.incrementAndGet();
                 }
-                if (name.equals("clearSelectables")) assertFalse(actual.isSelectionActive());
+                if (name.equals("setSelection") && ((forge.gamemodes.match.Selection)args[0]).max() == 0)
+                    assertFalse(actual.isSelectionActive());
             }));
             try {
                 assertTrue(game.answer(cleanup, Map.of("choices", discard)), "One command submits the entire complement of the seven kept cards");

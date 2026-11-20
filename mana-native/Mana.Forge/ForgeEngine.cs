@@ -265,7 +265,9 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
     public async Task<DeckSummary> ImportAsync(string name, string text) => Deck(await Request("import", new { name, text, format = "Commander" }));
     public async Task<DeckSummary> ImportPresetAsync(string id) => Deck(await Request("presetImport", new { id }));
     private static Card MapCatalogFace(JsonElement card) => new() {
-        GamePieceType = Text(card, "deckSection") == "Tokens" ? "token" : "card",
+        GamePieceType = Text(card, "deckSection") switch {
+            "Tokens" => "token", "Stickers" => "sticker_sheet", _ => "card"
+        },
         Name = Text(card, "name"), ArtName = Text(card, "artName"), ArtFace = Text(card, "artFace"),
         Edition = Text(card, "edition"), ArtSet = Text(card, "artSet"), CollectorNumber = Text(card, "collectorNumber"),
         ArtIndex = card.TryGetProperty("artIndex", out var artIndex) ? artIndex.GetInt32() : 0,

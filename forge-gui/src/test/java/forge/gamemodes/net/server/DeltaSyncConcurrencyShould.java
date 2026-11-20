@@ -135,7 +135,7 @@ public class DeltaSyncConcurrencyShould {
         });
         var gui = new RemoteClientGuiGame(new RemoteClient(channel), false);
         gui.setGameView(view());
-        gui.sendFullState();
+        gui.openView(new forge.trackable.TrackableCollection<>());
         gui.handleGameEvents(List.of(new GameEventGameStarted(GameType.Constructed, (PlayerView) null, List.<PlayerView>of())));
         assertEquals(sequences, List.of(1L), "The initial delta baseline was published");
         sequences.clear();
