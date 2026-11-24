@@ -193,6 +193,10 @@ internal static class Program
                 AiLibraryAcquisitionJourney.RunStandaloneAsync(paths, Arg("--fixture-mode") ?? "bundle",
                     Arg("--production-engine-jar"), Arg("--source-revision"), Arg("--source-manifest")).GetAwaiter().GetResult(); return 0;
             }
+            if (args.Contains("--ai-punisher-choice-journey")) {
+                AiPunisherChoiceJourney.RunStandaloneAsync(paths, Arg("--production-engine-jar"),
+                    Arg("--source-revision"), Arg("--source-manifest")).GetAwaiter().GetResult(); return 0;
+            }
             if (args.Contains("--smoke-cooperative-encounter")) {
                 CooperativeEncounterEngineJourney.RunStandaloneAsync(paths).GetAwaiter().GetResult(); return 0;
             }

@@ -41,7 +41,8 @@ internal static class AiReleaseEvaluation
         using var production = ZipFile.OpenRead(productionJar);
         if (production.GetEntry("forge/api/DesktopEngine.class") == null
             || production.Entries.Any(entry => entry.FullName.StartsWith("forge/api/AiReleaseFixtureEngine", StringComparison.Ordinal)
-                || entry.FullName.StartsWith("forge/api/LibraryAcquisitionFixtureEngine", StringComparison.Ordinal)))
+                || entry.FullName.StartsWith("forge/api/LibraryAcquisitionFixtureEngine", StringComparison.Ordinal)
+                || entry.FullName.StartsWith("forge/api/PunisherChoiceFixtureEngine", StringComparison.Ordinal)))
             throw new InvalidDataException("Shipping engine must contain the real entry point and exclude test fixture classes.");
         string? candidateBuild = null;
         if (verifyPackage) {
@@ -164,7 +165,7 @@ internal static class AiReleaseEvaluation
     private static string Hash(string file) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(file)));
 
     internal static bool FixtureClass(string name) => new[] {
-        "forge/api/AiReleaseFixtureEngine", "forge/api/LibraryAcquisitionFixtureEngine"
+        "forge/api/AiReleaseFixtureEngine", "forge/api/LibraryAcquisitionFixtureEngine", "forge/api/PunisherChoiceFixtureEngine"
     }.Any(prefix => name == prefix + ".class"
         || name.StartsWith(prefix + "$", StringComparison.Ordinal) && name.EndsWith(".class", StringComparison.Ordinal));
 }
