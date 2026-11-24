@@ -43,6 +43,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-cooperative-encounter");
         testRun |= args.Contains("--smoke-configured-simulation");
         testRun |= args.Contains("--ai-library-acquisition-journey");
+        testRun |= args.Contains("--ai-punisher-choice-journey");
         testRun |= args.Contains("--smoke-ai-team-goldens");
         testRun |= args.Contains("--ai-typed-return-golden");
         testRun |= args.Contains("--smoke-ai-resources");
