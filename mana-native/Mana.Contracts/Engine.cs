@@ -309,6 +309,8 @@ public sealed record Defender(string Kind, string Id, int PlayerId, string Name)
 public sealed record AttackOption(string CardId, ImmutableArray<Defender> Defenders);
 public sealed record Attack(string CardId, int DefendingPlayerId, ImmutableArray<string> BlockerIds, ImmutableArray<string> EligibleBlockerIds)
 {
+    // DefendingPlayerId retains the actual original public player assignment,
+    // including a player who has since left. It never grants target authority.
     // An attacker remains in combat after its defending permanent leaves.
     // Missing legacy metadata still means the original player/card assignment.
     public bool HasDefender { get; init; } = true;

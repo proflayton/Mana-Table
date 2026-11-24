@@ -2332,6 +2332,12 @@ blocker relations, absent defender and continued rules progress. Native wire,
 presentation and policy checks distinguish explicit absence from the legacy
 player fallback, retain blocker links, reject malformed real identities and
 avoid player arrows, life-threat estimates or commands for the absent target.
+`TerminalProjectionTest` also checks a pending loss reveal: every audience keeps
+the actual original defending player's historical ID while reporting no current
+defender, and preserves blocked status without departed card references. The
+focused native decoder and presentation controls run with
+`--smoke-headless-presentation --presentation-group departed-defender --profile <fresh-profile>`;
+the full headless inventory includes those same controls.
 These regressions use the existing Java and headless lanes rather than another
 randomized deck, golden fixture or JVM.
 

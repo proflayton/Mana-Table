@@ -2003,6 +2003,11 @@ leaves combat, Forge keeps the attacking creature in combat without a current
 defender (CR 506.4c). The adapter reports `hasDefender: false` and `defender: null`,
 retaining the attacker, blockers, blocked status, and original `defendingPlayerId`
 for the blocking relation. That player is not a replacement damage recipient.
+The same historical player ID remains when that player has lost while a loss
+reveal is pending. Both owned and spectator audiences retain the actual known
+original player, with no current defender or legal candidate for that player;
+they never substitute another player ID. A genuinely unknown original player
+remains unknown rather than being fabricated as player zero.
 Internal absent-target helpers receive no public card identity or name and are
 excluded from current defender choices. Clients treat an omitted `hasDefender`
 as true for older engine snapshots; false with a non-null defender is invalid.

@@ -276,6 +276,8 @@ public class TerminalProjectionTest {
             var spectator = JSON.toJsonTree(table.spectatorState()).getAsJsonObject();
             assertEquals(text(spectator, "status"), "playing");
             assertTrue(!spectator.has("outcome") || spectator.get("outcome").isJsonNull());
+            int originalDefendingPlayerId = table.game.getRegisteredPlayers().get(1).getId();
+            assertTrue(player(spectator, originalDefendingPlayerId).get("eliminated").getAsBoolean());
             Files.writeString(evidence.resolve("public-pending-loss-reveal.json"), JSON.toJson(spectator));
             for (var session : table.automatedSeats()) {
                 var owned = JSON.toJsonTree(session.automatedObservation()).getAsJsonObject();
@@ -300,7 +302,8 @@ public class TerminalProjectionTest {
                         assertTrue(blocker.isJsonPrimitive() && !blocker.getAsString().isBlank(), "A departed card cannot become a null/empty combat reference");
                     assertFalse(attacker.get("hasDefender").getAsBoolean(), "The departed player is no longer a current defender");
                     assertTrue(!attacker.has("defender") || attacker.get("defender").isJsonNull());
-                    assertTrue(!attacker.has("defendingPlayerId") || attacker.get("defendingPlayerId").isJsonNull());
+                    assertEquals(attacker.get("defendingPlayerId").getAsInt(), originalDefendingPlayerId,
+                            "The actual original player remains historical context, never a replacement current defender");
                     if (!blockedAttackerId.isEmpty() && text(attacker, "cardId").equals(blockedAttackerId)) {
                         sawBlockedAttacker = true;
                         assertTrue(attacker.get("blocked").getAsBoolean(), "Losing a blocker does not undo the rules blocked status");

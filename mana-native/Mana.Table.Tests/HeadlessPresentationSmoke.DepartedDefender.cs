@@ -15,14 +15,14 @@ internal static partial class HeadlessPresentationSmoke
 {
     private static void CheckDepartedDefender(string profile, Action<bool, string> check, List<object> trace, List<object> performance)
     {
-        JsonElement Wire(bool? hasDefender, object? defender)
+        JsonElement Wire(bool? hasDefender, object? defender, bool eliminatedDefender = false)
         {
             var attack = new Dictionary<string, object?> { ["cardId"] = "attacker", ["defendingPlayerId"] = 0,
                 ["defender"] = defender, ["blockerIds"] = new[] { "blocker" }, ["eligibleBlockerIds"] = new[] { "blocker" }, ["blocked"] = true };
             if (hasDefender != null) attack["hasDefender"] = hasDefender;
-            return JsonSerializer.SerializeToElement(new { id = "departed-defender-wire", status = "playing", viewerId = 0,
+            return JsonSerializer.SerializeToElement(new { id = "departed-defender-wire", status = "playing", viewerId = eliminatedDefender ? 1 : 0,
                 turn = 4, phase = "Combat damage", phaseKey = "COMBAT_DAMAGE", activePlayerId = 1,
-                players = new[] { new Player(0, "You", 40, false, false, ImmutableDictionary<string, int>.Empty, []),
+                players = new[] { new Player(0, "Original defender", eliminatedDefender ? 0 : 40, false, eliminatedDefender, ImmutableDictionary<string, int>.Empty, []),
                     new Player(1, "Other", 40, true, false, ImmutableDictionary<string, int>.Empty, []) }, stack = Array.Empty<object>(),
                 combat = new { attackers = new[] { attack }, attackOptions = Array.Empty<object>() }, prompt = (object?)null });
         }
@@ -32,6 +32,10 @@ internal static partial class HeadlessPresentationSmoke
             "An explicit departed defender decodes without a helper identity while preserving the attacker, defending relation and blocked state");
         check(ForgeSnapshotDecoder.Decode(Wire(null, null))!.Combat!.Attackers[0].HasDefender,
             "An older combat snapshot omitting defender metadata retains its legacy player assignment");
+        var eliminated = ForgeSnapshotDecoder.Decode(Wire(false, null, true))!;
+        check(eliminated.ViewerId == 1 && eliminated.Players.Single(player => player.Id == 0).Eliminated
+            && eliminated.Combat?.Attackers is [{ HasDefender: false, Defender: null, DefendingPlayerId: 0, Blocked: true }],
+            "A departed player's actual original ID remains readable historical context without becoming a current defender");
         foreach (var invalid in new[] { Wire(false, new { kind = "player", id = "0", playerId = 0, name = "You" }),
             Wire(true, new { kind = "card", id = (string?)null, playerId = 0, name = "Invalid live identity" }) }) {
             var scope = new ForgeCommandScope(); scope.Observe(absent);
@@ -78,5 +82,21 @@ internal static partial class HeadlessPresentationSmoke
             Combat = after.Combat! with { AttackOptions = [new("attacker", [new("player", "0", 0, "You")])] } };
         check(CombatGuide.Remove(declaration, "attacker") == null,
             "An absent defender cannot synthesize a player-toggle recall even when that player is a current legal alternative");
+
+        var lostPlayer = after with { ViewerId = 1,
+            Combat = after.Combat! with { Attackers = [after.Combat.Attackers[0] with { BlockerIds = [], EligibleBlockerIds = [] }] },
+            Players = after.Players.Select(player => player.Id != 0 ? player : player with {
+                Life = 0, Eliminated = true, Zones = player.Zones.Select(zone => zone with { Count = 0, Cards = [], TopCard = null }).ToImmutableArray()
+            }).ToImmutableArray() };
+        using var lostRun = new Runner(profile, "eliminated-player-defender", lostPlayer, trace, performance);
+        lostRun.Tick("original-defender-eliminated"); lostRun.Settle("original-defender-eliminated");
+        check(lostRun.Frame.Drawing.Commands.OfType<DrawCommand.Arrow>().Count() == 0
+            && lostRun.Frame.Cards.Any(card => card.Id == "attacker")
+            && lostPlayer.Combat.Attackers[0] is { DefendingPlayerId: 0, HasDefender: false, Defender: null, Blocked: true },
+            "Retaining a known eliminated player's historical ID neither redirects the attack nor erases its blocked status");
+        lostRun.Input(new Point(20, 60), keys: new KeyboardState(Keys.C));
+        lostRun.Input(new Point(20, 60)); lostRun.Settle("review-eliminated-original-defender");
+        check(Text(lostRun.Frame).Contains("DEFENDER LEFT COMBAT") && lostRun.Engine.Replies.Count == 0,
+            "Combat review for an eliminated original player stays readable without a replacement target or gameplay command");
     }
 }

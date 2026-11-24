@@ -135,7 +135,9 @@ final class SpectatorObservation {
             var defender = combat.getDefenderByAttacker(attacker);
             attackers.add(map("cardId", id(table, attacker.getView()), "hasDefender", CombatDefenders.isCurrent(table.game, defender),
                     "defender", defender(table, defender),
-                    "defendingPlayerId", defending == null || defending.hasLost() ? null : defending.getId(), "blockerIds", blockers,
+                    // Same original public assignment as the owned audience;
+                    // hasDefender/defender alone describe the current target.
+                    "defendingPlayerId", defending == null ? null : defending.getId(), "blockerIds", blockers,
                     "blocked", combat.isBlocked(attacker), "eligibleBlockerIds", List.of()));
         }
         return map("attackingPlayerId", combat.getAttackingPlayer().getId(), "attackers", List.copyOf(attackers),

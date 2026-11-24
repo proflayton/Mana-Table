@@ -3042,7 +3042,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             var defender = combat.getDefenderByAttacker(attacker);
             attacks.add(map("cardId", combatIds.id(attacker.getView()),
                     "hasDefender", CombatDefenders.isCurrent(game, defender), "defender", combatDefender(defender),
-                    "defendingPlayerId", combat.getDefenderPlayerByAttacker(attacker) == null || combat.getDefenderPlayerByAttacker(attacker).hasLost()
+                    // Historical assignment, not a current defender/target.
+                    // Preserve the actual player even after that player leaves.
+                    "defendingPlayerId", combat.getDefenderPlayerByAttacker(attacker) == null
                             ? null : combat.getDefenderPlayerByAttacker(attacker).getId(),
                     "blockerIds", assigned.stream().filter(card -> currentCardView(card.getView()) && card.getView().canBeShownTo(viewer))
                             .map(card -> combatIds.id(card.getView())).toList(),
