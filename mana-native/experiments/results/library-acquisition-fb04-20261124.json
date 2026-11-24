@@ -1,0 +1,287 @@
+{
+  "schemaVersion": 1,
+  "kind": "ai-development-experiment-summary",
+  "date": "2026-11-24",
+  "sourceRevision": "fb04a4de1fcc060355c1d893009709016044b1fa",
+  "sourceTree": "a2bd5e01d4926577eb982539a222684b20bee630",
+  "build": {
+    "scope": "Fresh local clean-source release-format 0.2.0 build; not public 0.2.504 binary.",
+    "engine": {
+      "schemaVersion": 2,
+      "sourceRevision": "fb04a4de1fcc060355c1d893009709016044b1fa",
+      "engine": {
+        "bytes": 28198740,
+        "sha256": "5a9f05ca5a723b2374d5d30af31d01a39e47a05d87fb14d0f5d798cb679b7a24"
+      },
+      "fixtureLauncher": {
+        "bytes": 27953,
+        "sha256": "a7f9c8e34e349981f203eb8543507a7f642ba4bbb3f79e9eb90017a9e67a8443"
+      }
+    },
+    "sourceReceipt": {
+      "schemaVersion": 1,
+      "purpose": "native-smoke-source-validation",
+      "sourceRevision": "fb04a4de1fcc060355c1d893009709016044b1fa",
+      "version": "0.2.0",
+      "buildMetadataSha256": "715B9F3792FD2B3DF402DF955388C71B190CD9B7342D16626B715988F4D10161",
+      "sourceArchive": {
+        "sizeBytes": 302820539,
+        "sha256": "20510CB0CAF97FD9D65F5B6E5FE7E3476580BEEBBA1201032D34F95E2D88CCCF",
+        "fileName": "package-source.zip"
+      },
+      "runtimeArchive": {
+        "sizeBytes": 147615183,
+        "sha256": "9C1252A42AB1A797007ECEFB6791E1B266D52B541BEB86E9DB26243B55D124DA",
+        "fileName": "package-windows-x64.zip"
+      }
+    },
+    "assemblyBinding": {
+      "assemblyOverlay": [
+        {
+          "sha256": "42B0E7EC3C0D86946CB4F8D5C40E277D961B38ADEA9A1049A150FB73992C8BC0",
+          "name": "Mana.AI"
+        },
+        {
+          "sha256": "394D7D0352936240D7210D7797BB3C9101A0F1EA7AACDB9F5E7EFB4DB1D6DB7C",
+          "name": "Mana.Planning"
+        },
+        {
+          "sha256": "F9F246BF7C6D032444D5DF5F2C6128E41DAFB667A0B8691B955B8D6F433E190B",
+          "name": "Mana.Contracts"
+        },
+        {
+          "sha256": "2D6EF5FD3E0144BDAC07092BE47545BB26B70605969716C3F6530E13CA73465A",
+          "name": "Mana.Forge"
+        }
+      ],
+      "publicReleaseBinary": false,
+      "kind": "local-clean-source-experiment-build",
+      "sourceRevision": "fb04a4de1fcc060355c1d893009709016044b1fa"
+    }
+  },
+  "preregistration": {
+    "frozenAtUtc": "2026-11-24T22:32:11.2676921Z",
+    "allLocksFrozenBeforeAnyExperiment": true,
+    "locks": [
+      {
+        "maximumWorkerMs": 1920000,
+        "lockSha256": "5a61bb92e559bdfc3e074d7e192cb82620598af6c9db2d06a85676dc9a390adc",
+        "name": "replay-aa",
+        "jobs": 8,
+        "maximumAttemptCaptureBytes": 136839168
+      },
+      {
+        "maximumWorkerMs": 1920000,
+        "lockSha256": "9d65e5c0c5856c88ea6684c42f14635619f8b80778d74d1f72cae9ad393e81d1",
+        "name": "replay-ab",
+        "jobs": 8,
+        "maximumAttemptCaptureBytes": 136839168
+      },
+      {
+        "maximumWorkerMs": 2400000,
+        "lockSha256": "2638e2932aa8dc4e44e66b8617ad0a8180511ec242cbff9946025d96c89882f4",
+        "name": "attachment-ab",
+        "jobs": 10,
+        "maximumAttemptCaptureBytes": 171048960
+      },
+      {
+        "maximumWorkerMs": 9600000,
+        "lockSha256": "b0783faa441dcbffeec53b3868b593b0b620d6c72498c3774f05b5a5f7d44fcb",
+        "name": "natural-aa",
+        "jobs": 32,
+        "maximumAttemptCaptureBytes": 547356672
+      },
+      {
+        "maximumWorkerMs": 9600000,
+        "lockSha256": "4d95eaf3b3cfe710f0b3f4f89d40cc2b34810b4bd505201dce07089ee8bffd6c",
+        "name": "natural-ab",
+        "jobs": 32,
+        "maximumAttemptCaptureBytes": 547356672
+      }
+    ],
+    "sourceRevision": "fb04a4de1fcc060355c1d893009709016044b1fa"
+  },
+  "treatments": {
+    "baseline": "casual-commander.v6",
+    "candidate": "casual-commander.v7.library-acquisition.v1",
+    "reference": "casual-commander.v6",
+    "fullAttachmentEvaluation": true,
+    "defaultChanged": false,
+    "promoted": false
+  },
+  "seeds": {
+    "planning": "261027",
+    "policy": "2668620592559112008",
+    "rulesRandomnessControlled": false
+  },
+  "naturalLimits": {
+    "decisionMs": 10000,
+    "workUnits": 4096,
+    "matchMs": 180000,
+    "turns": 160,
+    "workerMs": 300000,
+    "captureBytes": 16777216,
+    "concurrency": 1
+  },
+  "replay": {
+    "candidateAA": {
+      "planned": 8,
+      "retired": 8,
+      "usefulPassBoth": [
+        4,
+        4
+      ],
+      "sameInputSameCommandPairs": 4,
+      "reasonEquality": "unavailable: explanation not recorded",
+      "inputComparison": "Original source/raw bytes equal; exact parsed structure, all numeric tokens and array order equal. Only derived object-member serialization order differs."
+    },
+    "acquisitionAB": {
+      "planned": 8,
+      "retired": 8,
+      "baselinePass": 0,
+      "candidatePass": 4,
+      "corrections": 4,
+      "regressions": 0,
+      "incompletePairs": 0,
+      "families": 3,
+      "baselineFamilyRate": 0,
+      "candidateFamilyRate": 1,
+      "interpretation": "Known development corpus, not held-out or natural-game strength."
+    },
+    "attachmentAB": {
+      "planned": 10,
+      "retired": 10,
+      "baselinePass": 5,
+      "candidatePass": 5,
+      "regressions": 0
+    }
+  },
+  "naturalAA": {
+    "planned": 32,
+    "predeclaredLaunchLimit": 2,
+    "retired": 2,
+    "terminal": 2,
+    "intentionallyNotLaunched": 30,
+    "meaning": "Incomplete lifecycle/accounting control. Equal independent-game outcomes not required."
+  },
+  "naturalAB": {
+    "interpretation": "guardrail-failed",
+    "planned": 32,
+    "started": 7,
+    "terminal": 6,
+    "providerFailure": 1,
+    "notLaunched": 25,
+    "invalidEvidence": 0,
+    "criticalSafetyFailures": 1,
+    "cleanupFailures": 0,
+    "policyFailures": 0,
+    "arms": {
+      "baseline": {
+        "scheduled": 16,
+        "startedKnown": 3,
+        "startUnknown": 0,
+        "planned": {
+          "denominator": 16,
+          "observed": 3,
+          "unresolved": 13,
+          "lower": 0.125,
+          "upper": 0.9375,
+          "completedOnlyMean": 0.6666666666666666,
+          "completedOnlyInterpretation": "descriptive, potentially selected; never primary"
+        },
+        "startedOrPossible": {
+          "denominator": 3,
+          "observed": 3,
+          "unresolved": 0,
+          "lower": 0.6666666666666666,
+          "upper": 0.6666666666666666,
+          "completedOnlyMean": 0.6666666666666666,
+          "completedOnlyInterpretation": "descriptive, potentially selected; never primary"
+        },
+        "verifiedDraws": 0,
+        "soleWins": 2,
+        "statuses": {
+          "completed": 3,
+          "not-launched": 13
+        }
+      },
+      "candidate": {
+        "scheduled": 16,
+        "startedKnown": 4,
+        "startUnknown": 0,
+        "planned": {
+          "denominator": 16,
+          "observed": 3,
+          "unresolved": 13,
+          "lower": 0.0625,
+          "upper": 0.875,
+          "completedOnlyMean": 0.3333333333333333,
+          "completedOnlyInterpretation": "descriptive, potentially selected; never primary"
+        },
+        "startedOrPossible": {
+          "denominator": 4,
+          "observed": 3,
+          "unresolved": 1,
+          "lower": 0.25,
+          "upper": 0.5,
+          "completedOnlyMean": 0.3333333333333333,
+          "completedOnlyInterpretation": "descriptive, potentially selected; never primary"
+        },
+        "verifiedDraws": 0,
+        "soleWins": 1,
+        "statuses": {
+          "completed": 3,
+          "not-launched": 12,
+          "provider-failure": 1
+        }
+      }
+    },
+    "plannedDifferenceBounds": [
+      -0.875,
+      0.75
+    ],
+    "lockPermanentlyRetired": true,
+    "resumePermitted": false,
+    "strengthClaim": false,
+    "confidenceIntervals": null,
+    "coverage": "Not instrumented. First-focal-per-task samples cannot establish zero acquisition exposure or actual causal consequences."
+  },
+  "failure": {
+    "job": "block-0000-deck-0-seat-3-candidate",
+    "turn": 39,
+    "phase": "COMBAT_DAMAGE",
+    "boardRevision": 3387,
+    "status": "provider-failure",
+    "criticalSafetyFailure": true,
+    "reason": "Last-loss historical public portraits have no current visual/combat identity in owned projection; independent spectator assigns identities. Blocker references differ too.",
+    "sourceCause": "Game.onPlayerLost can wait for disclosure after removing player membership but before setGameOver. CurrentCardViews rejects departed membership; SpectatorObservation assigns IDs without that check.",
+    "notAttributedToPolicyTreatment": true,
+    "terminalOutcome": null,
+    "cleanupErrors": [],
+    "workerExitCode": 0,
+    "workerExitMeaning": "Committed measurement record, not a passing game or campaign.",
+    "retirementUnknown": false
+  },
+  "evidenceDigests": {
+    "reports": {
+      "replay-aa": "00b6690e72b2c336e8b6a1630c631790458759939021eb29dc6f398649fb0cd8",
+      "replay-ab": "97d4dc6f765e2c1baf74c8a857cfd6240a0c6bada01aaa9585a44aa853941a17",
+      "attachment-ab": "b64428e6c41d28d480582b69ff4b7beaa69a9ddf4bbfe3a5a7268b1bfdabf2b7",
+      "natural-aa": "a88d03899dcd4a14ba9498db337405643b5002634c75cf149d7ffe654508d015",
+      "natural-ab": "cc1c4f986ad54fc59cd2c4642c032f780e2c9267d2b27bc8eeafb2926d078061"
+    },
+    "mismatchPair": "b96c74205c5fdc91abe284735ee5b15f97bd30feb8d3d2b58ea1600590748f12",
+    "failedJobResult": "008a0b83f9af752a0bc202acdff7a62275ff2d8fc3d384955c5bd3228dcda067",
+    "failedJobArtifacts": "3a066d14272b66fa6a38a251a68e22eed1e6b0c105d1f4ee85dc80af326b1c59",
+    "losslessAAReview": "8dcaa75fa0430f0d92ed89dff1913b5b6f25d11219360049e5f2a693425b1c86",
+    "retainedDiagnostics": "1086884be2c4679ff13ddd51c136c0300e6503a6d665c3f06df1bb8f1405d622"
+  },
+  "validation": {
+    "coordinatorControls": 27,
+    "nativeFocusedControls": 226,
+    "allPassed": true,
+    "humanGameplayReview": "pending",
+    "privateEvidence": "Raw owned frames, handles, exact pair, ledgers, artifacts and first attempts remain host-private; not committed here."
+  },
+  "next": "Review a bounded provider projection fix preserving historical/action separation and public-parity guard. Any subsequent study requires new source/specs/locks; retain all seven original attempts."
+}
