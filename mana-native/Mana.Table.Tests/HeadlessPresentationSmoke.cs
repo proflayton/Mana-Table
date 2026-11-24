@@ -80,6 +80,7 @@ internal static partial class HeadlessPresentationSmoke
                     AiCampaignStepWaitNegativeChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                 }
                 else if (group == "typed-return-evidence") AiReleaseGoldens.CheckTypedReturnEvidence(Check);
+                else if (group == "cooperative-stack") AiReleaseGoldens.CheckCooperativeStackWitness(Check);
                 else if (group == "owner-read-marker") PolledFullGameContractChecks.RunOwnerReadMarkerControlAsync(profile, Check).GetAwaiter().GetResult();
                 else if (group == "owner-read-related") PolledFullGameContractChecks.RunOwnerReadRelatedAsync(profile, Check).GetAwaiter().GetResult();
                 else if (group == "owner-read-lineage") PolledFullGameContractChecks.RunOwnerReadLineageControlAsync(profile, Check).GetAwaiter().GetResult();
@@ -209,6 +210,7 @@ internal static partial class HeadlessPresentationSmoke
             HandReductionWireChecks.Run(Check);
             AiReleaseGoldens.CheckReceiptEvidence(Check);
             AiReleaseGoldens.CheckTypedReturnEvidence(Check);
+            AiReleaseGoldens.CheckCooperativeStackWitness(Check);
             AiEngineCampaign.CheckDisclosureBounds(Check);
             ForgePublicProjectionChecks.Run(profile, Check);
             CapturePngChecks.Run(Check);

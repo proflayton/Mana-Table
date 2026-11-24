@@ -86,6 +86,7 @@ internal static partial class AiReleaseGoldens
         int steps = 0, comparisons = 0, actorId = -1, allyId = -1, enemyId = -1, otherEnemy = -1;
         string sourceId = "", targetId = "", allyCardId = "", otherEnemyCardId = "", stop = "not-started", detail = "";
         int beforeCounter = 0;
+        CooperativeStackWitness? stackWitness = null;
         bool passed = false, stackSeen = false, resolved = false, ownCost = false, targetChosen = false, reportedDamage = false,
             counterApplied = false;
         Exception? failure = null;
@@ -146,7 +147,14 @@ internal static partial class AiReleaseGoldens
                     && item.SelectedControllerId == (removal ? enemyId : allyId) && item.CostOwner == sourceId);
                 var executions = actorReceipts.Where(item => !item.SelectionIsCost && item.SelectedCardId == targetId
                     && item.CostOwner == sourceId && item.ExecutionId.Length > 0).Select(item => item.ExecutionId).ToHashSet(StringComparer.Ordinal);
-                stackSeen |= state.Stack.Any(item => item.Card is { } card && CardViews.Identity(card) == sourceId);
+                // The source may already have been sacrificed before priority
+                // exposes the stack. Its portrait is not an occurrence identity.
+                if (stackWitness == null) foreach (var observedState in provider.Last.Select(item => item.State).Prepend(state)) {
+                    stackWitness = CaptureCooperativeStackWitness(observedState, accepted.State.Id, actorId, sourceId,
+                        targetId, removal ? enemyId : allyId, actorReceipts);
+                    if (stackWitness != null) break;
+                }
+                stackSeen = stackWitness != null;
                 // A sacrificed source can lose its readable card reference.
                 // The accepted target/payment execution remains authoritative;
                 // source-name matching cannot replace that historical identity.
@@ -201,7 +209,7 @@ internal static partial class AiReleaseGoldens
                 catch (Exception error) { captureErrors.Add(error.ToString()); passed = false; }
         }
         var evidence = JsonSerializer.SerializeToElement(new { audience = "host-private targeted fixture", accepted,
-            actorId, allyId, enemyId, sourceId, targetId, beforeCounter, targetChosen, ownCost, stackSeen, resolved, reportedDamage, counterApplied,
+            actorId, allyId, enemyId, sourceId, targetId, beforeCounter, targetChosen, ownCost, stackSeen, stackWitness, resolved, reportedDamage, counterApplied,
             commands = provider.Accepted, diagnostics = diagnostics.Summary(), failure = failure?.ToString(), captureErrors,
             campaignDeckQualificationCredit = false, naturalGameCompletionCredit = false,
             scope = "Actual policy/engine/controller/command consequence; fixture lists are not the pinned campaign deck versions." });

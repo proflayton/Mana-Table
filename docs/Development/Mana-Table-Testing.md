@@ -2326,6 +2326,14 @@ used for each accepted command. A separate outer poll may miss an intermediate
 bill already answered by the policy; it is not that command's observation.
 Ordered current-cost receipts and independent public stack/battlefield results
 remain separate requirements.
+Cooperative goldens bind their actual activated stack occurrence to an accepted
+source/target execution and its public activation event. A sacrificed source
+may have a portrait without a current card ID; neither that portrait nor a
+resolved/damage event alone supplies the stack witness. Negative controls for
+every binding run in the full headless inventory and the focused
+`--smoke-headless-presentation --presentation-group cooperative-stack --profile <fresh-profile>`
+group. Both actual cooperative journeys retain their primitive stack witness
+and keep the existing two-round and eighteen-second limits.
 The real `PlaneswalkerCombatRegressionTest` follows lethal combat through the
 defending permanent's departure and checks every audience's surviving attacker,
 blocker relations, absent defender and continued rules progress. Native wire,
