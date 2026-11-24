@@ -314,9 +314,18 @@
               },
               "Recipients": {
                 "Knowledge": "Known",
-                "Binding": "Explicit",
+                "Binding": "Source",
                 "TargetOperationId": null,
-                "Entities": []
+                "Entities": [
+                  {
+                    "Id": "source",
+                    "Kind": "Card",
+                    "CardId": "public-source",
+                    "PlayerId": null,
+                    "ControllerId": 0,
+                    "OwnerId": 0
+                  }
+                ]
               },
               "Links": [],
               "Costs": []
