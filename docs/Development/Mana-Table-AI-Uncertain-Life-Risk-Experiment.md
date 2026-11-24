@@ -110,8 +110,9 @@ empty/last libraries. Replay-worker checks exercise the independent grader and
 the actual two-arm worker on identical authored inputs. Node checks preserve
 the closed factories/settings/endpoints and reject hidden-damage expectations.
 
-Exact-input no-peek checks compare identical serialized replay bytes, history
-and seed. Two fresh provider worlds with different generated IDs are a separate
+Exact-input repeatability checks compare copies of identical serialized replay
+bytes, history and seed; they do not construct different hidden worlds or prove
+producer privacy. Two fresh provider worlds with different generated IDs are a separate
 producer test with structurally equivalent entitled facts; normalizing them is
 not a claim of identical raw input. Real-provider continuations must admit the
 actual owned frame, evaluate once, dispatch the exact proposed current index,

@@ -109,17 +109,17 @@ internal static class AiUncertainLifeRiskRegression
         check(Selected(renewedResult, 117) && !Frame(renewed).Allows(candidate.Proposal!) && Frame(renewed).Allows(renewedResult.Proposal!),
             "Renewed publications use their actual current indices and reject the earlier correct-looking command");
 
-        // Future worlds deliberately do not enter either recorded frame. Exact
-        // input bytes, seed and history are the no-peek assertion; real provider
-        // worlds and any normalized structural comparison are separate evidence.
+        // Exact-input repeatability only: this constructs two copies of one
+        // recorded request, not two hidden worlds. Producer privacy and actual
+        // different-future continuations require separate provider evidence.
         foreach (var recorded in new[] { original, Read("high-life-40-4") }) {
-            byte[] zeroFutureInput = JsonSerializer.SerializeToUtf8Bytes(recorded, Json);
-            byte[] largeFutureInput = JsonSerializer.SerializeToUtf8Bytes(recorded, Json);
-            var zero = JsonSerializer.Deserialize<AiDecisionReplayCase>(zeroFutureInput, Json)!;
-            var large = JsonSerializer.Deserialize<AiDecisionReplayCase>(largeFutureInput, Json)!;
-            check(zeroFutureInput.SequenceEqual(largeFutureInput)
-                    && Equivalent((await Evaluate(zero)).Proposal, (await Evaluate(large)).Proposal),
-                "Different analysis-only future outcomes cannot alter a decision on exact identical replay bytes/history/seed");
+            byte[] firstInput = JsonSerializer.SerializeToUtf8Bytes(recorded, Json);
+            byte[] secondInput = JsonSerializer.SerializeToUtf8Bytes(recorded, Json);
+            var first = JsonSerializer.Deserialize<AiDecisionReplayCase>(firstInput, Json)!;
+            var second = JsonSerializer.Deserialize<AiDecisionReplayCase>(secondInput, Json)!;
+            check(firstInput.SequenceEqual(secondInput)
+                    && Equivalent((await Evaluate(first)).Proposal, (await Evaluate(second)).Proposal),
+                "Copies of exact identical replay bytes/history/seed produce the same current command");
         }
     }
 
