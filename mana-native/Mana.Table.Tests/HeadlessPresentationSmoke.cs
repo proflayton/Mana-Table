@@ -33,6 +33,23 @@ internal static partial class HeadlessPresentationSmoke
         try {
             if (group != null) {
                 if (group == "startup-playback") StartupPlaybackChecks.Run(profile, Check);
+                else if (group == "attachment-capabilities") AttachmentCapabilityWireChecks.Run(Check);
+                else if (group == "attachment-owned") AttachmentOwnedChecks.RunPinned(profile, Check);
+                else if (group == "ai-experiments") {
+                    AiFixtureIsolationChecks.Run(profile, Check);
+                    LibraryAcquisitionWireChecks.Run(Check);
+                    AiExperimentWorkerChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+                    AiExperimentReplayChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+                    AiLibraryAcquisitionOwnedChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+                    AiLibraryAcquisitionJourney.RunAuditChecks(Check);
+                    AiExperimentNaturalChecks.Run(profile, Check);
+                }
+                else if (group == "engine-diagnostics") ForgeDiagnosticsProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
+                else if (group == "updates-owner") UpdateOwnershipChecks.Run(profile, Check);
+                else if (group == "history-owner") {
+                    HistoryPresentationSessionChecks.Run(profile, Check);
+                    HistoryAnnouncementPresentationChecks.Run(profile, Check);
+                }
                 else if (group == "ai-pods") PregameFlowChecks.RunAiPods(profile, Check);
                 else if (group == "capture-png") CapturePngChecks.Run(Check);
                 else if (group == "mana-pool") CheckManaPoolPaymentClarity(profile, Check, trace, performance);
@@ -54,6 +71,13 @@ internal static partial class HeadlessPresentationSmoke
                     PolledInputReceiptChecks.RunAsync(Check).GetAwaiter().GetResult();
                 }
                 else if (group == "owner-read-admission") PolledFullGameContractChecks.RunOwnerReadAdmissionControlsAsync(profile, Check).GetAwaiter().GetResult();
+                else if (group == "owner-command-wake") PolledFullGameContractChecks.RunCommandCompletionWakeAsync(profile, Check).GetAwaiter().GetResult();
+                else if (group == "polled-evidence") PolledEvidenceInboxChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+                else if (group == "ai-campaign-wait") {
+                    AiCampaignStepWaitChecks.RunAsync(Check).GetAwaiter().GetResult();
+                    AiCampaignStepWaitNegativeChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+                }
+                else if (group == "typed-return-evidence") AiReleaseGoldens.CheckTypedReturnEvidence(Check);
                 else if (group == "owner-read-marker") PolledFullGameContractChecks.RunOwnerReadMarkerControlAsync(profile, Check).GetAwaiter().GetResult();
                 else if (group == "owner-read-related") PolledFullGameContractChecks.RunOwnerReadRelatedAsync(profile, Check).GetAwaiter().GetResult();
                 else if (group == "owner-read-lineage") PolledFullGameContractChecks.RunOwnerReadLineageControlAsync(profile, Check).GetAwaiter().GetResult();
@@ -71,6 +95,7 @@ internal static partial class HeadlessPresentationSmoke
                     AutomatedHistoryProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                     HistoryAnnouncementPresentationChecks.Run(profile, Check);
                     ForgeRequestCancellationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
+                    ForgeDiagnosticsProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                     OwnedDecisionObservationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
                 }
                 else if (group == "encounter-start") {
@@ -110,6 +135,7 @@ internal static partial class HeadlessPresentationSmoke
                     PendingEffectPresentationChecks.Run(profile, Check);
                     StackCombatLayoutChecks.Run(profile, Check);
                 }
+                else if (group == "background-input") BackgroundInputChecks.Run(profile, Check);
                 else if (group == "seated-plane") {
                     TableSurfaceProjectionChecks.Run(Check);
                     SeatZoneChecks.Run(profile, Check);
@@ -143,11 +169,14 @@ internal static partial class HeadlessPresentationSmoke
             SmokeSourceReadChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             JourneyProgressClockChecks.Run(Check);
             AiCampaignQualificationChecks.Run(Check);
+            AiCampaignStepWaitChecks.RunAsync(Check).GetAwaiter().GetResult();
+            AiCampaignStepWaitNegativeChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             MixedGameQualificationChecks.Run(Check);
             ResourceEvidenceWireChecks.Run(Check);
             ConfiguredSimulationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             AutomatedHistoryProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             ForgeRequestCancellationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
+            ForgeDiagnosticsProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             OwnedDecisionObservationProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
             EncounterStartWireChecks.Run(Check);
             EncounterStartProtocolProbe.RunAsync(profile, Check).GetAwaiter().GetResult();
@@ -161,15 +190,26 @@ internal static partial class HeadlessPresentationSmoke
             ServerAutoPresentationChecks.Run(profile, Check);
             ProjectionRecordingChecks.Run(profile, Check);
             PendingOperationsWireChecks.Run(Check);
+            AttachmentCapabilityWireChecks.Run(Check);
+            AttachmentOwnedChecks.RunPinned(profile, Check);
+            AiFixtureIsolationChecks.Run(profile, Check);
+            LibraryAcquisitionWireChecks.Run(Check);
+            AiExperimentWorkerChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+            AiExperimentReplayChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+            AiLibraryAcquisitionOwnedChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
+            AiLibraryAcquisitionJourney.RunAuditChecks(Check);
+            AiExperimentNaturalChecks.Run(profile, Check);
             BlockingCapacityWireChecks.Run(Check);
             BlockRepairWireChecks.Run(Check);
             ManaColorPaymentWireChecks.Run(Check);
             ManaReductionWireChecks.Run(Check);
             HandReductionWireChecks.Run(Check);
             AiReleaseGoldens.CheckReceiptEvidence(Check);
+            AiReleaseGoldens.CheckTypedReturnEvidence(Check);
             AiEngineCampaign.CheckDisclosureBounds(Check);
             ForgePublicProjectionChecks.Run(profile, Check);
             CapturePngChecks.Run(Check);
+            UpdateOwnershipChecks.Run(profile, Check);
             CheckKnownActionFaces(profile, Check, trace, performance);
             PregameFlowChecks.Run(profile, Check);
             CooperativeLobbyInteractionChecks.Run(profile, Check);

@@ -11,6 +11,8 @@ import forge.gamemodes.net.CompatibleObjectEncoder;
 import forge.gamemodes.net.DeltaPacket;
 import forge.gamemodes.net.ProtocolMethod;
 import forge.gamemodes.net.event.GuiGameEvent;
+import forge.gui.GuiBase;
+import forge.gui.interfaces.IGuiBase;
 import forge.trackable.TrackableProperty;
 import forge.util.Localizer;
 import io.netty.buffer.ByteBuf;
@@ -23,6 +25,8 @@ import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoop;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.AfterMethod;
 import org.testng.annotations.Test;
 
 import java.io.Serializable;
@@ -44,6 +48,22 @@ import static org.mockito.Mockito.*;
 import static org.testng.Assert.*;
 
 public class DeltaSyncConcurrencyShould {
+    private IGuiBase previousGuiBase;
+
+    @BeforeMethod
+    public void initializeGuiDispatcher() {
+        previousGuiBase = GuiBase.getInterface();
+        var guiBase = mock(IGuiBase.class);
+        // Execute selection updates rather than dropping the GUI half of a publication.
+        doAnswer(call -> { ((Runnable) call.getArgument(0)).run(); return null; }).when(guiBase).invokeInEdtLater(any());
+        GuiBase.setInterface(guiBase);
+    }
+
+    @AfterMethod(alwaysRun = true)
+    public void restoreGuiDispatcher() {
+        GuiBase.setInterface(previousGuiBase);
+    }
+
     @BeforeClass
     public void initializeLanguage() {
         Localizer.getInstance().initialize("en-US", "res/languages/");
@@ -135,7 +155,7 @@ public class DeltaSyncConcurrencyShould {
         });
         var gui = new RemoteClientGuiGame(new RemoteClient(channel), false);
         gui.setGameView(view());
-        gui.sendFullState();
+        gui.openView(new forge.trackable.TrackableCollection<>());
         gui.handleGameEvents(List.of(new GameEventGameStarted(GameType.Constructed, (PlayerView) null, List.<PlayerView>of())));
         assertEquals(sequences, List.of(1L), "The initial delta baseline was published");
         sequences.clear();

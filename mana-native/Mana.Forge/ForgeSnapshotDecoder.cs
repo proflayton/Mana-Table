@@ -36,10 +36,12 @@ internal static class ForgeSnapshotDecoder
             if (spectator ? wire.ViewerId != -1 || wire.Prompt.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)
                     : wire.Status != "starting" && !earlyFailure && !players.Contains(wire.ViewerId)) throw Invalid();
             var decision = wire.Prompt.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? null
-                : ForgeDecisionDecoder.Decode(wire.Prompt, players);
+                : ForgeDecisionDecoder.Decode(wire.Prompt, players, wire.ViewerId);
             if (wire.Status == "resolving" && decision != null
                 || decision != null && wire.DecisionOwnerId is { } chooser && chooser != wire.ViewerId
                 || decision?.Payload is PriorityPayload && wire.PriorityPlayerId is { } responder && responder != wire.ViewerId) throw Invalid();
+            if (decision?.Payload is OptionsPayload { LibraryAcquisition: { } acquisition }
+                && (wire.DecisionOwnerId != wire.ViewerId || acquisition.ActorPlayerId != wire.ViewerId)) throw Invalid();
             if (wire.States.IsDefault || wire.Activity.IsDefault || wire.Notices.IsDefault || wire.IgnoredPriorityAbilities.IsDefault) throw Invalid();
             if (spectator && (!wire.PlayAccesses.IsEmpty || !wire.Activity.IsEmpty || !wire.Notices.IsEmpty
                 || wire.Players.Any(player => player.Zones.Any(zone => zone.TopCard is { } top
@@ -225,7 +227,7 @@ internal static class ForgeSnapshotDecoder
             Id = Identifier(Id), ControllerId = ControllerId, Repetition = Repetition,
             Targets = Targets.IsDefault ? throw Invalid() : Targets, Effect = Effect, ExecutionId = ExecutionId ?? "",
             OperationGraph = OperationGraph.ValueKind == JsonValueKind.Undefined ? ActionOperationGraph.Unknown
-                : OperationGraph.Deserialize<ActionOperationGraph>(OperationJson) ?? throw Invalid()
+                : ForgeAttachmentProjection.Normalize(OperationGraph.Deserialize<ActionOperationGraph>(OperationJson) ?? throw Invalid())
         };
     }
 

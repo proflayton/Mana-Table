@@ -25,7 +25,32 @@ to rebuild, not a wire or saved-data migration: IPC/sync versions and JSON field
 names remain unchanged. Optional workshop metadata collections still distinguish
 omitted/null (leave unchanged) from an explicit empty array (clear).
 
+Actual attachment operations can carry an additive bounded `attachment` body
+describing direct signed P/T and keyword grants. Their Java wire effect and
+knowledge remain `Unknown` for older enum readers. Native clients validate the
+body and current bindings before recognizing internal `Attach`. During an Aura's
+target announcement, `attachmentSourceCardId` may identify the existing read-only
+prompt portrait when the source is absent from zones; generic entity admission
+and action permissions do not change. This field is confined to the owned active
+attachment decision. See the [shared contract and offline export CLI](../contracts/card-capabilities/README.md).
+
 ## Implemented
+
+Owned library-search options may include optional `libraryAcquisition` facts:
+`actorPlayerId`, `libraryOwnerId`, `recipientPlayerId`, `stage`,
+`currentDestination`, `additionalCostKnownAbsent`, and `plannedDestinations`
+(`destination`, `maximumCount`). Stages are `direct`, `select-bundle`, and
+`distribute-bundle`. The bounded structural producer certifies only supported
+own-library basic-land acquisition paths. It does not infer intent from names
+or prompt text. Existing `intent` can remain `Unknown`.
+
+Native admission requires the current owned viewer/decision, matching actor,
+owner and recipient, supported stage/destinations, and disclosed keyless options.
+These facts add no identities, inspection privilege or command authority. Missing
+facts preserve older behavior; malformed supplied facts are rejected. No saved
+data migration or protocol version change is required. The experimental policy
+and supported mechanics are described in the
+[acquisition experiment](../docs/Development/Mana-Table-AI-Library-Acquisition-Experiment.md).
 
 | Hook | Behavior |
 | --- | --- |
@@ -1037,6 +1062,13 @@ legacy null identities without creating authority; scoped decision portraits
 still reject explicitly malformed identity fields. A finished table may retain
 exact cards from registered players' final rules zones for reading, with no
 pending choice or action domain.
+
+**Source candidate:** current stack target references can identify a public
+face-down battlefield occurrence through its existing anonymous `combatId` and
+the label `Face-down card`. This display link supplies no printed face, response
+key or action permission. Hidden hand/library cards, face-down exile cards and
+retired occurrences remain excluded. Historical announcement receipts retain
+their separate event-time disclosure rules.
 The original
 `GameStateMapper` excludes stack
 entries, combat assignments, attachments, counters, mana pools, temporary reveal
@@ -1184,6 +1216,11 @@ can differ from the physical source's controller after a control change.
 Neither field is reconstructed from the source's later board position or owner.
 Undisclosed sources retain no source identity/controller; an unknown producing
 ability stays unknown rather than borrowing the nearest stack entry.
+
+Engine-local `GameEventCause` remains attached to the original local event.
+Forge's legacy Java event transport replaces this private context with `null`
+before serializing its source/controller graph. Native JSON activity continues
+to disclose an admitted cause through the existing per-viewer authorization.
 
 `kind: zone` reports one actual movement (`amount: 1`) with `fromZone`/`toZone`
 among `Battlefield`, `Stack`, `Graveyard`, `Exile`, `Command`, `Hand` and `Library`;
@@ -2032,6 +2069,23 @@ default GUI hook that preserves a color choice's source card for API clients.
 The new host, protocol, and renderer live in their own modules. Preserve
 the repository's existing license and attribution. Forge's existing resources
 remain the source of truth for card definitions and rules.
+
+**Source candidate:** the full upstream integration pins
+[Forge 24b9d9660371331996bd8e8b897072e05f9962cc](https://github.com/Card-Forge/forge/commit/24b9d9660371331996bd8e8b897072e05f9962cc),
+with common ancestor `789bda3c2a03a09ff519e822c8729c157721f725`. Build the rules
+engine and its card, token, printing and supporting resources from the same
+source revision; replacing only a running installation's card files does not
+qualify new mechanics. The native package's existing source and archive checks
+remain required.
+
+Native API games explicitly disable upstream's general history Undo before game
+creation. The existing certified reversible-mana Undo retains its separate
+ownership and information barriers; legacy Forge games keep their normal Undo
+preference. Upstream `IGuiGame.Selection` marks are projected through the native
+bridge while the actual current input and its legal domain remain authoritative.
+Catalog sticker sheets retain the `sticker_sheet` game-piece identity. The hidden
+auxiliary `StickerSheets` zone is not relabeled as Command or added to spectator
+inspection; engine-owned sticker dialogs use the existing current-choice path.
 
 The [architecture guide](../docs/Development/Mana-Table-Architecture.md) maps the
 desktop modules and explains how to extend prompts, snapshots, and host commands.

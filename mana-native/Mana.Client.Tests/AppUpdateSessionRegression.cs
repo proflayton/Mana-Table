@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using Mana.Client;
 
-internal static class AppUpdateSessionRegression
+internal static partial class AppUpdateSessionRegression
 {
     public static async Task RunAsync(Action<bool, string> check)
     {
@@ -12,6 +12,10 @@ internal static class AppUpdateSessionRegression
             await FreshnessAsync(profile, check);
             await ClosedAsync(profile, check);
             await CloseJoinsPreparationAsync(profile, check);
+            await RetainedOwnershipAsync(profile, check);
+            await RetiredRestartIntentAsync(profile, check);
+            await PassiveCloseAsync(profile, check);
+            await CallbackFailuresAsync(profile, check);
             await PreferencesAsync(profile, check);
         } finally { Directory.Delete(profile, true); }
     }
@@ -20,7 +24,7 @@ internal static class AppUpdateSessionRegression
     {
         var queue = new Completions(); var source = new Updates();
         int launches = 0, exits = 0; string blocker = ""; bool failLaunch = false;
-        var session = new AppUpdateSession(source, profile, queue.Post, () => blocker, _ => {
+        var session = new Driver(source, profile, queue, () => blocker, _ => {
             launches++; if (failLaunch) throw new IOException("Controlled launch failure");
         }, () => exits++);
         try {
@@ -39,10 +43,13 @@ internal static class AppUpdateSessionRegression
             check(session.Download(), "Only explicit download intent starts preparation");
             await source.DownloadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
             long generation = session.View.Generation;
+            source.Progress!.Report(new(256, 1024));
+            await queue.Until(() => session.View.BytesReceived == 256);
+            check(session.View.Generation == generation, "Byte-only progress preserves unchanged control authority");
             source.Progress!.Report(new(512, 1024) { Stage = UpdatePreparationStage.Preparing });
             await queue.Until(() => session.View.Phase == AppUpdatePhase.Preparing);
-            check(session.View.Generation == generation && session.View.BytesReceived == 512 && !session.Check() && !session.Install(),
-                "Progress preserves control authority while preparation excludes checks and installation");
+            check(session.View.Generation > generation && session.View.BytesReceived == 512 && !session.Check() && !session.Install(),
+                "A preparation phase transition refreshes control scope while excluding checks and installation");
             source.DownloadGate.SetResult(source.Prepared);
             await queue.Until(() => session.View.Phase == AppUpdatePhase.Ready);
             blocker = "Game in progress";
@@ -88,7 +95,7 @@ internal static class AppUpdateSessionRegression
     private static async Task FreshnessAsync(string profile, Action<bool, string> check)
     {
         var queue = new Completions(); var source = new Updates();
-        var session = new AppUpdateSession(source, profile, queue.Post, () => "");
+        var session = new Driver(source, profile, queue, () => "");
         try {
             session.Check(); source.CheckGate.SetResult(source.Release);
             await queue.Until(() => session.View.Phase == AppUpdatePhase.Available);
@@ -128,7 +135,7 @@ internal static class AppUpdateSessionRegression
     private static async Task ClosedAsync(string profile, Action<bool, string> check)
     {
         var queue = new Completions(); var source = new Updates(); int launches = 0;
-        var session = new AppUpdateSession(source, profile, queue.Post, () => "", _ => launches++);
+        var session = new Driver(source, profile, queue, () => "", _ => launches++);
         session.Check(); source.CheckGate.SetResult(source.Release); await queue.Until(() => session.View.Phase == AppUpdatePhase.Available);
         session.Download(); await source.DownloadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
         source.DownloadGate.SetResult(source.Prepared); await queue.Until(() => session.View.Phase == AppUpdatePhase.Ready);
@@ -144,9 +151,9 @@ internal static class AppUpdateSessionRegression
     private static async Task PreferencesAsync(string profile, Action<bool, string> check)
     {
         var queue = new Completions(); var source = new Updates();
-        var session = new AppUpdateSession(source, profile, queue.Post, () => "");
+        var session = new Driver(source, profile, queue, () => "");
         session.ToggleStartupCheck(); session.Close();
-        var reopened = new AppUpdateSession(source, profile, queue.Post, () => "");
+        var reopened = new Driver(source, profile, queue, () => "");
         try {
             reopened.Tick(true, false);
             check(!reopened.CheckOnStartup && source.Checks == 0, "The existing startup preference survives session replacement and prevents automatic discovery");
@@ -155,7 +162,7 @@ internal static class AppUpdateSessionRegression
             check(reopened.View.Checked && reopened.View.Phase == AppUpdatePhase.Idle, "A successful empty check settles to current without offering a download");
         } finally { source.CompleteOutstanding(); reopened.Close(); }
         var development = new Updates { Build = new("", false, "") };
-        var disabled = new AppUpdateSession(development, profile, queue.Post, () => "");
+        var disabled = new Driver(development, profile, queue, () => "");
         disabled.Tick(true, false);
         check(!disabled.Check() && development.Checks == 0, "Unknown or development builds never invoke the update provider");
         disabled.Close();
@@ -164,7 +171,7 @@ internal static class AppUpdateSessionRegression
     private static async Task CloseJoinsPreparationAsync(string profile, Action<bool, string> check)
     {
         var queue = new Completions(); var source = new Updates { CancelAfterDownloadCleanup = true };
-        var session = new AppUpdateSession(source, profile, queue.Post, () => "");
+        var session = new Driver(source, profile, queue, () => "");
         session.Check(); source.CheckGate.SetResult(source.Release); await queue.Until(() => session.View.Phase == AppUpdatePhase.Available);
         session.Download(); await source.DownloadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
         var closing = Task.Run(session.Close);
@@ -177,25 +184,50 @@ internal static class AppUpdateSessionRegression
             "Shutdown joins actual provider cleanup instead of abandoning writes after a cancelled wait");
     }
 
+    // The fixture owns and pumps the retained workflow; no Game/rules mailbox.
+    private sealed class Driver
+    {
+        internal AppUpdateSession Owner { get; }
+        internal AppUpdateViewBinding Role { get; private set; }
+        private readonly Func<string> blocker;
+        private bool startup, restarted;
+        internal Driver(Updates source, string profile, Completions queue, Func<string> blocker,
+            Action<PreparedUpdate>? install = null, Action? installed = null)
+        {
+            this.blocker = blocker; Owner = new(source, profile, install, installed);
+            Role = Owner.AttachView(); queue.Bind(this);
+        }
+        internal AppUpdateView View => Owner.View;
+        internal bool CheckOnStartup => Role.CheckOnStartup;
+        internal AppUpdateInstallContext Context => new(blocker(), startup, restarted);
+        internal void Tick(bool startup, bool restarted) { this.startup = startup; this.restarted = restarted; Pump(); }
+        internal void Pump() => Owner.Pump(Role, Context);
+        internal bool Check() => Role.Check();
+        internal bool Download() => Role.Download();
+        internal bool CancelDownload() => Role.CancelDownload();
+        internal bool Install() => Role.Install(Context);
+        internal void ToggleStartupCheck() => Role.ToggleStartupCheck();
+        internal void Close() => Owner.Close();
+        internal AppUpdateViewBinding ReplaceView() { Role.Dispose(); return Role = Owner.AttachView(); }
+    }
     private sealed class Completions
     {
-        private readonly ConcurrentQueue<Action> queue = new();
-        private readonly SemaphoreSlim posted = new(0);
-        public void Post(Action action) { queue.Enqueue(action); posted.Release(); }
-        public void Drain() { while (queue.TryDequeue(out var action)) action(); }
+        private Driver owner = null!;
+        internal void Bind(Driver value) => owner = value;
+        public void Drain() => owner.Pump();
         public async Task Pending()
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            while (queue.IsEmpty) await posted.WaitAsync(timeout.Token);
+            await owner.Owner.WaitForQueuedWorkAsync(timeout.Token);
         }
         public async Task Until(Func<bool> predicate)
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            while (true) { Drain(); if (predicate()) return; await posted.WaitAsync(timeout.Token); }
+            while (true) { Drain(); if (predicate()) return; await owner.Owner.WaitForQueuedWorkAsync(timeout.Token); }
         }
     }
 
-    private sealed class Updates : IAppUpdates
+    private sealed class Updates : IAppUpdates, IDisposable
     {
         public AppBuild Build { get; set; } = new("0.2.9", true, new('a', 40));
         public AppRelease Release { get; } = new(new(0, 2, 10), new("https://example.invalid/release"), new("https://example.invalid/update"), 1024, new('a', 64));
@@ -209,6 +241,8 @@ internal static class AppUpdateSessionRegression
         public TaskCompletionSource DownloadCancelled = Gate();
         public bool DownloadFinished;
         public bool CancelAfterDownloadCleanup;
+        public bool ThrowCancellationNotification;
+        public int Disposals;
         public IProgress<UpdateDownloadProgress>? Progress;
         public async Task<AppRelease?> CheckAsync(CancellationToken cancellationToken = default)
         { Interlocked.Increment(ref Checks); var task = CheckGate.Task; CheckStarted.TrySetResult(); return await task; }
@@ -216,7 +250,10 @@ internal static class AppUpdateSessionRegression
         public async Task<PreparedUpdate> DownloadAsync(AppRelease release, string cacheDirectory, IProgress<UpdateDownloadProgress>? progress = null, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref Downloads); Progress = progress; var task = DownloadGate.Task;
-            using var registration = cancellationToken.Register(() => DownloadCancelled.TrySetResult());
+            using var registration = cancellationToken.Register(() => {
+                DownloadCancelled.TrySetResult();
+                if (ThrowCancellationNotification) throw new IOException("Controlled cancellation notification failure");
+            });
             DownloadStarted.TrySetResult();
             try {
                 var prepared = await task;
@@ -230,6 +267,7 @@ internal static class AppUpdateSessionRegression
         public void ResetDownload() { DownloadGate = Gate<PreparedUpdate>(); DownloadStarted = Gate(); }
         public void ResetValidation() { ValidationGate = Gate(); ValidationStarted = Gate(); }
         public void CompleteOutstanding() { CheckGate.TrySetCanceled(); DownloadGate.TrySetCanceled(); ValidationGate.TrySetCanceled(); }
+        public void Dispose() => Interlocked.Increment(ref Disposals);
     }
     private static TaskCompletionSource<T> Gate<T>() => new(TaskCreationOptions.RunContinuationsAsynchronously);
     private static TaskCompletionSource Gate() => new(TaskCreationOptions.RunContinuationsAsynchronously);

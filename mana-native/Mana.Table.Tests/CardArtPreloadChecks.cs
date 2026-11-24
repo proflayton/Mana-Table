@@ -34,6 +34,9 @@ internal static class CardArtPreloadChecks
         check(initial.Request.Name == first.Name, "Selected deck artwork starts warming before its first paint");
         art.Preload([current, current], [upcoming]);
         for (int i = 0; i < 30; i++) art.Get(reading);
+        // A changed preload plan must preserve Get demand from this same frame,
+        // including the inspected face which is absent from the preload list.
+        art.Preload([current], [upcoming]);
         initial.Complete();
         var focused = await source.Next();
         check(focused.Request.Name == reading.Name, "Reading a card takes precedence over visible and speculative downloads");
@@ -229,7 +232,13 @@ internal static class CardArtPreloadChecks
 
     private sealed record Pending(ArtRequest Request, TaskCompletionSource<byte[]?> Bytes)
     {
-        internal void Complete() => Bytes.TrySetResult([1, 2, 3]);
+        private static readonly byte[] Image = QueuedImage();
+        private static byte[] QueuedImage()
+        {
+            using var fixture = new CardReadingArtFixture();
+            return fixture.LoadAsync(new("Queued fixture", "front"), CancellationToken.None).GetAwaiter().GetResult()!;
+        }
+        internal void Complete() => Bytes.TrySetResult(Image);
     }
 
     private sealed class ControlledArt : ICardArtSource

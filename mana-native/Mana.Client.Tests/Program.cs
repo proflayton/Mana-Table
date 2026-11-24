@@ -10,6 +10,36 @@ if (args.Contains("--verify-failure-reporting"))
     throw new InvalidOperationException("Controlled test-runner failure reporting check.");
 int checks = 0;
 void Check(bool value, string description) { if (!value) throw new Exception(description); checks++; Console.WriteLine(description); }
+if (args.Contains("--ai-library-acquisition-checks")) {
+    await AiLibraryAcquisitionRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} AI library acquisition checks.");
+    return 0;
+}
+if (args.Contains("--ai-experiment-checks")) {
+    await AiExperimentVariantRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} AI experiment variant checks.");
+    return 0;
+}
+if (args.Contains("--ai-attachment-checks")) {
+    await AiAttachmentPolicyRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} AI attachment policy checks.");
+    return 0;
+}
+if (args.Contains("--ai-failure-provenance-checks")) {
+    await AiFailureProvenanceRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} AI failure provenance checks.");
+    return 0;
+}
+if (args.Contains("--ai-host-loop-checks")) {
+    await AiHostLoopRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} AI host loop checks.");
+    return 0;
+}
+if (args.Contains("--app-update-checks")) {
+    await AppUpdateSessionRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} retained update ownership checks.");
+    return 0;
+}
 if (args.Contains("--priority-continuation-checks")) {
     await PriorityContinuationRegression.RunAsync(Check);
     await PriorityObservationRegression.RunAsync(Check);
@@ -227,6 +257,7 @@ await MatchHistoryRegression.RunAsync(Check);
 await HistoryAnnouncementRegression.RunAsync(Check);
 await ReadAudienceLifecycleRegression.RunAsync(Check);
 await AiFrameworkRegression.RunAsync(Check);
+await AiFailureProvenanceRegression.RunAsync(Check);
 AiSemanticRegression.Run(Check);
 await AiHostRegression.RunAsync(Check);
 await AiHostLoopRegression.RunAsync(Check);
@@ -235,6 +266,9 @@ await AiRepeatedCadenceRegression.RunAsync(Check);
 await AiObservationSupersededRegression.RunAsync(Check);
 await AiPolicyRegression.RunAsync(Check);
 await AiDamageTargetRegression.RunAsync(Check);
+await AiExperimentVariantRegression.RunAsync(Check);
+await AiLibraryAcquisitionRegression.RunAsync(Check);
+await AiAttachmentPolicyRegression.RunAsync(Check);
 await AiRouteRetryRegression.RunAsync(Check);
 await AiDecisionQualityRegression.RunAsync(Check);
 await AiActionOutcomeRegression.RunAsync(Check);
@@ -282,6 +316,7 @@ PublicStateDescriptorChecks.Run(Check);
 DeckExperienceChecks.Run(Check);
 SoloOpponentSelectionRegression.Run(Check);
 await PrintingArtRegression.RunAsync(Check);
+await ArtworkSourceBoundsRegression.RunAsync(Check);
 Console.WriteLine($"Passed {checks} headless checks.");
 return 0;
 } catch (Exception error) {

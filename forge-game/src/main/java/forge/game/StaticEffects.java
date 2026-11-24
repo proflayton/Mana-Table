@@ -46,7 +46,7 @@ public class StaticEffects {
 
     private record EffectShape(Card source, long timestamp, Map<String, String> params,
                                java.util.List<Card> cards, java.util.List<forge.game.player.Player> players) { }
-    private record PermissionShape(forge.game.player.Player player, StaticAbility ability, Object payment,
+    private record PermissionShape(java.util.List<forge.game.player.Player> players, StaticAbility ability, Object payment,
                                    Object alternate, boolean flash, boolean zones) { }
 
     public static final class ReversiblePermissions {
@@ -88,7 +88,7 @@ public class StaticEffects {
             var values = new java.util.HashMap<StaticAbility, PermissionShape>();
             for (var item : original.entrySet()) {
                 var value = item.getValue();
-                values.put(item.getKey(), new PermissionShape(value.getPlayer(), value.getAbility(), value.getPayManaCost(),
+                values.put(item.getKey(), new PermissionShape(java.util.List.copyOf(value.getPlayers()), value.getAbility(), value.getPayManaCost(),
                         value.getAltManaCost(), value.isWithFlash(), value.grantsZonePermissions()));
             }
             permissionShapes.put(card, Map.copyOf(values));

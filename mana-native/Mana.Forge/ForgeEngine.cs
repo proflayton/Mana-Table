@@ -17,13 +17,26 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
     private readonly object worldScopeGate = new();
     private long worldGeneration;
     private readonly TimeProvider requestTime = requestClock ?? TimeProvider.System;
+    private readonly Func<string, IEngineDiagnosticSink> diagnosticSink = EngineDiagnostics.OpenFile;
+    private readonly TimeProvider diagnosticTime = TimeProvider.System;
+    private int fileLoggingAbandoned;
+    private EngineDiagnosticStatus? retiredDiagnostics;
+    private sealed record DiagnosticFactory(Func<string, IEngineDiagnosticSink> Sink, string Path)
+    {
+        internal IEngineDiagnosticSink Open() => Sink(Path);
+    }
+    internal ForgeEngine(ForgePaths paths, TimeProvider? requestClock, Func<string, IEngineDiagnosticSink> diagnosticSink,
+        TimeProvider? diagnosticClock = null) : this(paths, requestClock)
+        => (this.diagnosticSink, diagnosticTime) = (diagnosticSink, diagnosticClock ?? TimeProvider.System);
+    internal EngineDiagnosticStatus? DiagnosticStatus => current?.Diagnostics?.Status ?? retiredDiagnostics;
+    internal string DiagnosticTail => current?.Diagnostics?.CaptureTail() ?? "";
     // Readers retain their own process and ready signal across a failed startup.
     private sealed class EngineProcess(Process process)
     {
         public Process Process { get; } = process;
         public TaskCompletionSource Ready { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task? Reader { get; set; }
-        public Task? Diagnostics { get; set; }
+        public EngineDiagnostics? Diagnostics { get; set; }
         public Task? Stopped { get; set; }
         public bool SourceActionsAvailable { get; set; }
         public bool DeckLibraryAvailable { get; set; }
@@ -67,14 +80,16 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         Directory.CreateDirectory(paths.Profile);
         var start = new ProcessStartInfo(paths.Java) { UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
-            StandardInputEncoding = new System.Text.UTF8Encoding(false), StandardOutputEncoding = System.Text.Encoding.UTF8 };
+            StandardInputEncoding = new System.Text.UTF8Encoding(false), StandardOutputEncoding = System.Text.Encoding.UTF8,
+            StandardErrorEncoding = System.Text.Encoding.UTF8 };
         foreach (var arg in new[] { "-Xmx2g", "-Dfile.encoding=UTF-8", "-Djava.awt.headless=true", "-jar", paths.Jar, paths.Resources, Path.Combine(paths.Profile, "decks") }) start.ArgumentList.Add(arg);
         var owner = new EngineProcess(Process.Start(start) ?? throw new IOException("Could not start Forge"));
         current = owner;
-        owner.Diagnostics = Task.Run(async () => {
-            await using var log = new StreamWriter(Path.Combine(paths.Profile, "engine.log"), true);
-            while (await owner.Process.StandardError.ReadLineAsync() is { } line) { await log.WriteLineAsync(line); await log.FlushAsync(); }
-        });
+        // Capture only the path/factory. A stuck sink worker must not retain
+        // this engine, its process or a future process's authority.
+        owner.Diagnostics = new(owner.Process.Id, owner.Process.StandardError,
+            Volatile.Read(ref fileLoggingAbandoned) != 0 ? null
+                : new DiagnosticFactory(diagnosticSink, Path.Combine(paths.Profile, "engine.log")).Open, diagnosticTime);
         owner.Reader = Task.Run(async () => {
             try {
                 while (await owner.Process.StandardOutput.ReadLineAsync() is { } line) {
@@ -250,7 +265,9 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
     public async Task<DeckSummary> ImportAsync(string name, string text) => Deck(await Request("import", new { name, text, format = "Commander" }));
     public async Task<DeckSummary> ImportPresetAsync(string id) => Deck(await Request("presetImport", new { id }));
     private static Card MapCatalogFace(JsonElement card) => new() {
-        GamePieceType = Text(card, "deckSection") == "Tokens" ? "token" : "card",
+        GamePieceType = Text(card, "deckSection") switch {
+            "Tokens" => "token", "Stickers" => "sticker_sheet", _ => "card"
+        },
         Name = Text(card, "name"), ArtName = Text(card, "artName"), ArtFace = Text(card, "artFace"),
         Edition = Text(card, "edition"), ArtSet = Text(card, "artSet"), CollectorNumber = Text(card, "collectorNumber"),
         ArtIndex = card.TryGetProperty("artIndex", out var artIndex) ? artIndex.GetInt32() : 0,
@@ -472,11 +489,11 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         try { await StopAsync(owner); }
         finally { if (current == owner) current = null; }
     }
-    private static Task StopAsync(EngineProcess owner)
+    private Task StopAsync(EngineProcess owner)
     {
         lock (owner) return owner.Stopped ??= StopProcessAsync(owner);
     }
-    private static async Task StopProcessAsync(EngineProcess owner)
+    private async Task StopProcessAsync(EngineProcess owner)
     {
         var process = owner.Process;
         try {
@@ -497,7 +514,14 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
                 }
             }
             if (owner.Reader != null) await owner.Reader;
-            if (owner.Diagnostics != null) await owner.Diagnostics;
-        } finally { process.Dispose(); }
+        } finally {
+            try {
+                if (owner.Diagnostics != null) {
+                    var status = await owner.Diagnostics.RetireAsync().ConfigureAwait(false);
+                    if (status.WriterAbandoned) Interlocked.Exchange(ref fileLoggingAbandoned, 1);
+                    if (ReferenceEquals(current, owner)) retiredDiagnostics = status;
+                }
+            } finally { process.Dispose(); }
+        }
     }
 }

@@ -2,10 +2,13 @@ using System.Collections.Immutable;
 using Mana.AI;
 using Mana.Contracts;
 
-internal static class AiSwarmCombatRegression
+internal static partial class AiSwarmCombatRegression
 {
     internal static async Task RunAsync(Action<bool, string> check)
     {
+        await TypedNominalReturnCoverage(check);
+        await TypedNominalReturnControls(check);
+        await TypedCommanderReturns(check);
         await Stage(check, Enumerable.Repeat(2, 8).ToArray(), 2, 9, expected: 7);
         await Stage(check, [2, 2, .. Enumerable.Repeat(1, 32)], 7, 23, expected: 30,
             ownBodies: 42, enemyBodies: 11, ownOther: 7, enemyOther: 16);

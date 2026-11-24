@@ -3,6 +3,9 @@ package forge.api;
 import com.google.common.eventbus.Subscribe;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import forge.game.card.Card;
+import forge.game.card.CardView;
+import forge.game.event.GameEventCardChangeZone;
 import forge.game.event.GameEventGameFinished;
 import forge.game.event.GameEventZone;
 import forge.game.phase.PhaseHandler;
@@ -11,7 +14,6 @@ import org.testng.annotations.Test;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -23,10 +25,10 @@ import static org.testng.Assert.*;
 public class FlashbackRefreshConcessionTest {
     @Test(timeOut = 90000)
     public void aConcessionDuringFlashbackRefreshDoesNotInvalidateThePlayerTraversal() throws Exception {
-        // This real continuous effect makes the phase's affected-card set nonempty,
-        // so its normal state-based-action path refreshes each player's Flashback view.
+        // Muldrotha's real turn-scoped grant changes the computed Flashback view.
+        // Unchanged views correctly emit no zone event after the upstream refresh coalescing.
         try (var scenario = new RulesScenario("flashback-refresh-concession",
-                Map.of(0, List.of("Glorious Anthem", "Grizzly Bears")))) {
+                Map.of(0, List.of("Glorious Anthem", "Grizzly Bears", "Muldrotha, the Gravetide")))) {
             var opening = scenario.until(input -> text(input.prompt(), "inputType").equals("InputSelectEntitiesFromList")
                     && input.prompt().getAsJsonArray("playerChoices").size() == 4);
             var initialPlayers = scenario.table.game.getPlayers().stream().map(player -> player.getId()).toList();
@@ -34,14 +36,39 @@ public class FlashbackRefreshConcessionTest {
             String sessionId = text(opening.state(), "id");
             var departed = new AtomicBoolean();
             var capturedRefresh = new AtomicBoolean();
-            var refreshed = new CopyOnWriteArrayList<Integer>();
+            var milledForest = new AtomicReference<Card>();
             var callbackFailure = new AtomicReference<Throwable>();
             var finished = new CountDownLatch(1);
             var listener = new Object() {
+                @Subscribe public void cardMoved(GameEventCardChangeZone event) {
+                    if (event.from() == null || event.to() == null
+                            || event.from().zoneType() != ZoneType.Library || event.to().zoneType() != ZoneType.Graveyard
+                            || event.to().player() == null || event.to().player().getId() != initialPlayers.get(0)
+                            || scenario.table.game.getPhaseHandler().getPlayerTurn() != null) return;
+                    try {
+                        var graveyard = scenario.table.game.getRegisteredPlayers().get(0).getCardsIn(ZoneType.Graveyard);
+                        assertEquals(graveyard.size(), 1, "The real setup script mills exactly one Forest");
+                        var forest = graveyard.get(0);
+                        assertEquals(event.card().getId(), forest.getId(), "The movement identifies that exact graveyard card");
+                        assertEquals(forest.getName(), "Forest");
+                        assertFalse(event.to().player().getFlashback().contains(forest.getView()),
+                                "Muldrotha grants no graveyard access before a turn belongs to its controller");
+                        if (!milledForest.compareAndSet(null, forest)) {
+                            assertSame(milledForest.get(), forest, "Any repeated publication refers to the same one milled card");
+                        }
+                    } catch (Throwable failure) {
+                        callbackFailure.compareAndSet(null, failure);
+                    }
+                }
+
                 @Subscribe public void zoneChanged(GameEventZone event) {
                     if (event.zoneType() != ZoneType.Flashback || capturedRefresh.get() || !insidePhaseRefresh()) return;
                     try {
-                        refreshed.add(event.player().getId());
+                        assertNotNull(event.player(), "A changed computed Flashback view identifies its owner");
+                        assertEquals(event.player().getId(), initialPlayers.get(0).intValue());
+                        assertNotNull(milledForest.get(), "The changed view follows the actual pre-turn mill");
+                        assertTrue(event.player().getFlashback().contains(milledForest.get().getView()),
+                                "The actual first-turn permission exposes that exact milled Forest");
                         if (departed.compareAndSet(false, true)) {
                             // Runs synchronously inside the first refresh event, after
                             // the old live-list iterator has already yielded a player.
@@ -53,7 +80,7 @@ public class FlashbackRefreshConcessionTest {
                             assertTrue(scenario.table.game.getPlayers().stream()
                                     .anyMatch(player -> player.getId() == departedId));
                         }
-                        if (refreshed.size() == initialPlayers.size()) capturedRefresh.set(true);
+                        capturedRefresh.set(true);
                     } catch (Throwable failure) {
                         // Guava logs subscriber failures instead of propagating them.
                         // Keep the original failure for an explicit test-thread assertion.
@@ -65,15 +92,29 @@ public class FlashbackRefreshConcessionTest {
             };
             scenario.table.game.subscribeToEvents(listener);
             try {
+                HeadlessPlatform.query(scenario.table, () -> {
+                    assertNull(scenario.table.game.getPhaseHandler().getPlayerTurn());
+                    scenario.table.game.getRegisteredPlayers().get(0).getRegisteredPlayer()
+                            .addStartGameScript(List.of("DB$ Mill | NumCards$ 1 | Defined$ You"));
+                    return null;
+                });
                 assertTrue(scenario.answer(opening, Map.of("action", "player", "playerId", initialPlayers.get(0))));
                 main(scenario);
+                assertNull(callbackFailure.get(), "The deterministic concession callback must succeed");
+                assertTrue(departed.get(), "A real changed Flashback view must admit the concession before awaiting departure");
+                assertTrue(capturedRefresh.get(), "The real PhaseHandler refresh must finish its admission callback");
                 awaitConcession(scenario.table, scenario.table.seat(2));
                 var main = main(scenario);
                 assertNull(callbackFailure.get(), "The deterministic concession callback must succeed");
-                assertTrue(departed.get(), "The real PhaseHandler Flashback refresh must invoke the concession hook");
-                assertTrue(capturedRefresh.get(), "The interrupted refresh must still visit every original player");
-                assertEquals(refreshed, initialPlayers,
-                        "A stable traversal updates every original player once, including all surviving players");
+                HeadlessPlatform.query(scenario.table, () -> {
+                    assertEquals(scenario.table.game.getRegisteredPlayers().stream().map(player -> player.getId()).toList(), initialPlayers,
+                            "The original participants retain their registered identities after departure");
+                    for (var survivor : scenario.table.game.getPlayers()) {
+                        assertEquals(survivor.getView().getFlashback(), CardView.getCollection(survivor.getCardsIn(ZoneType.Flashback)),
+                                "Every survivor has the correct completed view, including unchanged silent refreshes");
+                    }
+                    return null;
+                });
                 assertEquals(scenario.table.game.getPlayers().size(), 3);
                 assertTrue(player(main.state(), departedId).get("eliminated").getAsBoolean());
                 assertTrue(scenario.state(2).get("prompt").isJsonNull(), "The departed player cannot retain a decision");

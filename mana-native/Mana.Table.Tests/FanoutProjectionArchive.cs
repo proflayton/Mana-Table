@@ -13,6 +13,8 @@ internal static class FanoutProjectionArchive
 {
     internal const string Provider = "forge-ordinary-polled-fanout";
     internal static readonly long DisplayDrainTicks = TimeSpan.FromSeconds(12).Ticks;
+    internal const int MaximumParts = 16;
+    internal const long MaximumStreamBytes = 512L * 1024 * 1024;
     private const long PayloadBudget = ProjectionRecording.MaximumBytes - 65536;
     internal sealed record Part(string File, int FirstOrdinal, int EndOrdinal, long StartTicks, long EndTicks, long Bytes, string Sha256);
     internal sealed record Manifest(int Version, string Audience, string? SourceRevision, int TotalCheckpoints,
@@ -22,7 +24,7 @@ internal static class FanoutProjectionArchive
     internal static Manifest Write(string directory, string? sourceRevision, FanoutAcceptedProjectionWindow window,
         long payloadBudget = PayloadBudget)
     {
-        if (window.Observations.IsDefaultOrEmpty || window.Observations.Length > ProjectionRecording.MaximumObservations
+        if (window.Observations.IsDefaultOrEmpty || window.Observations.Length > FanoutAcceptedProjection.MaximumCheckpoints
             || window.AcceptedAtTicks.Length != window.Observations.Length || payloadBudget is <= 0 or > PayloadBudget
             || window.AcceptedCallbacks < window.Observations.Length
             || window.AcceptedCallbacks - window.Observations.Length != window.IdenticalCallbacks || window.IdenticalCallbacks < 0)
@@ -33,10 +35,12 @@ internal static class FanoutProjectionArchive
         int start = 0; long bytes = 0;
         for (int ordinal = 0; ordinal < sizes.Length; ordinal++) {
             if (sizes[ordinal] > payloadBudget) throw new InvalidDataException("One checkpoint exceeds the bounded recording payload budget.");
-            if (bytes + sizes[ordinal] > payloadBudget) { ranges.Add((start, ordinal)); start = ordinal; bytes = 0; }
+            if (ordinal - start >= ProjectionRecording.MaximumObservations || bytes + sizes[ordinal] > payloadBudget) { ranges.Add((start, ordinal)); start = ordinal; bytes = 0; }
             bytes += sizes[ordinal];
         }
         ranges.Add((start, sizes.Length));
+        if (ranges.Count > MaximumParts || sizes.Sum() > MaximumStreamBytes)
+            throw new InvalidDataException("The whole-fanout storage quota is exhausted.");
         var parts = ImmutableArray.CreateBuilder<Part>();
         var settings = new ProjectionPresentationSettings(false, 1, true, 1000, 740);
         foreach (var range in ranges) {
@@ -52,6 +56,8 @@ internal static class FanoutProjectionArchive
             using var stream = File.OpenRead(file);
             parts.Add(new(name, range.Start, range.End, origin, end, stream.Length, Convert.ToHexString(SHA256.HashData(stream))));
         }
+        if (parts.Sum(part => part.Bytes) > MaximumStreamBytes)
+            throw new InvalidDataException("The whole-fanout archive exceeds its aggregate byte quota.");
         var manifest = new Manifest(1, "viewer-private", sourceRevision, sizes.Length, window.AcceptedCallbacks,
             window.IdenticalCallbacks, window.AcceptedAtTicks, window.EndTicks, DisplayDrainTicks, parts.ToImmutable());
         using var output = new FileStream(Path.Combine(directory, "manifest.json"), FileMode.CreateNew);
@@ -59,45 +65,59 @@ internal static class FanoutProjectionArchive
         return manifest;
     }
 
-    internal static ProjectionRecording Read(string directory, Point authoredViewport)
+    internal static ProjectionReplayPages Read(string directory, Point authoredViewport)
     {
         using var manifestStream = File.OpenRead(Path.Combine(directory, "manifest.json"));
         if (manifestStream.Length is <= 0 or > 262144) throw new InvalidDataException("Projection part manifest is empty or oversized.");
         var manifest = JsonSerializer.Deserialize<Manifest>(manifestStream) ?? throw new InvalidDataException("Missing projection part manifest.");
-        if (manifest.Version != 1 || manifest.Audience != "viewer-private" || manifest.TotalCheckpoints is <= 0 or > ProjectionRecording.MaximumObservations
+        if (manifest.Version != 1 || manifest.Audience != "viewer-private" || manifest.TotalCheckpoints is <= 0 or > FanoutAcceptedProjection.MaximumCheckpoints
             || manifest.GlobalAcceptedAtTicks.IsDefault || manifest.GlobalAcceptedAtTicks.Length != manifest.TotalCheckpoints
-            || manifest.GlobalAcceptedAtTicks[0] != 0 || manifest.Parts.IsDefaultOrEmpty || manifest.Parts.Length > manifest.TotalCheckpoints
-            || manifest.DisplayDrainTicks != DisplayDrainTicks || manifest.IdenticalCallbacks < 0
+            || manifest.GlobalAcceptedAtTicks[0] != 0 || manifest.Parts.IsDefaultOrEmpty || manifest.Parts.Length > MaximumParts
+            || manifest.Parts.Length > manifest.TotalCheckpoints || manifest.DisplayDrainTicks != DisplayDrainTicks || manifest.IdenticalCallbacks < 0
             || manifest.AcceptedCallbacks < manifest.TotalCheckpoints
-            || manifest.AcceptedCallbacks - manifest.TotalCheckpoints != manifest.IdenticalCallbacks)
+            || manifest.AcceptedCallbacks - manifest.TotalCheckpoints != manifest.IdenticalCallbacks
+            || manifest.CapturedEndTicks < 0 || manifest.CapturedEndTicks > ProjectionTimeline.MaximumDurationTicks - DisplayDrainTicks)
             throw new InvalidDataException("Projection parts changed their bounded owner, counts or global timing.");
-        var frames = ImmutableArray.CreateBuilder<GameSnapshot>();
+        long priorTick = 0;
+        foreach (long tick in manifest.GlobalAcceptedAtTicks) {
+            if (tick < priorTick || tick > manifest.CapturedEndTicks) throw new InvalidDataException("Projection global time reversed or exceeded its capture.");
+            priorTick = tick;
+        }
+        int ordinal = 0; long totalBytes = 0;
         for (int index = 0; index < manifest.Parts.Length; index++) {
             var part = manifest.Parts[index];
             long end = index + 1 < manifest.Parts.Length ? manifest.Parts[index + 1].StartTicks : checked(manifest.CapturedEndTicks + DisplayDrainTicks);
-            if (part.File != "part-" + index.ToString("D3") + ".json" || part.FirstOrdinal != frames.Count
+            if (part.File != "part-" + index.ToString("D3") + ".json" || part.FirstOrdinal != ordinal
                 || part.EndOrdinal <= part.FirstOrdinal || part.EndOrdinal > manifest.TotalCheckpoints
+                || part.EndOrdinal - part.FirstOrdinal > ProjectionRecording.MaximumObservations
                 || part.StartTicks != manifest.GlobalAcceptedAtTicks[part.FirstOrdinal] || part.EndTicks != end
-                || part.Bytes is <= 0 or > ProjectionRecording.MaximumBytes)
-                throw new InvalidDataException("Projection chunks lost their exact ordinal or timing seam.");
-            string file = Path.Combine(directory, part.File);
-            using (var stream = File.OpenRead(file))
-                if (stream.Length != part.Bytes || !Convert.ToHexString(SHA256.HashData(stream)).Equals(part.Sha256, StringComparison.Ordinal))
-                    throw new InvalidDataException("A stored projection part differs from its captured bytes.");
-            var recording = ProjectionRecording.Read(file, Provider);
-            if (recording.SourceRevision != manifest.SourceRevision || recording.Observations.Length != part.EndOrdinal - part.FirstOrdinal
-                || recording.Timeline is not { } timeline || timeline.EndTicks != part.EndTicks - part.StartTicks
-                || !timeline.AcceptedAtTicks.Select(ticks => ticks + part.StartTicks)
-                    .SequenceEqual(manifest.GlobalAcceptedAtTicks[part.FirstOrdinal..part.EndOrdinal]))
-                throw new InvalidDataException("Projection part contents disagree with their declared continuous acceptance window.");
-            frames.AddRange(recording.Observations);
+                || part.Bytes is <= 0 or > ProjectionRecording.MaximumBytes || (totalBytes += part.Bytes) > MaximumStreamBytes)
+                throw new InvalidDataException("Projection chunks lost their exact bounded ordinal or timing seam.");
+            VerifyPart(directory, part); ordinal = part.EndOrdinal;
         }
-        if (frames.Count != manifest.TotalCheckpoints) throw new InvalidDataException("Projection archive omitted a final checkpoint.");
-        // Review viewport/settings are authored: no original graphical surface
-        // was captured by these ordinary graphics-free client owners.
+        if (ordinal != manifest.TotalCheckpoints) throw new InvalidDataException("Projection archive omitted a final checkpoint.");
         var settings = new ProjectionPresentationSettings(false, 1, true, authoredViewport.X, authoredViewport.Y);
-        return new(1, Provider, manifest.SourceRevision, frames.ToImmutable(),
-            new(manifest.GlobalAcceptedAtTicks, checked(manifest.CapturedEndTicks + DisplayDrainTicks), settings));
+        return new(manifest.TotalCheckpoints, manifest.GlobalAcceptedAtTicks, checked(manifest.CapturedEndTicks + DisplayDrainTicks), settings, Open);
+
+        IEnumerable<ProjectionRecording> Open()
+        {
+            foreach (var part in manifest.Parts) {
+                VerifyPart(directory, part);
+                var recording = ProjectionRecording.Read(Path.Combine(directory, part.File), Provider);
+                if (recording.SourceRevision != manifest.SourceRevision || recording.Observations.Length != part.EndOrdinal - part.FirstOrdinal
+                    || recording.Timeline is not { } timeline || timeline.EndTicks != part.EndTicks - part.StartTicks
+                    || !timeline.AcceptedAtTicks.Select(ticks => ticks + part.StartTicks)
+                        .SequenceEqual(manifest.GlobalAcceptedAtTicks[part.FirstOrdinal..part.EndOrdinal]))
+                    throw new InvalidDataException("Projection part contents disagree with their continuous acceptance window.");
+                yield return recording;
+            }
+        }
+    }
+    private static void VerifyPart(string directory, Part part)
+    {
+        using var stream = File.OpenRead(Path.Combine(directory, part.File));
+        if (stream.Length != part.Bytes || !Convert.ToHexString(SHA256.HashData(stream)).Equals(part.Sha256, StringComparison.Ordinal))
+            throw new InvalidDataException("A stored projection part differs from its captured bytes.");
     }
 
     internal static long SerializedBytes(GameSnapshot state)

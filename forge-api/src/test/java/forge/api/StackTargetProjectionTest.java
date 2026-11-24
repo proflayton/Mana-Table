@@ -2,17 +2,160 @@ package forge.api;
 
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
+import forge.game.zone.ZoneType;
 import org.testng.annotations.Test;
 
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static forge.api.RulesScenario.*;
 import static org.testng.Assert.*;
 
 public class StackTargetProjectionTest {
+    @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void aRealPaidSpellKeepsItsAnonymousManifestTargetForEveryAudience() throws Exception {
+        try (var scenario = new RulesScenario("public-anonymous-manifest-target",
+                Map.of(0, List.of("Plains", "Reliquary Tower")), "Path to Exile", "Rhys the Redeemed",
+                Map.of(1, Collections.nCopies(99, "Willbender")))) {
+            var opening = scenario.until(input -> text(input.prompt(), "inputType").equals("InputSelectEntitiesFromList")
+                    && input.prompt().getAsJsonArray("playerChoices").size() == 4);
+            int owner = scenario.table.game.getRegisteredPlayers().get(1).getId();
+            int caster = scenario.table.game.getRegisteredPlayers().get(0).getId();
+            HeadlessPlatform.query(scenario.table, () -> {
+                assertNull(scenario.table.game.getPhaseHandler().getPlayerTurn());
+                var registered = scenario.table.game.getRegisteredPlayers().get(1).getRegisteredPlayer();
+                // Actual rules effects author the initial occurrences; no live card or face is injected.
+                registered.addStartGameScript(List.of("DB$ Manifest | Amount$ 1"));
+                registered.addStartGameScript(List.of("DB$ Dig | Defined$ You | DigNum$ 1 | ChangeNum$ All"
+                        + " | DestinationZone$ Exile | ExileFaceDown$ True"));
+                return null;
+            });
+            assertTrue(scenario.answer(opening, Map.of("action", "player", "playerId", caster)));
+            var main = main(scenario);
+            var recipient = card(main.state(), owner, "Face-down card");
+            String recipientId = text(recipient, "combatId");
+            assertFalse(recipientId.isBlank(), "The existing public battlefield occurrence already has an opaque identity");
+            HeadlessPlatform.query(scenario.table, () -> {
+                var game = scenario.table.game;
+                var targetOwner = game.getRegisteredPlayers().get(1);
+                var manifest = targetOwner.getCardsIn(ZoneType.Battlefield).get(0);
+                assertTrue(manifest.isManifested(), "The normal startup Manifest effect produced the actual permanent");
+                assertTrue(manifest.isFaceDown());
+                var hiddenExile = targetOwner.getCardsIn(ZoneType.Exile);
+                assertEquals(hiddenExile.size(), 1);
+                assertTrue(hiddenExile.get(0).isFaceDown(), "The separate normal Dig effect exiled a real card face down");
+                var observer = game.getRegisteredPlayers().get(0).getView();
+                var activity = new MatchActivity(observer, scenario.table.identities,
+                        view -> CurrentCardViews.isCurrent(game, view));
+                var identities = new CombatCardIds(observer, activity, scenario.table.identities);
+                assertEquals(StackTargetProjection.card(game, manifest.getView(), identities::id).id(), recipientId,
+                        "Anonymous target admission uses the same existing public battlefield identity");
+                for (var hidden : List.of(targetOwner.getCardsIn(ZoneType.Hand).get(0),
+                        targetOwner.getCardsIn(ZoneType.Library).get(0), hiddenExile.get(0))) {
+                    assertTrue(CurrentCardViews.isCurrent(game, hidden.getView()), "The negative is a real current occurrence");
+                    assertFalse(hidden.getView().canBeShownTo(observer));
+                    assertNull(StackTargetProjection.card(game, hidden.getView(), identities::id),
+                            "An anonymous battlefield target must not disclose hidden hand, library or face-down exile membership");
+                }
+                return null;
+            });
+            var spell = zone(viewer(main.state()), "Hand").getAsJsonArray("cards").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(value -> text(value, "name").equals("Path to Exile"))
+                    .findFirst().orElseThrow();
+            assertTrue(scenario.answer(main, Map.of("action", "card", "key", text(spell, "key"))));
+            var targeting = scenario.until(input -> text(input.prompt(), "inputType").equals("InputSelectTargets"));
+            recipient = card(targeting.state(), owner, "Face-down card");
+            assertEquals(text(recipient, "combatId"), recipientId);
+            assertTrue(recipient.get("selectable").getAsBoolean(), "The actual spell offers this face-down creature as a legal target");
+            assertTrue(scenario.answer(targeting, Map.of("action", "card", "key", text(recipient, "key"))));
+            var stacked = payAndStack(scenario);
+            assertTrue(card(stacked.state(), caster, "Plains").get("tapped").getAsBoolean(),
+                    "The actual white source paid for Path before its committed target was projected");
+            String pathExecutionId = HeadlessPlatform.query(scenario.table, () -> {
+                var json = new GsonBuilder().serializeNulls().setPrettyPrinting().create();
+                var states = new ArrayList<JsonObject>();
+                for (int seat = 0; seat < 4; seat++) states.add(json.toJsonTree(scenario.table.seat(seat).state()).getAsJsonObject());
+                states.add(json.toJsonTree(SpectatorObservation.project(scenario.table,
+                        states.get(0).get("boardRevision").getAsLong(), null)).getAsJsonObject());
+                for (var state : states) {
+                    var stack = state.getAsJsonArray("stack").asList().stream().map(value -> value.getAsJsonObject())
+                            .filter(item -> text(item, "name").equals("Path to Exile")).findFirst().orElseThrow();
+                    var targets = stack.getAsJsonArray("targets");
+                    assertEquals(targets.size(), 1, "Every audience retains the real committed anonymous target");
+                    var target = targets.get(0).getAsJsonObject();
+                    assertEquals(target.keySet(), Set.of("kind", "id", "name", "playerId"),
+                            "A committed display reference carries no response key, action or printed face");
+                    assertEquals(text(target, "kind"), "card");
+                    assertEquals(text(target, "id"), recipientId);
+                    assertEquals(text(target, "name"), "Face-down card");
+                    assertEquals(target.get("playerId").getAsInt(), owner);
+                    var portrait = card(state, owner, "Face-down card");
+                    assertEquals(text(portrait, "combatId"), recipientId);
+                    assertTrue(portrait.get("faceDown").getAsBoolean());
+                    assertEquals(text(portrait, "manaCost"), ""); assertEquals(text(portrait, "text"), "");
+                    assertEquals(portrait.get("power").getAsInt(), 2); assertEquals(portrait.get("toughness").getAsInt(), 2);
+                    for (String privateField : List.of("faces", "artName", "artFace", "artSet", "edition", "collectorNumber"))
+                        assertFalse(portrait.has(privateField), "The canonical face-down portrait cannot identify its printing: " + privateField);
+                    assertFalse(json.toJson(portrait).contains("Willbender"));
+                    assertTrue(zone(player(state, owner), "Exile").getAsJsonArray("cards").isEmpty(),
+                            "The separate face-down exile occurrence remains undisclosed");
+                    if (state.get("viewerId").getAsInt() == -1) {
+                        assertFalse(json.toJson(state).contains("Willbender"), "The spectator never learns the hidden printed card");
+                        for (var member : state.getAsJsonArray("players")) {
+                            assertTrue(zone(member.getAsJsonObject(), "Hand").getAsJsonArray("cards").isEmpty());
+                            assertTrue(zone(member.getAsJsonObject(), "Library").getAsJsonArray("cards").isEmpty());
+                        }
+                    }
+                    Files.writeString(scenario.evidence.resolve("anonymous-target-seat-" + state.get("viewerId").getAsInt() + ".json"), json.toJson(state));
+                }
+                String execution = text(states.get(0).getAsJsonArray("stack").get(0).getAsJsonObject(), "executionId");
+                assertFalse(execution.isBlank(), "The real committed Path has a retained execution identity");
+                return execution;
+            });
+            Input search = null;
+            int revealAcknowledgments = 0;
+            for (int continuation = 0; continuation < 8 && search == null; continuation++) {
+                var next = scenario.until(input -> text(input.prompt(), "kind").equals("reveal")
+                        || input.seat() == 1 && text(input.prompt(), "inputType").equals("InputConfirm"));
+                if (!text(next.prompt(), "kind").equals("reveal")) {
+                    search = next;
+                    break;
+                }
+                var choices = next.prompt().getAsJsonArray("choices");
+                assertEquals(choices.size(), 1, "The real face-down departure reveals only its one moved card");
+                var face = choices.get(0).getAsJsonObject().getAsJsonObject("card");
+                assertEquals(text(face, "name"), "Willbender");
+                assertFalse(face.get("faceDown").getAsBoolean());
+                assertFalse(face.has("key"), "The rules reveal is reading material, not card response authority");
+                assertEquals(text(next.prompt(), "executionId"), pathExecutionId);
+                assertEquals(text(next.prompt(), "executionStep"), "resolution");
+                assertTrue(zone(player(next.state(), owner), "Battlefield").getAsJsonArray("cards").isEmpty());
+                var moved = zone(player(next.state(), owner), "Exile").getAsJsonArray("cards");
+                assertEquals(moved.size(), 1, "Only the departed target is now face up; the other exile stays hidden");
+                assertEquals(text(moved.get(0).getAsJsonObject(), "name"), "Willbender");
+                assertFalse(moved.get(0).getAsJsonObject().get("faceDown").getAsBoolean());
+                assertNotEquals(text(moved.get(0).getAsJsonObject(), "combatId"), recipientId);
+                assertTrue(scenario.answer(next, Map.of("action", "ok")), "Acknowledge the exact current rules reveal");
+                revealAcknowledgments++;
+            }
+            assertTrue(revealAcknowledgments > 0, "The real face-down departure requires a reveal before Path's search");
+            assertNotNull(search, "The actual optional search must follow within the bounded reveal continuations");
+            assertTrue(scenario.answer(search, Map.of("action", "cancel")), "The real target controller declines Path's optional search");
+            var settled = scenario.until(input -> text(input.prompt(), "inputType").equals("InputPassPriority")
+                    && input.state().getAsJsonArray("stack").isEmpty());
+            var exiled = zone(player(settled.state(), owner), "Exile");
+            assertEquals(exiled.get("count").getAsInt(), 2);
+            assertEquals(exiled.getAsJsonArray("cards").size(), 1, "Only Path's now face-up exile occurrence is disclosed");
+            var revealed = exiled.getAsJsonArray("cards").get(0).getAsJsonObject();
+            assertEquals(text(revealed, "name"), "Willbender", "The actual spell resolved onto the manifested card");
+            assertNotEquals(text(revealed, "combatId"), recipientId, "The newly revealed exile occurrence cannot reuse the concealed battlefield identity");
+        }
+    }
+
     @Test(groups = "canonical-interaction", timeOut = 90000)
     public void aMovedPathTargetCannotRebindToItsNewExileOccurrenceWhileTheRealSearchIsPending() throws Exception {
         try (var scenario = RulesScenario.allied("public-in-flight-target-movement", Map.of(

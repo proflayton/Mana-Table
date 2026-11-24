@@ -42,9 +42,10 @@ internal static class PolledManaOutputEngineJourney
             Acknowledged = (command, before) => receipts.Enqueue(new(index, command, before))
         }).ToArray();
         using var evidence = new AiCampaignDiagnostics(directory);
+        var fixtureActions = Enumerable.Range(0, 2).Select(index => new KeepFixtureOpening(index == 0)).ToArray();
         var players = engines.Select((engine, index) => new ConnectedPlayerDriver(ports[index], engine, sources[index],
             engine, engine, evidence, 261106 + index, MixedGameDriveMode.PolledBackground,
-            testPolicy: new KeepFixtureOpening(),
+            testPolicy: fixtureActions[index],
             passing: ConnectedPlayerPassingMode.FullControl)).ToArray();
         var botPort = new PolledLobbyPorts.BotPort(engines[0]);
         var ai = new AiTableHost(botPort, _ => new KeepFixtureOpening(), 261106,
@@ -143,12 +144,19 @@ internal static class PolledManaOutputEngineJourney
                 "The actual three-mana cast resolves once, spends the pool, taps Wastes and sacrifices Crystal Vein before the next untap");
             var consuming = receipts.Where(receipt => receipt.Index == 0 && receipt.Command is UseOfferedAction
                 && CardViews.FindActionSource(receipt.Before!, ((UseOfferedAction)receipt.Command).Card)?.Card.Name == "Crystal Vein").ToArray();
-            Require(consuming is [{ Command: UseOfferedAction { ManaOutput: null } used }]
-                    && sourceQueries.Any(set => set.SourceCardKey == used.Card && set.DecisionId == used.DecisionId
+            Require(fixtureActions[0].ManualGesture is { AutoOffered: true } gesture
+                    && consuming is [{ Command: UseOfferedAction { ManaOutput: null } used }]
+                    && consuming[0].Before is { Decision.Payload: PaymentPayload { Pay.Enabled: true } }
+                    && gesture.GameId == used.GameId && gesture.DecisionId == used.DecisionId
+                    && gesture.SourceCardKey == used.Card && gesture.ActionId == used.ActionId
+                    && sourceQueries.Any(set => set.GameId == used.GameId && set.SourceCardId == gesture.SourceCardId
+                        && set.SourceCardKey == used.Card && set.DecisionId == used.DecisionId
                         && set.Actions.Any(action => action.Id == used.ActionId
                             && action.Text.Contains("Sacrifice", StringComparison.OrdinalIgnoreCase) && action.QuickMana == null)),
-                "The current ordinary source reader and client dispatch exactly one consuming activation without an unauthorized explicit output");
+                "While Auto remains offered, the authored manual gesture uses the current ordinary source reader and client to dispatch exactly one consuming activation without an unauthorized explicit output");
             facts["consumingActivationReceipts"] = consuming.Length;
+            facts["authoredManualConsumingGestures"] = fixtureActions.Count(policy => policy.ManualGesture != null);
+            facts["autoOfferedDuringManualGesture"] = fixtureActions.Count(policy => policy.ManualGesture is { AutoOffered: true });
             facts["explicitConsumingOutputs"] = consuming.Count(receipt => ((UseOfferedAction)receipt.Command).ManaOutput != null);
             facts["resolvedInspectors"] = owner.Zone("Battlefield").Cards.Count(card => card.Name == "Foundry Inspector");
             facts["sacrificedCrystalVeins"] = owner.Zone("Graveyard").Cards.Count(card => card.Name == "Crystal Vein");
@@ -179,7 +187,8 @@ internal static class PolledManaOutputEngineJourney
             evidence.DrainPending();
             File.WriteAllText(Path.Combine(directory, "private-evidence.json"), JsonSerializer.Serialize(new {
                 initial, stopped, acceptedFrames, receipts = receipts.ToArray(), sourceQueries = sourceQueries.ToArray(), history,
-                botReceipts = botPort.Receipts.ToArray(), botFaults = botPort.Faults.ToArray(), botHistories = ai.Histories
+                botReceipts = botPort.Receipts.ToArray(), botFaults = botPort.Faults.ToArray(), botHistories = ai.Histories,
+                manualGesture = fixtureActions[0].ManualGesture
             }, new JsonSerializerOptions { WriteIndented = true }));
             File.WriteAllText(Path.Combine(directory, "result.json"), JsonSerializer.Serialize(new {
                 scenario = "ordinary-polled-consuming-output-payment", passed = complete && failure == null && cleanupErrors.Count == 0,
@@ -188,11 +197,12 @@ internal static class PolledManaOutputEngineJourney
                 creditedTotalSeconds, creditedActiveSeconds,
                 elapsedSeconds = elapsed.Elapsed.TotalSeconds, activeSeconds = active?.Elapsed.TotalSeconds,
                 totalBudgetSeconds = 90, activeBudgetSeconds = 45, passing = ConnectedPlayerPassingMode.FullControl.ToString(),
-                opening = "Declared fixture script keeps the opening hand; every subsequent decision delegates to production CasualCommanderPolicy.",
+                opening = "Declared fixture script keeps the opening hand and selects one current manual Crystal Vein activation while Auto remains offered; all other decisions delegate to production CasualCommanderPolicy.",
+                manualGesture = fixtureActions[0].ManualGesture,
                 observedFrames, identicalFrames,
                 players = players.Select((player, index) => new { index, viewerId = stopped[index]?.ViewerId,
                     player.ClientAdmissions, player.ProviderAcceptances, player.AutoEvidence }), runtime,
-                scope = "Declared deterministic pregame resources; actual current ordinary TCP owners, production policy, source readers, cost/choice path and typed history. Not a natural completed game, standing-Auto qualification or human UX approval."
+                scope = "Authored manual consuming-source journey with declared deterministic pregame resources; actual current ordinary TCP owners, source readers, cost/choice path and typed history. Other decisions use production policy. Not an unmodified policy-strength assertion, natural completed game, standing-Auto qualification or human UX approval."
             }, new JsonSerializerOptions { WriteIndented = true }));
         }
         if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
@@ -229,13 +239,36 @@ internal static class PolledManaOutputEngineJourney
         }
     }
 
-    private sealed class KeepFixtureOpening : IAiPolicy
+    private sealed record ManualGestureEvidence(string GameId, int ViewerId, string DecisionId,
+        long Revision, long BoardRevision, string SourceCardKey, string SourceCardId, string ActionId, bool AutoOffered);
+
+    private sealed class KeepFixtureOpening(bool manualConsumingSource = false) : IAiPolicy
     {
         private readonly CasualCommanderPolicy ordinary = new();
+        internal ManualGestureEvidence? ManualGesture { get; private set; }
         public AiPolicyDescriptor Descriptor => ordinary.Descriptor;
         public Task<AiProposal> EvaluateAsync(AiDecisionRequest request, CancellationToken cancellation)
-            => request.Frame.State.Decision is { Payload: OpeningHandPayload } decision
-                ? Task.FromResult<AiProposal>(new AiProposal.Answer(new KeepOpeningHand(request.Frame.State.Id, decision.Id), "declared-fixture-opening-keep"))
-                : ordinary.EvaluateAsync(request, cancellation);
+        {
+            var frame = request.Frame;
+            var state = frame.State;
+            if (state.Decision is { Payload: OpeningHandPayload } opening)
+                return Task.FromResult<AiProposal>(new AiProposal.Answer(new KeepOpeningHand(state.Id, opening.Id), "declared-fixture-opening-keep"));
+            if (manualConsumingSource && ManualGesture == null && state is { Turn: 1, PhaseKey: "MAIN1", Decision.Payload: PaymentPayload payment }
+                    && state.ActivePlayerId == state.ViewerId
+                    && state.Viewer!.Zone("Battlefield").Cards.SingleOrDefault(card => card.Name == "Crystal Vein" && !card.FaceDown) is { } source) {
+                var set = frame.SourceActions.SingleOrDefault(set => set.SourceCardKey == source.Key);
+                var action = set?.Actions.SingleOrDefault(action => action.Kind == "activate" && action.QuickMana == null
+                    && action.Text.Contains("Sacrifice", StringComparison.OrdinalIgnoreCase));
+                if (action == null) throw new InvalidDataException("The declared manual gesture has no current consuming source offer.");
+                var command = new UseOfferedAction(state.Id, state.Decision.Id, source.Key, action.Id);
+                if (!frame.Allows(command)) throw new InvalidDataException("The declared manual gesture lacks current offered authority.");
+                // Select the real offered route; the normal driver must still
+                // load its ordinary source reader and submit through ClientSession.
+                ManualGesture = new(state.Id, state.ViewerId, state.Decision.Id, state.Revision, state.BoardRevision,
+                    source.Key, CardViews.Identity(source), action.Id, payment.Pay.Enabled);
+                return Task.FromResult<AiProposal>(new AiProposal.Answer(command, "declared-fixture-manual-consuming-source"));
+            }
+            return ordinary.EvaluateAsync(request, cancellation);
+        }
     }
 }

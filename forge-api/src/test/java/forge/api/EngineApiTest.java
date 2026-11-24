@@ -12,6 +12,7 @@ import forge.game.Match;
 import forge.game.card.CardView;
 import forge.game.event.GameEventCardDestroyed;
 import forge.game.player.PlayerView;
+import forge.game.undo.UndoManager;
 import forge.game.zone.ZoneType;
 import forge.item.PaperCard;
 import forge.trackable.TrackableCollection;
@@ -212,6 +213,26 @@ public class EngineApiTest {
         assertEquals(MatchSession.choiceCard(card, opponent).get("name"), "Face-down or hidden card");
         card.set(TrackableProperty.Facedown, true);
         assertEquals(MatchSession.choiceCard(card, owner).get("name"), "Face-down or hidden card");
+    }
+
+    @Test
+    public void generalUndoOptOutIsLocalToItsActualGame() {
+        var legacyRules = new GameRules(GameType.Constructed);
+        var legacy = new Match(legacyRules, List.of(), "Legacy undo default").createGame();
+        assertTrue(legacyRules.isGeneralUndoAllowed());
+        assertEquals(legacy.getUndoManager().mode(), UndoManager.Mode.FREE);
+
+        var nativeRules = new GameRules(GameType.Constructed);
+        nativeRules.setGeneralUndoAllowed(false);
+        var nativeGame = new Match(nativeRules, List.of(), "Native undo opt-out").createGame();
+        var undo = nativeGame.getUndoManager();
+        assertEquals(undo.mode(), UndoManager.Mode.OFF);
+        undo.checkpoint(nativeGame, null);
+        assertEquals(undo.mode(), UndoManager.Mode.OFF);
+        assertEquals(undo.depth(), 0);
+        assertNull(undo.markForRollback(nativeGame), "Disabled general Undo must not capture a standalone game snapshot");
+        assertEquals(legacy.getUndoManager().mode(), UndoManager.Mode.FREE,
+                "A native game's opt-out must not disable general Undo in a legacy game");
     }
 
     @Test

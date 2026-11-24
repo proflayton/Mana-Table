@@ -1,5 +1,91 @@
 # Review the Mana Table experience
 
+## Readable Explore and repeated triggers: source candidate
+
+**Player feedback: issues; revised candidate pending human review.** The reported
+Hakbal/Nicanzil screenshot places long trigger announcements directly over card
+faces above a second Next to resolve panel. Repeated-trigger overview tiles also
+allow multiline names to collide with fixed controller/count captions. The player
+needs to identify the next actual effect, its source and recipients, then inspect
+waiting work or respond without losing the table.
+
+The observed [official Arena Sylvan Library screen](https://media.wizards.com/2026/images/daily/uV4gKhqzHC.webp)
+uses one bounded source-art ability face beside the battlefield, a separate
+current prompt and a source permanent that stays on the table. The accompanying
+[developer diary](https://magic.wizards.com/en/news/mtg-arena/dev-diary-sylvan-library)
+explains the contextual choice journey and its rules-sensitive fallback. Our
+adaptation keeps one current effect body with source/controller/targets, normal
+reading type and an opaque backdrop. Waiting work stays behind a pending-count
+control. Opening it replaces the overview with measured source rows; that grouping
+is our multiplayer adaptation, not a claim
+about Arena's repeated-trigger UI. The reference does not demonstrate large
+four-player workloads or justify skipping any resolution or response window.
+
+The actual stack top owns Next to resolve. A live announcement naming any current
+stack occurrence uses that existing surface and arrival emphasis, rather than
+printing another rules paragraph over the board. An event whose occurrence has
+left the stack stays in History while current work needs the reading space;
+with an empty stack it can use a distinct measured, opaque historical notice. Lifecycle
+records, pacing and every underlying trigger remain intact. Source rows count
+current members and expose their actual absolute positions through the existing
+fan; they do not make interleaved triggers consecutive or simultaneous.
+
+Hover reads the exact current effect, source or recipient. The current effect's
+count opens its matching member fan; the pending-total control opens the source
+overview. Opening a source row exposes its separate member references; returning
+restores the current queue. This deliberate inspection can occupy the table's
+existing reading space, rather than forcing every waiting effect into the live
+HUD. Full names and ordinary type stay intact.
+When a full ability reader cannot fit beside the current controls, its source
+thumbnail can sit beside the measured name/type header. The header grows for
+long names; full rules, live footer and reading fonts retain their sizes. Printed
+permanent readers keep their existing card form.
+The complete opaque source overview is placed around the current owner readouts
+and response controls. Three sources use one wider row at the same source-row
+reading width; two sources keep their existing arrangement. If no complete
+overview fits, the pending-count control explicitly opens the existing full-stack
+inspector. An already-open overview transfers that same reading intent without
+an unpaused Auto frame; a fresh required choice takes precedence over this fallback.
+Ability readers can use the whole visible canvas while retaining every protected
+control and owner reservation. If a full ability face cannot fit beside an open
+overview, hover does not paint an unsafe face. Open that source group, then hover
+its exact member to read the complete effect at the same font. The overview states
+that gesture. Ordinary printed-card readers retain their existing behavior.
+Reading sends no gameplay command. Required choices and existing priority/Take
+control gestures retain their engine authority and reserved space. Unknown
+causality cannot be deduplicated by a matching card name or effect text.
+
+Review Explore/Nicanzil mixed effects, long source/controller names, interleaved
+71/110-trigger workloads, a new response, a removed member, historical settlement
+and required-choice interruption at 1000x740 and 1540x980 with 100/130% text and
+normal/reduced motion. Check rendered glyphs inside their own backgrounds and
+separate name/count/controller/body regions, exact-source hover, deep-member
+inspection, return and current priority controls. Automated geometry and agent
+inspection remain separate from the player's acceptance of the revised visual.
+
+## Auto across window focus changes: source candidate
+
+**Reported behavior: issues; revised candidate pending human review.** With Auto
+enabled, switching from Mana Table to another application stops automatic
+priority progress. The input-focus gate also withheld observation credit and
+cancelled or withdrew automatic continuation, although the application continued
+to receive and compose current game observations.
+
+The journey uses Mana Table's existing Auto, Hold, phase stops and inspection
+gestures: enable Auto, switch applications, let already-authorized priority work
+continue, then return to the same table or its next required choice. Window focus
+only controls device input. Hold, required choices, meaningful response windows,
+saved own-turn phase stops and deliberate pinned reading/overlays retain their
+existing pauses. Returning with held mouse buttons or shortcut keys still
+requires a neutral input sample before a fresh manual gesture.
+
+This corrects the reported Mana Table gesture; it adds no new visual arrangement
+or controls. The current engine permission and acknowledged continuation policy
+still own every pass. Background updates admit actual command receipts and fresh
+owned observations; tabbing away cannot enable Auto, grant another seat's
+authority or answer a required choice. Review Auto on/off, Hold, an own-turn stop,
+a response, a pinned reader and a fresh required choice across Alt+Tab and return.
+
 ## Understanding a blocked target: source candidate
 
 **Source candidate; human review pending.** A player tried to use Staff of

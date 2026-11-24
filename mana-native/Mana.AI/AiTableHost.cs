@@ -3,7 +3,10 @@ using Mana.Contracts;
 
 namespace Mana.AI;
 
-public sealed record AiHostFault(string GameId, int SeatId, string ReasonCode);
+public sealed record AiHostFault(string GameId, int SeatId, string ReasonCode)
+{
+    public AiFailure? Failure { get; init; }
+}
 
 /// <summary>Host-only failure evidence. Never part of a policy's seat knowledge or public match state.</summary>
 public interface IAiHostDiagnostics
@@ -29,7 +32,12 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
     private readonly CancellationTokenSource lifetime = new();
     private readonly HashSet<string> faultedGames = [];
     private readonly Dictionary<(string Game, int Seat), AiDecisionStamp> rejected = [];
-    private readonly Dictionary<(string Game, int Seat), long> awaitingObservation = [];
+    private sealed record AwaitingObservation(long Started, AiFailure Evidence);
+    private readonly Dictionary<(string Game, int Seat), AwaitingObservation> awaitingObservation = [];
+    private readonly Dictionary<(string Game, int Seat), (long Revision, long Board)> publicReadProgress = [];
+    private readonly Dictionary<string, ImmutableHashSet<int>> publicReadRosters = [];
+    private readonly Dictionary<string, ImmutableHashSet<int>> publicReadOwners = [];
+    private readonly HashSet<string> publicReadBaselines = [];
     private Task? runner;
     private bool enabled, disposed;
     public AiHostFault? LastFault { get; private set; }
@@ -62,9 +70,10 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
         await StepCoreAsync(cancellation).ConfigureAwait(false);
     }
 
-    // Acknowledgement requests another read, never means input consumption or
-    // permission to reuse this batch. Absence of work keeps the idle backoff.
-    private enum AiHostStepOutcome { WaitForCurrentWork, ReobserveAfterAcceptedSubmission }
+    // Acknowledgement or new privately owned public progress requests another read,
+    // never input consumption or permission to reuse this batch. Unchanged
+    // work keeps the idle backoff.
+    private enum AiHostStepOutcome { WaitForCurrentWork, ReobserveCurrentWork }
 
     private async Task<AiHostStepOutcome> StepCoreAsync(CancellationToken cancellation)
     {
@@ -92,6 +101,8 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
                     awaitingObservation.Remove(key);
                 }
             }
+            bool newOwnedBoard = ObserveOwnedPublicProgress(observed, active);
+            bool progressFramesValid = true;
             foreach (var item in observed) {
                 token.ThrowIfCancellationRequested();
                 var state = item.State;
@@ -117,6 +128,7 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
                 // Execution/resource facts matter even between owned inputs;
                 // their validation precedes observation-owner mutation.
                 if (!session.ObserveAutomaticProgress(state)) {
+                    progressFramesValid = false;
                     if (await CheckObservationProgress(key, token).ConfigureAwait(false)) backoffRequired = true;
                     continue;
                 }
@@ -158,7 +170,8 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
                 var result = await session.EvaluateAsync(token).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
                 if (result.Status is AiSeatStatus.Unavailable or AiSeatStatus.Invalid or AiSeatStatus.BudgetExceeded or AiSeatStatus.NeedsRecovery) {
-                    await FaultAsync(state.Id, item.SeatId, result.Status.ToString().ToLowerInvariant(), token).ConfigureAwait(false);
+                    await FaultAsync(state.Id, item.SeatId, result.Status.ToString().ToLowerInvariant(), token,
+                        failure: result.Failure).ConfigureAwait(false);
                     backoffRequired = true;
                     continue;
                 }
@@ -166,7 +179,8 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
                 try {
                     await AwaitProvider("execute", stop => provider.ExecuteAutomatedAsync(item.SeatId, ticket.Command, stop), token).ConfigureAwait(false);
                     acceptedSubmission |= session.Report(ticket, AiExecutionReceipt.Accepted);
-                    awaitingObservation[key] = operationTime.GetTimestamp();
+                    awaitingObservation[key] = new(operationTime.GetTimestamp(),
+                        ticket.FailureEvidence(AiFailureKind.ObservationNoProgress, "accepted-no-progress"));
                 } catch (EngineCommandRejectedException) {
                     session.Report(ticket, AiExecutionReceipt.Rejected);
                     rejected[key] = ticket.Stamp;
@@ -180,28 +194,100 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
                     throw;
                 } catch (Exception error) {
                     session.Report(ticket, AiExecutionReceipt.Unknown);
-                    await FaultAsync(state.Id, item.SeatId, "execution-unknown", token, error).ConfigureAwait(false);
+                    await FaultAsync(state.Id, item.SeatId, "execution-unknown", token, error, session.View.Failure).ConfigureAwait(false);
                     backoffRequired = true;
                 }
             }
-            return (acceptedSubmission || acceptedControl) && !backoffRequired ? AiHostStepOutcome.ReobserveAfterAcceptedSubmission
+            // A pacing owner can close while this step awaits provider work.
+            // Recheck only the new scheduling hint; existing post-ACK refresh
+            // semantics remain independent and cannot grant an input answer.
+            bool freshPublicWork = newOwnedBoard && progressFramesValid && (pacing == null
+                || observed.Where(row => row.State.Viewer is { Eliminated: false })
+                    .All(row => pacing.Ready(row.State.Id, row.SeatId)));
+            return (acceptedSubmission || acceptedControl || freshPublicWork) && !backoffRequired
+                ? AiHostStepOutcome.ReobserveCurrentWork
                 : AiHostStepOutcome.WaitForCurrentWork;
         } finally { step.Release(); }
     }
 
+    // A new public board in an already-bound privately owned scope is continuing
+    // rules work, not an idle poll. This requests one independent provider read;
+    // it supplies no decision, pacing credit, command or renewed work budget.
+    private bool ObserveOwnedPublicProgress(ImmutableArray<AutomatedSeatObservation> observed,
+        HashSet<(string Id, int SeatId)> active)
+    {
+        var games = active.Select(key => key.Id).ToHashSet();
+        // Missing live views revoke command sessions above, but cannot erase
+        // read-progress ceilings or the certificate of who is privately owned.
+        foreach (var key in publicReadProgress.Keys.Where(key => !games.Contains(key.Game)).ToArray()) publicReadProgress.Remove(key);
+        foreach (string game in publicReadRosters.Keys.Where(game => !games.Contains(game)).ToArray()) publicReadRosters.Remove(game);
+        foreach (string game in publicReadOwners.Keys.Where(game => !games.Contains(game)).ToArray()) publicReadOwners.Remove(game);
+        publicReadBaselines.RemoveWhere(game => !games.Contains(game));
+        bool fresh = false;
+        foreach (var group in observed.GroupBy(row => row.State.Id)) {
+            var rows = group.ToArray();
+            if (rows.Any(row => row.State.ViewerId != row.SeatId || row.State.Viewer == null
+                    || row.State.Status is not ("playing" or "resolving") || row.State.Error != null
+                    || row.State.Revision < 0 || row.State.BoardRevision < 0)) {
+                publicReadBaselines.Add(group.Key);
+                continue;
+            }
+            var players = rows[0].State.Players;
+            var ids = players.Select(player => player.Id).ToImmutableHashSet();
+            bool coherent = ids.Count == players.Length && ids.All(id => id >= 0)
+                && rows.Select(row => row.SeatId).Distinct().Count() == rows.Length
+                && rows.All(row => row.State.Players.Length == ids.Count
+                    && row.State.Players.Select(player => player.Id).ToHashSet().SetEquals(ids)
+                    && row.State.Players.All(player => players.Single(original => original.Id == player.Id).Eliminated == player.Eliminated));
+            bool rosterKnown = publicReadRosters.TryGetValue(group.Key, out var roster);
+            if (!rosterKnown && coherent) publicReadRosters.Add(group.Key, roster = ids);
+            if (!coherent || rosterKnown && !roster!.SetEquals(ids)) {
+                publicReadBaselines.Add(group.Key);
+                continue;
+            }
+            var living = players.Where(player => !player.Eliminated).Select(player => player.Id).ToHashSet();
+            var owned = rows.Select(row => row.SeatId).ToImmutableHashSet();
+            publicReadOwners.TryGetValue(group.Key, out var knownOwners);
+            knownOwners ??= [];
+            if (!owned.IsSubsetOf(knownOwners)) publicReadBaselines.Add(group.Key);
+            knownOwners = knownOwners.Union(owned);
+            publicReadOwners[group.Key] = knownOwners;
+            bool complete = knownOwners.Where(living.Contains).All(owned.Contains);
+            if (!complete) publicReadBaselines.Add(group.Key);
+            bool bound = rosterKnown && coherent && roster!.SetEquals(ids);
+            bool advanced = false, monotonic = true;
+            foreach (var row in rows) {
+                var key = (group.Key, row.SeatId);
+                bool priorKnown = publicReadProgress.TryGetValue(key, out var prior);
+                bound &= priorKnown && seats.ContainsKey(key);
+                bool ordered = !priorKnown || row.State.Revision >= prior.Revision && row.State.BoardRevision >= prior.Board;
+                monotonic &= ordered;
+                advanced |= priorKnown && living.Contains(row.SeatId) && row.State.BoardRevision > prior.Board;
+                if (ordered) publicReadProgress[key] = (row.State.Revision, row.State.BoardRevision);
+            }
+            if (!monotonic) publicReadBaselines.Add(group.Key);
+            bool baseline = complete && monotonic && publicReadBaselines.Remove(group.Key);
+            if (!baseline && complete && bound && monotonic && advanced && living.Count >= 2 && living.Overlaps(owned)
+                && rows.Where(row => living.Contains(row.SeatId)).All(row => pacing == null || pacing.Ready(group.Key, row.SeatId)))
+                fresh = true;
+        }
+        return fresh;
+    }
+
     private async Task<bool> CheckObservationProgress((string Game, int Seat) key, CancellationToken cancellation)
     {
-        if (!awaitingObservation.TryGetValue(key, out var started)
-            || operationTime.GetElapsedTime(started) < ObservationTimeout) return false;
+        if (!awaitingObservation.TryGetValue(key, out var awaiting)
+            || operationTime.GetElapsedTime(awaiting.Started) < ObservationTimeout) return false;
         awaitingObservation.Remove(key);
         await FaultAsync(key.Game, key.Seat, "accepted-no-progress", cancellation,
-            new TimeoutException("The automated decision did not advance after an accepted command.")).ConfigureAwait(false);
+            new TimeoutException("The automated decision did not advance after an accepted command."), awaiting.Evidence).ConfigureAwait(false);
         return true;
     }
 
-    private async Task FaultAsync(string game, int seat, string reason, CancellationToken cancellation, Exception? error = null)
+    private async Task FaultAsync(string game, int seat, string reason, CancellationToken cancellation,
+        Exception? error = null, AiFailure? failure = null)
     {
-        LastFault = new(game, seat, reason);
+        LastFault = new(game, seat, reason) { Failure = failure };
         ReportDiagnostic(LastFault, error);
         faultedGames.Add(game);
         try { await WithdrawPriorityGameAsync(game, cancellation).ConfigureAwait(false); }
@@ -284,6 +370,8 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
                     // but it cannot retain local policy work or reusable tickets.
                     lock (seats) { foreach (var seat in seats.Values) seat.Dispose(); seats.Clear(); }
                     awaitingObservation.Clear();
+                    publicReadProgress.Clear(); publicReadRosters.Clear();
+                    publicReadOwners.Clear(); publicReadBaselines.Clear();
                 }
             }
             finally { step.Release(); }

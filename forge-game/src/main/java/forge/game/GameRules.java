@@ -18,6 +18,9 @@ public class GameRules {
     private boolean allowCheatShuffle = false;
     private final Set<GameType> appliedVariants = EnumSet.noneOf(GameType.class);
     private int simTimeout = 120;
+    // Native hosts own a narrower certified undo contract; legacy GUI defaults
+    // keep the upstream general snapshot-undo behavior.
+    private boolean allowGeneralUndo = true;
 
     // it's a preference, not rule... but I could hardly find a better place for it
     private boolean useGrayText;
@@ -31,6 +34,14 @@ public class GameRules {
 
     public GameType getGameType() {
         return gameType;
+    }
+
+    public boolean isGeneralUndoAllowed() {
+        return allowGeneralUndo;
+    }
+
+    public void setGeneralUndoAllowed(final boolean allowed) {
+        allowGeneralUndo = allowed;
     }
 
     public boolean hasManaBurn() {
@@ -48,7 +59,7 @@ public class GameRules {
     }
 
     public int getPoisonCountersToLose() {
-        return poisonCountersToLose;
+        return hasAppliedVariant(GameType.TwoHeadedGiant) ? 15 : poisonCountersToLose; // 810.8d
     }
     public void setPoisonCountersToLose(final int amount) {
         this.poisonCountersToLose = amount;
@@ -132,6 +143,11 @@ public class GameRules {
      * Other commander formats may designate leaders without this loss condition. */
     public Integer getCommanderCombatDamageLimit() {
         return hasAppliedVariant(GameType.Commander) ? 21 : null;
+    }
+
+    /** Teams take turns and hold priority together (CR 805), as in Two-Headed Giant. */
+    public boolean hasSharedTeamTurns() {
+        return appliedVariants.contains(GameType.TwoHeadedGiant);
     }
 
     public boolean useGrayText() {

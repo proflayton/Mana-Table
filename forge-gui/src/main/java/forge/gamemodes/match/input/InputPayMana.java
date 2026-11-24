@@ -46,6 +46,8 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     private final Queue<Card> delaySelectCards = new LinkedList<>();
 
     private boolean bPaid = false;
+    private CardCollection autoPayManaSources;
+    private boolean autoPayManaSourcesKnown;
     private String historyOrigin = "unknown";
     private boolean historyFinished;
 
@@ -67,7 +69,6 @@ public abstract class InputPayMana extends InputSyncronizedBase {
 
     @Override
     protected void onStop() {
-        getController().clearActionableCards();
         if (!isFinished()) {
             // Clear current Mana cost being paid for SA
             saPaidFor.setManaCostBeingPaid(null);
@@ -112,15 +113,24 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     }
 
     protected List<SpellAbility> getAllManaAbilities(Card card) {
-        return getAllManaAbilities(card, false);
+        return getAllManaAbilities(card, player, false);
     }
 
     private List<SpellAbility> getAllManaAbilities(Card card, boolean query) {
+        return getAllManaAbilities(card, player, query);
+    }
+
+    /** UI funding inspection never changes the live abilities it observes. */
+    public static List<SpellAbility> getAllManaAbilities(Card card, Player activator) {
+        return getAllManaAbilities(card, activator, true);
+    }
+
+    private static List<SpellAbility> getAllManaAbilities(Card card, Player activator, boolean query) {
         List<SpellAbility> result = Lists.newArrayList();
         for (SpellAbility original : card.getManaAbilities()) {
-            SpellAbility sa = query ? original.copyForQuery(player) : original;
+            SpellAbility sa = query ? original.copyForQuery(activator) : original;
             result.add(sa);
-            result.addAll(GameActionUtil.getAlternativeCosts(sa, player, false));
+            result.addAll(GameActionUtil.getAlternativeCosts(sa, activator, false));
         }
         if (query) {
             // Query variants retain the original ID. Equality-based removal
@@ -130,7 +140,7 @@ public abstract class InputPayMana extends InputSyncronizedBase {
         }
         final Collection<SpellAbility> toRemove = Lists.newArrayListWithCapacity(result.size());
         for (final SpellAbility sa : result) {
-            sa.setActivatingPlayer(player);
+            sa.setActivatingPlayer(activator);
             if (sa.canPlay(true)) {
                 continue;
             }
@@ -439,15 +449,25 @@ public abstract class InputPayMana extends InputSyncronizedBase {
                         if (restrictionsMet && !player.getController().isFullControl(FullControlFlag.NoPaymentFromManaAbility)) {
                             player.getManaPool().payManaFromAbility(saPaidFor, manaCost, chosen);
                         }
+                        if (!restrictionsMet || chosen.getPayCosts().hasManaCost()) {
+                            invalidateAutoPayManaSources();
+                        }
                     }
                 } finally {
                     locked = false;
+                    // Restore the actual current bill even when a busy render
+                    // was skipped while this mana ability was running.
+                    showMessage();
                 }
-                onStateChanged();
             }
         });
 
         return true;
+    }
+
+    @Override
+    protected boolean isBusy() {
+        return locked;
     }
 
     protected boolean isAlreadyPaid() {
@@ -510,20 +530,22 @@ public abstract class InputPayMana extends InputSyncronizedBase {
         final CardCollection autoPayManaSources = supportAutoPay() ? getAutoPayManaSources() : null;
         updateButtons(autoPayManaSources != null);
         // The button and highlights describe the same current unpaid bill.
-        getController().pushActionableCards(true, getAutoTapPreviewViews(autoPayManaSources));
+        showSelection();
         showMessage(getMessage(), saPaidFor.getView());
     }
 
     @Override
     public void showMessage() {
         if (isFinished() || locked) { return; }
-        getController().pushActionableCards(true);
         updateButtons(false);
         onStateChanged();
     }
 
     protected void onStateChanged() {
         if (isFinished() || locked) return;
+        // A completed payment gesture or explicit restoration can change the
+        // bill, pool or sources. Rendering may reuse only this fresh plan.
+        invalidateAutoPayManaSources();
         if (isAlreadyPaid()) {
             recordPaymentEnd("completed");
             done();
@@ -549,6 +571,7 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     protected abstract String getMessage();
 
     private CardCollection getAutoPayManaSources() {
+        if (autoPayManaSourcesKnown) return autoPayManaSources;
         final ManaCostBeingPaid costCopy = new ManaCostBeingPaid(manaCost);
         Evaluator<CardCollection> proc = new Evaluator<>() {
             @Override
@@ -557,7 +580,21 @@ public abstract class InputPayMana extends InputSyncronizedBase {
             }
         };
         runAsAi(proc);
-        return proc.getResult();
+        autoPayManaSources = proc.getResult();
+        autoPayManaSourcesKnown = true;
+        return autoPayManaSources;
+    }
+
+    private void invalidateAutoPayManaSources() {
+        autoPayManaSourcesKnown = false;
+        autoPayManaSources = null;
+    }
+
+    @Override
+    protected List<CardView> getActionable() {
+        if (isFinished() || locked) return List.of();
+        return getController().getActionableCards(true,
+                getAutoTapPreviewViews(autoPayManaSourcesKnown ? autoPayManaSources : null));
     }
 
     /** Cards the Auto button would tap, for emphasized highlighting; null when unavailable. */

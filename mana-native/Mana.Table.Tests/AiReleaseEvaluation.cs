@@ -33,14 +33,15 @@ internal static class AiReleaseEvaluation
             || !manifest.Contains("Class-Path: forge-engine.jar\n", StringComparison.Ordinal)
             || !launcher.Entries.Any(entry => entry.FullName == "forge/api/AiReleaseFixtureEngine.class")
             || launcher.Entries.Any(entry => entry.FullName.EndsWith(".class", StringComparison.Ordinal)
-                && !entry.FullName.StartsWith("forge/api/AiReleaseFixtureEngine", StringComparison.Ordinal)))
+                && !FixtureClass(entry.FullName)))
             throw new InvalidDataException("Use the test-only fixture launcher, containing only its pregame factory classes.");
         string dependency = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(launch.Jar))!, "forge-engine.jar");
         string productionHash = Hash(productionJar);
         if (Hash(dependency) != productionHash) throw new InvalidDataException("The launcher's production engine dependency differs from the recorded engine.");
         using var production = ZipFile.OpenRead(productionJar);
         if (production.GetEntry("forge/api/DesktopEngine.class") == null
-            || production.Entries.Any(entry => entry.FullName.StartsWith("forge/api/AiReleaseFixtureEngine", StringComparison.Ordinal)))
+            || production.Entries.Any(entry => entry.FullName.StartsWith("forge/api/AiReleaseFixtureEngine", StringComparison.Ordinal)
+                || entry.FullName.StartsWith("forge/api/LibraryAcquisitionFixtureEngine", StringComparison.Ordinal)))
             throw new InvalidDataException("Shipping engine must contain the real entry point and exclude test fixture classes.");
         string? candidateBuild = null;
         if (verifyPackage) {
@@ -161,4 +162,9 @@ internal static class AiReleaseEvaluation
     }
 
     private static string Hash(string file) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(file)));
+
+    internal static bool FixtureClass(string name) => new[] {
+        "forge/api/AiReleaseFixtureEngine", "forge/api/LibraryAcquisitionFixtureEngine"
+    }.Any(prefix => name == prefix + ".class"
+        || name.StartsWith(prefix + "$", StringComparison.Ordinal) && name.EndsWith(".class", StringComparison.Ordinal));
 }

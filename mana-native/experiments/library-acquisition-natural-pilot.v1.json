@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "kind": "ai-experiment-spec",
+  "id": "library-acquisition-natural-development-pilot-v1",
+  "hypothesis": "Measure full-v6 versus the scoped v7 own-library acquisition candidate against three frozen full-v6 reference seats, with identical new provider facts in both arms. Preserve the complete balanced 32-game schedule and assess natural outcomes, unresolved games and focal policy cost. This development pilot is not confirmation of general playing strength.",
+  "mode": "natural",
+  "primaryEndpoint": "focal-win-share",
+  "variants": {
+    "baseline": { "factoryId": "casual-commander.v6", "attachmentEvaluation": true },
+    "candidate": { "factoryId": "casual-commander.v7.library-acquisition.v1", "attachmentEvaluation": true },
+    "reference": { "factoryId": "casual-commander.v6", "attachmentEvaluation": true }
+  },
+  "limits": {
+    "decisionMs": 10000, "workUnits": 4096,
+    "matchMs": 180000, "turns": 160, "workerMs": 300000, "captureBytes": 16777216
+  },
+  "runtime": {
+    "dotnetPath": "C:/Program Files/dotnet/dotnet.exe",
+    "driverPath": "../Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.dll",
+    "engineJarPath": "../../forge-api/target/forge-engine.jar",
+    "resourcesPath": "../../forge-gui/res"
+  },
+  "planningSeed": "261027",
+  "policySeed": "2668620592559112008",
+  "repetitions": 1,
+  "decks": [
+    { "id": "rhys-token-equipment-v1", "path": "../../forge-api/src/test/resources/forge/api/ai-campaign/rhys-token-equipment.v1.txt" },
+    { "id": "pir-toothy-counter-ramp-v1", "path": "../../forge-api/src/test/resources/forge/api/ai-campaign/pir-toothy-counter-ramp.v1.txt" },
+    { "id": "balmor-spells-multitarget-v1", "path": "../../forge-api/src/test/resources/forge/api/ai-campaign/balmor-spells-multitarget.v1.txt" },
+    { "id": "traxos-colorless-artifacts-v1", "path": "../../forge-api/src/test/resources/forge/api/ai-campaign/traxos-colorless-artifacts.v1.txt" }
+  ]
+}

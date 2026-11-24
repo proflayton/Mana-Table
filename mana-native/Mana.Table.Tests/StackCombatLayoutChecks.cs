@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Mana.Client;
@@ -23,6 +24,10 @@ internal static class StackCombatLayoutChecks
     {
         CheckWorkspaceFit(profile, check);
         foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) }) {
+            CheckOverviewFallback(profile, size, check);
+            foreach (float textScale in new[] { 1f, 1.3f })
+            foreach (bool reducedMotion in new[] { false, true })
+                CheckExplore(profile, size, textScale, reducedMotion, check);
             // Start with the reported long description WITHOUT hovering: the
             // main competition must be caught independently of reader placement.
             using (var longText = new Journey(profile, size, 1.3f, true, 2, "provider-description",
@@ -57,6 +62,53 @@ internal static class StackCombatLayoutChecks
     }
 
     private sealed record Painted(string Name, Rectangle Logical, Rectangle Physical);
+
+    private static void CheckOverviewFallback(string profile, Point size, Action<bool, string> check)
+    {
+        // Authored layout stress, not new provider facts or rules receipts. The
+        // oversized non-current source leaves the actual primary unchanged.
+        var state = Mana.Scenarios.ExploreTriggersScenario.Snapshot(1);
+        var overfull = state with { Revision = state.Revision + 1, BoardRevision = state.BoardRevision + 1,
+            Stack = state.Stack.SetItem(3, state.Stack[3] with {
+                Name = string.Join(" ", Enumerable.Repeat("Complete source name", 120)) }) };
+        using (var run = new Journey(profile, size, 1f, true, 4, "overview-active-no-fit", state)) {
+            run.Click("stack-workload-overview"); run.Tick();
+            run.View.SetAutomatic(true); run.Tick();
+            run.Record("overview-start", new { run.View.StackWorkloadInspectionActive, run.View.ZoneName, run.View.DecisionDock,
+                run.View.StackWorkloads, run.View.SeatReadouts, frame = run.Frame.Observe() });
+            check(run.View.StackWorkloadInspectionActive && run.View.DecisionDock?.PauseReason == DecisionDockPauseReason.Inspection,
+                run.Label + ": an explicit overview owns the current inspection pause before a no-fit transition");
+            run.Present(overfull); run.Tick();
+            check(!run.View.StackWorkloadInspectionActive && run.View.ZoneName == "Stack"
+                    && run.View.DecisionDock?.PauseReason is DecisionDockPauseReason.Inspection or DecisionDockPauseReason.Overlay
+                    && run.Commands.IsEmpty,
+                run.Label + ": a no-fit overview transfers its explicit reading intent atomically to the existing full-stack inspector");
+            run.Tick(advance: .7);
+            check(run.View.ZoneName == "Stack" && run.View.DecisionDock?.PauseReason == DecisionDockPauseReason.Overlay
+                    && run.View.Automatic && run.Commands.IsEmpty,
+                run.Label + ": the fallback retains enabled Auto behind an uninterrupted reading pause without dispatching a pass");
+        }
+        using (var run = new Journey(profile, size, 1.3f, true, 4, "overview-default-no-fit", overfull)) {
+            var bar = run.Hit("stack-workload-overview");
+            check(bar.Intent is MatchIntent.OpenStack && run.TryPoint(bar, out _),
+                run.Label + ": an unplaceable complete overview exposes the existing full-stack route as a reachable current control");
+            run.Click(bar.Id); run.Tick();
+            check(run.View.ZoneName == "Stack" && !run.View.StackWorkloadInspectionActive && run.Commands.IsEmpty,
+                run.Label + ": the no-fit queue control opens its declared inspector once without an invisible overview or gameplay command");
+        }
+        using (var run = new Journey(profile, size, 1f, true, 4, "overview-required-no-fit", state)) {
+            run.Click("stack-workload-overview"); run.Tick();
+            run.View.SetAutomatic(true);
+            var required = overfull with { Decision = new("required-overview-layout", new("Make the current required choice."),
+                new ConfirmationPayload(new("Continue", true))), ActionClass = "confirmation" };
+            var acceptedRequired = run.Present(required); run.Tick();
+            var answer = run.Hit("confirm");
+            check(!run.View.StackWorkloadInspectionActive && run.View.ZoneName == null
+                    && run.View.Match!.Decision?.Id == acceptedRequired.Decision!.Id && run.View.CurrentHit(answer)
+                    && run.TryPoint(answer, out _) && run.Commands.IsEmpty,
+                run.Label + ": a fresh required choice retires overview intent before no-fit fallback and keeps its exact answer exposed");
+        }
+    }
     private static Rectangle PanelPaint(Rectangle bounds) => Rectangle.Union(bounds,
         new(bounds.X + 2, bounds.Y + 5, bounds.Width, bounds.Height));
     private static string Normalize(string value) => Regex.Replace(value, @"\s+", " ").Trim();
@@ -64,6 +116,129 @@ internal static class StackCombatLayoutChecks
     {
         var measured = new TextMetrics().TextSize(text.Value ?? "", text.Size, text.Width, text.MaxLines, text.Bold, scale);
         return new(text.X, text.Y, measured.X, measured.Y);
+    }
+
+    private static void CheckExplore(string profile, Point size, float scale, bool reduced, Action<bool, string> check)
+    {
+        var before = Mana.Scenarios.ExploreTriggersScenario.Snapshot(0);
+        using var run = new Journey(profile, size, scale, reduced, 4, "explore", before);
+        var mixed = Mana.Scenarios.ExploreTriggersScenario.Snapshot(1);
+        run.Present(mixed); run.Tick();
+        CheckCurrent(Mana.Scenarios.ExploreTriggersScenario.LandEffect, 4);
+        check(run.View.AnnouncementId != null && run.View.AnnouncementBounds == null,
+            run.Label + ": exact live Explore announcements remain recorded without a second floating effect body");
+        run.Click("stack-workload-overview"); run.Tick();
+        var groups = run.View.StackWorkloads;
+        CheckGroupGeometry();
+        check(groups.SelectMany(group => group.MemberIds).Distinct().Count() == 4
+                && groups.Count == 3 && groups.Single(group => group.IsNext).Positions.SequenceEqual([1, 3]),
+            run.Label + ": land and nonland Explore effects remain separate even on the same physical Nicanzil");
+        foreach (var group in groups.ToArray()) {
+            var item = run.View.Match!.Stack.Single(item => item.Id == group.MemberIds[0]);
+            var sourceHit = run.Hit("stack-workload:" + item.Id);
+            run.Tick(run.Point(sourceHit)); run.Tick(advance: .4);
+            var overviewReader = run.View.ReferencePreviewBounds;
+            check(overviewReader == null && sourceHit.Intent is MatchIntent.OpenStackWorkload
+                    || overviewReader is { } clear && !run.View.SeatReadouts.Concat(run.Frame.Hits
+                        .Where(hit => hit.Id is "confirm" or "combat-review" or "stack-resolution-arm" or "stack-resolution-stop")
+                        .Select(hit => PanelPaint(hit.Bounds))).Any(clear.Intersects),
+                run.Label + ": source hover either fits beside the complete overview or preserves the explicit exact-member reading route without covering protected controls");
+            run.Tick(new Point(10, 60)); run.Tick();
+            run.Click(sourceHit.Id); run.Tick();
+            check(run.View.StackRows.Select(row => row.Id).SequenceEqual(group.MemberIds),
+                run.Label + ": each overview source opens only its complete exact current member group");
+            var member = run.Hit("stack-workload-member:" + item.Id);
+            run.Tick(run.Point(member)); run.Tick(advance: .4);
+            var reader = run.View.ReferencePreviewBounds;
+            var rules = run.Frame.Drawing.Commands.OfType<DrawCommand.Text>()
+                .Where(text => reader?.Contains(text.X, text.Y) == true && text.Size == CardRulesLayout.RulesFont).ToArray();
+            var protectedObjects = run.View.SeatReadouts.Concat(run.Frame.Hits
+                .Where(hit => hit.Id is "confirm" or "combat-review" or "stack-resolution-arm" or "stack-resolution-stop")
+                .Select(hit => PanelPaint(hit.Bounds))).ToArray();
+            run.Record("explore-overview-reader-" + item.Id, new { reader, run.View.PendingReaderReservations,
+                run.View.PendingReaderFits, protectedObjects, frame = run.Frame.Observe() });
+            check(reader != null && run.View.ReferencePreviewStackId == item.Id
+                    && run.View.ReferencePreviewCardId == CardViews.Identity(item.Card!)
+                    && Normalize(string.Join(" ", rules.Select(text => text.Value))).Contains(Normalize(item.Text), StringComparison.Ordinal)
+                    && rules.All(text => reader.Value.Contains(TextBounds(text, scale))),
+                run.Label + ": every source from the three-effect overview opens its exact full rules at the existing reading font");
+            check(new Rectangle(0, 0, 1600, run.View.DesignHeight).Contains(reader!.Value)
+                    && !protectedObjects.Any(reader.Value.Intersects) && run.Commands.IsEmpty,
+                run.Label + ": every complete Explore source reader fits the visible canvas without covering owner facts or current controls");
+            run.Tick(new Point(10, 60)); run.Tick();
+            run.Click("stack-workload-close"); run.Tick();
+            run.Click("stack-workload-overview"); run.Tick();
+        }
+        var target = run.Hit("stack-workload:explore-land-0");
+        run.Click(target.Id); run.Tick();
+        check(run.Frame.Hits.Any(hit => hit.Id == "stack-workload-member:explore-land-2") && run.Commands.IsEmpty,
+            run.Label + ": the source row opens the exact interleaved members without answering priority");
+        run.Click("stack-workload-close"); run.Tick();
+        run.Click("stack-workload-overview"); run.Tick();
+        check(run.View.StackWorkloadInspectionActive, run.Label + ": explicit queue inspection holds reading only while its current workload exists");
+        run.Present(Mana.Scenarios.ExploreTriggersScenario.Snapshot(2)); run.Tick();
+        check(!run.View.StackWorkloadInspectionActive, run.Label + ": a workload becoming singleton effects retires stale inspection before pacing");
+        CheckCurrent(Mana.Scenarios.ExploreTriggersScenario.CounterEffect, 3);
+        run.Present(Mana.Scenarios.ExploreTriggersScenario.Snapshot(3)); run.Tick();
+        CheckCurrent("Counter target activated or triggered ability.", 4);
+        check(run.View.Match!.Stack[0].Id == "explore-response" && run.Commands.IsEmpty,
+            run.Label + ": a new opposing response becomes the actual next effect without a stale source-census ordering");
+        run.Present(Mana.Scenarios.ExploreTriggersScenario.Snapshot(4)); run.Tick();
+        var required = run.Frame.Hits.SingleOrDefault(hit => hit.Id == "confirm");
+        check(run.View.Match!.Decision?.Payload is ConfirmationPayload && required != null
+                && run.View.CurrentHit(required) && run.TryPoint(required, out _) && run.Commands.IsEmpty,
+            run.Label + ": a required current choice retains its exposed scoped answer without the overview answering it");
+
+        // Dense authored layout coverage uses the same legacy unbound execution
+        // form as draw-triggers.v1; it does not invent 110 rules receipts.
+        var workload = mixed with { Stack = Enumerable.Range(0, 110).Select(index => mixed.Stack[index % mixed.Stack.Length]
+            with { Id = "explore-110-" + index, ExecutionId = "" }).ToImmutableArray(), Executions = null };
+        run.Present(workload); run.Tick();
+        CheckCurrent(Mana.Scenarios.ExploreTriggersScenario.LandEffect, 110);
+        run.Click("stack-workload-overview"); run.Tick();
+        CheckGroupGeometry();
+        check(run.View.StackWorkloads.SelectMany(group => group.MemberIds).Distinct().Count() == 110 && run.Commands.IsEmpty,
+            run.Label + ": all 110 current occurrences remain represented in the readable source census");
+        run.Record("explore-readable-current", new { run.View.StackWorkloads, run.View.StackRows,
+            announcement = run.View.AnnouncementBounds, frame = run.Frame.Observe(), commands = run.Commands.Count });
+        run.Present(Mana.Scenarios.ExploreTriggersScenario.Snapshot(0)); run.Tick();
+        check(!run.View.StackWorkloadInspectionActive && run.View.StackRows.Count == 0 && run.Commands.IsEmpty,
+            run.Label + ": an empty stack retires the invisible inspection pause and all old member references");
+
+        void CheckCurrent(string effect, int pending)
+        {
+            run.Record("explore-before-assert-" + pending + "-" + run.View.Match!.Stack[0].Id,
+                new { run.View.StudyHudConstrained, run.View.StudyAttentionBounds, run.View.StackWorkloads,
+                    run.View.StackRows, announcement = run.View.AnnouncementBounds, frame = run.Frame.Observe() });
+            var texts = run.Frame.Drawing.Commands.OfType<DrawCommand.Text>().ToArray();
+            var top = run.View.StackRows.FirstOrDefault(row => row.Position == 1);
+            var body = texts.Where(text => text.Value == effect).ToArray();
+            check(run.View.Match!.Stack.Length == pending && top != null && body.Length == 1
+                    && top.Bounds.Contains(TextBounds(body[0], scale)),
+                run.Label + ": one bounded next-effect surface owns the complete actual top effect at " + pending + " pending");
+            CheckGroupGeometry();
+            check(!run.View.StudyHudConstrained && run.Commands.IsEmpty,
+                run.Label + ": the measured trigger workspace fits without changing decisions or shrinking text");
+        }
+
+        void CheckGroupGeometry()
+        {
+            var state = run.View.Match ?? throw new InvalidOperationException("The current Explore group lost its match.");
+            run.Record("explore-group-geometry-" + run.View.Now,
+                new { run.View.StackWorkloads, run.View.StackRows, frame = run.Frame.Observe(), commands = run.Commands.Count });
+            var texts = run.Frame.Drawing.Commands.OfType<DrawCommand.Text>().ToArray();
+            foreach (var group in run.View.StackWorkloads) {
+                var name = texts.Where(text => text.Value == state.Stack.First(item => item.Id == group.MemberIds[0]).Name
+                    && group.Bounds.Contains(text.X, text.Y)).ToArray();
+                check(name.Length == 1 && group.Bounds.Contains(TextBounds(name[0], scale)),
+                    run.Label + ": the complete source name fits its measured row backdrop");
+                var regions = new[] { group.NameBounds, group.ControllerBounds, group.EffectBounds,
+                    group.CountBounds, group.PositionBounds }.Where(bounds => !bounds.IsEmpty).ToArray();
+                check(regions.All(group.Bounds.Contains)
+                        && !regions.Where((first, index) => regions.Skip(index + 1).Any(first.Intersects)).Any(),
+                    run.Label + ": source, controller, effect, count and actual position occupy distinct measured regions");
+            }
+        }
     }
 
     private static void CheckWorkspaceFit(string profile, Action<bool, string> check)
@@ -114,10 +289,11 @@ internal static class StackCombatLayoutChecks
             .FirstOrDefault(part => part.Bounds.Left == first.Bounds.Left && part.Bounds.Width == first.Bounds.Width
                 && part.Bounds.Bottom <= first.Bounds.Top && first.Bounds.Top - part.Bounds.Bottom <= 8);
         if (grouped) {
-            var sourceHeader = frame.Drawing.Commands.OfType<DrawCommand.Text>()
-                .SingleOrDefault(text => text.Value == run.PendingCount + " pending · by source");
-            check(first != null && sourceHeader != null, run.Label + ": the grouped stack's actual source/count header remains present");
-            stack.Add(Paint("stack-source-header", TextBounds(sourceHeader!, run.Scale)));
+            var overview = frame.Hits.SingleOrDefault(hit => hit.Id == "stack-workload-overview");
+            bool census = frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value?.StartsWith(run.PendingCount + " pending ·", StringComparison.Ordinal) == true)
+                || frame.Drawing.Commands.OfType<DrawCommand.CenterText>().Any(text => text.Value?.StartsWith(run.PendingCount + " pending ·", StringComparison.Ordinal) == true);
+            check(first != null && overview != null && census, run.Label + ": the exact pending count retains an explicit source-overview gesture");
+            stack.Add(Paint("stack-source-header", PanelPaint(overview!.Bounds)));
             foreach (var text in frame.Drawing.Commands.OfType<DrawCommand.Text>().Where(text => text.Value != null
                 && (text.Value.StartsWith("Triggered ·", StringComparison.Ordinal) || text.Value.StartsWith("Pending trigger ·", StringComparison.Ordinal)
                     || text.Value == StackCombatHudScenario.ProviderTriggerText)))
@@ -217,6 +393,7 @@ internal static class StackCombatLayoutChecks
             .Concat(readouts.Where(readout => readerPaint.Intersects(readout.Physical))
                 .Select(readout => new { Surface = "seat-readout-" + readout.Index, readout.Logical, readout.Physical })).ToArray();
         run.Record("trigger-reading-before-assert", new { preview, readerBounds, readerPaint, protectedControls, SeatReadouts = readouts,
+            run.View.PendingReaderReservations, run.View.PendingReaderFits,
             ReadoutPlans = run.View.ReadoutPlans.Values.Select(plan => new { plan.PlayerId, Pieces = plan.Pieces.Select(bounds =>
                 new { Logical = bounds, Physical = run.Physical(bounds) }).ToArray(), plan.Text }),
             collisions, reading, game, decision, scope, currentScope = run.View.Scope, time = run.View.Now, began,
@@ -291,8 +468,9 @@ internal static class StackCombatLayoutChecks
             scope = run.View.Scope, time = run.View.Now, commands = run.Commands.Count, frame = run.Frame.Observe() });
         check(run.View.StackWorkloads is [{ MemberIds.Length: 3, IsNext: true } group]
                 && group.MemberIds.SequenceEqual(grouped.Stack.Select(item => item.Id)) && group.Positions.SequenceEqual([1, 2, 3])
-                && run.View.AnnouncementId != null && visibleAnnouncement.Length == 2 && run.Commands.IsEmpty,
-            run.Label + ": three exact same-source occurrences form one current pile without losing order or its new trigger announcement");
+                && run.View.AnnouncementId != null && run.View.AnnouncementBounds == null
+                && visibleAnnouncement.Length == 1 && run.Commands.IsEmpty,
+            run.Label + ": three exact same-source occurrences retain their order and announcement lifecycle with one current effect body");
         CheckLayout(run, "grouped-current-trigger", check);
         CheckReading(run, check);
     }
@@ -302,17 +480,19 @@ internal static class StackCombatLayoutChecks
         using var run = new Journey(profile, new(1000, 740), 1.3f, true, 1, "empty-announcement");
         run.Present(StackCombatHudScenario.CompletedAnnouncement()); run.Tick();
         var announced = run.Frame.Drawing.Commands.OfType<DrawCommand.Text>()
-            .Where(text => text.Value is { } value && (value == StackCombatHudScenario.TriggerText
-                || value.StartsWith("Resolved ·", StringComparison.Ordinal) && value.Contains("Mithril Coat", StringComparison.Ordinal)))
+            .Where(text => run.View.AnnouncementBounds?.Contains(text.X, text.Y) == true
+                && text.Value is { } value && (value == StackCombatHudScenario.TriggerText
+                || value.StartsWith("Resolved ·", StringComparison.Ordinal) || value == "Mithril Coat"))
             .Select(text => run.Physical(TextBounds(text, run.Scale))).ToArray();
         var buttons = run.Frame.Hits.Where(hit => hit.Id is "confirm" or "combat-review")
             .Select(hit => run.Physical(PanelPaint(hit.Bounds))).ToArray();
         var combat = run.Frame.Drawing.Commands.OfType<DrawCommand.Text>().SingleOrDefault(text => text.Value == "2 attacking · 0 blocked");
         var protectedPaint = buttons.Concat(run.View.SeatReadouts.Select(run.Physical))
             .Concat(combat == null ? [] : new[] { run.Physical(TextBounds(combat, run.Scale)) }).ToArray();
-        run.Record("stack-empty-announcement", new { announced, protectedPaint, frame = run.Frame.Observe() });
+        run.Record("stack-empty-announcement", new { announced, run.View.AnnouncementBounds, protectedPaint, frame = run.Frame.Observe() });
         check(run.View.Match?.Stack.IsEmpty == true && run.View.StackRows.Count == 0 && run.View.AnnouncementId != null
-                && announced.Length == 2 && combat != null && run.Commands.IsEmpty,
+                && run.View.AnnouncementBounds is { } notice && announced.Length == 3
+                && announced.All(run.Physical(notice).Contains) && combat != null && run.Commands.IsEmpty,
             run.Label + ": an actual terminal receipt may announce while the rules stack stays empty and combat remains unchanged");
         check(announced.All(bounds => new Rectangle(0, 0, run.Size.X, run.Size.Y).Contains(bounds)
                 && protectedPaint.All(other => !bounds.Intersects(other))),
@@ -350,7 +530,7 @@ internal static class StackCombatLayoutChecks
             app = new(TestTableServices.For(engine), DirectoryPath, engine.State, size);
             app.EnableLiveTableStudy(); Tick(); Tick(advance: .7);
         }
-        internal void Present(GameSnapshot state) { engine.Present(state); app.QueueObservation(engine.State); }
+        internal GameSnapshot Present(GameSnapshot state) { engine.Present(state); app.QueueObservation(engine.State); return engine.State; }
         internal void Tick(Point? physical = null, ButtonState left = ButtonState.Released, double advance = 1.0 / 60)
         {
             pointer = physical ?? pointer;

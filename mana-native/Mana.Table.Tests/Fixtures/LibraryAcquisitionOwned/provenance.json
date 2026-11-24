@@ -1,0 +1,30 @@
+﻿[
+    {
+        "id":  "acquisition-direct-battlefield",
+        "rawSha256":  "0A07659D67DBE2FC00D51DD1DD55E10307C1F040948B195F753200BDC2E7F0B0",
+        "storedSha256":  "20BD267AB02630F6EAA3493E69FA89F73014EA7E2E04B4EC08EF55D1651A0A58",
+        "rawBytes":  124269,
+        "storedBytes":  5195
+    },
+    {
+        "id":  "acquisition-direct-hand",
+        "rawSha256":  "7D8A50070E706114C13B362D2C8E34207A386395AA03E7D3B23FFEC1DB7859C5",
+        "storedSha256":  "5DA5C7DA17EF07EC18205FE82797C8FCBE16D89359DC6C9C0EAC0F714B5C47F5",
+        "rawBytes":  124176,
+        "storedBytes":  5161
+    },
+    {
+        "id":  "acquisition-bundle",
+        "rawSha256":  "7918B9782EB2D91FF6B904A8D0761DA8F306DB5DB43071FE45B0F75B60E0B2C5",
+        "storedSha256":  "CB71C7E6EABBAFA7F32C0A79410B188A6B9AAC105E3F33EC0329C7A4B0C1DDE0",
+        "rawBytes":  129423,
+        "storedBytes":  5271
+    },
+    {
+        "id":  "acquisition-renamed-bundle",
+        "rawSha256":  "30001812B7D1AAAD1B42ECC31AD1AD68AC9F3C54932DE3D75C2E906B936D5DB7",
+        "storedSha256":  "303761C3D0AC6C9887ABC1DEEAA2AF03BD5028AA9E298504121F354438F1BB4D",
+        "rawBytes":  129360,
+        "storedBytes":  5258
+    }
+]

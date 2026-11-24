@@ -9,6 +9,30 @@ Use the package's `SOURCE.txt`/`build.json` and release notes to identify its be
 The [native development guide](../../mana-native/README.md) is the build/run entry
 point for the Windows client.
 
+The [gameplay reliability program](Mana-Table-Reliability-Program.md) records the
+reviewed artwork, process diagnostics, AI failure, history presentation and
+update-operation designs. Its implementation and qualification states are
+tracked separately from the larger cooperative and live-update milestones.
+
+The first Archive/Mana Table capability bridge shares a versioned, MIT-licensed
+[definition contract](../../contracts/card-capabilities/README.md) for direct
+Aura modifiers. Forge extracts a closed structural subset, Archive maps exports
+into potential graphs, and native AI consumes current bound modifier facts.
+Definition coverage, live binding, legal commands and strategic evaluation stay
+separate. A current prompt's read-only source portrait can supply attachment
+provenance without entering the target/resource occurrence catalog. Full
+strategy packages and broad interaction discovery remain unimplemented.
+
+Rules-process diagnostics have a process-owned bounded stderr drain and an
+independent optional file worker. A slow or failed `engine.log` sink cannot
+backpressure the child through that drain. Fixed queue/tail storage, explicit
+omission accounting and one half-second retirement grace bound optional work.
+After a noncooperative file worker is abandoned, that engine instance suppresses
+later file workers while continuing each process's drain. Retired status is
+text-free and immutable; diagnostics never acquire command or failure authority.
+See the [diagnostics design](Mana-Table-Engine-Diagnostics-Design.md) for the
+retention limits and process-liveness evidence.
+
 The [3 November boundary audit](Mana-Table-Boundary-Audit-2026-11-03.md) follows
 recent regressions across published source facts, client audience lifetimes and
 current native composition. Those values have separate invalidation rules:
@@ -47,6 +71,23 @@ Private or concealed faces receive no binding. Missing legacy rules or damage
 bindings remain unknown. The AI shares one bounded nominal combat assessment
 between blocking and reserving defenders; it does not turn this forecast into
 rules authority or claim to simulate every prevention/replacement effect.
+
+The optional free-for-all elimination forecast uses that same assessment for
+ordinary return attacks by the other surviving players. Ordinary life damage
+stays aggregated; commander contributions join prior damage by `CommanderId`,
+including under changed control. Partner commanders never share a damage bill,
+and the defender being eliminated contributes no future attack. Unknown helper
+coverage declines the optional cohort. Its named risk-only unblocked-return
+query additionally recognizes exactly menace, protection and modular, which do
+not change full current-power player damage when no own blockers are credited.
+It requires each supplied amount to equal the source's full nominal damage;
+default current-damage, blocking and retention assessments keep their original
+coverage. Already-terminal prior damage also declines.
+The former pooled commander upper bound remains only for genuinely legacy
+frames: missing rules and no typed lineage in any retained player's bounded
+Battlefield, Command zone or damage rows. Partial typed data cannot enter that
+fallback. Those scans, assessment construction and risk channels are charged
+to the existing search slice and reserved again for later staged inputs.
 
 Standing Auto also separates desired policy from wire ownership. A retained
 `NoResponse` intent reserves the automatic progression route, but an available
@@ -264,9 +305,16 @@ while malformed responses remain errors rather than unsupported fallbacks.
 game/audience generation. It owns deduplication, gaps and the immutable
 `MatchHistoryReadModel`; it cannot issue a gameplay command. Historical identities
 never enter the live action catalog. The renderer's existing feedback consumers
-are not yet migrated to this new reader. `Mana.Game` owns selected play, measured
-reading, current disclosure checks and archive navigation, with no rules inference
-from nearby observations or payment pool differences.
+are not yet migrated to this new reader. The source-only P1 extraction places
+selection, pages, retained detail formatting and archive requests in
+`HistoryPresentationSession`. It publishes one immutable view after measured
+page reconciliation. Composition retains global overlay and current disclosure
+checks, recording and archive closure; historical identities grant no commands.
+One actual storage pipeline and one replaceable pending read bound outstanding
+work. Logical cancellation or the ten-second UI limit revokes results without
+freeing a still-running I/O slot. Export is explicit and never queued for replay.
+An in-progress destination write can finish after the reader closes. Actual I/O
+settlement alone does not prove private callbacks have drained for future unload.
 
 Composition constructs `MatchHistoryArchive` and injects it through `TableServices`.
 Accepted history batches feed its bounded background writer. Archives use local
@@ -1320,10 +1368,42 @@ automated input still receives a fresh observation and policy evaluation.
 The background loop separately distinguishes an accepted submission that needs
 a fresh observation from a cycle with no current work. Acceptance skips the
 40 ms idle backoff before that read; it proves no input consumption or resolved
-effect. Resolving, unchanged authority and presentation holds keep the backoff,
-and rejection or failure overrides another seat's accepted-submission hint.
+effect. Same-board resolving, unchanged authority and presentation holds keep
+the backoff, and rejection or failure overrides another seat's refresh hint.
+An already-bound game can also request one fresh read when a living privately
+owned view observes public board progress, including while humans remain. This
+requires at least two living players, one living private owner, identical
+complete player-ID/elimination rosters across the views and retained game
+binding, monotonic per-seat revision/board watermarks, and pacing readiness
+before and after the step. Private ownership comes only from the host port;
+player names cannot establish it. Every previously certified living owner must
+remain present. A missing private view is allowed only when the complete public
+roster proves that owner eliminated. New owners require a baseline. Incomplete
+or inconsistent batches retain the ownership certificate and scalar high-waters;
+lower restored boards cannot invent progress, and a complete catch-up baseline
+precedes the next hint. Command/session retirement remains independent. Initial,
+retired, regressed, metadata-only and unchanged scopes keep ordinary backoff.
+The initial private port cannot prove an unseen owner's existence. Retained
+read state is bounded by the game roster and cleared with game/whole-scope
+retirement and disposal. Staggered owned rows may advance independently; this
+is at most one hint per eligible advanced batch, not one per global board.
+This scheduling hint neither reuses a batch nor supplies an answer, observation
+credit, accepted receipt, rules consequence or renewed decision allowance.
 The existing operation clock schedules the idle wait; announcement pacing and
 all current actor, offer and command permissions remain separate gates.
+
+The separate manual all-AI campaign has no background host timer or configured
+presentation pacing. Its test-driver wait follows the existing independent
+spectator checks and natural/turn/time stop checks. A small per-Match helper may
+cooperatively yield after validated strict public board progress, while its
+original one-millisecond timer remains for baseline, idle, metadata-only,
+foreign or invalid input. Bound game/roster and scalar revision, board and
+restoration high-waters prevent rollback from manufacturing progress; recovery
+first requires a complete baseline. This helper never inspects private scopes
+or changes a command, provider call, policy allowance, consent or grade. It
+records only aggregate wait counts/elapsed ticks through the existing result
+writer. Await elapsed includes continuation scheduling and supplies no CPU or
+historical throughput claim.
 
 The source implementation after 0.2.292 separates announcement timing from
 cohort validity. With complete typed public progress, a phase, action-version or
@@ -1365,6 +1445,20 @@ poll. The current replica and its synchronization timestamp remain unchanged;
 the next ordinary poll can discover fresh authority. A command or post-command
 readback still uses the normal uncertain-receipt failure path. Catching a safe
 read at this owner must not turn a possibly executed command into a retry.
+
+Before a poll worker invokes match observation, it rechecks its captured session
+epoch, bootstrap audience and lobby owner under the same session gate used by
+command admission. This check follows the optional awaited lobby discovery and
+also covers a late-starting poll without lobby discovery. The shipping Forge
+adapter captures its provider read lease synchronously during that invocation;
+the returned task is awaited outside the session gate. Thus an obsolete worker
+cannot acquire a post-command Forge lease and race the actual command readback.
+Already-invoked reads retain their existing provider and publication fences.
+This adds no observation retry, command replay or timeout extension. It does not
+impose synchronous lease capture on arbitrary `IMatchConnection` implementations:
+a wrapper that delays its underlying invocation must preserve its own ownership.
+`BindLobby` remains an owner-thread operation with the existing reply-side owner
+reference check; this gate is not a general concurrent lobby-writer contract.
 
 The Forge provider also fences its own command-authority cache. An ordinary or
 owned read captures its audience, command-admission sequence and observed anchor
@@ -3652,6 +3746,27 @@ remains an open design problem.
 `TextureFiltering` builds GPU mipmaps once per loaded image; anisotropic card
 sampling handles angled minification, and table surfaces request 4x MSAA.
 Full-resolution artwork and rendered rules text remain available for inspection.
+
+The source-only artwork residency policy admits checked PNG/JPEG dimensions and
+encoded lengths before GPU decoding. `CardArt` accounts complete RGBA mip chains,
+evicts unpinned LRU entries and bounds resident payload, transient upload peak,
+texture count, queued bytes and metadata. `DrawingFrame` inventories its texture
+references. Window composition pins the exact completed frame before releasing
+the previous one, and Draw consumes that retained frame/lease pair. Mandatory
+roles and optional captures have separate fixed quotas. Shutdown revokes every
+lease before disposing textures. Queue, source-held and device-upload byte
+counters exclude decoder/source copy buffers and driver allocations; they are
+not total CPU/VRAM measurements. See the [residency design](Mana-Table-Artwork-Residency-Design.md).
+
+The source-only U1 update workflow belongs to `TableWindow` composition through
+`AppUpdateSession`. `TableApplication` borrows one revocable `AppUpdateViewBinding`;
+retiring it cannot cancel an accepted download or retain restart authority.
+One completion slot and one coalesced progress slot feed a composition pump after
+application update, using fresh install blockers. Byte-only progress preserves
+control scope. Close fences commands and joins actual provider work independently
+of Game/session callbacks; Program retains provider disposal. This preserves the
+existing possibly indefinite join for a noncooperative SDK. It supplies no live
+assembly loading or authenticated live-update store.
 
 Native updates are separate from engine commands. Supported managed installations
 use `IncrementalAppUpdates` and the pinned Velopack SDK for selected full/delta

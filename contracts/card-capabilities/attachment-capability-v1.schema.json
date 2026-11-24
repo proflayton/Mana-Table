@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mana-strategy:attachment-capability:1.0",
+  "title": "Direct continuous attachment modifier capability",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "scope", "source", "coverage", "attachment"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "kind": {"const": "attachment_capability"},
+    "scope": {"const": "direct_continuous_modifiers"},
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["provider", "definitionFingerprint", "extractorVersion"],
+      "properties": {
+        "provider": {"const": "forge"},
+        "definitionFingerprint": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"},
+        "extractorVersion": {"const": "forge-attachment/1"}
+      }
+    },
+    "coverage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "declaredFeatures", "unsupportedFeatures"],
+      "properties": {
+        "status": {"enum": ["complete_for_declared_features", "partial"]},
+        "declaredFeatures": {"type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true,
+          "items": {"enum": ["signed_pt", "keyword_grants"]}},
+        "unsupportedFeatures": {"type": "array", "maxItems": 32, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 96, "pattern": "^[a-z0-9][a-z0-9_.:-]*$"}}
+      }
+    },
+    "attachment": {"$ref": "#/$defs/attachment"}
+  },
+  "$defs": {
+    "keywords": {"type": "array", "maxItems": 9, "uniqueItems": true,
+      "items": {"enum": ["flying", "trample", "reach", "vigilance", "lifelink", "deathtouch", "first strike", "double strike", "indestructible"]}},
+    "attachment": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false,
+          "required": ["knowledge", "powerDelta", "toughnessDelta", "grantedKeywords"],
+          "properties": {
+            "knowledge": {"const": "Known"},
+            "powerDelta": {"type": "integer", "minimum": -1000, "maximum": 1000},
+            "toughnessDelta": {"type": "integer", "minimum": -1000, "maximum": 1000},
+            "grantedKeywords": {"$ref": "#/$defs/keywords"}
+          }},
+        {"type": "object", "additionalProperties": false,
+          "required": ["knowledge", "powerDelta", "toughnessDelta", "grantedKeywords"],
+          "properties": {
+            "knowledge": {"enum": ["Unknown", "Unsupported"]},
+            "powerDelta": {"type": "null"}, "toughnessDelta": {"type": "null"},
+            "grantedKeywords": {"type": "array", "maxItems": 0}
+          }}
+      ]
+    }
+  }
+}

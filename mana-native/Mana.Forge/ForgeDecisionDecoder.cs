@@ -13,7 +13,7 @@ internal static class ForgeDecisionDecoder
         Converters = { new JsonStringEnumConverter() } };
     private static readonly JsonSerializerOptions DeclineJson = new() { PropertyNameCaseInsensitive = true,
         Converters = { new JsonStringEnumConverter(allowIntegerValues: false) } };
-    internal static Decision Decode(JsonElement prompt, IReadOnlySet<int>? players = null)
+    internal static Decision Decode(JsonElement prompt, IReadOnlySet<int>? players = null, int? viewerId = null)
     {
         try {
             Object(prompt);
@@ -44,6 +44,9 @@ internal static class ForgeDecisionDecoder
             if (Present(prompt, "handReduction") && (task != "choice" || purpose != "" || ordered
                 || Present(prompt, "manaPaymentContext") || Present(prompt, "counterPaymentChoice")
                 || Present(prompt, "disclosedCards") || Present(prompt, "libraryCards"))) throw Invalid();
+            if (Present(prompt, "libraryAcquisition") && (task != "choice" || purpose != "" || ordered
+                || Present(prompt, "manaPaymentContext") || Present(prompt, "counterPaymentChoice") || Present(prompt, "handReduction")
+                || Present(prompt, "disclosedCards") || Text(prompt, "context") != "librarySearch" || !Present(prompt, "libraryCards"))) throw Invalid();
             if (task != "mana" && (Present(prompt, "unpaidMana") || Present(prompt, "unpaidManaParts") || Present(prompt, "fundingContext")
                 || Present(prompt, "usablePoolManaColors") || Present(prompt, "payerId"))) throw Invalid();
             if (Present(prompt, "unpaidMana") && Present(prompt, "unpaidManaParts")) throw Invalid();
@@ -88,7 +91,8 @@ internal static class ForgeDecisionDecoder
                 "choice" when purpose == "abilities" => new AbilityChoicePayload(Selection(prompt)),
                 "choice" when ordered => new OrderingPayload(Selection(prompt)),
                 "choice" => new OptionsPayload(Selection(prompt), CounterChoice(prompt, players)) {
-                    ManaPaymentContext = ManaColorPayment(prompt, players), HandReduction = HandReduction(prompt, players)
+                    ManaPaymentContext = ManaColorPayment(prompt, players), HandReduction = HandReduction(prompt, players),
+                    LibraryAcquisition = LibraryAcquisition(prompt, players, viewerId)
                 },
                 "reveal" => new RevealPayload(Reveal(prompt)),
                 "number" => new NumberPayload(Text(prompt, "initial"), kind == "text" ? OptionalNumberRange(prompt) : NumberRange(prompt)),
@@ -113,6 +117,36 @@ internal static class ForgeDecisionDecoder
         int player = Integer(value, "playerId");
         if (players == null || !players.Contains(player)) throw Invalid();
         return new(player, Integer(value, "handSize"), Integer(value, "maximumHandSize"));
+    }
+
+    private static LibraryAcquisitionContext? LibraryAcquisition(JsonElement prompt, IReadOnlySet<int>? players, int? viewerId)
+    {
+        var supplied = prompt.EnumerateObject().Where(property => property.Name.Equals("libraryAcquisition", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (supplied.Length == 0 || supplied.Length == 1 && supplied[0].Name == "libraryAcquisition"
+            && supplied[0].Value.ValueKind == JsonValueKind.Null) return null;
+        if (supplied.Length != 1 || supplied[0].Name != "libraryAcquisition") throw Invalid();
+        var value = supplied[0].Value;
+        Closed(value, "actorPlayerId", "libraryOwnerId", "recipientPlayerId", "stage", "currentDestination", "additionalCostKnownAbsent", "plannedDestinations");
+        int actor = Integer(value, "actorPlayerId");
+        if (viewerId == null || actor != viewerId || players == null || !players.Contains(actor)) throw Invalid();
+        var stage = Text(value, "stage", required: true) switch {
+            "direct" => LibraryAcquisitionStage.Direct, "select-bundle" => LibraryAcquisitionStage.SelectBundle,
+            "distribute-bundle" => LibraryAcquisitionStage.DistributeBundle, _ => throw Invalid()
+        };
+        var destinations = Array(value, "plannedDestinations", required: true).Select(destination => {
+            Closed(destination, "destination", "maximumCount");
+            return new LibraryAcquisitionDestination(Text(destination, "destination", required: true), Integer(destination, "maximumCount"));
+        }).ToImmutableArray();
+        return new(actor, Integer(value, "libraryOwnerId"), Integer(value, "recipientPlayerId"), stage,
+            Text(value, "currentDestination", required: true), Flag(value, "additionalCostKnownAbsent", required: true), destinations);
+    }
+
+    private static void Closed(JsonElement value, params string[] expected)
+    {
+        Object(value);
+        var actual = value.EnumerateObject().Select(property => property.Name).ToArray();
+        if (actual.Length != expected.Length || actual.Distinct(StringComparer.Ordinal).Count() != actual.Length
+            || actual.Any(key => !expected.Contains(key, StringComparer.Ordinal))) throw Invalid();
     }
 
     private static ImmutableArray<string> PaymentSymbols(JsonElement prompt, string key)

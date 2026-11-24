@@ -60,7 +60,17 @@ public abstract record AiProposal
     {
         public AiPlanTransition? PlanTransition { get; init; }
     }
-    public sealed record Unavailable(string Capability, string Detail) : AiProposal;
+    public sealed record Unavailable(string Capability, string Detail) : AiProposal
+    {
+        // Corroborated by the owning session, never serialized into history.
+        [System.Text.Json.Serialization.JsonIgnore]
+        internal AiWorkBudget? LimitedWork { get; init; }
+        public static Unavailable FromWorkLimit(AiWorkBudget work)
+        {
+            ArgumentNullException.ThrowIfNull(work);
+            return new("work-budget", "Decision allowance exhausted.") { LimitedWork = work };
+        }
+    }
 }
 
 public sealed record AiDecisionRequest(AiDecisionFrame Frame, AiSeatHistory History,
@@ -90,6 +100,12 @@ public sealed class AiWorkBudget : Mana.Planning.IManaPlanningWork
     // Spending the final available unit is valid. A refused request is a
     // distinct fact, so bounded planners cannot mistake it for a normal pass.
     public bool WasExceeded => Volatile.Read(ref exceeded) != 0;
+    internal bool BelongsTo(AiWorkBudget owner)
+    {
+        for (AiWorkBudget? current = this; current != null; current = current.parent)
+            if (ReferenceEquals(current, owner)) return true;
+        return false;
+    }
     internal AiWorkBudget(int units) => remaining = units;
     private AiWorkBudget(int units, AiWorkBudget parent, int reserve)
         => (remaining, this.parent, this.reserve) = (units, parent, reserve);

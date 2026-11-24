@@ -182,31 +182,71 @@ try {
     $checks++
     Reset-Fixture 'engine'
     & $runBlock | Out-Null
-    if ($fixture.Calls.Count -ne 3) { throw 'The headless engine, four-client mixed-lobby and polled campaign journeys must each run exactly once.' }
+    if ($fixture.Calls.Count -ne 5) { throw 'The headless engine, actual acquisition bundle, typed return golden, four-client mixed-lobby and polled campaign journeys must each run exactly once.' }
     Assert-Arguments $fixture.Calls[0] @('./dist/ci-inputs/harness/Mana.Table.Tests.dll', '--smoke-headless-engine', '--engine-jar', $env:MANA_NATIVE_FIXTURE_LAUNCHER,
         '--production-engine-jar', (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar'), '--engine-resources', (Join-Path $env:MANA_NATIVE_PACKAGE 'engine'),
         '--source-revision', $env:GITHUB_SHA, '--source-manifest', 'dist/ci-inputs/ci-engine-manifest.json', '--profile', 'dist/headless-engine-checks')
-    Assert-Arguments $fixture.Calls[1] @('./dist/ci-inputs/harness/Mana.Table.Tests.dll', '--smoke', '--engine-jar',
+    Assert-Arguments $fixture.Calls[1] @('./dist/ci-inputs/harness/Mana.Table.Tests.dll', '--ai-library-acquisition-journey', '--fixture-mode', 'bundle',
+        '--engine-jar', $env:MANA_NATIVE_FIXTURE_LAUNCHER, '--production-engine-jar', (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar'),
+        '--engine-resources', (Join-Path $env:MANA_NATIVE_PACKAGE 'engine'), '--source-revision', $env:GITHUB_SHA,
+        '--source-manifest', 'dist/ci-inputs/ci-engine-manifest.json', '--profile', 'dist/library-acquisition-checks')
+    $typedReturnArguments = @('./dist/ci-inputs/harness/Mana.Table.Tests.dll', '--ai-typed-return-golden',
+        '--engine-jar', $env:MANA_NATIVE_FIXTURE_LAUNCHER, '--production-engine-jar', (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar'),
+        '--engine-resources', (Join-Path $env:MANA_NATIVE_PACKAGE 'engine'), '--source-revision', $env:GITHUB_SHA,
+        '--source-manifest', 'dist/ci-inputs/ci-engine-manifest.json', '--profile', 'dist/typed-return-golden-checks')
+    Assert-Arguments $fixture.Calls[2] $typedReturnArguments
+    Assert-Arguments $fixture.Calls[3] @('./dist/ci-inputs/harness/Mana.Table.Tests.dll', '--smoke', '--engine-jar',
         (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar'), '--engine-resources', (Join-Path $env:MANA_NATIVE_PACKAGE 'engine'),
         '--profile', 'dist/mixed-lobby-checks')
-    Assert-Arguments $fixture.Calls[2] @('./dist/ci-inputs/harness/Mana.Table.Tests.dll', '--qualify-mixed-game', '--mixed-game-mode', 'polled-background',
+    Assert-Arguments $fixture.Calls[4] @('./dist/ci-inputs/harness/Mana.Table.Tests.dll', '--qualify-mixed-game', '--mixed-game-mode', 'polled-background',
         '--campaign-profile', 'smoke', '--engine-jar', (Join-Path $env:MANA_NATIVE_PACKAGE 'engine/forge-engine.jar'),
         '--engine-resources', (Join-Path $env:MANA_NATIVE_PACKAGE 'engine'), '--profile', 'dist/polled-full-game-checks')
+    $profiles = @($fixture.Calls | ForEach-Object { $index = [Array]::IndexOf([string[]]$_, '--profile'); if ($index -lt 0) { throw 'Every native engine check needs an explicit profile.' }; $_[$index + 1] })
+    if (@($profiles | Select-Object -Unique).Count -ne 5) { throw 'Native engine checks must retain five independent evidence profiles.' }
     $checks++
+    # Mutate only the new shipping invocation. The command double executes the
+    # actual workflow block; these controls must fail the exact-argument oracle.
+    $typedReturnLines = [regex]::Matches($runBlock.ToString(), '(?m)^[ \t]*dotnet [^\n]* --ai-typed-return-golden[^\n]*$')
+    if ($typedReturnLines.Count -ne 1) { throw 'Expected exactly one typed return golden shipping invocation.' }
+    $typedReturnLine = $typedReturnLines[0].Value.Trim()
+    $typedReturnMutations = @(
+        @{ Name='missing'; Line='' },
+        @{ Name='duplicate'; Line=($typedReturnLine + "`n" + $typedReturnLine) },
+        @{ Name='unbound-fixture'; Line=$typedReturnLine.Replace('--engine-jar $env:MANA_NATIVE_FIXTURE_LAUNCHER', '--engine-jar unverified-fixture.jar') },
+        @{ Name='unbound-production'; Line=$typedReturnLine.Replace('--production-engine-jar (Join-Path $env:MANA_NATIVE_PACKAGE ''engine/forge-engine.jar'')', '--production-engine-jar unverified-engine.jar') },
+        @{ Name='unbound-resources'; Line=$typedReturnLine.Replace('--engine-resources (Join-Path $env:MANA_NATIVE_PACKAGE ''engine'')', '--engine-resources unverified-resources') },
+        @{ Name='wrong-source'; Line=$typedReturnLine.Replace('--source-revision $env:GITHUB_SHA', ('--source-revision ' + ('b' * 40))) },
+        @{ Name='missing-manifest'; Line=$typedReturnLine.Replace('--source-manifest dist/ci-inputs/ci-engine-manifest.json ', '') },
+        @{ Name='wrong-manifest'; Line=$typedReturnLine.Replace('--source-manifest dist/ci-inputs/ci-engine-manifest.json', '--source-manifest unverified-manifest.json') },
+        @{ Name='duplicate-source'; Line=$typedReturnLine.Replace('--source-revision $env:GITHUB_SHA', '--source-revision $env:GITHUB_SHA --source-revision $env:GITHUB_SHA') },
+        @{ Name='shared-profile'; Line=$typedReturnLine.Replace('dist/typed-return-golden-checks', 'dist/library-acquisition-checks') }
+    )
+    foreach ($mutation in $typedReturnMutations) {
+        Reset-Fixture 'engine'
+        $changed = [scriptblock]::Create($runBlock.ToString().Replace($typedReturnLine, $mutation.Line))
+        & $changed | Out-Null
+        $rejected = $false
+        try {
+            if ($fixture.Calls.Count -ne 5) { throw 'Typed return invocation inventory changed.' }
+            Assert-Arguments $fixture.Calls[2] $typedReturnArguments
+        } catch { $rejected = $true }
+        if (-not $rejected) { throw "The engine invocation oracle accepted a typed return mutation: $($mutation.Name)" }
+        $checks++
+    }
     foreach ($variant in @('missing', 'empty', 'oversized', 'malformed', 'failure', 'not-continued', 'string-continued',
         'wrong-scenario', 'wrong-scope', 'ux-claim', 'outcome-claim', 'qualification-claim', 'missing-failure')) {
         Reset-Fixture 'engine'
         $fixture.Prefix = $variant
         $rejected = $false
         try { & $runBlock | Out-Null } catch { $rejected = $true }
-        if (-not $rejected -or $fixture.Calls.Count -ne 2) { throw "The mixed-lobby gate accepted invalid prefix evidence: $variant" }
+        if (-not $rejected -or $fixture.Calls.Count -ne 4) { throw "The mixed-lobby gate accepted invalid prefix evidence: $variant" }
         $checks++
     }
     foreach ($variant in @('passed','time-budget','natural-outcome')) {
         Reset-Fixture 'engine'
         $fixture.Campaign = $variant
         & $runBlock | Out-Null
-        if ($fixture.Calls.Count -ne 3) { throw "The campaign gate did not accept valid bounded metadata: $variant" }
+        if ($fixture.Calls.Count -ne 5) { throw "The campaign gate did not accept valid bounded metadata: $variant" }
         $checks++
     }
     $invalidCampaigns = @('wrong-profile','wrong-manifest-mode','wrong-result-mode','missing-failure','failure','unknown-stop','mechanical-stop',
@@ -219,15 +259,15 @@ try {
         $fixture.Campaign = $variant
         $rejected = $false
         try { & $runBlock | Out-Null } catch { $rejected = $true }
-        if (-not $rejected -or $fixture.Calls.Count -ne 3) { throw "The polled campaign gate accepted invalid metadata: $variant" }
+        if (-not $rejected -or $fixture.Calls.Count -ne 5) { throw "The polled campaign gate accepted invalid metadata: $variant" }
         $checks++
     }
     foreach ($suite in @('presentation', 'engine')) {
-        $count = if ($suite -ceq 'presentation') { 4 } else { 3 }
+        $count = if ($suite -ceq 'engine') { 5 } else { 4 }
         for ($failAt = 1; $failAt -le $count; $failAt++) {
             Reset-Fixture $suite $failAt
             $rejected = $false
-            try { & $runBlock | Out-Null } catch { $rejected = $_.Exception.Message -cmatch '^(Native check failed:|Production native adapter and packaged Forge command checks failed\.|Production four-client and mixed-lobby native checks failed\.|Default-polled/background-AI campaign smoke failed\.)' }
+            try { & $runBlock | Out-Null } catch { $rejected = $_.Exception.Message -cmatch '^(Native check failed:|Production native adapter and packaged Forge command checks failed\.|Actual baseline/candidate library acquisition continuation failed\.|Actual typed return vigilance elimination golden failed\.|Production four-client and mixed-lobby native checks failed\.|Default-polled/background-AI campaign smoke failed\.)' }
             if (-not $rejected -or $fixture.Calls.Count -ne $failAt) { throw "$suite must stop at failed command $failAt." }
             $checks++
         }

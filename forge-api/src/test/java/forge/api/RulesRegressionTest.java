@@ -68,7 +68,8 @@ public class RulesRegressionTest {
                         assertFalse(actual.isSelectionActive()); waits.incrementAndGet();
                     }
                     if (controller.getInputQueue().getInput() == actual
-                            && (name.equals("setHighlighted") && Boolean.FALSE.equals(args[1]) || name.equals("clearSelectables"))) {
+                            && name.equals("setSelection")
+                            && ((forge.gamemodes.match.Selection)args[0]).max() == 0) {
                         assertFalse(actual.isSelectionActive(), "Completion must precede highlight and selectable cleanup");
                         game.session(0).publishInput();
                         cleanupFrames.add(new GsonBuilder().serializeNulls().create().toJsonTree(game.session(0).state()).getAsJsonObject());

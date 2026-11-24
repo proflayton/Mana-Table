@@ -341,7 +341,10 @@ public class ChoicePublicationTest {
                 try { result = method.invoke(originalGui, args); }
                 catch (InvocationTargetException failure) { throw failure.getCause(); }
                 if (method.getName().equals("updateButtons") && parentOpened != null && controller().getInputQueue().getInput() instanceof InputSelectManyBase<?>) parentOpened.countDown();
-                if (method.getName().equals("setHighlighted") && Boolean.TRUE.equals(args[1])) {
+                if (method.getName().equals("setSelection")
+                        && controller().getInputQueue().getInput() instanceof InputSelectManyBase<?> input
+                        && !input.getSelected().isEmpty()
+                        && !((forge.gamemodes.match.Selection)args[0]).chosen().isEmpty()) {
                     var callback = afterSelected; afterSelected = null; if (callback != null) callback.run();
                 }
                 return result;

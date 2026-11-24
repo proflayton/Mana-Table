@@ -14,7 +14,7 @@ namespace Mana.Table;
 internal sealed class ProjectionReplaySession : IDisposable
 {
     private readonly PresentationRun app;
-    private readonly ProjectionRecording recording;
+    private readonly ProjectionReplayPages recording;
     private readonly List<Acceptance> accepted = [];
     private const long FrameTicks = TimeSpan.TicksPerSecond / 60;
     private Point pointer = new(20, 60);
@@ -22,13 +22,15 @@ internal sealed class ProjectionReplaySession : IDisposable
     internal IReadOnlyList<Acceptance> Accepted => accepted;
     internal event Action<PresentationFrame>? Presented;
     internal long ElapsedTicks => app.ElapsedTicks;
-    internal ProjectionPlayback Playback { get; }
+    internal PagedProjectionPlayback Playback { get; }
     internal TableApplication.Probe View => app.View;
     internal PresentationFrame Frame { get; private set; } = null!;
     internal ProjectionReplaySession(ProjectionRecording recording, string profile, Point size)
+        : this(ProjectionReplayPages.Single(recording), profile, size) { }
+    internal ProjectionReplaySession(ProjectionReplayPages recording, string profile, Point size)
     {
         this.recording = recording;
-        var settings = recording.Timeline?.Settings;
+        var settings = recording.Settings;
         if (settings != null && (size.X != settings.Width || size.Y != settings.Height))
             throw new ArgumentException("Timed playback preserves its captured viewport; use an authored scenario to test another size.");
         Size = size;
@@ -43,15 +45,15 @@ internal sealed class ProjectionReplaySession : IDisposable
             authority: ClientSessionAuthority.ObserveOnly);
         View.SetTableStudy(settings?.TableStudy ?? true);
         app.Accepted += OnAccepted;
-        if (recording.Timeline != null) { QueueDue(0); TickAt(0); }
+        if (recording.EndTicks != null) { QueueDue(0); TickAt(0); }
         else { Tick(); Tick(); }
     }
     private void OnAccepted(GameSnapshot state, TimeSpan at, ProjectionPresentationSettings settings)
         => accepted.Add(new(state, at, settings));
     private Point Size { get; }
     internal PresentationFrame Tick()
-        => recording.Timeline is { } timeline
-            ? TickTo(Math.Min(timeline.EndTicks, app.ElapsedTicks + FrameTicks))
+        => recording.EndTicks is { } endTicks
+            ? TickTo(Math.Min(endTicks, app.ElapsedTicks + FrameTicks))
             : TickAt(app.ElapsedTicks + FrameTicks);
     private PresentationFrame TickAt(long ticks, Point? viewport = null)
     {
@@ -63,27 +65,26 @@ internal sealed class ProjectionReplaySession : IDisposable
     }
     internal bool Advance()
     {
-        if (Playback.Position + 1 >= recording.Observations.Length) return false;
-        if (recording.Timeline is { } timeline) TickTo(timeline.AcceptedAtTicks[Playback.Position + 1]);
+        if (Playback.Position + 1 >= recording.TotalObservations) return false;
+        if (recording.EndTicks != null) TickTo(recording.AcceptedAtTicks[Playback.Position + 1]);
         else { Playback.Advance(); QueueCurrent(); Tick(); Tick(); }
         return true;
     }
     internal PresentationFrame TickTo(long targetTicks)
     {
-        var timeline = recording.Timeline ?? throw new InvalidOperationException("This recording has no captured timing.");
-        if (targetTicks < app.ElapsedTicks || targetTicks > timeline.EndTicks) throw new ArgumentOutOfRangeException(nameof(targetTicks));
+        long endTicks = recording.EndTicks ?? throw new InvalidOperationException("This recording has no captured timing.");
+        if (targetTicks < app.ElapsedTicks || targetTicks > endTicks) throw new ArgumentOutOfRangeException(nameof(targetTicks));
         while (app.ElapsedTicks < targetTicks) {
             long next = Math.Min(targetTicks, app.ElapsedTicks + FrameTicks);
-            if (Playback.Position + 1 < recording.Observations.Length)
-                next = Math.Min(next, timeline.AcceptedAtTicks[Playback.Position + 1]);
+            if (Playback.Position + 1 < recording.TotalObservations)
+                next = Math.Min(next, recording.AcceptedAtTicks[Playback.Position + 1]);
             QueueDue(next); TickAt(next);
         }
         return Frame;
     }
     private void QueueDue(long ticks)
     {
-        var timeline = recording.Timeline!;
-        while (Playback.Position + 1 < recording.Observations.Length && timeline.AcceptedAtTicks[Playback.Position + 1] <= ticks) {
+        while (Playback.Position + 1 < recording.TotalObservations && recording.AcceptedAtTicks[Playback.Position + 1] <= ticks) {
             Playback.Advance(); QueueCurrent();
         }
     }
@@ -91,11 +92,11 @@ internal sealed class ProjectionReplaySession : IDisposable
     {
         app.QueueObservation(Playback.Current);
     }
-    internal PresentationFrame Finish() => recording.Timeline is { } timeline ? TickTo(timeline.EndTicks) : Frame;
+    internal PresentationFrame Finish() => recording.EndTicks is { } endTicks ? TickTo(endTicks) : Frame;
     internal void Capture(ProjectionCapture? capture) => app.Capture(capture);
     internal PresentationFrame UpdateViewport(Point viewport) => TickAt(app.ElapsedTicks, viewport);
     internal PresentationFrame Hover(Point position) { pointer = position; Tick(); return Tick(); }
-    public void Dispose() { app.Accepted -= OnAccepted; app.Dispose(); }
+    public void Dispose() { app.Accepted -= OnAccepted; app.Dispose(); Playback.Dispose(); }
 
     internal static void RunFile(string path, string profile)
     {

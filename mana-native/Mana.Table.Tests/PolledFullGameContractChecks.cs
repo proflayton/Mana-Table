@@ -32,6 +32,7 @@ internal static partial class PolledFullGameContractChecks
         await PolledEvidenceInboxChecks.RunAsync(profile, check);
         await CampaignOwnerWaitChecks.RunAsync(profile, check);
         await PollScheduling(profile, check);
+        await RunCommandCompletionWakeAsync(profile, check);
         await DuePollCannotStarveAuto(profile, check);
         await SlowPollCannotStarveDecision(profile, check);
         await AcceptedInputProgress(profile, check);
@@ -200,6 +201,7 @@ internal static partial class PolledFullGameContractChecks
                 run.Port.State = run.Port.RichState = changed;
                 run.Driver.Client.Poll(true, _ => { }); await Drain(run.Driver.Client);
                 await run.Driver.ObserveAsync();
+                await Drain(run.Driver.Client);
             }
             clock.Advance(TimeSpan.FromSeconds(46));
             var progress = run.Driver.ProgressEvidence;
@@ -465,6 +467,33 @@ internal static partial class PolledFullGameContractChecks
         check(run.Driver.TimeUntilNextPoll == null, "A closed player exposes no future poll deadline");
     }
 
+    internal static async Task RunCommandCompletionWakeAsync(string profile, Action<bool, string> check)
+    {
+        var initial = Opening();
+        using var run = new DriverCase(profile, "completed-command-wake", initial, initial,
+            passing: ConnectedPlayerPassingMode.FullControl);
+        await run.Prime();
+        await run.Driver.ObserveAsync();
+        check(run.Driver.TimeUntilNextPoll == TimeSpan.FromMilliseconds(50),
+            "An owned decision prepared before the normal poll deadline does not change the idle observation cadence");
+        var fresh = initial with { Revision = 11, BoardRevision = 11,
+            Decision = initial.Decision! with { Id = "fresh-after-completed-command" } };
+        run.Port.AfterExecute = fresh;
+        await run.Driver.StepAsync();
+        check(run.Driver.TimeUntilNextPoll == TimeSpan.Zero && run.Port.Reads == 2
+                && run.Driver.Client.State == fresh && run.Driver.ProviderAcceptances == 1,
+            "A completed foreground command wakes the campaign owner immediately, matching the shipping application's Completed handler");
+        run.Port.RichState = fresh;
+        await run.Driver.ObserveAsync();
+        check(run.Port.Reads == 2 && run.Port.OwnedReads == 2 && !run.Driver.Client.Polling,
+            "The awakened owner prepares the newly accepted exact decision before any due idle poll");
+        run.Port.AfterExecute = fresh with { Revision = 12, BoardRevision = 12, Decision = null };
+        await run.Driver.StepAsync();
+        check(run.Port.Commands is [KeepOpeningHand, KeepOpeningHand { DecisionId: "fresh-after-completed-command" }]
+                && run.Driver.ProviderAcceptances == 2 && run.Policy.Evaluations == 2 && run.Port.Reads == 3,
+            "Each fresh current prompt still owns one normal policy command, acknowledgement and readback after an immediate owner wake");
+    }
+
     private static async Task SlowPollCannotStarveDecision(string profile, Action<bool, string> check)
     {
         var first = Opening();
@@ -720,6 +749,9 @@ internal static partial class PolledFullGameContractChecks
             ? initial with { Revision = 11, PriorityContinuation = Granted(grant, PriorityContinuationStatus.Active) } : null;
         await run.Prime(); await run.Driver.ObserveAsync(); await Drain(run.Driver.Client);
         await run.Driver.ObserveAsync(); await run.Driver.StepAsync();
+        // Foreground completion now wakes the normal owner, so its legitimate
+        // due idle poll must retire before this fixture publishes the next state.
+        await Drain(run.Driver.Client);
         var advanced = run.Port.State with { Revision = 12,
             PriorityContinuation = run.Port.State.PriorityContinuation! with { AutomaticPasses = 17 } };
         run.Port.State = advanced;

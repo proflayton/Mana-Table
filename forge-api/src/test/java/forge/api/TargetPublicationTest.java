@@ -151,7 +151,8 @@ public class TargetPublicationTest {
                     Object result;
                     try { result = method.invoke(originalGui, args); }
                     catch (InvocationTargetException failure) { throw failure.getCause(); }
-                    if (method.getName().equals("clearSelectables")) {
+                    if (method.getName().equals("setSelection")
+                            && ((forge.gamemodes.match.Selection)args[0]).max() == 0) {
                         // A real cleanup callback can publish while the old
                         // input is still on the queue. No replacement Input or
                         // simulated stop path hides that exact boundary.

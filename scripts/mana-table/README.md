@@ -1,8 +1,9 @@
 # Mana Table CI tools
 
 The Windows MonoGame app is the only player client. These dependency-free Node
-tools preserve release/source verification and documentation checks; they do
-not contain an app, rules implementation or game integration-test client.
+tools preserve release/source verification and documentation checks and coordinate
+developer AI experiments. They contain no app, rules implementation or game
+integration-test client.
 
 Run from the repository root with Node 24:
 
@@ -32,6 +33,9 @@ node scripts/mana-table/check-docs.cjs
   Writes and uploads are one-shot commands and are never retried by this client.
 - `check-docs.cjs` checks maintained local links/headings without network access.
   It does not validate feature claims or the user experience.
+- `ai-experiment.cjs plan|run|analyze` locks development specs, coordinates isolated
+  .NET/Java workers and produces descriptive private comparisons. It contains no
+  strategy or rules evaluator. See the [experiment examples](../../mana-native/experiments/README.md).
 
 The historical `Mana Table / desktop` required status now runs this small
 tool/documentation check only. App builds, native journeys and installer/update
