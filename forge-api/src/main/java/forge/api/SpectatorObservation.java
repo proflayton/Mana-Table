@@ -99,6 +99,9 @@ final class SpectatorObservation {
                 && card.canBeShownTo(AUDIENCE);
     }
     private static String id(MatchTable table, CardView card) {
+        // Last-loss disclosure can retain registered historical portraits before
+        // game over. Reading a public face does not make it a live occurrence.
+        if (!CurrentCardViews.isCurrent(table.game, card)) return "";
         return card.isFaceDown() ? table.identities.concealed(card) : table.identities.id(card);
     }
     private static Map<String, Object> card(MatchTable table, CardView card) {
@@ -109,13 +112,15 @@ final class SpectatorObservation {
         result.put("key", ""); result.put("visualId", id(table, card)); result.put("combatId", id(table, card));
         result.put("selectable", false); result.put("highlighted", false);
         result.put("attachedTo", attachment(table, card.getAttachedTo()));
-        result.put("attachments", card.getAllAttachedCards().stream().filter(SpectatorObservation::publicCard).map(attached -> attachment(table, attached)).toList());
+        result.put("attachments", card.getAllAttachedCards().stream().map(attached -> attachment(table, attached)).filter(Objects::nonNull).toList());
         MatchSession.addCardFaces(result, card, !hidden);
         MatchSession.addCardPrinting(result, card, !hidden);
         return Collections.unmodifiableMap(result);
     }
     private static Map<String, Object> attachment(MatchTable table, CardView card) {
-        return !publicCard(card) ? null : map("id", id(table, card), "name", card.isFaceDown() ? "Face-down permanent" : card.getCurrentState().getName(),
+        if (!publicCard(card)) return null;
+        String identity = id(table, card);
+        return identity.isEmpty() ? null : map("id", identity, "name", card.isFaceDown() ? "Face-down permanent" : card.getCurrentState().getName(),
                 "type", card.isFaceDown() ? "" : card.getCurrentState().getType().toString());
     }
     private static Map<String, Object> combat(MatchTable table) {
@@ -123,20 +128,22 @@ final class SpectatorObservation {
         if (combat == null || table.game.isGameOver()) return null;
         var attackers = new ArrayList<Object>();
         for (Card attacker : combat.getAttackers()) {
-            var blockers = combat.getBlockers(attacker).stream().map(card -> id(table, card.getView())).toList();
+            if (!CurrentCardViews.isCurrent(table.game, attacker.getView())) continue;
+            var blockers = combat.getBlockers(attacker).stream().filter(card -> CurrentCardViews.isCurrent(table.game, card.getView()))
+                    .map(card -> id(table, card.getView())).toList();
             Player defending = combat.getDefenderPlayerByAttacker(attacker);
             var defender = combat.getDefenderByAttacker(attacker);
-            attackers.add(map("cardId", id(table, attacker.getView()), "hasDefender", CombatDefenders.isCurrent(defender),
+            attackers.add(map("cardId", id(table, attacker.getView()), "hasDefender", CombatDefenders.isCurrent(table.game, defender),
                     "defender", defender(table, defender),
-                    "defendingPlayerId", defending == null ? null : defending.getId(), "blockerIds", blockers,
+                    "defendingPlayerId", defending == null || defending.hasLost() ? null : defending.getId(), "blockerIds", blockers,
                     "blocked", combat.isBlocked(attacker), "eligibleBlockerIds", List.of()));
         }
         return map("attackingPlayerId", combat.getAttackingPlayer().getId(), "attackers", List.copyOf(attackers),
-                "defenders", combat.getDefenders().stream().filter(CombatDefenders::isCurrent).map(entity -> defender(table, entity)).toList(),
+                "defenders", combat.getDefenders().stream().filter(entity -> CombatDefenders.isCurrent(table.game, entity)).map(entity -> defender(table, entity)).toList(),
                 "selectedDefender", null, "attackerCandidates", List.of(), "attackOptions", List.of(), "blockerCandidates", List.of(), "blockProblem", null);
     }
     private static Map<String, Object> defender(MatchTable table, GameEntity entity) {
-        if (!CombatDefenders.isCurrent(entity)) return null;
+        if (!CombatDefenders.isCurrent(table.game, entity)) return null;
         if (entity instanceof Player player) return map("kind", "player", "id", player.getId(), "name", player.getName(), "playerId", player.getId());
         if (entity instanceof Card card) return map("kind", "card", "id", id(table, card.getView()),
                 "name", card.isFaceDown() ? "Face-down permanent" : card.getName(), "playerId",

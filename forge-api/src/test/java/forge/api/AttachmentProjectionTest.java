@@ -8,6 +8,7 @@ import forge.trackable.TrackableCollection;
 import forge.trackable.TrackableProperty;
 import org.testng.annotations.Test;
 
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -79,5 +80,25 @@ public class AttachmentProjectionTest {
         assertTrue(((List<?>) project(creature).get("attachments")).isEmpty());
         sword.set(TrackableProperty.Zone, ZoneType.Graveyard);
         assertNull(project(sword).get("attachedTo"));
+    }
+
+    @Test public void historicalPublicPortraitsCannotPublishUnidentifiedAttachmentReferences() {
+        var creature = card(301, "Retained creature", "Creature Elf");
+        var sword = card(302, "Retained equipment", "Artifact Equipment");
+        sword.set(TrackableProperty.EntityAttachedTo, creature);
+        creature.set(TrackableProperty.AttachedCards, new TrackableCollection<>(sword));
+        var current = new HashSet<>(List.of(creature, sword));
+        var scopedIds = new CombatCardIds(viewer, new MatchActivity(viewer, new MatchIdentities(), current::contains));
+        var equipped = new LinkedHashMap<String, Object>();
+        AttachmentProjection.add(equipped, sword, viewer, scopedIds);
+        assertNotNull(equipped.get("attachedTo"), "A real current endpoint still supplies its exact public identity");
+        current.clear();
+        assertEquals(creature.getZone(), ZoneType.Battlefield, "Readable historical portraits can retain a zone label after rules membership ends");
+        for (var portrait : List.of(creature, sword)) {
+            var historical = new LinkedHashMap<String, Object>();
+            AttachmentProjection.add(historical, portrait, viewer, scopedIds);
+            assertNull(historical.get("attachedTo"));
+            assertTrue(((List<?>) historical.get("attachments")).isEmpty(), "Absent current IDs cannot become null/empty attachment references");
+        }
     }
 }

@@ -42,11 +42,20 @@ public class TerminalProjectionTest {
         commanderCombat(false, true);
     }
 
+    @Test(timeOut = 90000)
+    public void theLastLossRevealDropsDepartedBlockersWithoutUnblockingTheAttack() throws Exception {
+        commanderCombat(false, true, false, true);
+    }
+
     private static void commanderCombat(boolean blocks, boolean withManifest) throws Exception {
         commanderCombat(blocks, withManifest, false);
     }
 
     private static void commanderCombat(boolean blocks, boolean withManifest, boolean pendingRefresh) throws Exception {
+        commanderCombat(blocks, withManifest, pendingRefresh, false);
+    }
+
+    private static void commanderCombat(boolean blocks, boolean withManifest, boolean pendingRefresh, boolean departedBlocker) throws Exception {
         var resources = Path.of("../forge-gui/res");
         if (StaticData.instance() == null) EngineResources.load(resources);
         var deck = new Deck("Terminal commander damage");
@@ -56,6 +65,8 @@ public class TerminalProjectionTest {
                 .mapToObj(index -> MatchTable.automated(deck, "Commander", "Policy " + index)).toList();
         players.get(0).addExtraCardsOnBattlefield(List.of("Raised by Giants", "Glorious Anthem", "True Conviction",
                 "Concordant Crossroads", "Forest").stream().<forge.item.IPaperCard>map(name -> StaticData.instance().getCommonCards().getCard(name)).toList());
+        if (departedBlocker) players.get(0).addExtraCardsOnBattlefield(List.of("Grizzly Bears", "Unnatural Growth").stream()
+                .<forge.item.IPaperCard>map(name -> StaticData.instance().getCommonCards().getCard(name)).toList());
         players.get(1).addExtraCardsOnBattlefield(List.of("Grizzly Bears", "Plains").stream()
                 .<forge.item.IPaperCard>map(name -> StaticData.instance().getCommonCards().getCard(name)).toList());
         Path evidence = ApiTestWorkspace.evidence(blocks ? "blocked-commander-damage"
@@ -86,7 +97,7 @@ public class TerminalProjectionTest {
             var attack = until(table, answered, input -> input.seat() == 0
                     && text(input.prompt(), "inputType").equals("InputAttack"));
             var commander = card(attack.state(), "Battlefield", "Rhys the Redeemed");
-            assertEquals(commander.get("power").getAsInt(), 11);
+            assertEquals(commander.get("power").getAsInt(), departedBlocker ? 22 : 11);
             String commanderId = text(commander, "commanderId");
             assertFalse(commanderId.isEmpty());
             assertEquals(attack.state().getAsJsonObject("commanderCombat").get("damageLimit").getAsInt(), 21);
@@ -97,12 +108,20 @@ public class TerminalProjectionTest {
                     attackStage, evidence, "attack");
             assertFalse(new CombatStage(attackStage.inputType(), attackStage.declarationId(), attackStage.attackerId(), 0, "")
                     .matches(attack.state()), "A staged attack cannot certify a different defender");
+            String extraAttackerId = departedBlocker ? text(card(attack.state(), "Battlefield", "Grizzly Bears"), "combatId") : "";
+            if (departedBlocker) {
+                var extra = card(attack.state(), "Battlefield", "Grizzly Bears");
+                var extraStage = new CombatStage("InputAttack", attackStage.declarationId(), extraAttackerId, 1, "");
+                attack = stage(table, attack, Map.of("action", "attack", "attackerKey", text(extra, "key"), "defenderPlayerId", 1),
+                        extraStage, evidence, "extra-attack");
+            }
             answer(table, answered, attack, Map.of("action", "ok"));
             var block = until(table, answered, input -> input.seat() == 1
                     && text(input.prompt(), "inputType").equals("InputBlock"));
-            if (blocks) {
+            if (blocks || departedBlocker) {
                 var currentAttacker = zone(player(block.state(), 0), "Battlefield").getAsJsonArray("cards").asList().stream()
-                        .map(value -> value.getAsJsonObject()).filter(face -> text(face, "commanderId").equals(commanderId)).findFirst().orElseThrow();
+                        .map(value -> value.getAsJsonObject()).filter(face -> departedBlocker
+                                ? text(face, "combatId").equals(extraAttackerId) : text(face, "commanderId").equals(commanderId)).findFirst().orElseThrow();
                 var blocker = card(block.state(), "Battlefield", "Grizzly Bears");
                 assertFalse(text(blocker, "combatId").isEmpty(), "The exact current blocker has a public physical identity");
                 var blockStage = new CombatStage("InputBlock", text(block.state().getAsJsonObject("combat"), "declarationId"),
@@ -180,6 +199,9 @@ public class TerminalProjectionTest {
                         var living = zone(player(state, 0), "Battlefield").getAsJsonArray("cards");
                         assertTrue(living.asList().stream().anyMatch(value -> !text(value.getAsJsonObject(), "key").isEmpty()),
                                 "The unrelated current battlefield keeps its own current handles");
+                        assertPendingLossPublicParity(table, evidence, extraAttackerId);
+                        var oldAttack = attack;
+                        assertThrows(IllegalArgumentException.class, () -> table.automatedSeat(0).action(request(oldAttack, Map.of("action", "ok"))));
                         sawLossReveal = true;
                         answer(table, answered, new RulesScenario.Input(owner, state, prompt), Map.of("action", "ok"));
                         continue;
@@ -247,6 +269,59 @@ public class TerminalProjectionTest {
             assertThrows(IllegalArgumentException.class, () -> table.automatedSeat(0).action(request(oldAttack, Map.of("action", "ok"))));
             assertEquals(table.automatedSeat(0).state(), finalState, "Retained final display cards cannot reopen an expired rules input");
         }
+    }
+
+    private static void assertPendingLossPublicParity(MatchTable table, Path evidence, String blockedAttackerId) throws Exception {
+        HeadlessPlatform.query(table, () -> {
+            var spectator = JSON.toJsonTree(table.spectatorState()).getAsJsonObject();
+            assertEquals(text(spectator, "status"), "playing");
+            assertTrue(!spectator.has("outcome") || spectator.get("outcome").isJsonNull());
+            Files.writeString(evidence.resolve("public-pending-loss-reveal.json"), JSON.toJson(spectator));
+            for (var session : table.automatedSeats()) {
+                var owned = JSON.toJsonTree(session.automatedObservation()).getAsJsonObject();
+                var state = owned.getAsJsonObject("state");
+                assertEquals(state.get("boardRevision"), spectator.get("boardRevision"), "Compare the same committed publication, without observing a new cut");
+                for (var entry : state.getAsJsonArray("players")) {
+                    var person = entry.getAsJsonObject();
+                    var publicPerson = player(spectator, person.get("id").getAsInt());
+                    for (String name : List.of("Battlefield", "Graveyard", "Exile", "Command")) {
+                        var area = zone(person, name); var publicArea = zone(publicPerson, name);
+                        assertEquals(area.get("count"), publicArea.get("count"));
+                        assertEquals(publicCards(area), publicCards(publicArea), "Owned and independent public faces agree through the pending last-loss disclosure: " + name);
+                    }
+                }
+                assertEquals(state.getAsJsonObject("combat").getAsJsonArray("attackers"),
+                        spectator.getAsJsonObject("combat").getAsJsonArray("attackers"), "Public assigned combat topology is the same for every audience");
+                boolean sawBlockedAttacker = false;
+                for (var value : state.getAsJsonObject("combat").getAsJsonArray("attackers")) {
+                    var attacker = value.getAsJsonObject();
+                    assertFalse(text(attacker, "cardId").isBlank());
+                    for (var blocker : attacker.getAsJsonArray("blockerIds"))
+                        assertTrue(blocker.isJsonPrimitive() && !blocker.getAsString().isBlank(), "A departed card cannot become a null/empty combat reference");
+                    assertFalse(attacker.get("hasDefender").getAsBoolean(), "The departed player is no longer a current defender");
+                    assertTrue(!attacker.has("defender") || attacker.get("defender").isJsonNull());
+                    assertTrue(!attacker.has("defendingPlayerId") || attacker.get("defendingPlayerId").isJsonNull());
+                    if (!blockedAttackerId.isEmpty() && text(attacker, "cardId").equals(blockedAttackerId)) {
+                        sawBlockedAttacker = true;
+                        assertTrue(attacker.get("blocked").getAsBoolean(), "Losing a blocker does not undo the rules blocked status");
+                        assertEquals(attacker.getAsJsonArray("blockerIds").size(), 0, "Only the assigned historical blocker left the current topology");
+                    }
+                }
+                assertTrue(blockedAttackerId.isEmpty() || sawBlockedAttacker, "The still-current blocked attacker remains in combat");
+                assertTrue(zone(player(state, state.get("viewerId").getAsInt()), "Library").getAsJsonArray("cards").isEmpty(),
+                        "Public parity must not be obtained by disclosing library faces");
+            }
+            return null;
+        });
+    }
+
+    private static com.google.gson.JsonArray publicCards(JsonObject area) {
+        var cards = area.getAsJsonArray("cards").deepCopy();
+        for (var value : cards) {
+            var card = value.getAsJsonObject();
+            for (String privateField : List.of("key", "selectable", "highlighted", "playAffordability")) card.remove(privateField);
+        }
+        return cards;
     }
 
     private static JsonObject card(JsonObject state, String zoneName, String name) {

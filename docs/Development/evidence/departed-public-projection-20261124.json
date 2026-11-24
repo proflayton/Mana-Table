@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "kind": "departed-public-projection-regression",
+  "baseRevision": "fb04a4de1fcc060355c1d893009709016044b1fa",
+  "sourceScope": "Local reviewed working-tree patch over the base; exact tested source-file bytes below. Subsequent merged-source CI remains required.",
+  "sourceFiles": [
+    {
+      "file": "forge-api/src/main/java/forge/api/AttachmentProjection.java",
+      "sha256": "55f06f82bbe64da71775c6bb8cf0de77b3b4b1946ef5ff428580b51208b1b71a"
+    },
+    {
+      "file": "forge-api/src/main/java/forge/api/CombatDefenders.java",
+      "sha256": "80175289b8f974152b872520c074257a2a5b177eec24aa04b313ea17371b6f3b"
+    },
+    {
+      "file": "forge-api/src/main/java/forge/api/MatchSession.java",
+      "sha256": "51c31e61c0e4a045a28ce2b7fc0fa1e9fd7d803d8063d7611a8180ce686358d6"
+    },
+    {
+      "file": "forge-api/src/main/java/forge/api/SpectatorObservation.java",
+      "sha256": "7c0af0b1c958f9c466fd41b91d8cc00d1a935995d35153d7a3604f9cacb1e767"
+    },
+    {
+      "file": "forge-api/src/test/java/forge/api/AttachmentProjectionTest.java",
+      "sha256": "e7ac011891d10d3290f4455df6c518325740e68be097281ce449b722c0cd1835"
+    },
+    {
+      "file": "forge-api/src/test/java/forge/api/TerminalProjectionTest.java",
+      "sha256": "eb976cb88555a06c56d8b7ddd24db1b2947c12b34fabd258fcf96a53fe104884"
+    },
+    {
+      "file": "forge-api/README.md",
+      "sha256": "e41b1cc7a714e8b28256d4a87d3635b96e4830d8e9cd6d8f32e3a2e32c00b7ca"
+    }
+  ],
+  "runs": [
+    {
+      "name": "red",
+      "tests": 5,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "reportSha256": "aac3533ae6e2c2968c86ab38b8f0da4dda759daa1a38aafeb74ecb97c922a71f",
+      "classNames": [
+        "forge.api.TerminalProjectionTest"
+      ]
+    },
+    {
+      "name": "green-terminal",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "reportSha256": "75e559ade2b790d83e331fd640216bca5095a6e54966d515fd18667d1a0266c3",
+      "classNames": [
+        "forge.api.TerminalProjectionTest"
+      ]
+    },
+    {
+      "name": "green-neighbors",
+      "tests": 61,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "reportSha256": "e6bfa1d5435f6818e24ffb89d456833abfbe00a03c3bd6d030ce2b4c79738361",
+      "classNames": [
+        "forge.api.ActionOccurrenceCoherenceTest",
+        "forge.api.AttachmentProjectionTest",
+        "forge.api.AuraAttachmentJourneyTest",
+        "forge.api.CardQueryConcessionTest",
+        "forge.api.CombatChoicePublicationTest",
+        "forge.api.CombatChoiceScopeTest",
+        "forge.api.CombatForwardingTest",
+        "forge.api.CurrentZonePublicationTest",
+        "forge.api.EliminationRegressionTest",
+        "forge.api.ExecutionDisclosureTest",
+        "forge.api.PlaneswalkerCombatRegressionTest",
+        "forge.api.ScryVisibilityTest",
+        "forge.api.TerminalCombatProjectionTest"
+      ]
+    },
+    {
+      "name": "green-historical-attachment",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "reportSha256": "d2c5e8103c8b526c46df6d914e1cd12f0e334e4cd5f4f2dd02e4a572ac50ff8f",
+      "classNames": [
+        "forge.api.AttachmentProjectionTest"
+      ]
+    }
+  ],
+  "passedTestExecutions": 69,
+  "distinctPassedMethods": 67,
+  "methodCounting": "Green5 terminal +61 neighbors +3 final attachment. Two existing attachment methods repeat; final attachment adds one new negative.",
+  "productionScope": "Independent spectator matches owned historical-portrait identity withholding; omit noncurrent combat/attachment references, preserve actual blocked status and current/final display identities. No CurrentCardViews, action admission, parity guard, policy/default or wire schema change.",
+  "testEvidence": "Actual pending last-loss face-down reveal, same-board independent spectator plus both owned audiences, full public faces/combat, current live controls, stale attack refusal and hidden library arrays. Historical attachment negative is explicitly synthetic.",
+  "historicalExperiment": "Original fb04 32-game lock permanently stopped after6 terminals,1 unresolved provider failure,25 not launched. No resumption, replacement or strength claim.",
+  "runtime": "JDK17 offline Maven default targeted tests; no api-ci profile or release qualification claim.",
+  "humanReview": {
+    "factProjection": "not applicable: deterministic provider-fact correction, no new player controls",
+    "releaseGameplay": "pending"
+  },
+  "privateEvidence": "Raw test XML, source patch, actual owned/public frames and logs remain host-private; only aggregate counts, logical class names and digests published."
+}

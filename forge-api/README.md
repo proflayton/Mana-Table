@@ -1126,6 +1126,14 @@ legacy null identities without creating authority; scoped decision portraits
 still reject explicitly malformed identity fields. A finished table may retain
 exact cards from registered players' final rules zones for reading, with no
 pending choice or action domain.
+While a last-loss disclosure is still waiting for acknowledgement, registered
+historical public portraits remain readable with empty occurrence IDs in both
+seat and independent spectator snapshots. They grant no current selection keys,
+attachment references or combat references. Current assigned combat omits departed
+cards and defenders without clearing an attacker's actual `blocked` status.
+After the rules outcome completes, exact registered final-zone display identities
+retain their existing behavior. This does not change current-card admission or
+the requirement that same-board public projections agree.
 
 **Source candidate:** current stack target references can identify a public
 face-down battlefield occurrence through its existing anonymous `combatId` and
