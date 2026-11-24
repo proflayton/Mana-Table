@@ -80,7 +80,11 @@ internal static class AiUncertainLifeRiskRegression
             await Parity(check, relations, "Allied or genuinely unknown relationships cannot qualify as risk-specific opponents");
         }
         var absentOwner = original with { State = original.State with { DecisionOwnerId = null } };
-        await Parity(check, absentOwner, "Missing explicit decision ownership declines the optional risk treatment");
+        Reject(check, () => _ = Frame(absentOwner),
+            "A present certificate without explicit current ownership is rejected before either policy evaluates it");
+        var oldWireAbsentOwner = absentOwner with { Semantics = absentOwner.Semantics with {
+            Options = absentOwner.Semantics.Options.Select(option => option with { RememberedMillLifeLoss = null }).ToImmutableArray() } };
+        await Parity(check, oldWireAbsentOwner, "Legacy input without a certificate or explicit owner preserves baseline fallback");
 
         foreach (long seed in new[] { long.MinValue, 17L, 9007199254740993L, long.MaxValue })
         foreach (int work in new[] { 1, 5, 6, 16, 4096 }) {
@@ -95,7 +99,8 @@ internal static class AiUncertainLifeRiskRegression
             var limited = original with { RemainingWork = work };
             var result = await Evaluate(limited);
             check(result.Evidence is { RemainingWork: >= 0 } && result.Evidence.RemainingWork <= work
-                    && (result.Status == AiSeatStatus.BudgetExceeded && result.Proposal == null
+                    && ((result.Status is AiSeatStatus.Unavailable or AiSeatStatus.BudgetExceeded
+                            && result.Evidence.Failure?.Kind == AiFailureKind.WorkLimit && result.Proposal == null)
                         || result.Status == AiSeatStatus.Ready && result.Proposal != null && Frame(limited).Allows(result.Proposal)),
                 $"Risk qualification respects its shared {work}-unit allowance without an unvalidated or illegal answer");
         }
