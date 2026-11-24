@@ -183,14 +183,27 @@ internal static class AiPunisherChoiceJourney
                     }
                     if (riskChoice) {
                         deciding = state;
+                        Write("owned-choice.json", item);
                         if (state.Players.Single(player => player.Id == decider).Life != initialLife)
                             throw new InvalidDataException("The actual deciding input has the wrong public starting life.");
                         var owner = state.Players.Single(player => player.Id == controller);
+                        var risk = item.Semantics.Options.Single(option => option.RememberedMillLifeLoss != null);
+                        var certificate = risk.RememberedMillLifeLoss!;
+                        var source = owner.Zone("Battlefield").Cards.Single(card => CardViews.Identity(card) == certificate.SourceCardId);
+                        var mill = risk.OperationGraph.Operations.Single(node => node.Id == risk.OperationGraph.RootId);
+                        var loss = risk.OperationGraph.Operations.Single(node => node.Id == certificate.LifeLossOperationId);
+                        if (certificate.Version != 1 || certificate.ObservedCount != 4
+                            || !source.Counters.TryGetValue(certificate.CounterType, out int counter) || counter != 4
+                            || mill.ActorPlayerId != controller || loss.ActorPlayerId != controller
+                            || mill.Recipients.Entities is not [{ Kind: SemanticEntityKind.Player, PlayerId: var milled }] || milled != controller
+                            || loss.Recipients is not { Knowledge: SemanticKnowledge.Known, Binding: EffectRecipientBinding.Explicit,
+                                Entities: [{ Kind: SemanticEntityKind.Player, PlayerId: var harmed }] } || harmed != decider
+                            || mill.Amount != null || loss.Amount != null || loss.AmountKnowledge != SemanticKnowledge.Unknown)
+                            throw new InvalidDataException("The actual deciding input lacks the frozen public four-card exposure and exact affected players.");
                         beforeHand = owner.Zone("Hand").Count; beforeLibrary = owner.Zone("Library").Count;
                         string execution = state.Decision.ExecutionId;
                         rootExecution = state.Executions?.Occurrences.SingleOrDefault(occurrence => occurrence.Id == execution)?.BudgetRootId;
                         if (string.IsNullOrEmpty(rootExecution)) throw new InvalidDataException("Owned choice lacks its actual execution root.");
-                        Write("owned-choice.json", item);
                     }
                     var session = sessions[item.SeatId]; session.Observe(frame);
                     var evaluation = await session.EvaluateAsync(deadline.Token);
@@ -201,7 +214,9 @@ internal static class AiPunisherChoiceJourney
                     if (riskChoice) {
                         var draw = item.Semantics.Options.Single(option => option.OperationGraph.Operations is [{ Effect: ActionEffectKind.Draw, Amount: 1 }]);
                         bool drew = submission.Command is ChooseOptions { Choices.Length: 1 } answer && answer.Choices[0] == draw.Index;
-                        Write("pre-dispatch-proposal.json", new { submission, expectedDraw = expectDraw, actualDraw = drew });
+                        Write("pre-dispatch-proposal.json", new { submission.Stamp, submission.ReasonCode,
+                            command = JsonSerializer.SerializeToElement(submission.Command, submission.Command.GetType()),
+                            expectedDraw = expectDraw, actualDraw = drew });
                         if (drew != expectDraw) throw new InvalidDataException("Native choice disagrees with the frozen low/high-life preference or baseline control.");
                     }
                     try { await port.ExecuteAutomatedAsync(item.SeatId, submission.Command, deadline.Token); session.Report(submission, AiExecutionReceipt.Accepted); }
@@ -228,8 +243,10 @@ internal static class AiPunisherChoiceJourney
                 throw new InvalidDataException("Accepted choice's actual public life/zone consequences disagree with the controlled rules outcome.");
             if (loss > 0 && !causal.Any(entry => entry.Impact is { Kind: "life", PlayerId: var player, Amount: var amount } && player == decider && amount == -loss))
                 throw new InvalidDataException("Life loss lacks its same-execution public event.");
-            if (expectDraw && !causal.Any(entry => entry.Impact is { Kind: "zone", FromZone: "Library", ToZone: "Hand", RecipientControllerId: var recipient } && recipient == controller))
-                throw new InvalidDataException("Actual draw lacks its same-execution public movement event.");
+            if (!expectDraw && causal.Count(entry => entry.Kind == "moved" && entry.PlayerId == controller) != 4)
+                throw new InvalidDataException("Actual Mill lacks four same-execution public movement events.");
+            if (expectDraw && !causal.Any(entry => entry.Kind == "draw" && entry.PlayerId == controller && entry.Count == 1))
+                throw new InvalidDataException("Actual draw lacks its same-execution public draw event.");
         } catch (Exception error) { failure = error.ToString(); throw; }
         finally {
             string? cleanupError = null;
