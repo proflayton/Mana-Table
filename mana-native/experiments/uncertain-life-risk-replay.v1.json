@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "kind": "ai-experiment-spec",
+  "id": "uncertain-life-risk-authored-replay-v1",
+  "hypothesis": "On frozen authored current typed life-choice opportunities, a separately registered four-life/card stress preference allows a known opponent Draw1 in declared protection cases while retaining known zero/one-life alternatives. This grades explicit product preferences, not proven danger or general strength. Four was frozen before execution; hidden future outcomes do not define the rubric. High-life and low-exposure controls remain ungraded here and have separate exact-v6 parity checks.",
+  "mode": "replay",
+  "primaryEndpoint": "acceptable-decision-rate",
+  "variants": {
+    "baseline": {
+      "factoryId": "casual-commander.v6",
+      "attachmentEvaluation": true
+    },
+    "candidate": {
+      "factoryId": "casual-commander.v6.uncertain-life-risk.v1",
+      "attachmentEvaluation": true
+    },
+    "reference": {
+      "factoryId": "casual-commander.v6",
+      "attachmentEvaluation": true
+    }
+  },
+  "limits": {
+    "decisionMs": 3000,
+    "workUnits": 4096,
+    "matchMs": 180000,
+    "turns": 160,
+    "workerMs": 240000,
+    "captureBytes": 16777216
+  },
+  "runtime": {
+    "dotnetPath": "C:/Program Files/dotnet/dotnet.exe",
+    "driverPath": "../Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.dll"
+  },
+  "planningSeed": "261027",
+  "policySeed": "2668620592559112008",
+  "repetitions": 1,
+  "replays": [
+    {
+      "id": "protected-12-4",
+      "path": "../Mana.Table.Tests/Fixtures/PunisherChoiceAuthored/protected-12-4.json",
+      "format": "replay",
+      "family": "authored-uncertain-own-life-choice",
+      "expectation": {
+        "kind": "prefer-opponent-draw"
+      },
+      "certifiedUndo": false
+    },
+    {
+      "id": "renamed-protected-12-4",
+      "path": "../Mana.Table.Tests/Fixtures/PunisherChoiceAuthored/renamed-protected-12-4.json",
+      "format": "replay",
+      "family": "authored-uncertain-own-life-choice",
+      "expectation": {
+        "kind": "prefer-opponent-draw"
+      },
+      "certifiedUndo": false
+    },
+    {
+      "id": "high-life-40-4",
+      "path": "../Mana.Table.Tests/Fixtures/PunisherChoiceAuthored/high-life-40-4.json",
+      "format": "replay",
+      "family": "authored-uncertain-own-life-choice",
+      "expectation": {
+        "kind": "ungraded"
+      },
+      "certifiedUndo": false
+    },
+    {
+      "id": "small-exposure-12-1",
+      "path": "../Mana.Table.Tests/Fixtures/PunisherChoiceAuthored/small-exposure-12-1.json",
+      "format": "replay",
+      "family": "authored-uncertain-own-life-choice",
+      "expectation": {
+        "kind": "ungraded"
+      },
+      "certifiedUndo": false
+    },
+    {
+      "id": "boundary-16-4",
+      "path": "../Mana.Table.Tests/Fixtures/PunisherChoiceAuthored/boundary-16-4.json",
+      "format": "replay",
+      "family": "authored-uncertain-own-life-choice",
+      "expectation": {
+        "kind": "prefer-opponent-draw"
+      },
+      "certifiedUndo": false
+    },
+    {
+      "id": "outside-boundary-17-4",
+      "path": "../Mana.Table.Tests/Fixtures/PunisherChoiceAuthored/outside-boundary-17-4.json",
+      "format": "replay",
+      "family": "authored-uncertain-own-life-choice",
+      "expectation": {
+        "kind": "ungraded"
+      },
+      "certifiedUndo": false
+    },
+    {
+      "id": "known-self-loss-0",
+      "path": "../Mana.Table.Tests/Fixtures/PunisherChoiceAuthored/known-self-loss-0.json",
+      "format": "replay",
+      "family": "authored-fixed-own-life-cost",
+      "expectation": {
+        "kind": "prefer-fixed-self-loss"
+      },
+      "certifiedUndo": false
+    },
+    {
+      "id": "known-self-loss-1",
+      "path": "../Mana.Table.Tests/Fixtures/PunisherChoiceAuthored/known-self-loss-1.json",
+      "format": "replay",
+      "family": "authored-fixed-own-life-cost",
+      "expectation": {
+        "kind": "prefer-fixed-self-loss"
+      },
+      "certifiedUndo": false
+    }
+  ]
+}

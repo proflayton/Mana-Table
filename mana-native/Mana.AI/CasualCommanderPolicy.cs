@@ -21,8 +21,11 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         ArgumentNullException.ThrowIfNull(options);
         if (options.LibraryAcquisitionEvaluation && !options.AttachmentEvaluation)
             throw new ArgumentException("The acquisition candidate requires full attachment evaluation.", nameof(options));
+        if (options.UncertainLifeRiskEvaluation && (!options.AttachmentEvaluation || options.LibraryAcquisitionEvaluation))
+            throw new ArgumentException("The life-risk candidate cannot compose acquisition or attachment ablation.", nameof(options));
         Options = options;
-        Descriptor = new(Options.LibraryAcquisitionEvaluation ? "casual-commander.v7.library-acquisition.v1"
+        Descriptor = new(Options.UncertainLifeRiskEvaluation ? AiExperimentPolicyRegistry.UncertainLifeRiskFactoryId
+                : Options.LibraryAcquisitionEvaluation ? "casual-commander.v7.library-acquisition.v1"
                 : Options.AttachmentEvaluation ? "casual-commander.v6" : "casual-commander.v6.attachment-ablation.v1",
             AiTasks.All, AiPriorityAutomation.NoResponse);
     }
@@ -478,6 +481,12 @@ public sealed class CasualCommanderPolicy : IAiPolicy
     {
         if (options.CounterPayment is { } counter) return CounterChoice(request, counter);
         if (options.HandReduction is { } reduction) return ReduceHand(request, options.Selection, reduction);
+        if (Options.UncertainLifeRiskEvaluation) {
+            if (CasualUncertainLifeRisk.TryChoose(request, options, out int drawIndex))
+                return Answer(request, new ChooseOptions(request.Frame.State.Id, request.Frame.State.Decision!.Id, [drawIndex]),
+                    "choose-bounded-opponent-draw-under-own-life-exposure");
+            if (request.Work.WasExceeded) return AiProposal.Unavailable.FromWorkLimit(request.Work);
+        }
         if (Options.LibraryAcquisitionEvaluation && CasualLibraryAcquisition.TryChoose(request, options, out var indices))
             return Answer(request, new ChooseOptions(request.Frame.State.Id, request.Frame.State.Decision!.Id, indices),
                 "choose-certified-library-basic-lands");

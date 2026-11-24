@@ -98,3 +98,21 @@ Hidden Hand moves remain anonymous in public activity. A bounded private fixture
 audit independently binds those moves to IDs already disclosed in the acting
 seat's Hand and the resolved execution; it is never policy input. This is a
 mechanic regression, not a natural-game strength measurement.
+
+## Uncertain own-life exposure candidate
+
+`uncertain-life-risk-replay.v1.json` separately compares full v6 with
+`casual-commander.v6.uncertain-life-risk.v1`. Its eight authored contract-input
+replays freeze a conservative four-life/card stress preference, known zero/one
+life controls and ungraded high-life/low-exposure parity cases. These are not
+real-provider captures or general-strength evidence. Renamed/boundary variants
+share one mechanic family; the known fixed-loss controls form the second.
+
+Use the same Plan/Run/Analyze commands with a fresh profile. Original replay
+history, seed and allowance are preserved; no game command is executed. The
+independent `prefer-opponent-draw` and `prefer-fixed-self-loss` endpoints grade
+fixture-declared structural preferences, never the candidate score/threshold or
+actual hidden damage. Safety, exact-v6 fallback parity, real-provider causal
+continuation and human gameplay acceptance are separate checks. Shipping v6
+remains unchanged, and this candidate cannot compose the library candidate or
+attachment ablation. See the [frozen risk design](../../docs/Development/Mana-Table-AI-Uncertain-Life-Risk-Experiment.md).

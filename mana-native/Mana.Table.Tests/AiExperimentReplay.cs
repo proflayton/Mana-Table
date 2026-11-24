@@ -17,6 +17,7 @@ internal static class AiExperimentReplay
 {
     internal const string Evaluator = "current-scoped-choice.v1";
     internal const string LibraryAcquisitionEvaluator = "own-library-basic-acquisition.v1";
+    internal const string OwnLifeChoiceEvaluator = "own-life-choice-preference.v1";
     private const int MaximumInputBytes = 16 * 1024 * 1024;
     private static readonly JsonSerializerOptions Json = new() {
         PropertyNameCaseInsensitive = true, WriteIndented = true,
@@ -42,7 +43,8 @@ internal static class AiExperimentReplay
             family = input.GetProperty("family").GetString() ?? "";
             if (string.IsNullOrWhiteSpace(family)) throw Invalid("A replay requires its declared family.");
             kind = input.GetProperty("expectation").GetProperty("kind").GetString() ?? "";
-            if (kind is not ("target-self" or "target-opponent" or "cancel" or "complete" or "admissible" or "ungraded" or "acquire-basic-lands")) throw Invalid("Unsupported replay evaluator.");
+            if (kind is not ("target-self" or "target-opponent" or "cancel" or "complete" or "admissible" or "ungraded" or "acquire-basic-lands"
+                or "prefer-opponent-draw" or "prefer-fixed-self-loss")) throw Invalid("Unsupported replay evaluator.");
             double milliseconds = limits.GetProperty("decisionMs").GetDouble();
             int work = limits.GetProperty("workUnits").GetInt32();
             if (!double.IsFinite(milliseconds) || milliseconds <= 0 || milliseconds > uint.MaxValue - 1 || work <= 0)
@@ -139,10 +141,13 @@ internal static class AiExperimentReplay
             "target-opponent" => Controller(frame.State, result.Proposal) is { } player
                 && PlayerRelations.ForViewer(frame.State, player) == PlayerRelation.Opponent,
             "acquire-basic-lands" => AcquiresBasicLands(frame, result.Proposal),
+            "prefer-opponent-draw" or "prefer-fixed-self-loss" => AiOwnLifeChoiceGrade.PreferredIndex(frame, kind) is { } index
+                && result.Proposal is ChooseOptions { Choices: [var selected] } && selected == index,
             _ => false
         };
         return new() { ["grade"] = !eligible ? "ungraded" : passes ? "pass" : "fail", ["eligible"] = eligible,
-            ["admissible"] = admissible, ["evaluator"] = kind == "acquire-basic-lands" ? LibraryAcquisitionEvaluator : Evaluator };
+            ["admissible"] = admissible, ["evaluator"] = kind == "acquire-basic-lands" ? LibraryAcquisitionEvaluator
+                : kind is "prefer-opponent-draw" or "prefer-fixed-self-loss" ? OwnLifeChoiceEvaluator : Evaluator };
     }
 
     private static bool Eligible(AiDecisionFrame frame, string kind)
@@ -153,6 +158,7 @@ internal static class AiExperimentReplay
         if (kind == "cancel") return frame.Allows(new CancelSelection(game, decision)) || frame.Allows(new CancelPayment(game, decision));
         if (kind == "complete") return frame.Allows(new CompleteSelection(game, decision));
         if (kind == "acquire-basic-lands") return LibraryOpportunity(frame) is not null;
+        if (kind is "prefer-opponent-draw" or "prefer-fixed-self-loss") return AiOwnLifeChoiceGrade.PreferredIndex(frame, kind) != null;
         if (kind is not ("target-self" or "target-opponent")) return false;
         bool Matches(int player) => kind == "target-self" ? player == frame.State.ViewerId
             : PlayerRelations.ForViewer(frame.State, player) == PlayerRelation.Opponent;

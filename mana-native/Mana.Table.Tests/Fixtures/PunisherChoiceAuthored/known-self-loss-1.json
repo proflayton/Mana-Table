@@ -1,0 +1,248 @@
+{
+  "FormatVersion": 1,
+  "Id": "known-self-loss-1",
+  "PolicyId": "authored-contract-input.v1",
+  "State": {
+    "Id": "authored-risk-frame",
+    "Status": "playing",
+    "Error": null,
+    "Result": null,
+    "ViewerId": 1,
+    "Turn": 4,
+    "Phase": "End step",
+    "PhaseKey": "END_OF_TURN",
+    "ActivePlayerId": 0,
+    "Players": [
+      {
+        "Id": 0,
+        "Name": "Other",
+        "Life": 40,
+        "Priority": false,
+        "Eliminated": false,
+        "Mana": {},
+        "TeamId": 0,
+        "Zones": [
+          {
+            "Name": "Library",
+            "Count": 50,
+            "Cards": [],
+            "TopCard": null
+          },
+          {
+            "Name": "Hand",
+            "Count": 3,
+            "Cards": [],
+            "TopCard": null
+          },
+          {
+            "Name": "Battlefield",
+            "Count": 1,
+            "Cards": [
+              {
+                "VisualId": "public-source",
+                "CombatId": "public-source",
+                "Key": "",
+                "Name": "Arbitrary public source",
+                "Type": "Artifact",
+                "Counters": {
+                  "Influence": 4
+                }
+              }
+            ],
+            "TopCard": null
+          }
+        ]
+      },
+      {
+        "Id": 1,
+        "Name": "Actor",
+        "Life": 12,
+        "Priority": false,
+        "Eliminated": false,
+        "Mana": {},
+        "TeamId": 1,
+        "Zones": [
+          {
+            "Name": "Library",
+            "Count": 50,
+            "Cards": [],
+            "TopCard": null
+          },
+          {
+            "Name": "Hand",
+            "Count": 3,
+            "Cards": [],
+            "TopCard": null
+          }
+        ]
+      }
+    ],
+    "Stack": [],
+    "Combat": null,
+    "Revision": 1,
+    "BoardRevision": 1,
+    "DecisionOwnerId": 1,
+    "Decision": {
+      "Id": "current-risk-choice",
+      "Context": {
+        "Message": "Untrusted prompt",
+        "Source": {
+          "CardId": "public-source",
+          "Card": {
+            "VisualId": "public-source",
+            "CombatId": "public-source",
+            "Key": "",
+            "Name": "Arbitrary public source",
+            "Type": "Artifact",
+            "Counters": {
+              "Influence": 4
+            }
+          },
+          "ControllerId": 0,
+          "Zone": "Battlefield"
+        }
+      },
+      "Payload": {
+        "type": "options",
+        "Selection": {
+          "Choices": [
+            {
+              "Index": 17,
+              "Label": "Untrusted first label",
+              "Card": null
+            },
+            {
+              "Index": 41,
+              "Label": "Untrusted second label",
+              "Card": null
+            }
+          ],
+          "Range": {
+            "Min": 1,
+            "Max": 1
+          },
+          "Disclosures": []
+        }
+      }
+    }
+  },
+  "Domain": {
+    "Version": 0,
+    "Coverage": "NotApplicable",
+    "Sources": [],
+    "Actions": []
+  },
+  "Semantics": {
+    "Options": [
+      {
+        "Index": 17,
+        "Effect": "Draw",
+        "Amount": 1,
+        "OperationGraph": {
+          "Knowledge": "Known",
+          "RootId": 0,
+          "Operations": [
+            {
+              "Id": 0,
+              "Effect": "Draw",
+              "Knowledge": "Known",
+              "ActorPlayerId": 0,
+              "Amount": 1,
+              "AmountKnowledge": "Known",
+              "Sources": {
+                "Knowledge": "Known",
+                "Binding": "Source",
+                "TargetOperationId": null,
+                "Entities": [
+                  {
+                    "Id": "source",
+                    "Kind": "Card",
+                    "CardId": "public-source",
+                    "PlayerId": null,
+                    "ControllerId": 0,
+                    "OwnerId": 0
+                  }
+                ]
+              },
+              "Recipients": {
+                "Knowledge": "Known",
+                "Binding": "Actor",
+                "TargetOperationId": null,
+                "Entities": [
+                  {
+                    "Id": "player:0",
+                    "Kind": "Player",
+                    "CardId": "",
+                    "PlayerId": 0,
+                    "ControllerId": null,
+                    "OwnerId": null
+                  }
+                ]
+              },
+              "Links": [],
+              "Costs": []
+            }
+          ]
+        }
+      },
+      {
+        "Index": 41,
+        "Effect": "LifeLoss",
+        "Amount": 1,
+        "OperationGraph": {
+          "Knowledge": "Known",
+          "RootId": 0,
+          "Operations": [
+            {
+              "Id": 0,
+              "Effect": "LifeLoss",
+              "Knowledge": "Known",
+              "ActorPlayerId": 0,
+              "Amount": 1,
+              "AmountKnowledge": "Known",
+              "Sources": {
+                "Knowledge": "Known",
+                "Binding": "Source",
+                "TargetOperationId": null,
+                "Entities": [
+                  {
+                    "Id": "source",
+                    "Kind": "Card",
+                    "CardId": "public-source",
+                    "PlayerId": null,
+                    "ControllerId": 0,
+                    "OwnerId": 0
+                  }
+                ]
+              },
+              "Recipients": {
+                "Knowledge": "Known",
+                "Binding": "Explicit",
+                "TargetOperationId": null,
+                "Entities": [
+                  {
+                    "Id": "player:1",
+                    "Kind": "Player",
+                    "CardId": "",
+                    "PlayerId": 1,
+                    "ControllerId": null,
+                    "OwnerId": null
+                  }
+                ]
+              },
+              "Links": [],
+              "Costs": []
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "History": {
+    "Decisions": [],
+    "Events": []
+  },
+  "Seed": 17,
+  "RemainingTime": "00:00:03",
+  "RemainingWork": 4096
+}
