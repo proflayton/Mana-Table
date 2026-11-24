@@ -9,6 +9,7 @@ import forge.game.card.CardCollectionView;
 import forge.game.card.CardView;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
+import forge.game.spellability.AbilitySub;
 import forge.game.spellability.StackItemView;
 import forge.game.trigger.WrappedAbility;
 import forge.game.zone.ZoneType;
@@ -26,6 +27,7 @@ final class ActionOperationProjection {
     private final Player viewer;
     private final Function<CardView, String> identity;
     private final boolean committed;
+    private final CurrentEffectChoice currentChoice;
     private sealed interface GraphNode { }
     private record LiveNode(SpellAbility ability) implements GraphNode { }
     private record RecipeNode(ScheduledOperationRecipe recipe) implements GraphNode { }
@@ -40,6 +42,12 @@ final class ActionOperationProjection {
     static Map<String, Object> describe(SpellAbility ability, Player viewer, Function<CardView, String> identity) {
         if (ability == null) return unknown();
         return new ActionOperationProjection(viewer, identity, false).graph(ability);
+    }
+
+    static Map<String, Object> describeChoice(SpellAbility ability, Player viewer, Function<CardView, String> identity,
+                                              CurrentEffectChoice currentChoice) {
+        if (ability == null) return unknown();
+        return new ActionOperationProjection(viewer, identity, false, currentChoice).graph(ability);
     }
 
     /** Same grammar as a prospective action, but only the operations and target
@@ -72,9 +80,15 @@ final class ActionOperationProjection {
     }
 
     private ActionOperationProjection(Player viewer, Function<CardView, String> identity, boolean committed) {
+        this(viewer, identity, committed, null);
+    }
+
+    private ActionOperationProjection(Player viewer, Function<CardView, String> identity, boolean committed,
+                                      CurrentEffectChoice currentChoice) {
         this.viewer = viewer;
         this.identity = identity;
         this.committed = committed;
+        this.currentChoice = currentChoice;
     }
 
     private Map<String, Object> graph(SpellAbility root) {
@@ -257,7 +271,10 @@ final class ActionOperationProjection {
                 "counterType", ability.getParamOrDefault("CounterType", ""), "conditional", conditional,
                 "originZone", origin, "destinationZone", destination,
                 "sources", sources, "recipients", recipients, "targets", targets,
-                "costs", committed || ability.getPayCosts() == null ? List.of() : ability.getPayCosts().getCostParts().stream().map(ActionSemantics::cost).toList(),
+                "costs", committed || ability.getPayCosts() == null
+                        || currentChoice != null && ability instanceof AbilitySub
+                            && currentChoice.owns(ability) && CurrentEffectChoice.noCost(ability)
+                        ? List.of() : ability.getPayCosts().getCostParts().stream().map(ActionSemantics::cost).toList(),
                 "links", List.copyOf(links.get(index)));
         // Keep the legacy Unknown enum/knowledge on every wire, including
         // ordinary TCP stack snapshots. New readers can admit the optional
@@ -350,7 +367,11 @@ final class ActionOperationProjection {
         boolean playerOperation = Set.of("Draw", "LifeGain", "LifeLoss", "LoseGame", "WinGame", "Token", "Mill", "Scry", "Mana").contains(effect);
         String defined = ability.getParamOrDefault(parameter, playerOperation ? "You" : "Self");
         if (effect.equals("Search") && !ability.hasParam(parameter)) return unknownRecipients();
-        Integer target = targetBinding(ability, defined);
+        if (playerOperation && defined.equals("ParentTarget") && currentChoice != null) {
+            var player = currentChoice.parentPlayer(ability);
+            if (player != null) return binding(index, "Explicit", null, List.of(entity(index, player)));
+        }
+        Integer target = targetBinding(ability, defined, playerOperation);
         if (Set.of("Targeted", "ThisTargeted", "ParentTarget").contains(defined))
             return target == null ? unknownRecipients() : selectedBinding(index, target, live(target));
         if (Set.of("TargetedController", "ThisTargetedController", "TargetedOwner", "ThisTargetedOwner").contains(defined))
@@ -391,9 +412,13 @@ final class ActionOperationProjection {
     }
 
     private Integer targetBinding(SpellAbility ability, String defined) {
+        return targetBinding(ability, defined, false);
+    }
+
+    private Integer targetBinding(SpellAbility ability, String defined, boolean playerOperation) {
         if (defined.startsWith("ThisTargeted")) return ability.usesTargeting() ? ids.get(ability) : null;
         if (defined.equals("ParentTarget")) {
-            SpellAbility parent = ability.getParentTargetingCard();
+            SpellAbility parent = playerOperation ? ability.getParentTargetingPlayer() : ability.getParentTargetingCard();
             return parent == null ? null : ids.get(parent);
         }
         var groups = new LinkedHashSet<SpellAbility>();

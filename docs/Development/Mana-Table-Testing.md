@@ -87,6 +87,39 @@ accepted choices, resolved execution, actual acquired identities and destination
 an acknowledgement or count increase alone is insufficient. Bounded private Hand
 audit admission has negative controls in the ordinary headless inventory.
 
+## Uncertain own-life choice continuation
+
+The separate experimental `casual-commander.v6.uncertain-life-risk.v1` policy
+does not change the shipping v6 default or combine with the land-acquisition
+candidate. Its real-provider continuation uses:
+
+```powershell
+dotnet <source-bound-harness>/Mana.Table.Tests.dll --ai-punisher-choice-journey --engine-jar <source-bound-fixture.jar> --production-engine-jar <production.jar> --engine-resources <package>/engine --source-revision <full-commit> --source-manifest <ci-engine-manifest.json> --profile <fresh-profile>
+```
+
+`--engine-resources` is the bundle root containing `forge-res` and `runtime`.
+This command runs eight independent controlled games: v6 and the candidate at
+life12/40 with hidden future mana values0/7. A private pregame artifact copies
+the actual tracked Palantír SVar mechanics; a deliberate synthetic activation
+supplies four influence counters and the chosen deciding opponent. Opening-hand
+keeps and that bootstrap are setup actions, with no AI skill credit. This is not
+four natural end steps, an identical-shuffle comparison, or natural win evidence.
+
+Only the actual current owned risk choice receives policy credit. Each case
+retains its request, proposal, accepted receipt and same-execution resolved
+draw/mill/life evidence before cleanup. Library faces remain absent from every
+policy observation. Low-life candidate cases allow the draw in both hidden
+worlds; high-life candidate cases and baseline controls take the unknown branch.
+The zero-value world intentionally demonstrates that the frozen preference is
+not a prediction of damage. Independent games have different authority IDs;
+they do not establish byte-identical inputs. Exact same-input no-peek and narrow
+recognition/admission controls belong to the focused contract/policy tests.
+
+The required Windows engine suite runs this command using the same clean-source
+package, harness, private launcher and production dependency. Private fixture
+classes are rejected in the shipping JAR. Any first-attempt or cleanup failure
+remains a failure; use a fresh profile after investigating its cause.
+
 ## Shared attachment capability checks
 
 After building `Mana.Table.Tests`, the `attachment-capabilities` headless group
@@ -2293,12 +2326,26 @@ used for each accepted command. A separate outer poll may miss an intermediate
 bill already answered by the policy; it is not that command's observation.
 Ordered current-cost receipts and independent public stack/battlefield results
 remain separate requirements.
+Cooperative goldens bind their actual activated stack occurrence to an accepted
+source/target execution and its public activation event. A sacrificed source
+may have a portrait without a current card ID; neither that portrait nor a
+resolved/damage event alone supplies the stack witness. Negative controls for
+every binding run in the full headless inventory and the focused
+`--smoke-headless-presentation --presentation-group cooperative-stack --profile <fresh-profile>`
+group. Both actual cooperative journeys retain their primitive stack witness
+and keep the existing two-round and eighteen-second limits.
 The real `PlaneswalkerCombatRegressionTest` follows lethal combat through the
 defending permanent's departure and checks every audience's surviving attacker,
 blocker relations, absent defender and continued rules progress. Native wire,
 presentation and policy checks distinguish explicit absence from the legacy
 player fallback, retain blocker links, reject malformed real identities and
 avoid player arrows, life-threat estimates or commands for the absent target.
+`TerminalProjectionTest` also checks a pending loss reveal: every audience keeps
+the actual original defending player's historical ID while reporting no current
+defender, and preserves blocked status without departed card references. The
+focused native decoder and presentation controls run with
+`--smoke-headless-presentation --presentation-group departed-defender --profile <fresh-profile>`;
+the full headless inventory includes those same controls.
 These regressions use the existing Java and headless lanes rather than another
 randomized deck, golden fixture or JVM.
 

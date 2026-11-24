@@ -3,7 +3,8 @@ using System.Text.Json.Serialization;
 
 namespace Mana.AI;
 
-public sealed record CasualCommanderOptions(bool AttachmentEvaluation = true, bool LibraryAcquisitionEvaluation = false);
+public sealed record CasualCommanderOptions(bool AttachmentEvaluation = true, bool LibraryAcquisitionEvaluation = false,
+    bool UncertainLifeRiskEvaluation = false);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record AiExperimentVariant(string FactoryId, bool AttachmentEvaluation = true);
@@ -14,15 +15,17 @@ public static class AiExperimentPolicyRegistry
 {
     public const string CasualCommanderFactoryId = "casual-commander.v6";
     public const string LibraryAcquisitionFactoryId = "casual-commander.v7.library-acquisition.v1";
+    public const string UncertainLifeRiskFactoryId = "casual-commander.v6.uncertain-life-risk.v1";
 
     public static IAiPolicy Create(AiExperimentVariant variant)
     {
         ArgumentNullException.ThrowIfNull(variant);
-        if (variant.FactoryId != CasualCommanderFactoryId && variant.FactoryId != LibraryAcquisitionFactoryId)
+        if (!Supported(variant.FactoryId))
             throw new ArgumentException("Unsupported experiment policy factory.", nameof(variant));
-        if (variant.FactoryId == LibraryAcquisitionFactoryId && !variant.AttachmentEvaluation)
-            throw new ArgumentException("The acquisition candidate requires full attachment evaluation.", nameof(variant));
-        return new CasualCommanderPolicy(new(variant.AttachmentEvaluation, variant.FactoryId == LibraryAcquisitionFactoryId));
+        if (variant.FactoryId != CasualCommanderFactoryId && !variant.AttachmentEvaluation)
+            throw new ArgumentException("An experimental candidate requires full attachment evaluation.", nameof(variant));
+        return new CasualCommanderPolicy(new(variant.AttachmentEvaluation, variant.FactoryId == LibraryAcquisitionFactoryId,
+            variant.FactoryId == UncertainLifeRiskFactoryId));
     }
 
     public static AiExperimentVariant Parse(JsonElement value)
@@ -41,10 +44,13 @@ public static class AiExperimentPolicyRegistry
                 default: throw new ArgumentException("Unsupported experiment variant setting.");
             }
         }
-        if (factory != CasualCommanderFactoryId && factory != LibraryAcquisitionFactoryId)
+        if (!Supported(factory))
             throw new ArgumentException("Unsupported experiment policy factory.");
-        if (factory == LibraryAcquisitionFactoryId && !attachment)
-            throw new ArgumentException("The acquisition candidate requires full attachment evaluation.");
-        return new(factory, attachment);
+        if (factory != CasualCommanderFactoryId && !attachment)
+            throw new ArgumentException("An experimental candidate requires full attachment evaluation.");
+        return new(factory!, attachment);
     }
+
+    private static bool Supported(string? factory) => factory is CasualCommanderFactoryId
+        or LibraryAcquisitionFactoryId or UncertainLifeRiskFactoryId;
 }

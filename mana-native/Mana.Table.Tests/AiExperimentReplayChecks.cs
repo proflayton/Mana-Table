@@ -109,6 +109,20 @@ internal static class AiExperimentReplayChecks
                 && ungradedResult["status"]!.ToString() == "completed",
             "An explicitly ungraded legal proposal stays visible without inventing a tactical verdict");
         AiLibraryAcquisitionGradeChecks.Run(check);
+        AiOwnLifeChoiceGradeChecks.Run(check);
+        string riskPath = Path.Combine(AppContext.BaseDirectory, "Fixtures", "PunisherChoiceAuthored", "protected-12-4.json");
+        var riskJob = new JsonObject {
+            ["seed"] = "17", ["variant"] = new JsonObject { ["factoryId"] = "casual-commander.v6", ["attachmentEvaluation"] = true },
+            ["replay"] = new JsonObject { ["path"] = riskPath, ["sha256"] = Hash(File.ReadAllBytes(riskPath)), ["format"] = "replay",
+                ["family"] = "authored-own-life-choice", ["expectation"] = new JsonObject { ["kind"] = "prefer-opponent-draw" }, ["certifiedUndo"] = false }
+        };
+        var oldRisk = await Run(riskJob);
+        riskJob["variant"]!["factoryId"] = AiExperimentPolicyRegistry.UncertainLifeRiskFactoryId;
+        var newRisk = await Run(riskJob);
+        check(Grade(oldRisk) == "fail" && Grade(newRisk) == "pass"
+                && oldRisk["replay"]!["admissible"]!.GetValue<bool>() && newRisk["replay"]!["admissible"]!.GetValue<bool>()
+                && oldRisk["details"]!["admittedReplaySha256"]!.ToString() == newRisk["details"]!["admittedReplaySha256"]!.ToString(),
+            "The actual replay worker grades the frozen authored life preference on identical input in both legal policy arms");
     }
 
     private static JsonObject Job(string fixture, string expectation)

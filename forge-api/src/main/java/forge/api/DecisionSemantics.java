@@ -102,6 +102,11 @@ final class DecisionSemantics {
 
     static List<Map<String, Object>> options(List<?> choices, Function<SpellAbilityView, SpellAbility> resolve,
                                            Player viewer, Function<CardView, String> identity) {
+        return options(choices, resolve, viewer, identity, null);
+    }
+
+    static List<Map<String, Object>> options(List<?> choices, Function<SpellAbilityView, SpellAbility> resolve,
+                                           Player viewer, Function<CardView, String> identity, CurrentEffectChoice currentChoice) {
         var options = new ArrayList<Map<String, Object>>();
         for (int index = 0; index < choices.size(); index++) {
             Object choice = choices.get(index);
@@ -118,7 +123,10 @@ final class DecisionSemantics {
             option.put("index", index);
             option.put("effect", ActionSemantics.effect(ability));
             option.put("amount", ActionSemantics.effectAmount(ability));
-            option.put("operationGraph", ActionOperationProjection.describe(ability, viewer, identity));
+            var graph = ActionOperationProjection.describeChoice(ability, viewer, identity, currentChoice);
+            option.put("operationGraph", graph);
+            var millLifeLoss = CurrentChoiceMillLifeLossProjection.describe(ability, currentChoice, graph, identity);
+            if (millLifeLoss != null) option.put("rememberedMillLifeLoss", millLifeLoss);
             options.add(option);
         }
         return List.copyOf(options);

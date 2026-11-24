@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 
 namespace Mana.Contracts;
 
@@ -13,11 +14,18 @@ public enum DecisionIntent
 public enum DecisionOrderingPurpose { Unknown, CostPayment }
 public sealed record DecisionOptionSemantics(int Index, ActionEffectKind Effect, int? Amount = null)
 {
+    // A current public counter and a closed nominal dependency, never a value
+    // forecast or command capability. Missing on legacy observations.
+    public RememberedMillLifeLoss? RememberedMillLifeLoss { get; init; }
     public ActionOperationGraph OperationGraph { get; init; } = ActionOperationGraph.Unknown;
     // Identity of an actual offered recipient, distinct from choosing an
     // ability recipe. In particular, a counter targets a stack occurrence.
     public SemanticEntity? Target { get; init; }
 }
+[JsonConverter(typeof(RememberedMillLifeLossConverter))]
+public sealed record RememberedMillLifeLoss([property: JsonRequired] int Version,
+    [property: JsonRequired] string SourceCardId, [property: JsonRequired] string CounterType,
+    [property: JsonRequired] int ObservedCount, [property: JsonRequired] int LifeLossOperationId);
 public sealed record DecisionSemantics(DecisionIntent Intent = DecisionIntent.Unknown, int? Amount = null)
 {
     // One underlying rules decision can replace its input object while keeping

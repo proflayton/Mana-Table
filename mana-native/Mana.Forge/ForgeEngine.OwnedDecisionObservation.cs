@@ -68,6 +68,7 @@ public sealed partial class ForgeEngine : IOwnedDecisionObservations
                 || !domain.Sources.IsEmpty || !domain.Actions.IsEmpty || !domain.PoolManaColors.IsEmpty))
                 throw new IOException("An audience without a decision cannot acquire action offers.");
             DecisionOrderingFacts.Validate(state, semantics);
+            RememberedMillLifeLossFacts.Validate(state, semantics);
             return new(state, ForgeAttachmentProjection.Normalize(domain), ForgeAttachmentProjection.Normalize(semantics, state));
         } catch (Exception error) when (error is JsonException or InvalidOperationException or ArgumentException
             or FormatException or OverflowException or KeyNotFoundException) {

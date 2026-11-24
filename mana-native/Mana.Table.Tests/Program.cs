@@ -43,6 +43,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-cooperative-encounter");
         testRun |= args.Contains("--smoke-configured-simulation");
         testRun |= args.Contains("--ai-library-acquisition-journey");
+        testRun |= args.Contains("--ai-punisher-choice-journey");
         testRun |= args.Contains("--smoke-ai-team-goldens");
         testRun |= args.Contains("--ai-typed-return-golden");
         testRun |= args.Contains("--smoke-ai-resources");
@@ -192,6 +193,10 @@ internal static class Program
             if (args.Contains("--ai-library-acquisition-journey")) {
                 AiLibraryAcquisitionJourney.RunStandaloneAsync(paths, Arg("--fixture-mode") ?? "bundle",
                     Arg("--production-engine-jar"), Arg("--source-revision"), Arg("--source-manifest")).GetAwaiter().GetResult(); return 0;
+            }
+            if (args.Contains("--ai-punisher-choice-journey")) {
+                AiPunisherChoiceJourney.RunStandaloneAsync(paths, Arg("--production-engine-jar"),
+                    Arg("--source-revision"), Arg("--source-manifest")).GetAwaiter().GetResult(); return 0;
             }
             if (args.Contains("--smoke-cooperative-encounter")) {
                 CooperativeEncounterEngineJourney.RunStandaloneAsync(paths).GetAwaiter().GetResult(); return 0;

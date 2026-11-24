@@ -20,6 +20,7 @@ internal static class AiPolicyRegression
         await PaymentProvenance(check);
         await AiCostPaymentRegression.RunAsync(check);
         await AiCostOrderingRegression.RunAsync(check);
+        await AiRememberedMillLifeLossFactsRegression.RunAsync(check);
         await TargetsAndSocialMemory(check);
         await AiTeamRelationsRegression.RunAsync(check);
         AiCausalHistoryRegression.Run(check);

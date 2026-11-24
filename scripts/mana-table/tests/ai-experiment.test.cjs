@@ -106,6 +106,32 @@ test('library-acquisition experiment variants and independent expectation remain
   assert.equal(C.schedule(natural, natural.decks).length, 32);
 });
 
+test('uncertain-life candidate and authored preference endpoints remain closed and independent from acquisition', t => {
+  const f = fixture(t); C.validateSpec(f.spec);
+  const risk = structuredClone(f.spec);
+  risk.variants.candidate = { factoryId: 'casual-commander.v6.uncertain-life-risk.v1', attachmentEvaluation: true };
+  for (const kind of ['prefer-opponent-draw', 'prefer-fixed-self-loss']) {
+    risk.replays[0].expectation = { kind }; C.validateSpec(risk);
+  }
+  for (const change of [
+    spec => spec.variants.candidate.attachmentEvaluation = false,
+    spec => spec.variants.candidate.libraryAcquisitionEvaluation = true,
+    spec => spec.variants.candidate.stressLifePerCard = 28,
+    spec => spec.variants.candidate.factoryId = 'casual-commander.v6.uncertain-life-risk',
+    spec => spec.replays[0].expectation.kind = 'avoid-actual-hidden-lethal-damage',
+    spec => spec.replays[0].expectation.expectedDamage = 28
+  ]) { const invalid = structuredClone(risk); change(invalid); assert.throws(() => C.validateSpec(invalid)); }
+  const original = C.schedule(risk, risk.replays);
+  assert.equal(original.length, 2); assert.equal(original[0].seed, original[1].seed);
+  assert.deepEqual(original[0].replay, original[1].replay);
+  const maintained = JSON.parse(fs.readFileSync(path.join(__dirname, '../../../mana-native/experiments/uncertain-life-risk-replay.v1.json'), 'utf8'));
+  C.validateSpec(maintained);
+  assert.equal(maintained.variants.baseline.factoryId, 'casual-commander.v6');
+  assert.equal(maintained.variants.candidate.factoryId, 'casual-commander.v6.uncertain-life-risk.v1');
+  assert.equal(maintained.replays.length, 8);
+  assert.equal(new Set(maintained.replays.map(item => item.family)).size, 2);
+});
+
 test('both-arm replay receipts retain paired eligibility and deterministic independent analysis', async t => {
   const f = fixture(t); await E.plan(f.specFile, f.out);
   const first = await E.run(f.out); assert.equal(first.launched, 2); assert.equal(first.report.replay.corrections, 1); assert.equal(first.report.replay.regressions, 0);

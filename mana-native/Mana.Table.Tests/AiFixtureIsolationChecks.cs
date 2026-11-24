@@ -29,9 +29,13 @@ internal static class AiFixtureIsolationChecks
         Archive(fixture, "forge/api/AiReleaseFixtureEngine.class", "forge/api/LibraryAcquisitionFixtureEngine.class",
             "forge/api/LibraryAcquisitionFixtureEngine$Bundle.class");
         check(Admitted(), "The explicit acquisition pregame factories are admitted only in the private fixture archive");
+        Archive(fixture, "forge/api/AiReleaseFixtureEngine.class", "forge/api/PunisherChoiceFixtureEngine.class",
+            "forge/api/PunisherChoiceFixtureEngine$LowSeven.class");
+        check(Admitted(), "The explicit punisher pregame factories are admitted only in the private fixture archive");
         Archive(fixture, "forge/api/AiReleaseFixtureEngine.class", "forge/api/AiReleaseFixtureEngine$PolledFanout.class",
             "forge/api/AiReleaseFixtureEngine$PolledManaOutput.class", "forge/api/LibraryAcquisitionFixtureEngine.class",
-            "forge/api/LibraryAcquisitionFixtureEngine$Bundle.class");
+            "forge/api/LibraryAcquisitionFixtureEngine$Bundle.class", "forge/api/PunisherChoiceFixtureEngine.class",
+            "forge/api/PunisherChoiceFixtureEngine$LowSeven.class");
         var paths = new ForgePaths("unused-java", fixture, directory, directory);
         var runtime = AiReleaseEvaluation.VerifyRuntime(paths, production);
         foreach (string bootstrap in new[] { "PolledFanout", "PolledManaOutput" }) {
@@ -42,7 +46,7 @@ internal static class AiFixtureIsolationChecks
             check(target.Entries.Count == original.Length + 1 && original.All(entry => {
                 using var input = entry.Open(); using var output = target.GetEntry(entry.FullName)!.Open();
                 return SHA256.HashData(input).SequenceEqual(SHA256.HashData(output));
-            }), "Both explicitly declared private fixture families retain every exact class byte in the derived " + bootstrap + " launcher");
+            }), "All explicitly declared private fixture families retain every exact class byte in the derived " + bootstrap + " launcher");
             using var manifestReader = new StreamReader(target.GetEntry("META-INF/MANIFEST.MF")!.Open());
             check(manifestReader.ReadToEnd().Contains("Main-Class: forge.api.AiReleaseFixtureEngine$" + bootstrap + "\r\n", StringComparison.Ordinal)
                     && SHA256.HashData(File.ReadAllBytes(Path.Combine(Path.GetDirectoryName(derived.Jar)!, "forge-engine.jar")))
@@ -55,7 +59,7 @@ internal static class AiFixtureIsolationChecks
         }
         Archive(fixture, "forge/api/AiReleaseFixtureEngine.class", "forge/api/AiReleaseFixtureEngine$PolledFanout.class");
         check(!Derived("changed-fixture", runtime), "Derivation rejects fixture bytes changed after runtime verification");
-        foreach (string injected in new[] { "forge/api/AiReleaseFixtureEngineImposter.class", "forge/api/LibraryAcquisitionFixtureEngineImposter.class",
+        foreach (string injected in new[] { "forge/api/AiReleaseFixtureEngineImposter.class", "forge/api/LibraryAcquisitionFixtureEngineImposter.class", "forge/api/PunisherChoiceFixtureEngineImposter.class",
                      "forge/api/DesktopEngine.class", "other/AiReleaseFixtureEngine$PolledFanout.class" }) {
             Archive(fixture, "forge/api/AiReleaseFixtureEngine.class", "forge/api/AiReleaseFixtureEngine$PolledFanout.class", injected);
             var changed = runtime with { FixtureLauncherSha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(fixture))) };
@@ -67,12 +71,12 @@ internal static class AiFixtureIsolationChecks
         Archive(production, "forge/api/DesktopEngine.class", "changed.class");
         check(!Derived("changed-production", runtime), "Derivation rejects a production dependency changed after runtime verification");
         Archive(production, "forge/api/DesktopEngine.class");
-        foreach (string injected in new[] { "forge/api/LibraryAcquisitionFixtureEngineImposter.class", "forge/api/DesktopEngine.class" }) {
+        foreach (string injected in new[] { "forge/api/LibraryAcquisitionFixtureEngineImposter.class", "forge/api/PunisherChoiceFixtureEngineImposter.class", "forge/api/DesktopEngine.class" }) {
             Archive(fixture, "forge/api/AiReleaseFixtureEngine.class", injected);
             check(!Admitted(), "A private fixture archive cannot smuggle a lookalike factory or production implementation: " + injected);
         }
         Archive(fixture, "forge/api/AiReleaseFixtureEngine.class", "forge/api/LibraryAcquisitionFixtureEngine$Bundle.class");
-        foreach (string leaked in new[] { "forge/api/AiReleaseFixtureEngine.class", "forge/api/LibraryAcquisitionFixtureEngine$Bundle.class" }) {
+        foreach (string leaked in new[] { "forge/api/AiReleaseFixtureEngine.class", "forge/api/LibraryAcquisitionFixtureEngine$Bundle.class", "forge/api/PunisherChoiceFixtureEngine$LowSeven.class" }) {
             Archive(production, "forge/api/DesktopEngine.class", leaked);
             check(!Admitted(), "Test-only factory classes cannot enter the production engine: " + leaked);
         }

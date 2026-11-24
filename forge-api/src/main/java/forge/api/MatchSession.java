@@ -2538,6 +2538,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (!selectionDialog(prompt) || !selectionOwnerCurrent(prompt) || !table.currentPublication(boardRevision)
                 || sourceActionVersion.get() != sourceVersion) return false;
         var choices = prompt.offeredChoices;
+        var effectChoice = human.getEffectChoiceContext();
         boolean ordered = prompt.orderedChoices;
         int minimum = prompt.min, maximum = prompt.max;
         var paying = game.costPaymentStack.peek();
@@ -2552,7 +2553,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                             map("destination", item.destination(), "maximumCount", item.maximumCount())).toList()));
         }
         var base = DecisionSemantics.describeContext(paying);
-        var options = DecisionSemantics.options(choices, human::getDecisionAbility, human.getPlayer(), this::semanticCardId);
+        var currentChoice = paying == null && !ordered && minimum == 1 && maximum == 1
+                ? CurrentEffectChoice.capture(choices, effectChoice, human.getPlayer()) : null;
+        var options = DecisionSemantics.options(choices, human::getDecisionAbility, human.getPlayer(), this::semanticCardId, currentChoice);
         var ordering = DecisionSemantics.ordering(choices, ordered, minimum, maximum);
         // Offered indices remain answerable when an ambient cost changes.
         automatedFacts.putAll(game.costPaymentStack.peek() == paying ? base
@@ -2564,6 +2567,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         return table.currentPublication(boardRevision) && sourceActionVersion.get() == sourceVersion
                 && selectionOwnerCurrent(prompt) && prompt.offeredChoices == choices
+                && human.getEffectChoiceContext() == effectChoice
+                && (currentChoice == null || currentChoice.selectedPlayer() != null)
                 && prompt.orderedChoices == ordered && prompt.min == minimum && prompt.max == maximum
                 && (!projectedPrompt.containsKey("libraryAcquisition") || acquisition == human.getLibraryAcquisitionOffer()
                     && acquisition.matches(human.getPlayer(), choices));
@@ -2998,7 +3003,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var defenders = new ArrayList<Object>();
         GameEntity selectedDefender = null;
         for (var defender : combat.getDefenders()) {
-            if (!CombatDefenders.isCurrent(defender)) continue;
+            if (!CombatDefenders.isCurrent(game, defender)) continue;
             defenders.add(combatDefender(defender));
             if (attacking && offered != null && offered.selectedDefender() != null && offered.selectedDefender().id() == defender.getId()
                     && offered.selectedDefender().player() == (defender instanceof Player)) selectedDefender = defender;
@@ -3014,7 +3019,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 candidates.add(combatIds.id(card.getView()));
             var legalDefenders = new ArrayList<Object>();
             for (GameEntity defender : combat.getDefenders()) {
-                if (!CombatDefenders.isCurrent(defender)) continue;
+                if (!CombatDefenders.isCurrent(game, defender)) continue;
                 if (choices.stream().noneMatch(choice -> choice.id() == defender.getId() && choice.player() == (defender instanceof Player))) continue;
                 legalDefenders.add(combatDefender(defender));
                 handles.attackPairs.add(card.getId() + ":" + (defender instanceof Player ? "player:" : "card:") + defender.getId());
@@ -3025,7 +3030,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 .filter(card -> offered.blockerCandidates().contains(card.getId())).toList() : List.<Card>of();
         var attacks = new ArrayList<Object>();
         for (Card attacker : combat.getAttackers()) {
-            if (!attacker.getView().canBeShownTo(viewer)) continue;
+            if (!currentCardView(attacker.getView()) || !attacker.getView().canBeShownTo(viewer)) continue;
             var assigned = combat.getBlockers(attacker);
             var eligible = new ArrayList<String>();
             for (Card blocker : blockers) {
@@ -3036,15 +3041,19 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             }
             var defender = combat.getDefenderByAttacker(attacker);
             attacks.add(map("cardId", combatIds.id(attacker.getView()),
-                    "hasDefender", CombatDefenders.isCurrent(defender), "defender", combatDefender(defender),
-                    "defendingPlayerId", combat.getDefenderPlayerByAttacker(attacker) == null ? null : combat.getDefenderPlayerByAttacker(attacker).getId(),
-                    "blockerIds", assigned.stream().filter(card -> card.getView().canBeShownTo(viewer)).map(card -> combatIds.id(card.getView())).toList(),
+                    "hasDefender", CombatDefenders.isCurrent(game, defender), "defender", combatDefender(defender),
+                    // Historical assignment, not a current defender/target.
+                    // Preserve the actual player even after that player leaves.
+                    "defendingPlayerId", combat.getDefenderPlayerByAttacker(attacker) == null
+                            ? null : combat.getDefenderPlayerByAttacker(attacker).getId(),
+                    "blockerIds", assigned.stream().filter(card -> currentCardView(card.getView()) && card.getView().canBeShownTo(viewer))
+                            .map(card -> combatIds.id(card.getView())).toList(),
                     "blocked", combat.isBlocked(attacker), "eligibleBlockerIds", eligible));
         }
         boolean attackValid = !attacking || offered != null && okEnabled;
         var repair = new ArrayList<Object>();
         if (attacking && !attackValid) for (var entry : combat.getAttackConstraints().getLegalAttackers().getLeft().entrySet())
-            if (CombatDefenders.isCurrent(entry.getValue()))
+            if (currentCardView(entry.getKey().getView()) && CombatDefenders.isCurrent(game, entry.getValue()))
                 repair.add(map("cardId", combatIds.id(entry.getKey().getView()), "defender", combatDefender(entry.getValue())));
         String blockProblem = blocking && offered != null ? offered.blockProblem() : null;
         List<Object> blockRepair = null;
@@ -3077,7 +3086,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         // Forge retains attackers against an internal absent-defender card when
         // their planeswalker or battle leaves combat (CR 506.4c). It has no
         // public occurrence and must never acquire a card identity or target.
-        if (!CombatDefenders.isCurrent(entity)) return null;
+        if (!CombatDefenders.isCurrent(game, entity)) return null;
         if (entity instanceof Player player) return map("kind", "player", "id", player.getId(),
                 "name", player.getView().equals(viewer) ? "You" : player.getName(), "playerId", player.getId());
         if (entity instanceof Card card) {

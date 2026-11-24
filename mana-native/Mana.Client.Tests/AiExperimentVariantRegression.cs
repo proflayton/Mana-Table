@@ -7,6 +7,7 @@ internal static class AiExperimentVariantRegression
 {
     internal static async Task RunAsync(Action<bool, string> check)
     {
+        await AiUncertainLifeRiskRegression.RunAsync(check);
         var full = new AiExperimentVariant("casual-commander.v6");
         var ablated = full with { AttachmentEvaluation = false };
         check(AiExperimentPolicyRegistry.Create(full).Descriptor.Id == new CasualCommanderPolicy().Descriptor.Id

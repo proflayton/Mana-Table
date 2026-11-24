@@ -195,6 +195,70 @@ explicit stack/transient source. An internal rule object can supply a readable
 decision portrait without being a published card: commander replacement effects,
 for example, keep Unknown graph sources rather than borrowing a card identity.
 Portrait inspection does not grant selection, activation or retained disclosure.
+An actual owned, mandatory effect-choice callback can resolve a selected
+`ParentTarget` player outside an option's branch graph. The producer retains the
+actual `chooseSpellAbilitiesForEffect` owner, chooser and offered ability mapping
+only while that callback blocks. It resolves the nearest selected player
+ancestor with `getParentTargetingPlayer`, requires that exact current owner and
+one publicly selected current chooser, then emits the existing `Known/Explicit`
+recipient grammar with no `targetOperationId`. It does not import an ancestor
+graph or create target/action occurrences. Missing, ambiguous, hidden, foreign
+or unowned evidence remains `Unknown` independently of quantity evidence.
+
+Private `DecisionOptionSemantics` can additionally carry this closed optional
+nominal dependency:
+
+```json
+"rememberedMillLifeLoss": {
+  "version": 1,
+  "sourceCardId": "current-public-occurrence",
+  "counterType": "Influence",
+  "observedCount": 4,
+  "lifeLossOperationId": 1
+}
+```
+
+The current option's graph root is Mill; the graph consists only of
+Mill -> LifeLoss -> terminal Cleanup through two ordinary `Sequence` edges.
+The mill amount's SVar is exactly a current-source counter expression; its
+remembered output supplies the following life-loss SVar's exact mana-value sum.
+`counterType` is the public `Card.Counters` key (`CounterType.getName()`), not the
+script's uppercase token. This optional certificate requires that exact key to
+be explicitly present in the current public dictionary, including an explicit
+zero if a producer exposes one. Missing/unknown keys never become certified zero
+through a mirrored native counter registry. The snapshot count does not promise
+a resolved number of milled cards.
+
+The producer requires the actual current callback owner, same current public
+face-up Battlefield source, exact ordinary parameter allowlists, no costs,
+conditions, extra effects, alternate memory paths or additional choices. An
+actual owned `AbilitySub` recipe's shared canonical `Cost.Zero` marker has no
+payment obligation and is projected as empty costs after checking its literal
+zero mana and absent restrictions. Authored costs, X, restricted/nonmana payments
+and unowned prospective graphs keep their existing cost projection. An
+emptiness-only `hasRemembered()` prerequisite excludes unrelated existing
+memory. It does not enumerate, count, type-check or disclose any remembered
+object or read any library/deck content. A nonempty source declines this optional
+certificate while its separately proven recipient can remain known.
+
+The native boundary validates the public source/counter, current owned offered
+index and exact finite graph shape. It trusts the producer for the internal
+empty-memory prerequisite; that cannot be independently reconstructed from the
+public snapshot. This is nominal dependency evidence at publication, not a
+guarantee about future replacements, remembered objects, mana values, expected
+loss, probability or upper bound. Mill and LifeLoss retain `amount: null`,
+`amountKnowledge: Unknown`, node `knowledge: Unknown` and graph
+`knowledge: Unknown`, including a zero counter snapshot. The optional fact
+neither promotes operation knowledge nor changes baseline policy scoring.
+
+Version one requires all five distinct typed fields and rejects unknown fields,
+duplicate keys, conflicting source/counter/operation references and malformed
+present certificates. An absent/null field on an old option remains absent;
+the existing older option DTO settings ignore this additive property. No new
+legacy effect enum or overall protocol version is required. A certificate is
+not proof of current command ownership: existing immutable publication,
+audience, decision ID and current option scopes continue to authorize replies.
+
 Private decision semantics can add `numeric` for an explicit rules announcement:
 `purpose`, entitled `sourceCardId`, declared `costs`, `manaCostKnowledge`, and
 read-only `funding`. Funding groups production routes by physical source, with
@@ -1062,6 +1126,14 @@ legacy null identities without creating authority; scoped decision portraits
 still reject explicitly malformed identity fields. A finished table may retain
 exact cards from registered players' final rules zones for reading, with no
 pending choice or action domain.
+While a last-loss disclosure is still waiting for acknowledgement, registered
+historical public portraits remain readable with empty occurrence IDs in both
+seat and independent spectator snapshots. They grant no current selection keys,
+attachment references or combat references. Current assigned combat omits departed
+cards and defenders without clearing an attacker's actual `blocked` status.
+After the rules outcome completes, exact registered final-zone display identities
+retain their existing behavior. This does not change current-card admission or
+the requirement that same-board public projections agree.
 
 **Source candidate:** current stack target references can identify a public
 face-down battlefield occurrence through its existing anonymous `combatId` and
@@ -1931,6 +2003,11 @@ leaves combat, Forge keeps the attacking creature in combat without a current
 defender (CR 506.4c). The adapter reports `hasDefender: false` and `defender: null`,
 retaining the attacker, blockers, blocked status, and original `defendingPlayerId`
 for the blocking relation. That player is not a replacement damage recipient.
+The same historical player ID remains when that player has lost while a loss
+reveal is pending. Both owned and spectator audiences retain the actual known
+original player, with no current defender or legal candidate for that player;
+they never substitute another player ID. A genuinely unknown original player
+remains unknown rather than being fabricated as player zero.
 Internal absent-target helpers receive no public card identity or name and are
 excluded from current defender choices. Clients treat an omitted `hasDefender`
 as true for older engine snapshots; false with a non-null defender is invalid.

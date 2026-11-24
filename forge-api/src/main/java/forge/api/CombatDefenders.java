@@ -1,5 +1,6 @@
 package forge.api;
 
+import forge.game.Game;
 import forge.game.GameEntity;
 import forge.game.GameEntityView;
 import forge.game.card.Card;
@@ -25,6 +26,10 @@ final class CombatDefenders {
         if (entity instanceof Player player) return !player.hasLost();
         if (entity instanceof Card card) return card.isInPlay() && (card.isPlaneswalker() || card.isBattle());
         return false;
+    }
+
+    static boolean isCurrent(Game game, GameEntity entity) {
+        return isCurrent(entity) && (!(entity instanceof Card card) || CurrentCardViews.isCurrent(game, card.getView()));
     }
 
     static boolean isCurrent(GameEntityView entity) {

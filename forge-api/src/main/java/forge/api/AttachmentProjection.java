@@ -28,8 +28,10 @@ final class AttachmentProjection {
 
     private static Map<String, Object> reference(CardView card, PlayerView viewer, CombatCardIds ids) {
         if (card == null || !MatchSession.isVisibleInZone(card, ZoneType.Battlefield, viewer)) return null;
+        String identity = ids.id(card);
+        if (identity == null || identity.isEmpty()) return null;
         var result = new LinkedHashMap<String, Object>();
-        result.put("id", ids.id(card));
+        result.put("id", identity);
         result.put("name", card.isFaceDown() ? "Face-down permanent" : card.getCurrentState().getName());
         result.put("type", card.isFaceDown() ? "" : card.getCurrentState().getType().toString());
         return result;

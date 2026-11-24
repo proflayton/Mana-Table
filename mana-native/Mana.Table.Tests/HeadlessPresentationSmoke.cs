@@ -38,6 +38,7 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "ai-experiments") {
                     AiFixtureIsolationChecks.Run(profile, Check);
                     LibraryAcquisitionWireChecks.Run(Check);
+                    RememberedMillLifeLossWireChecks.Run(Check);
                     AiExperimentWorkerChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     AiExperimentReplayChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                     AiLibraryAcquisitionOwnedChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
@@ -55,6 +56,7 @@ internal static partial class HeadlessPresentationSmoke
                 else if (group == "mana-pool") CheckManaPoolPaymentClarity(profile, Check, trace, performance);
                 else if (group == "keyword-help") CheckKeywordHelp(profile, Check, trace, performance);
                 else if (group == "commander-combat") CommanderCombatWireChecks.Run(Check);
+                else if (group == "departed-defender") CheckDepartedDefender(profile, Check, trace, performance);
                 else if (group == "priority-notifications") PriorityNotificationChecks.Run(profile, Check);
                 else if (group == "priority-abilities") CheckPriorityAbilityPreferences(profile, Check, trace, performance);
                 else if (group == "target-restrictions") {
@@ -78,6 +80,7 @@ internal static partial class HeadlessPresentationSmoke
                     AiCampaignStepWaitNegativeChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
                 }
                 else if (group == "typed-return-evidence") AiReleaseGoldens.CheckTypedReturnEvidence(Check);
+                else if (group == "cooperative-stack") AiReleaseGoldens.CheckCooperativeStackWitness(Check);
                 else if (group == "owner-read-marker") PolledFullGameContractChecks.RunOwnerReadMarkerControlAsync(profile, Check).GetAwaiter().GetResult();
                 else if (group == "owner-read-related") PolledFullGameContractChecks.RunOwnerReadRelatedAsync(profile, Check).GetAwaiter().GetResult();
                 else if (group == "owner-read-lineage") PolledFullGameContractChecks.RunOwnerReadLineageControlAsync(profile, Check).GetAwaiter().GetResult();
@@ -194,6 +197,7 @@ internal static partial class HeadlessPresentationSmoke
             AttachmentOwnedChecks.RunPinned(profile, Check);
             AiFixtureIsolationChecks.Run(profile, Check);
             LibraryAcquisitionWireChecks.Run(Check);
+            RememberedMillLifeLossWireChecks.Run(Check);
             AiExperimentWorkerChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             AiExperimentReplayChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
             AiLibraryAcquisitionOwnedChecks.RunAsync(profile, Check).GetAwaiter().GetResult();
@@ -206,6 +210,7 @@ internal static partial class HeadlessPresentationSmoke
             HandReductionWireChecks.Run(Check);
             AiReleaseGoldens.CheckReceiptEvidence(Check);
             AiReleaseGoldens.CheckTypedReturnEvidence(Check);
+            AiReleaseGoldens.CheckCooperativeStackWitness(Check);
             AiEngineCampaign.CheckDisclosureBounds(Check);
             ForgePublicProjectionChecks.Run(profile, Check);
             CapturePngChecks.Run(Check);
