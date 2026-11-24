@@ -191,14 +191,14 @@ internal static class AiPunisherChoiceJourney
                         var certificate = risk.RememberedMillLifeLoss!;
                         var source = owner.Zone("Battlefield").Cards.Single(card => CardViews.Identity(card) == certificate.SourceCardId);
                         var mill = risk.OperationGraph.Operations.Single(node => node.Id == risk.OperationGraph.RootId);
-                        var loss = risk.OperationGraph.Operations.Single(node => node.Id == certificate.LifeLossOperationId);
+                        var lossNode = risk.OperationGraph.Operations.Single(node => node.Id == certificate.LifeLossOperationId);
                         if (certificate.Version != 1 || certificate.ObservedCount != 4
                             || !source.Counters.TryGetValue(certificate.CounterType, out int counter) || counter != 4
-                            || mill.ActorPlayerId != controller || loss.ActorPlayerId != controller
+                            || mill.ActorPlayerId != controller || lossNode.ActorPlayerId != controller
                             || mill.Recipients.Entities is not [{ Kind: SemanticEntityKind.Player, PlayerId: var milled }] || milled != controller
-                            || loss.Recipients is not { Knowledge: SemanticKnowledge.Known, Binding: EffectRecipientBinding.Explicit,
+                            || lossNode.Recipients is not { Knowledge: SemanticKnowledge.Known, Binding: EffectRecipientBinding.Explicit,
                                 Entities: [{ Kind: SemanticEntityKind.Player, PlayerId: var harmed }] } || harmed != decider
-                            || mill.Amount != null || loss.Amount != null || loss.AmountKnowledge != SemanticKnowledge.Unknown)
+                            || mill.Amount != null || lossNode.Amount != null || lossNode.AmountKnowledge != SemanticKnowledge.Unknown)
                             throw new InvalidDataException("The actual deciding input lacks the frozen public four-card exposure and exact affected players.");
                         beforeHand = owner.Zone("Hand").Count; beforeLibrary = owner.Zone("Library").Count;
                         string execution = state.Decision.ExecutionId;
