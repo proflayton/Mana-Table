@@ -69,7 +69,7 @@ final class CurrentChoiceMillLifeLossProjection {
     }
 
     private static boolean noCost(SpellAbility ability) {
-        return ability.getPayCosts() == null || ability.getPayCosts().getCostParts().isEmpty();
+        return CurrentEffectChoice.noCost(ability);
     }
     private static boolean plain(SpellAbility ability, Set<String> allowed) {
         return !ability.isWrapper() && !ability.isReplacementAbility() && !ability.usesTargeting()

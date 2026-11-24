@@ -116,6 +116,11 @@ Mill must remember its output, followed by exact LoseLife using
 `Remembered$CardManaCost`, then Cleanup clearing memory. Closed parameter
 allowlists exclude arithmetic, additional effects, conditions, payments,
 repetition, optional/secret/random choices and unrelated memory-writing paths.
+Forge's shared canonical `AbilitySub` `Cost.Zero` contains a synthetic zero-mana
+part. Only that exact unrestricted literal-zero marker on an actual owned
+subability recipe is normalized to empty projected costs. Authored zero-looking
+cost objects, X, nonmana costs and unowned prospective graphs retain their parts;
+they do not acquire this certificate.
 No name, description, AILogic value, past outcome or deck/library content supplies
 capability. The public source is face-up/current on Battlefield, its observed
 counter agrees with its published view, and all three nodes have that source and
@@ -147,8 +152,10 @@ continue to do that.
 from the tracked card script and separately controlled owned callback matrices
 at life40/12 and influence0/1/2/4. Controlled callback setup is not represented
 as natural game play. The native client/wire checks cover roundtrip, missing old
-facts, conflict rejection and unchanged v6 proposals. These source-authored
-checks must pass the exact integrated head before this slice is qualified.
+facts, conflict rejection and unchanged v6 proposals on the fixed contract
+fixture. This repairs facts across qualifying current effect choices; it is not
+a universal old/new-provider proposal equivalence claim. These checks must pass
+the exact integrated head before this slice is qualified.
 
 ## Separate policy experiment after fact review
 

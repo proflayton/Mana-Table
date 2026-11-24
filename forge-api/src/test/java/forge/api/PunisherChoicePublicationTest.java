@@ -79,6 +79,7 @@ public class PunisherChoicePublicationTest {
                 var raw = fixture.session().automatedObservation();
                 ChoicePublicationTest.assertImmutableOptions((List<?>)((Map<?, ?>)raw.get("semantics")).get("options"));
                 fixture.source.setCounters(CounterEnumType.INFLUENCE, counters + 1);
+                fixture.source.getView().updateCounters(fixture.source);
                 assertEquals(fixture.observation(), before, "Changing a live source cannot rewrite a retained immutable publication");
                 fixture.table.publish(); assertCertificate(fixture.observation(), counters + 1);
                 assertSnapshot(before, counters); return null;
@@ -117,6 +118,14 @@ public class PunisherChoicePublicationTest {
                     loss.setSVar("Y", unsupported); fixture.table.publish(); assertDeclined(fixture.observation(), true);
                 }
                 loss.setSVar("Y", oldY);
+                var defaultCost = mill.getPayCosts();
+                for (var authoredCost : List.of(new Cost("1", false), new Cost("X", false), new Cost("T", false), new Cost("0", false))) {
+                    mill.setPayCosts(authoredCost); fixture.table.publish(); var costed = fixture.observation();
+                    assertDeclined(costed, true);
+                    assertFalse(nodes(option(costed, "Mill").getAsJsonObject("operationGraph")).get(0).getAsJsonArray("costs").isEmpty(),
+                            "Authored payments, including X and zero-looking noncanonical costs, keep their existing projected parts");
+                }
+                mill.setPayCosts(defaultCost);
                 fixture.owner.getMapParams().put("TempRemember", "True"); fixture.table.publish(); assertDeclined(fixture.observation(), true);
                 fixture.owner.getMapParams().remove("TempRemember");
                 fixture.owner.getTargets().add(fixture.actor()); fixture.table.publish(); assertDeclined(fixture.observation(), false);
@@ -138,6 +147,8 @@ public class PunisherChoicePublicationTest {
                 var prospectiveLoss = nodes(JSON.toJsonTree(prospective).getAsJsonObject()).stream()
                         .filter(node -> text(node, "effect").equals("LifeLoss")).findFirst().orElseThrow();
                 assertEquals(text(prospectiveLoss.getAsJsonObject("recipients"), "knowledge"), "Unknown");
+                assertEquals(prospectiveLoss.getAsJsonArray("costs").size(), 1,
+                        "An unowned prospective graph retains its legacy zero-cost marker; normalization is current-choice only");
                 var foreignOwner = AbilityFactory.getAbility(fixture.source.getSVar("DBChoice"), fixture.source);
                 foreignOwner.setActivatingPlayer(fixture.actor()); foreignOwner.getTargets().add(fixture.chooser());
                 ((forge.game.spellability.AbilitySub)mill).setParent(foreignOwner);
@@ -226,6 +237,8 @@ public class PunisherChoicePublicationTest {
         for (var node : nodes(graph)) if (!text(node, "effect").equals("Cleanup")) {
             assertTrue(node.get("amount").isJsonNull()); assertEquals(text(node, "amountKnowledge"), "Unknown"); assertEquals(text(node, "knowledge"), "Unknown");
         }
+        for (var node : nodes(graph)) assertTrue(node.getAsJsonArray("costs").isEmpty(),
+                "Canonical AbilitySub Cost.Zero is not a payment obligation on the current resolving branch");
         var recipients = loss.getAsJsonObject("recipients"); assertEquals(text(recipients, "binding"), "Explicit");
         assertEquals(text(recipients, "knowledge"), "Known"); assertTrue(recipients.get("targetOperationId").isJsonNull());
         assertEquals(recipients.getAsJsonArray("entities").size(), 1);
@@ -255,7 +268,7 @@ public class PunisherChoicePublicationTest {
             var seats = java.util.stream.IntStream.range(0, 4).mapToObj(seat -> MatchTable.automated(new Deck(), "Constructed", "Seat " + seat)).toList();
             table = new MatchTable("Constructed", seats, resources, evidence, true); HeadlessPlatform.activate(table);
             source = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard(PALANTIR), actor()); actor().getZone(ZoneType.Battlefield).add(source);
-            source.setCounters(CounterEnumType.INFLUENCE, counters); chooser().setLife(life, null);
+            source.setCounters(CounterEnumType.INFLUENCE, counters); source.getView().updateCounters(source); chooser().setLife(life, null);
             owner = AbilityFactory.getAbility(source.getSVar("DBChoice"), source); owner.setActivatingPlayer(actor()); owner.getTargets().add(chooser());
             if (renamed) {
                 source.setName("Unrelated test artifact");

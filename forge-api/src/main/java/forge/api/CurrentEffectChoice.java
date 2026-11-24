@@ -1,6 +1,8 @@
 package forge.api;
 
 import forge.game.ability.ApiType;
+import forge.game.cost.Cost;
+import forge.game.cost.CostPartMana;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.spellability.SpellAbilityView;
@@ -71,5 +73,17 @@ final class CurrentEffectChoice {
 
     Player parentPlayer(SpellAbility ability) {
         return owns(ability) && ability.getParentTargetingPlayer() == owner ? selectedPlayer() : null;
+    }
+
+    /** AbilitySub uses the shared Cost.Zero object, whose implementation has
+     * one synthetic zero-mana part. It is not a payment on this resolving branch.
+     * Do not erase authored costs or general zero-looking cost expressions. */
+    static boolean noCost(SpellAbility ability) {
+        var cost = ability.getPayCosts();
+        if (cost == null || cost.getCostParts().isEmpty()) return true;
+        return cost == Cost.Zero && cost.getCostParts().size() == 1
+                && cost.getCostParts().get(0) instanceof CostPartMana mana && mana.getMana().isZero()
+                && mana.getXMin() == 0 && !mana.isExiledCreatureCost() && !mana.isEnchantedCreatureCost()
+                && !mana.isCostPayAnyNumberOfTimes() && mana.getMaxWaterbend() == null;
     }
 }

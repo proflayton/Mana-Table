@@ -9,6 +9,7 @@ import forge.game.card.CardCollectionView;
 import forge.game.card.CardView;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
+import forge.game.spellability.AbilitySub;
 import forge.game.spellability.StackItemView;
 import forge.game.trigger.WrappedAbility;
 import forge.game.zone.ZoneType;
@@ -270,7 +271,10 @@ final class ActionOperationProjection {
                 "counterType", ability.getParamOrDefault("CounterType", ""), "conditional", conditional,
                 "originZone", origin, "destinationZone", destination,
                 "sources", sources, "recipients", recipients, "targets", targets,
-                "costs", committed || ability.getPayCosts() == null ? List.of() : ability.getPayCosts().getCostParts().stream().map(ActionSemantics::cost).toList(),
+                "costs", committed || ability.getPayCosts() == null
+                        || currentChoice != null && ability instanceof AbilitySub
+                            && currentChoice.owns(ability) && CurrentEffectChoice.noCost(ability)
+                        ? List.of() : ability.getPayCosts().getCostParts().stream().map(ActionSemantics::cost).toList(),
                 "links", List.copyOf(links.get(index)));
         // Keep the legacy Unknown enum/knowledge on every wire, including
         // ordinary TCP stack snapshots. New readers can admit the optional

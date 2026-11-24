@@ -232,6 +232,10 @@ a resolved number of milled cards.
 The producer requires the actual current callback owner, same current public
 face-up Battlefield source, exact ordinary parameter allowlists, no costs,
 conditions, extra effects, alternate memory paths or additional choices. An
+actual owned `AbilitySub` recipe's shared canonical `Cost.Zero` marker has no
+payment obligation and is projected as empty costs after checking its literal
+zero mana and absent restrictions. Authored costs, X, restricted/nonmana payments
+and unowned prospective graphs keep their existing cost projection. An
 emptiness-only `hasRemembered()` prerequisite excludes unrelated existing
 memory. It does not enumerate, count, type-check or disclose any remembered
 object or read any library/deck content. A nonempty source declines this optional
