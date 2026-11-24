@@ -44,7 +44,8 @@ internal static class PolledFanoutEngineJourney
             if (!value) throw new InvalidDataException(message);
             check(value, message); checks.Add(message);
         }
-        var botPort = new PolledLobbyPorts.BotPort(engines[0]);
+        var openingPort = new QuietOpeningPort(engines[0]);
+        var botPort = new PolledLobbyPorts.BotPort(openingPort);
         var pacingDuration = TimeSpan.FromSeconds(2.4);
         var pacing = new TimedAiHostPacing(pacingDuration);
         var ai = new AiTableHost(botPort, _ => new CasualCommanderPolicy(), 261104,
@@ -188,6 +189,19 @@ internal static class PolledFanoutEngineJourney
                                     && state.Viewer!.Zone("Command").Cards.Count(card => card.Name == "Power Play") == 1
                                     && state.Players.Sum(participant => participant.Zone("Command").Cards.Count(card => card.Name == "Power Play")) == 1,
                                 "The declared Power Play conspiracy makes the ordinary host the actual turn-one starting player before its cast");
+                            var openings = openingPort.FirstOpenings;
+                            var keeps = botPort.Receipts.Where(receipt => receipt.Command is KeepOpeningHand).ToArray();
+                            Require(openings.Select(opening => opening.SeatId).SequenceEqual(new[] { 2, 3 })
+                                    && openings.All(opening => opening.GameId == state.Id && opening.ViewerId == opening.SeatId
+                                        && opening.HandCount == 4 && opening.OwnedCards == 4 && opening.KeepEnabled
+                                        && state.Players.Single(participant => participant.Id == opening.ViewerId).Zone("Hand").Count == 4)
+                                    && keeps.Length == 2 && openings.All(opening => keeps.Count(receipt => receipt.Seat == opening.SeatId
+                                        && receipt.Command is KeepOpeningHand keep && keep.GameId == opening.GameId
+                                        && keep.DecisionId == opening.DecisionId) == 1)
+                                    && !botPort.Receipts.Any(receipt => receipt.Command is MulliganOpeningHand),
+                                "Both quiet AI seats receive their declared four-card owned opening and keep it through the normal policy and current decision, without forced answers or mulligans");
+                            facts["quietAiStartingHand"] = 4; facts["quietAiOrdinaryKeeps"] = keeps.Length;
+                            facts["quietAiMulligans"] = 0;
                             startingPlayerVerified = true;
                             facts["hostStartingTurn"] = state.Turn;
                         }
@@ -370,6 +384,8 @@ internal static class PolledFanoutEngineJourney
                     scope = "Shipping timed pacing with fresh real AI policy decisions; not a diagnostic bypass or proof of a live slowdown's cause." },
                 startingPlayer = new { rule = "Power Play conspiracy", testOnly = true, verified = startingPlayerVerified,
                     purpose = "The actual pregame rule puts the host's controlled cast on turn one without changing AI strategy or pacing." },
+                openingResources = new { fixtureOnly = true, quietAiStartingHand = 4, firstOwnedOpenings = openingPort.FirstOpenings,
+                    scope = "Only the two quiet AI registered starting hands are authored; human resources, legal AI lists, real opening choices, shipping policy, pacing and all qualification clocks are unchanged. This is not a production throughput improvement." },
                 aiHistoryCapacity = 1024,
                 capturedTriggers = captured.Count, optionalPaymentTriggers = eyeTriggers.Count, coherentPublicCheckpoints = coherent,
                 projectionContinuityVerified,
@@ -387,6 +403,35 @@ internal static class PolledFanoutEngineJourney
             clock.Check();
             foreach (var player in players) player.Projection.ThrowIfFaulted();
         }
+    }
+
+    private sealed record QuietOpening(int SeatId, int ViewerId, string GameId, string DecisionId,
+        long Revision, long BoardRevision, int HandCount, int OwnedCards, bool KeepEnabled);
+
+    // Observe the real host's existing reads without adding a poll or retaining
+    // card faces. Capture the FIRST opening even if its resources are wrong.
+    private sealed class QuietOpeningPort(IAutomatedSeatProvider inner) : IAutomatedSeatProvider
+    {
+        private readonly ConcurrentDictionary<int, QuietOpening> first = new();
+        internal ImmutableArray<QuietOpening> FirstOpenings => first.Values.OrderBy(opening => opening.SeatId).ToImmutableArray();
+        public Task EnableAutomatedSeatsAsync(CancellationToken cancellation = default) => inner.EnableAutomatedSeatsAsync(cancellation);
+        public async Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync(CancellationToken cancellation = default)
+        {
+            var batch = await inner.ObserveAutomatedSeatsAsync(cancellation);
+            foreach (var observation in batch) {
+                if (observation.SeatId is not (2 or 3)
+                        || observation.State.Decision is not { Payload: OpeningHandPayload opening } decision) continue;
+                var hand = observation.State.Viewer?.Zone("Hand");
+                first.TryAdd(observation.SeatId, new(observation.SeatId, observation.State.ViewerId,
+                    observation.State.Id, decision.Id, observation.State.Revision, observation.State.BoardRevision,
+                    hand?.Count ?? -1, hand?.Cards.Length ?? -1, opening.Keep.Enabled));
+            }
+            return batch;
+        }
+        public Task ExecuteAutomatedAsync(int seatId, GameCommand command, CancellationToken cancellation = default)
+            => inner.ExecuteAutomatedAsync(seatId, command, cancellation);
+        public Task ReportAutomationFaultAsync(string gameId, int seatId, string reason, CancellationToken cancellation = default)
+            => inner.ReportAutomationFaultAsync(gameId, seatId, reason, cancellation);
     }
 
     internal static async Task StartMatchAsync(JourneyProgressClock clock, Func<Task> start)
