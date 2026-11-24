@@ -12,7 +12,7 @@ internal static class AiOwnLifeChoiceGrade
     internal static int? PreferredIndex(AiDecisionFrame frame, string kind)
     {
         var state = frame.State;
-        if (state.Viewer is not { Eliminated: false, Life: > 0 } || state.DecisionOwnerId != state.ViewerId
+        if (state.Status != "playing" || state.Viewer is not { Eliminated: false, Life: > 0 } || state.DecisionOwnerId != state.ViewerId
             || frame.Semantics.SelectionIsCost || frame.Semantics.Intent is DecisionIntent.Discard or DecisionIntent.Sacrifice
             || state.Decision?.Payload is not OptionsPayload { CounterPayment: null, ManaPaymentContext: null,
                 HandReduction: null, LibraryAcquisition: null, Selection.Range: { Min: 1, Max: 1 } } payload

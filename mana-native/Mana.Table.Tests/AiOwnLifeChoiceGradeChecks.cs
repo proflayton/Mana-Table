@@ -52,6 +52,11 @@ internal static class AiOwnLifeChoiceGradeChecks
         var certified = Frame(original);
         check(!Grade(certified, "prefer-fixed-self-loss", Command(certified, 41))["eligible"]!.GetValue<bool>(),
             "An unknown aggregate cannot gain the known-bounded-loss endpoint through an option label");
+        bool finishedRejected = false;
+        try { _ = Frame(original with { State = original.State with { Status = "finished" } }); }
+        catch (ArgumentException) { finishedRejected = true; }
+        check(finishedRejected,
+            "A finished-world snapshot cannot enter the live authored preference grader through production frame admission");
     }
 
     private static System.Text.Json.Nodes.JsonObject Grade(AiDecisionFrame frame, string kind, DecisionCommand command)
