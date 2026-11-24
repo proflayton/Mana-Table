@@ -71,6 +71,10 @@ public final class AiReleaseFixtureEngine {
         // the actual spell and enough real cards for its 55 draws.
         var hostMain = players.get(0).getDeck().getMain();
         hostMain.clear(); hostMain.add(StaticData.instance().getCommonCards().getCard("Shamanic Revelation"), 99);
+        // Declared private fixture resources: quiet all-basic AI lists begin
+        // with four cards and still answer their ordinary opening input using
+        // the shipping policy and pacing. Human starting resources are unchanged.
+        players.get(2).setStartingHand(4); players.get(3).setStartingHand(4);
         // Use the real pregame starting-player rule. This keeps the measured
         // trigger workload on turn one without overriding an AI's choices.
         var powerPlay = StaticData.instance().getVariantCards().getCard("Power Play");

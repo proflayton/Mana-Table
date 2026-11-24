@@ -310,11 +310,19 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
             case 12:
                 Check(ClickAccepted && scenario.Replies is [IgnorePriorityAbility { AbilityId: "mesa-fetch" }], "The contextual control submits only the selected ability preference");
                 Check(state.Decision?.Payload is PriorityPayload { CanAutoPass: true } && state.IgnoredPriorityAbilities is [{ Id: "mesa-fetch", IgnoredUntilNextTurn: true }], "Engine-authorized Auto becomes eligible after ignoring the sole response");
-                Check(view.Automatic && view.Held && view.Hits.Any(h => h.Id == "confirm"), "Hold continues to expose manual priority after an ability is ignored");
-                Check(view.Hits.Any(h => h.Id == "ability-auto-pass-open") && !view.Hits.Any(h => h.Id == "ability-undo:mesa-fetch"),
-                    "The armed preference keeps its compact list entry rather than a direct Restore switch or persistent source panel");
+                Check(view.Automatic && view.Held && view.Overlay == "priority-stops"
+                    && view.Hits.Any(h => h.Id == "ability-undo:mesa-fetch")
+                    && !view.Hits.Any(h => h.Id is "confirm" or "ability-auto-pass-open"),
+                    "Acknowledging Skip retains the activation list and its current Stop control without exposing the held priority behind it");
                 Capture(surface, "04-ability-ignored-held");
-                Publish(state with { Decision = null, Status = "resolving" }); view.SetHeld(false); Next(); break;
+                Press("ability-list-backdrop"); stage = 120; changed = view.Now; break;
+            case 120: Release(); Next(); break;
+            case 121:
+                Check(ClickAccepted && view.Overlay.Length == 0 && view.Automatic && view.Held
+                    && view.Hits.Any(h => h.Id == "confirm") && view.Hits.Any(h => h.Id == "ability-auto-pass-open"),
+                    "Explicit dismissal returns the compact activation entry and held manual priority without changing its preference");
+                Publish(state with { Decision = null, Status = "resolving" }); view.SetHeld(false);
+                stage = 13; changed = view.Now; break;
             case 13:
                 Check(view.Hits.Any(h => h.Id == "ability-auto-pass-open") && state.IgnoredPriorityAbilities[0].SourceCardKey.Length == 0,
                     "The retained policy stays readable between prompts without retaining a source action handle");
@@ -363,11 +371,21 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
             case 21: Release(); Next(); break;
             case 22:
                 Check(state.IgnoredPriorityAbilities is [{ Id: "mesa-second" }] && state.Decision?.Payload is PriorityPayload { CanAutoPass: false }, "Ignoring one ability does not suppress another ability on the same card");
-                Check(view.Hits.Any(h => h.Id == "confirm"), "Another available response still stops Auto");
+                Check(view.Overlay == "priority-stops" && view.Automatic && view.Held
+                    && view.Hits.Any(h => h.Id == "ability-pass:mesa-fetch")
+                    && view.Hits.Any(h => h.Id == "ability-undo:mesa-second")
+                    && !view.Hits.Any(h => h.Id == "confirm" || h.Zone == "Battlefield"),
+                    "Skipping one of two same-source activations retains both independent current list controls and blocks the underlying table");
+                Capture(surface, "07-same-source-ability-skipped-list");
+                Press("ability-list-backdrop"); stage = 220; changed = view.Now; break;
+            case 220: Release(); Next(); break;
+            case 221:
+                Check(ClickAccepted && view.Overlay.Length == 0 && view.Hits.Any(h => h.Id == "confirm"),
+                    "Explicitly dismissing the retained list reveals manual priority while the other available response still stops Auto");
                 var mesaHit = view.Hits.First(h => h.Card?.VisualId == "mesa" && h.Zone == "Battlefield");
                 Check(mesaHit.Card!.Selectable && CardActions.CanActivate(state, mesaHit.Card), "An ignored source remains available for manual activation");
                 manualGame = state.Id; manualDecision = state.Decision!.Id; manualCard = mesaHit.Card.Key;
-                Press(mesaHit.Id); Next(); break;
+                Press(mesaHit.Id); stage = 23; changed = view.Now; break;
             case 23: Release(); Next(); break;
             case 24:
                 if (view.DisplayedPose("mesa") is not { Size.X: >= 400 } || !view.Hits.Any(hit => hit.Id == "read-card-action")) return;
