@@ -2538,6 +2538,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (!selectionDialog(prompt) || !selectionOwnerCurrent(prompt) || !table.currentPublication(boardRevision)
                 || sourceActionVersion.get() != sourceVersion) return false;
         var choices = prompt.offeredChoices;
+        var effectChoice = human.getEffectChoiceContext();
         boolean ordered = prompt.orderedChoices;
         int minimum = prompt.min, maximum = prompt.max;
         var paying = game.costPaymentStack.peek();
@@ -2552,7 +2553,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                             map("destination", item.destination(), "maximumCount", item.maximumCount())).toList()));
         }
         var base = DecisionSemantics.describeContext(paying);
-        var options = DecisionSemantics.options(choices, human::getDecisionAbility, human.getPlayer(), this::semanticCardId);
+        var currentChoice = paying == null && !ordered && minimum == 1 && maximum == 1
+                ? CurrentEffectChoice.capture(choices, effectChoice, human.getPlayer()) : null;
+        var options = DecisionSemantics.options(choices, human::getDecisionAbility, human.getPlayer(), this::semanticCardId, currentChoice);
         var ordering = DecisionSemantics.ordering(choices, ordered, minimum, maximum);
         // Offered indices remain answerable when an ambient cost changes.
         automatedFacts.putAll(game.costPaymentStack.peek() == paying ? base
@@ -2564,6 +2567,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         return table.currentPublication(boardRevision) && sourceActionVersion.get() == sourceVersion
                 && selectionOwnerCurrent(prompt) && prompt.offeredChoices == choices
+                && human.getEffectChoiceContext() == effectChoice
+                && (currentChoice == null || currentChoice.selectedPlayer() != null)
                 && prompt.orderedChoices == ordered && prompt.min == minimum && prompt.max == maximum
                 && (!projectedPrompt.containsKey("libraryAcquisition") || acquisition == human.getLibraryAcquisitionOffer()
                     && acquisition.matches(human.getPlayer(), choices));

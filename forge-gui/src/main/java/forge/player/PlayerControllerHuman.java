@@ -136,6 +136,15 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
 
     protected Map<SpellAbilityView, SpellAbility> spellViewCache = null;
     private volatile Map<SpellAbilityView, ? extends SpellAbility> decisionAbilities = Map.of();
+    private volatile EffectChoiceContext effectChoiceContext;
+
+    /** The actual owner of this blocking callback, never reconstructed from a
+     * source card or an option's description. Nested callbacks restore it. */
+    public record EffectChoiceContext(SpellAbility owner, Player chooser,
+                                     Map<SpellAbilityView, ? extends SpellAbility> abilities, int count) {
+        public EffectChoiceContext { abilities = Map.copyOf(abilities); }
+    }
+    public EffectChoiceContext getEffectChoiceContext() { return effectChoiceContext; }
     private volatile forge.game.player.LibraryAcquisitionOffer libraryAcquisitionOffer;
 
     /** Provenance for the exact currently blocking zone-change choice only. */
@@ -152,16 +161,27 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     public SpellAbility getDecisionAbility(SpellAbilityView view) { return decisionAbilities.get(view); }
 
     private <T> T withDecisionAbilities(Map<SpellAbilityView, ? extends SpellAbility> abilities, Supplier<T> choose) {
+        return withDecisionAbilities(abilities, null, choose);
+    }
+
+    private <T> T withDecisionAbilities(Map<SpellAbilityView, ? extends SpellAbility> abilities,
+                                       EffectChoiceContext context, Supplier<T> choose) {
         var previous = decisionAbilities;
+        var previousContext = effectChoiceContext;
         decisionAbilities = Map.copyOf(abilities);
+        effectChoiceContext = context;
         PlayerControllerHuman controlling = getPlayer().isControlled()
                 && getPlayer().getControllingPlayer().getController() instanceof PlayerControllerHuman controller ? controller : this;
         var controllingPrevious = controlling.decisionAbilities;
+        var controllingPreviousContext = controlling.effectChoiceContext;
         controlling.decisionAbilities = decisionAbilities;
+        controlling.effectChoiceContext = context;
         try { return choose.get(); }
         finally {
             controlling.decisionAbilities = controllingPrevious;
+            controlling.effectChoiceContext = controllingPreviousContext;
             decisionAbilities = previous;
+            effectChoiceContext = previousContext;
         }
     }
 
@@ -770,6 +790,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         //override generic
         final String decisionTitle = title;
         List<SpellAbilityView> chosen = withDecisionAbilities(spellViewCache,
+                new EffectChoiceContext(sa, getPlayer(), spellViewCache, num),
                 () -> getGui().getChoices(decisionTitle, num, num, Lists.newArrayList(spellViewCache.keySet())));
 
         for (SpellAbilityView view : chosen) {

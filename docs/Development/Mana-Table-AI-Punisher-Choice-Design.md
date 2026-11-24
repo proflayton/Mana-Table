@@ -1,6 +1,6 @@
 # Unpriced uncertainty in opponent-decided effects
 
-Separate proposed experiment. Controlled real-provider fixtures reproduce a mandatory choice in which v6 at 12 life selects an unquantified life-loss branch and is eliminated by the actual 28-life loss. The alternative lets an opponent draw one card. This design records the missing facts and bounded next experiment; it does not claim an implemented policy fix.
+Separate experiment. Controlled real-provider fixtures reproduce a mandatory choice in which v6 at 12 life selects an unquantified life-loss branch and is eliminated by the actual 28-life loss. The alternative lets an opponent draw one card. The reviewed Phase A source contract below preserves unknown outcomes; its current-source tests and separate policy candidate require execution qualification before any improvement or release claim.
 
 The actual card script is `forge-gui/res/cardsfolder/p/palantir_of_orthanc.txt`:
 its GenericChoice offers controller Draw1 or controller MillX followed by the
@@ -52,9 +52,11 @@ The native consumer cannot infer that recipient from an English choice label,
 the card name, an AILogic tag, the acting seat, or a previous observed life loss.
 
 `ActionSemantics.effectAmount` admits literal quantities only. Its Unknown
-result for X/Y is honest. `ActionOperationProjection.targetBinding`, for
-ParentTarget, looks up a parent operation ID; the already chosen targeting
-parent is outside this branch projection, so the recipient remains Unknown.
+result for X/Y is honest. `ActionOperationProjection.targetBinding` originally
+used `getParentTargetingCard()` even for player-valued ParentTarget. Forge's
+actual player semantics use `getParentTargetingPlayer()`. The already chosen
+targeting parent is also outside this branch projection, so merely correcting
+that helper does not repair the missing recipient.
 Do not fix that by copying an arbitrary ancestor graph or inventing target IDs.
 
 `CasualActionAssessment.Evaluate` correctly returns Incomplete/operation-knowledge
@@ -76,52 +78,77 @@ The same ChoiceScore fallback exists in the live 0eaa source. The controlled
 runtime is explicitly default v6 from the frozen diagnostic binaries; this is
 not a claim that the user's installed binary is that newer assembly.
 
-## First execution slice: trustworthy facts, unchanged strategy
+## Reviewed Phase A: trustworthy facts, unchanged strategy
 
-Phase A is independently deliverable. It repairs narrowly qualified structural
-evidence while preserving Unknown outcome amounts and current policy behavior.
+Phase A has two independent facts. The selected recipient can be repaired even
+when the optional quantity dependency declines. Neither changes ChoiceScore,
+generic confirmations, library acquisition or shipping v6's fallback.
 
-1. **Resolved ParentTarget recipient.** In the actual current owned choice
-   publication, resolve the selected parent target through Forge's existing
-   object references. An unambiguous current player may be projected as Known
-   Explicit player recipient even when its targeting operation is outside this
-   branch. Bind to the real parent ability/current pending choice, not any
-   same-source ability or arbitrary remembered player. If the target is absent,
-   ambiguous, secret or not provably related to this branch, retain Unknown.
-   Reuse ordinary game/player roster admission. This does not grant a new command.
-2. **Closed dynamic quantity evidence.** Add optional mechanically typed amount
-   dependency facts, with two initially supported operators:
-   `PublicSourceCounterSnapshot(sourceCardId,counterType,observedCount)` for
-   the exposed Mill operation, and
-   `SumManaValuesOfRememberedMill(inputOperationId)` for its linked LifeLoss.
-   Operator spelling is provisional contract design, not an accepted wire schema.
-   The first records a current public observation; the second describes a
-   dependency, **not** a value, average, probability or upper bound.
-3. Qualify from actual ability parameters/SVar definitions and active references:
-   Mill RememberMilled=True; a mechanically exact current-source counter
-   expression; linked LoseLife depending on those remembered milled cards;
-   deterministic ordinary sequence and cleanup; no paid, conditional, repeat,
-   replacement-description, additional-choice or unrelated remembered-input path.
-   Require evidence that the aggregation input is exactly this mill, excluding
-   preexisting or modified remembered objects. Do not expose those objects.
-4. Keep operation/graph Knowledge Unknown and AmountKnowledge Unknown whenever
-   the eventual loss is unknown. A known dependency and recipient do not make
-   an uncertain numerical effect a complete known forecast. Existing literal
-   quantities and older replays retain their meanings.
+`PlayerControllerHuman` retains a scoped `EffectChoiceContext` for the actual
+blocking callback: owning ability, actual chooser, offered view-to-ability map
+and requested cardinality. Nested callbacks restore it in `finally`, including
+the controlling-player proxy. `MatchSession.captureChoice` checks this exact
+context with its existing pending owner, board publication and source-version
+fences. `CurrentEffectChoice` requires identity membership in that owner's real
+Choices and an exact sequential descendant; a shared source alone proves
+nothing. For player-valued ParentTarget, the nearest selected player ancestor
+must be that owner and its one publicly selected current player must be the
+actual chooser. The output is existing Known/Explicit recipient grammar with no
+parent operation ID. No ancestor graph or legal-target query is added.
 
-Native admission cross-checks every optional operator against the current graph
-node kind, referenced operation ID, actual public source identity/counter,
-player recipient, and immutable owned publication. Reject conflicting evidence;
-do not silently promote it. Missing optional facts remain readable and Unknown.
-No new enum value on the legacy effect wire, target/source occurrence, pass,
-concession, reveal privilege or resolver is needed.
+The reviewed quantity schema is one optional `rememberedMillLifeLoss` field on
+`DecisionOptionSemantics`, rather than a general expression API. Its closed
+version-one fields are `version`, `sourceCardId`, `counterType`, `observedCount`
+and `lifeLossOperationId`. The option graph root is Mill; exactly two Sequence
+edges identify its LifeLoss and terminal Cleanup, with no other nodes or links.
+`counterType` is the exact public counter dictionary key (for example
+`Influence`), not the uppercase script token. Certification requires this exact
+key to be explicitly present in the public dictionary. The ordinary Forge
+snapshot omits a zero counter, so that case declines the certificate while its
+recipient can remain known; an authored explicitly exposed zero remains valid.
+No native mirrored counter-type registry guesses an absent key. Every
+descriptor field is required; missing count cannot silently become zero.
 
-Likely producer files: ActionOperationProjection.java, DecisionSemantics.java,
-ActionSemantics.java if a separate bounded quantity extractor is appropriate,
-and ChoicePublicationTest/owned real-rule tests. Native files: immutable operation
-contracts, Forge mapper/admission, shared wire schema and round-trip regressions.
-The first slice should not modify ChoiceScore, generic confirmations, library
-acquisition or fallback policy behavior.
+`CurrentChoiceMillLifeLossProjection` recognizes actual API/parameter/SVar
+mechanics only. It accepts an unadorned SVar identifier resolving with Forge's
+ability-first/card-fallback precedence to exact `Count$CardCounters.<enum>`;
+Mill must remember its output, followed by exact LoseLife using
+`Remembered$CardManaCost`, then Cleanup clearing memory. Closed parameter
+allowlists exclude arithmetic, additional effects, conditions, payments,
+repetition, optional/secret/random choices and unrelated memory-writing paths.
+No name, description, AILogic value, past outcome or deck/library content supplies
+capability. The public source is face-up/current on Battlefield, its observed
+counter agrees with its published view, and all three nodes have that source and
+actor.
+
+Mill appends to the source's remembered objects, so the producer requires an
+emptiness-only `hasRemembered()` prerequisite. It never enumerates, counts,
+type-checks or reads values from remembered objects. Existing unrelated memory
+declines the certificate. Native cannot verify this internal prerequisite from
+public state; it trusts the producer and validates only the public source,
+counter, exact graph and current owned option. Future replacements and
+continuous-state changes remain unmodeled. The certificate describes a nominal
+dependency at publication; it does not guarantee future remembered objects or
+resolved numeric loss.
+
+Mill/LifeLoss amount and amount knowledge remain null/Unknown and their node
+and graph knowledge stay Unknown, including a zero counter. `ActionSemantics`
+literal amount behavior remains unchanged. Native
+`RememberedMillLifeLossFacts` is shared by the real owned/automated decoders and
+authored AI-frame admission. Invalid present evidence rejects; absent/null old
+facts remain readable. The closed descriptor converter rejects missing,
+duplicate, extra and mistyped fields. Existing older option DTO settings ignore
+the additive property. No legacy enum, overall protocol version, occurrence,
+action handle, pass/reveal/concession privilege or resolver is added. Semantic
+evidence alone cannot prove command ownership; existing current input scopes
+continue to do that.
+
+`PunisherChoicePublicationTest` includes an actual end-step/scry/target journey
+from the tracked card script and separately controlled owned callback matrices
+at life40/12 and influence0/1/2/4. Controlled callback setup is not represented
+as natural game play. The native client/wire checks cover roundtrip, missing old
+facts, conflict rejection and unchanged v6 proposals. These source-authored
+checks must pass the exact integrated head before this slice is qualified.
 
 ## Separate policy experiment after fact review
 
@@ -140,8 +167,11 @@ inputs, every constant and unsupported-case fallback. A conservative low-life
 guard is a plausible hypothesis; these observations establish neither the best
 health threshold nor an expected mana value. Public observed cards could support
 a later explicit uncertain prior, but that is a separate proposal, not authority
-to inspect the library or assume a deck list. Policy execution is not yet approved
-by this design: the numeric tradeoff requires explicit tech-lead review.
+to inspect the library or assume a deck list. The tech lead subsequently reviewed
+and froze a separately versioned candidate using a four-life-per-card stress
+preference; this is not an expected value or a bound derived from hidden test
+decks. Candidate execution/measurement and qualification remain separate from
+Phase A facts and default v6 promotion.
 
 Keep shipping v6, attachment evaluation, and the library-acquisition experiment
 independent. Use a distinct closed registry factory/descriptor for this experiment;
@@ -201,8 +231,11 @@ these two controlled consequences or a single natural win/loss.
 * Proven: actual source quantities/recipient are not presently modeled and the
   fallback ordering systematically prices this risk as a near-zero alternative.
 * Proven: the isolated current v6 choice can resolve to elimination at12life.
-* Required next: review/freeze Phase A typed producer/native contract and exact
-  current-parent qualification; then implement its independent acceptance.
-* Pending: separately reviewed risk-policy rule/constants, experiment rubric,
-  aggregate evaluation and human gameplay approval. No risk-policy production
-  edits or threshold tuning were made during this investigation.
+* Reviewed/frozen: current-owner player binding and the closed version-one
+  nominal remembered-mill certificate, including the emptiness-only gate.
+* Reviewed/frozen separately: candidate four-life stress preference and exact
+  scoped alternatives; it supplies neither a mean nor a guaranteed loss bound.
+* Pending: exact-head integrated execution of Phase A acceptance, independent
+  policy usefulness/risk evaluation, natural comparisons and human gameplay
+  approval. The earlier controlled diagnostics remain diagnostics with their
+  original first-attempt and cleanup caveats.
