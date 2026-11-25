@@ -1,11 +1,13 @@
 # Uncertain own-life exposure experiment
 
-**Source-only experimental candidate; shipping v6 remains unchanged.** The
+**Experimental candidate; shipping default v6 remains unchanged.** The
 separately registered factory is `casual-commander.v6.uncertain-life-risk.v1`.
 It cannot compose the library-acquisition candidate or attachment ablation,
 including through the public options constructor. This document freezes the
-tech-lead-approved preference on 24 November 2026; qualification and human
-casual-Commander review remain pending for the exact integrated candidate.
+tech-lead-approved preference on 24 November 2026. Exact-source bounded
+qualification and the frozen replay comparisons are complete in the
+[measurement report](Mana-Table-AI-Experiment-Results-2026-11-24.md);
+human casual-Commander review and promotion remain pending.
 
 The [original investigation](Mana-Table-AI-Punisher-Choice-Design.md) records the
 real owned choice: at 12 life and four public influence counters, v6 picks an

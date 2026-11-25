@@ -5,6 +5,10 @@ development replays confirm the bounded acquisition selection improvement, but
 the full-game comparison is incomplete and cannot support a strength or promotion
 claim. Shipping remains v6; human casual-Commander review is pending.
 
+A [fresh source148 cohort](Mana-Table-AI-Experiment-Results-2026-11-24.md)
+later completed all 32 natural attempts after the provider fix. It is a separate
+study; this stopped cohort and its original denominator remain unchanged.
+
 The measured source is `fb04a4de1fcc060355c1d893009709016044b1fa`, tree
 `a2bd5e01d4926577eb982539a222684b20bee630`. This report's later documentation
 commit is not the measured source. A fresh local clean-source release-format

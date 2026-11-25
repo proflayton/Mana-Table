@@ -91,6 +91,11 @@ are descriptive and make no general strength or confidence-interval claim.
 
 ## First development measurement
 
+The [fresh source148 measurement](Mana-Table-AI-Experiment-Results-2026-11-24.md)
+records exact-source qualification, repeated tactical comparisons and the full
+32-attempt natural pilot. The [earlier stopped fb04 pilot](Mana-Table-AI-Library-Acquisition-Pilot-2026-11-24.md)
+remains separate. Neither study authorizes default-policy promotion.
+
 At source `3b7877cbecafbf02c71e0296cef61dde321bc807`, the locked four-case
 owned replay comparison completed all eight jobs: baseline 0/4 useful selections,
 candidate 4/4, four corrections and zero regressions, incomplete pairs or invalid
