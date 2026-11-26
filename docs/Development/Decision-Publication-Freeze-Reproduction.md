@@ -92,6 +92,8 @@ It confirms the actual no-land warning when needed. A game must reach an engine
 outcome; 45 seconds without public rules progress fails the run and captures the
 human state, raw AI observations, continuation owners, recent receipts and rules
 thread dump where available.
+The runner also has a 12-minute total time budget. Reaching that budget before
+an outcome is recorded separately from a 45-second loss of rules progress.
 
 `--freeze-fast` removes the AI thinking delay and accelerates presentation time.
 Omit it to retain the production 2.4-second AI cadence. `--freeze-seed <integer>`
@@ -107,6 +109,7 @@ an immutable path while it runs.
 | Fixed engine, focused authority and rules suite | 63 passed, zero failures |
 | Native diagnostic runner build | Passed; one existing AudioSettingsSmoke nullability warning |
 | Fixed engine, accelerated complete local games | Five natural outcomes, turns 27, 33, 34, 40 and 42 |
+| Final candidate, ordinary AI pacing | Advanced through turn 33 for 12 minutes; stopped at the runner's total time budget, with no rules-progress stall |
 
 The captured release failures and the fixed candidate's complete-game results
 are recorded in `F:\ForgeButBetter\.tools\freeze-0510-results.json`, with raw
