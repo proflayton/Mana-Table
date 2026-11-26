@@ -84,6 +84,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private PriorityResponseAttempt priorityResponseAttempt;
     private final SourceReadFailureCapture sourceReadFailure = new SourceReadFailureCapture();
     private long publishedSourceActionVersion = -1;
+    private Pending decisionRefreshQueued;
     private final Map<Input, String> inputEpisodes = new WeakHashMap<>();
     private Input inspectionInput;
     private long inspectionSourceVersion = -1;
@@ -433,7 +434,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     // Any rules mutation, including a hidden one, revokes the previous action
     // capability without disclosing which fact changed.
-    @Subscribe public void onSourceActionEvent(GameEvent event) { sourceActionVersion.incrementAndGet(); }
+    @Subscribe public void onSourceActionEvent(GameEvent event) {
+        sourceActionVersion.incrementAndGet();
+    }
 
     @Subscribe
     public void onQuietYieldEvent(GameEvent event) {
@@ -1094,7 +1097,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                             || human.getInputQueue().getInput() != current.input || human.getInputProxy().getInput() != current.input
                             || (current.input instanceof InputPassPriority || current.input instanceof InputPayMana) && !sourceInputCurrent(current)
                             || isSelectionInput(current.input) && !selectionInputCurrent(current))) {
-                    if (latest.get("prompt") != null && !finished()) markBusy(current);
+                    if (latest.get("prompt") != null && !finished()) {
+                        markBusy(current);
+                    }
+                    queueDecisionRefresh(current);
                     current = null;
                 }
                 Pending observedOwner = pending;
@@ -1179,6 +1185,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         if (captured != null) {
                             current.poolManaColors.clear(); current.publishedDecision = null;
                         }
+                        queueDecisionRefresh(current);
                     }
                     throw new StaleObservationException();
                 }
@@ -2992,6 +2999,22 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (combatRefreshQueued == input) combatRefreshQueued = null;
             if (!closed && error == null && human.getInputProxy().getInput() == input && human.getInputQueue().getInput() == input)
                 input.showMessageInitial();
+        });
+    }
+
+    /** A rules query can invalidate its own publication while the controller
+     * is still waiting. Retire the mixed read now and let the input owner commit
+     * a new cohort later; snapshot reads must not publish or answer the input. */
+    private void queueDecisionRefresh(Pending current) {
+        if (current == null || !current.kind.equals("input") || pending != current
+                || inputActionQueued || !inputOwnerCurrent(current.input) || decisionRefreshQueued == current) return;
+        decisionRefreshQueued = current;
+        long sequence = human.getInputProxy().getInputSequence();
+        HeadlessPlatform.later(() -> {
+            if (decisionRefreshQueued != current) return;
+            decisionRefreshQueued = null;
+            if (pending == current && !inputActionQueued && inputOwnerCurrent(current.input)
+                    && human.getInputProxy().getInputSequence() == sequence) publishInputInState(true);
         });
     }
     private Map<String, Object> combatState(Pending prompt, DecisionHandles handles) {

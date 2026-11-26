@@ -89,6 +89,11 @@ public class GameAction {
     private final Game game;
     private final ReentrantLock stateBoundary = new ReentrantLock(true);
     private volatile boolean stateBoundaryEnabled;
+    private final ThreadLocal<Boolean> staticAbilityEvents = new ThreadLocal<>();
+
+    /** Alternate-face eligibility rebuilds continuous effects with events off.
+     * Player facts must honor that scope too, including its restoration pass. */
+    public boolean publishesStaticAbilityEvents() { return !Boolean.FALSE.equals(staticAbilityEvents.get()); }
 
     /** Opt-in for hosts which instrument every input and synchronous GUI wait. */
     public void enableStateBoundary() { stateBoundaryEnabled = true; }
@@ -1190,6 +1195,16 @@ public class GameAction {
         checkStaticAbilities(runEvents, affectedCards, preList, null);
     }
     public final void checkStaticAbilities(final boolean runEvents, final Set<Card> affectedCards, final CardCollectionView preList, final Set<Card> enteringWith) {
+        Boolean previous = staticAbilityEvents.get();
+        staticAbilityEvents.set(runEvents);
+        try {
+            checkStaticAbilitiesOwned(runEvents, affectedCards, preList, enteringWith);
+        } finally {
+            if (previous == null) staticAbilityEvents.remove(); else staticAbilityEvents.set(previous);
+        }
+    }
+
+    private void checkStaticAbilitiesOwned(final boolean runEvents, final Set<Card> affectedCards, final CardCollectionView preList, final Set<Card> enteringWith) {
         if (isCheckingStaticAbilitiesOnHold()) {
             return;
         }

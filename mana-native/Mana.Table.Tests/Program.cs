@@ -52,6 +52,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-polled-mana-output");
         testRun |= args.Contains("--check-polled-fanout-projection");
         testRun |= args.Contains("--smoke-whole-seat-ai");
+        testRun |= args.Contains("--reproduce-solo-freeze");
         testRun |= args.Contains("--replay-ai-decision");
         testRun |= args.Contains("--attachment-owned-checks");
         testRun |= args.Contains("--replay-projection");
@@ -238,6 +239,8 @@ internal static class Program
             if (args.Contains("--smoke-engine-startup")) { EngineStartupRegression.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-headless-engine")) { HeadlessEngineSmoke.RunAsync(paths, Arg("--production-engine-jar"), Arg("--source-revision"), Arg("--source-manifest")).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-whole-seat-ai")) { AiWholeSeatEngineCheck.RunStandaloneAsync(paths, args.Contains("--ai-complete")).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--reproduce-solo-freeze")) { SoloFreezeJourney.RunAsync(paths,
+                long.Parse(Arg("--freeze-seed") ?? "261125"), args.Contains("--freeze-fast")).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-ai-campaign")) { AiEngineCampaign.RunStandaloneAsync(paths,
                 AiCampaignLimits.ForProfile(Arg("--campaign-profile")), Arg("--production-engine-jar")).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--qualify-mixed-game")) { MixedGameCampaign.RunAsync(paths,
