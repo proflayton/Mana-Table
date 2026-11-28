@@ -14,12 +14,13 @@ final class SeatConnection implements MatchEndpoint, AutoCloseable {
         var server = new SyncTransport.Server((seat, method, p) -> switch (method) {
             case "observe" -> session.state(MatchEndpoint.privateActionFaces(p));
             case "decisionObservation" -> session.decisionObservation(MatchEndpoint.privateActionFaces(p));
+            case "reconcileProgress" -> session.reconcileProgress(p);
             case "reply" -> session.action(p); case "sourceActions" -> session.sourceActions(p); case "concede" -> session.concede(p);
             case "presence" -> session.presence(p);
             case "tempoPresented" -> session.tempoPresented(p);
             case "history" -> session.history(p);
             default -> throw new IllegalArgumentException("Unknown seat command");
-        }, () -> { throw new IllegalStateException("This seat is local"); }, ignored -> { }, Set.of("match-history", "history-announcements", "owned-decision-observation", "private-action-faces", "table-presence", "table-choices-v1", "priority-continuation-v1"));
+        }, () -> { throw new IllegalStateException("This seat is local"); }, ignored -> { }, Set.of("match-history", "history-announcements", "owned-decision-observation", "private-action-faces", "table-presence", "table-choices-v1", "priority-continuation-v1", "match-progress-recovery-v1"));
         return new SeatConnection(server.local(0), () -> { server.close(); session.closeTable(); });
     }
     @SuppressWarnings("unchecked") public Map<String, Object> state() { return (Map<String, Object>)connection.request("observe", new JsonObject()); }
@@ -36,6 +37,11 @@ final class SeatConnection implements MatchEndpoint, AutoCloseable {
         var request = new JsonObject();
         if (privateActionFaces && connection.capabilities().contains("private-action-faces")) request.addProperty("privateActionFaces", true);
         return request;
+    }
+    @SuppressWarnings("unchecked") public Map<String, Object> reconcileProgress(JsonObject command) {
+        if (!connection.capabilities().contains("match-progress-recovery-v1"))
+            throw new SyncTransport.CodedFailure("unsupported-capability", "This host cannot reconcile match progress.");
+        return (Map<String, Object>)connection.request("reconcileProgress", command);
     }
     @SuppressWarnings("unchecked") public Map<String, Object> action(JsonObject command) {
         var action = command.has("action") ? command.get("action").getAsString() : "";

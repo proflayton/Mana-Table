@@ -361,6 +361,9 @@ internal static class HeadlessEngineSmoke
                 await AiReleaseGoldens.RunAsync(engine, paths.Profile, Check);
                 await CooperativeEncounterEngineJourney.RunAsync(engine, paths.Profile, deck.Id, Check);
                 await ConfiguredSimulationEngineJourney.RunAsync(engine, paths.Profile, deck.Id, Check);
+                await ProgressRecoveryEngineJourney.RunAsync(paths with {
+                    Jar = productionJar, Profile = Path.Combine(paths.Profile, "progress-recovery") });
+                Check(true, "The packaged production engine restores masked AI and human inputs through the bounded recovery ports");
             }
             await AiWholeSeatEngineCheck.RunAsync(engine, paths.Profile, Check);
             await AiEngineCampaign.RunAsync(engine, paths.Profile, new(1, 16, TimeSpan.FromSeconds(35)) {

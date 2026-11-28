@@ -60,6 +60,22 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     private boolean closed;
     private boolean faulted;
     private boolean startQueued;
+    boolean reconcilingProgress;
+
+    /** Explicit control repair, serialized with the input owner. No input is
+     * answered, no command replayed, and publication cannot queue Auto here. */
+    Map<String, Object> reconcileProgress() {
+        synchronized (gate) {
+            if (closed || faulted) return Map.of("gameId", id, "status", "retired");
+            boolean previous = reconcilingProgress;
+            reconcilingProgress = true;
+            try {
+                boolean repaired = false;
+                for (var seat : seats.values()) repaired |= seat.republishWaitingInput();
+                return Map.of("gameId", id, "status", repaired ? "reconciled" : "unchanged", "boardRevision", boardRevision);
+            } finally { reconcilingProgress = previous; }
+        }
+    }
     private final CompletableFuture<Void> startupCompletion = new CompletableFuture<>();
     final DecisionTempo tempo;
     private ScheduledExecutorService tempoWorker;
@@ -406,7 +422,10 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
 
     /** Credit replenishment can release any waiting seat, but always re-enters
      * its original mutually exclusive dispatcher under this table boundary. */
-    void continuePriority() { for (var seat : seats.values()) seat.continuePriority(); }
+    void continuePriority() {
+        for (var seat : seats.values()) seat.continuePriority();
+        refreshDecisionState();
+    }
 
     /** Public decision ownership only; a seat's options and prompt remain private. */
     void refreshDecisionState() {
@@ -418,9 +437,13 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
             String actionClass = decisions.isEmpty() ? "resolving" : decisions.size() == 1 ? decisions.get(0).actionClass() : "simultaneous";
             var inspection = publicInspectionContext(owner, actionClass);
             var choice = publicChoiceContext(owner, actionClass);
+            var matchWaits = seats.values().stream().map(MatchSession::progressWait).filter(Objects::nonNull).toList();
+            var readingWaits = humanSeats.stream().map(seats::get).filter(MatchSession::activeHuman)
+                    .filter(MatchSession::priorityObserverRegistered).filter(seat -> !seat.priorityObserverHasCredit())
+                    .map(seat -> seat.playerId()).toList();
             for (var seat : seats.values()) {
                 if (!decisionPublicationCurrent(publication, decisions)) return;
-                seat.updatePublicDecision(owner, actionClass, inspection, choice);
+                seat.updatePublicDecision(owner, actionClass, inspection, choice, matchWaits, readingWaits);
             }
             for (var seat : seats.values()) {
                 if (!decisionPublicationCurrent(publication, decisions)) return;

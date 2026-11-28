@@ -19,6 +19,7 @@ internal sealed partial class TableApplication
         internal Mana.Table.Presentation.PresentationFrame? Frame => game.Frame;
         internal bool Activate(Hit hit) => game.ActivateHit(hit);
         internal bool SubmitCurrent(DecisionCommand command) => game.Send(command);
+        internal Mana.Client.ClientSession Client => game.session;
         internal bool AcceptHistory(HistoryBatch batch) => game.session.History.Accept(batch);
         internal string? HistorySelectionId => game.SelectedHistory?.Id;
         internal string HistoryDetailText => game.SelectedHistory is { } action ? game.HistoryDetails(action) : "";

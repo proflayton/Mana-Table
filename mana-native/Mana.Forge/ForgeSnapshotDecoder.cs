@@ -63,6 +63,7 @@ internal static class ForgeSnapshotDecoder
                 FiniteStackYield = wire.FiniteStackYield,
                 PriorityContinuation = wire.PriorityContinuation, PriorityObservation = wire.PriorityObservation, HumanPlayerIds = wire.HumanPlayerIds,
                 PriorityPlayerId = wire.PriorityPlayerId, DecisionOwnerId = wire.DecisionOwnerId,
+                MatchWaits = wire.MatchWaits, MatchReadingWaits = wire.MatchReadingWaits,
                 ActionClass = wire.ActionClass, States = wire.States, Activity = wire.Activity,
                 Notices = wire.Notices, IgnoredPriorityAbilities = wire.IgnoredPriorityAbilities,
                 PlayAccesses = wire.PlayAccesses, Tempo = wire.Tempo, ActionSources = wire.ActionSources,
@@ -89,6 +90,7 @@ internal static class ForgeSnapshotDecoder
             FiniteResolutionFacts.Validate(snapshot);
             FiniteStackYieldFacts.Validate(snapshot);
             PriorityContinuationFacts.Validate(snapshot);
+            MatchProgressWitness.Validate(snapshot);
             HumanParticipationFacts.Validate(snapshot);
             if (snapshot.Decision?.Payload is OptionsPayload { HandReduction: not null }
                 && !HandReductionFacts.IsCurrent(snapshot)) throw Invalid();
@@ -193,6 +195,8 @@ internal static class ForgeSnapshotDecoder
         public PriorityObservationState? PriorityObservation { get; init; }
         public ImmutableArray<int>? HumanPlayerIds { get; init; }
         public int? PriorityPlayerId { get; init; }
+        public ImmutableArray<MatchWait>? MatchWaits { get; init; }
+        public ImmutableArray<int>? MatchReadingWaits { get; init; }
         public int? DecisionOwnerId { get; init; }
         public string ActionClass { get; init; } = "";
         public ImmutableArray<PublicState> States { get; init; } = [];

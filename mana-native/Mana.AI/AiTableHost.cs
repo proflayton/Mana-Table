@@ -88,9 +88,12 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
                 // Discovery produced no authority. The next ordinary host step
                 // must obtain a new complete batch before evaluating any seat.
                 // Other provider failures still reach the diagnostic/fault path.
+                await CheckSupersededProgressAsync(token).ConfigureAwait(false);
                 return AiHostStepOutcome.WaitForCurrentWork;
             }
+            supersededSince = null;
             pacing?.Observe(observed.Select(item => AiTableProgress.From(item.State)).ToImmutableArray());
+            if (await CheckMatchProgressAsync(observed, token).ConfigureAwait(false)) return AiHostStepOutcome.ReobserveCurrentWork;
             var active = observed.Select(item => (item.State.Id, item.SeatId)).ToHashSet();
             await RetirePriorityOwnersAsync(active, token).ConfigureAwait(false);
             faultedGames.RemoveWhere(game => !active.Any(key => key.Id == game));
@@ -133,6 +136,10 @@ public sealed partial class AiTableHost(IAutomatedSeatProvider provider, Func<in
                     continue;
                 }
                 PriorityWork priorityWork;
+                // No private prompt retires this accepted-command scope. The
+                // shared progress watch owns the ensuing automatic-work wait,
+                // including when priority metadata reserves this iteration.
+                if (state.Decision == null) awaitingObservation.Remove(key);
                 try { priorityWork = await MaintainPriorityAsync(item, session, token).ConfigureAwait(false); }
                 catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
                 catch (Exception error) {

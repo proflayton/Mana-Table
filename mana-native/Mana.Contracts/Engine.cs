@@ -384,6 +384,11 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
     public int? PriorityPlayerId { get; init; }
     // Public acting seat only. Another seat's private prompt/options are never copied here.
     public int? DecisionOwnerId { get; init; }
+    // Engine-reported wait ownership, including simultaneous private choices.
+    // Generations are health evidence, never decision or action capabilities.
+    public ImmutableArray<MatchWait>? MatchWaits { get; init; }
+    // Actual registered human readers whose exhausted delivery credit holds Auto.
+    public ImmutableArray<int>? MatchReadingWaits { get; init; }
     public string ActionClass { get; init; } = "";
     public ImmutableArray<ActivityEntry> Activity { get; init; } = [];
     public ExecutionFrame? Executions { get; init; }

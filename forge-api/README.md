@@ -36,6 +36,27 @@ attachment decision. See the [shared contract and offline export CLI](../contrac
 
 ## Implemented
 
+Hosts advertise additive `match-progress-recovery-v1` capability. Player
+`matchReconcileProgress` requires the current `sessionId`; host-private
+`automatedReconcileProgress` additionally requires an owned integer `seatId`.
+Seat sync exposes `reconcileProgress` only when negotiated. Legacy hosts receive
+no unnegotiated request. Receipts contain `gameId`, `status`
+(`reconciled`, `unchanged`, `retired`) and `boardRevision`. A receipt never grants
+action authority: callers must read a fresh owned observation.
+
+Optional snapshot `matchReadingWaits` lists registered living human seats whose
+actual exhausted delivery credit holds automatic priority. Empty means no human
+reading owner; a bare hold reason grants no indefinite wait. ACKs refresh these
+facts and continuation state for every audience without answering a rules input.
+
+Optional snapshot `matchWaits` rows contain `playerId`, positive episode
+`generation` and `published`. These describe actual unfinished controller
+inputs/dialogs without disclosing options, cards or decision scopes. An unchanged
+episode keeps its generation when publication is lost or restored. Reconciliation
+can republish the existing input, but cannot answer it, replay a command or run
+priority continuation. Healthy repeated calls are inert. These additive fields
+and negotiated control methods require no protocol-version or saved-data change.
+
 Owned library-search options may include optional `libraryAcquisition` facts:
 `actorPlayerId`, `libraryOwnerId`, `recipientPlayerId`, `stage`,
 `currentDestination`, `additionalCostKnownAbsent`, and `plannedDestinations`

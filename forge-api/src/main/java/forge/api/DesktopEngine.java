@@ -93,7 +93,7 @@ public final class DesktopEngine implements AutoCloseable {
         var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]), simulationTables, pregameSetup);
         engine.resources = Path.of(args[0]);
         engine.documents.loadAnalysisFormats(engine.resources);
-        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", PROTOCOL_VERSION, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo", "automated-seats", "certified-one-step-undo", "match-history", "history-announcements", "match-setup", "durable-encounter-admission", "simulation-match-setup", "automated-match-history", "owned-decision-observation", "private-action-faces", "table-presence", "table-choices-v1", "priority-continuation-v1", AUTOMATED_PRIORITY_CONTINUATION, AUTOMATED_PRIORITY_METADATA, AUTOMATED_PRIORITY_RESPONSES))));
+        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", PROTOCOL_VERSION, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo", "automated-seats", "certified-one-step-undo", "match-history", "history-announcements", "match-setup", "durable-encounter-admission", "simulation-match-setup", "automated-match-history", "owned-decision-observation", "private-action-faces", "table-presence", "table-choices-v1", "priority-continuation-v1", AUTOMATED_PRIORITY_CONTINUATION, AUTOMATED_PRIORITY_METADATA, AUTOMATED_PRIORITY_RESPONSES, "match-progress-recovery-v1"))));
         try (engine; var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = input.readLine()) != null) {
@@ -221,6 +221,7 @@ public final class DesktopEngine implements AutoCloseable {
                 case "multiplayerClose" -> seat.close();
                 case "matchState" -> seat.match().state(MatchEndpoint.privateActionFaces(p));
                 case "matchDecisionObservation" -> seat.match().decisionObservation(MatchEndpoint.privateActionFaces(p));
+                case "matchReconcileProgress" -> seat.match().reconcileProgress(p);
                 case "matchAction" -> seat.match().action(p);
                 case "matchSourceActions" -> seat.match().sourceActions(p);
                 case "tablePresence" -> seat.match().presence(p);
@@ -238,6 +239,17 @@ public final class DesktopEngine implements AutoCloseable {
                 yield Map.of("enabled", true);
             }
             case "automatedState" -> ownedAutomatedSeats().stream().map(MatchSession::automatedObservation).toList();
+            case "automatedReconcileProgress" -> {
+                if (!p.has("sessionId") || !p.get("sessionId").isJsonPrimitive()
+                        || !p.get("sessionId").getAsJsonPrimitive().isString()
+                        || !p.has("seatId") || !p.get("seatId").isJsonPrimitive()
+                        || !p.get("seatId").getAsJsonPrimitive().isNumber())
+                    throw new IllegalArgumentException("Progress reconciliation requires a current game and owned integer seat");
+                final int seatId;
+                try { seatId = p.get("seatId").getAsBigDecimal().intValueExact(); }
+                catch (RuntimeException invalid) { throw new IllegalArgumentException("Progress reconciliation requires an owned integer seat"); }
+                yield ownedAutomatedSeat(p.get("sessionId").getAsString(), seatId).reconcileProgress(p);
+            }
             case "automatedMatchHistory" -> {
                 if (!p.has("gameId") || !p.get("gameId").isJsonPrimitive()
                         || !p.get("gameId").getAsJsonPrimitive().isString()
@@ -427,6 +439,11 @@ public final class DesktopEngine implements AutoCloseable {
             case "matchDecisionObservation" -> {
                 if (multiplayer != null && multiplayer.connected()) yield multiplayer.match().decisionObservation(MatchEndpoint.privateActionFaces(p));
                 yield match == null ? null : match.decisionObservation(MatchEndpoint.privateActionFaces(p));
+            }
+            case "matchReconcileProgress" -> {
+                if (multiplayer != null && multiplayer.connected()) yield multiplayer.match().reconcileProgress(p);
+                if (match == null) throw new IllegalStateException("No active match");
+                yield match.reconcileProgress(p);
             }
             case "matchAction" -> {
                 if (multiplayer != null && multiplayer.connected()) {

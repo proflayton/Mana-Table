@@ -155,6 +155,8 @@ public sealed partial class AiTableHost
 
     private static bool NeedsPriorityAcknowledgement(PriorityOwner owner, GameSnapshot state, PriorityObservationState credit)
         => !credit.Registered || owner.AcknowledgedStackVersion != state.StackInterruptionVersion
+            || state.PriorityContinuation is { Status: PriorityContinuationStatus.Held, ReasonCode: "awaiting-observation" }
+                && credit.BoardRevision > credit.AcknowledgedBoardRevision
             || credit.PublicActivitySequence - credit.AcknowledgedPublicActivitySequence >= 16;
 
     private async Task<AutomatedPriorityControlResult> AcknowledgePriorityAsync(PriorityOwner owner, GameSnapshot state,

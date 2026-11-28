@@ -58,6 +58,7 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
         public bool AutomatedPriorityContinuationAvailable { get; set; }
         public bool AutomatedPriorityMetadataAvailable { get; set; }
         public bool AutomatedPriorityResponsesAvailable { get; set; }
+        public bool MatchProgressRecoveryAvailable { get; set; }
         public ForgeCommandScope Commands { get; } = new();
         public volatile Exception? Failure;
         public volatile bool FramingFailed;
@@ -118,6 +119,7 @@ public sealed partial class ForgeEngine(ForgePaths paths, TimeProvider? requestC
                             owner.AutomatedPriorityContinuationAvailable = capabilities.Contains("automated-priority-continuation-v1");
                             owner.AutomatedPriorityMetadataAvailable = capabilities.Contains("automated-priority-metadata-v1");
                             owner.AutomatedPriorityResponsesAvailable = capabilities.Contains("automated-priority-responses-v1");
+                            owner.MatchProgressRecoveryAvailable = capabilities.Contains("match-progress-recovery-v1");
                             owner.Ready.TrySetResult();
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));

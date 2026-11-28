@@ -2900,6 +2900,46 @@ Local action failures remain acknowledged until dismissed or a new action starts
 a successful background poll does not erase them. Host/guest departure confirms
 its consequence; an eliminated seat can watch or leave.
 
+### Bounded match progress and input recovery
+
+`MatchProgressWatch` gives automatic match work a 45-second monotonic progress
+budget. New rules activity, actual input changes and staged selections count
+as progress. Revision numbers, board publications and successful polls do not.
+The player session and AI host share this reducer. Explicit human choices and
+human-owned observation waits remain untimed; a closed pacing gate alone does
+not excuse stalled automatic work.
+
+The engine publishes optional `matchWaits` facts for actual unfinished controller
+inputs and dialogs: owner, episode generation and whether the decision was
+published coherently. Multiple simultaneous human choices are legitimate waits.
+An unpublished input is automatic recovery work even while another human is
+choosing. Its generation remains stable through publication loss and repair, so
+unrelated activity cannot indefinitely renew its budget. These public facts carry
+no options, card identities, decision IDs or command authority.
+
+`matchReadingWaits` names only registered living human readers whose actual
+delivery credit is exhausted. A human's presence or an `awaiting-observation`
+reason alone cannot suspend the progress budget. Held bots acknowledge a newer
+actual board even below the ordinary activity batch threshold, then reobserve.
+Credit release refreshes continuation metadata for every seat, so an available
+response cannot remain hidden behind a stale observation hold. Unchanged boards
+neither repeat acknowledgements nor authorize a manual pass through human credit.
+
+After the budget expires, a capable provider gets one bounded reconciliation
+attempt. `match-progress-recovery-v1` republishes the existing unanswered input
+under current ownership; it never passes, chooses, concedes, enables Auto or
+replays an uncertain command. A fresh owned observation is required before
+gameplay resumes. Unchanged successful polls cannot hide the interruption.
+Provider timeout, repeated superseded reads and late completions are bounded or
+fenced by the existing operation, session and engine-generation owners.
+
+If safe repair cannot restore progress, the player retains the last board and
+the existing recovery/leave controls. The AI host reports an explicit match
+fault instead of waiting forever. This does not reconstruct corrupted rules
+state or resume an arbitrary deadlocked JVM. Durable checkpoints and deterministic
+replay would be a separate recovery mechanism. Human review of the changed
+recovery text is **pending**; no controls or geometry were added.
+
 `ClientSession.WaitForQueuedWorkAsync` is a passive owner notification for posted
 callbacks and external observation ingress. It never pumps, accepts snapshots,
 polls or dispatches commands. Closure wakes pending waiters, and canceling one

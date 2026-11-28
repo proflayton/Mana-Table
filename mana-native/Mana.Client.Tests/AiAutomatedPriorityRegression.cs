@@ -17,6 +17,7 @@ internal static class AiAutomatedPriorityRegression
         await PreparationRetirementAndPacing(check);
         await CertificatesAndChoices(check);
         await PacingAndHumanCredit(check);
+        await HeldObservationNeedsCurrentAcknowledgement(check);
         await PublishedActionBarrier(check);
         await LegacyRegistration(check);
         await Overflow(check);
@@ -327,6 +328,25 @@ internal static class AiAutomatedPriorityRegression
                     AutomatedPriorityControl.Withdraw] && policy.Calls == 0,
                 "A new presentation pause withdraws active bot consent without acknowledging or acting through the pause");
         } finally { await host.DisposeAsync(); }
+    }
+
+    private static async Task HeldObservationNeedsCurrentAcknowledgement(Action<bool, string> check)
+    {
+        var port = new Port(); var policy = new Policy();
+        await using var host = new AiTableHost(port, _ => policy, 1);
+        await Arm(host);
+        port.State = port.State with { Revision = port.State.Revision + 1, BoardRevision = 2,
+            PriorityObservation = port.State.PriorityObservation! with { BoardRevision = 2, PublicActivitySequence = 2 },
+            PriorityContinuation = port.State.PriorityContinuation! with { Status = PriorityContinuationStatus.Held,
+                ReasonCode = "awaiting-observation" } };
+        await host.StepAsync();
+        check(port.Controls.Count(control => control is AutomatedPriorityControl.Acknowledge) == 2
+                && port.Commands.Count == 0 && policy.Calls == 0,
+            "An observation-held bot acknowledges a newer actual board even below the normal activity batch threshold");
+        await host.StepAsync(); await host.StepAsync();
+        check(port.Controls.Count(control => control is AutomatedPriorityControl.Acknowledge) == 2
+                && port.Commands.Count == 0 && policy.Calls == 0,
+            "An unchanged held board neither repeats its ACK nor bypasses another human's reading credit");
     }
 
     private static async Task LegacyRegistration(Action<bool, string> check)

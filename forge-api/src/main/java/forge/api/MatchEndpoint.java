@@ -15,6 +15,7 @@ interface MatchEndpoint {
     Map<String, Object> history(JsonObject query);
     Map<String, Object> concede(JsonObject command);
     Map<String, Object> tempoPresented(JsonObject command);
+    default Map<String, Object> reconcileProgress(JsonObject command) { throw new IllegalArgumentException("This host cannot reconcile match progress"); }
     boolean finished();
 
     static boolean privateActionFaces(JsonObject request) {

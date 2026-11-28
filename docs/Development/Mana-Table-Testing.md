@@ -1,5 +1,28 @@
 # Testing Mana Table
 
+## Match liveness and bounded recovery
+
+`Mana.Client.Tests --match-liveness-checks` runs deterministic monotonic-clock
+checks for lost prompts, publication churn, staged progress, simultaneous human
+choices, explicit human attention waits, blocked repair providers, stale reads
+and late completion fencing. These checks also run in the default client inventory.
+
+`MatchProgressRecoveryTest` removes actual Java adapter publication ownership
+while preserving Forge's waiting input. Local/TCP and human/automated cases must
+restore a fresh actionable scope without passing priority, changing rules state
+or disclosing another seat's prompt. Repeated healthy repair is inert, a queued
+command stays consumed, legacy hosts receive no unnegotiated request and capture
+failures do not disclose private diagnostics. The Java suite runs in ordinary CI.
+
+The native `--smoke-progress-recovery` journey uses a real packaged JVM with
+controlled observation loss around the player and AI ports. It verifies negotiated
+IPC repair followed by a fresh owned read, then one legal AI answer; the player
+case leaves the real input unanswered. It does not itself delete Java publication
+ownership: the Java tests cover that distinct fault. Source-bound
+`--smoke-headless-engine` invokes this journey against the production JAR in CI.
+A healthy full solo game separately checks that normal progress does not trigger
+the guard. Automated results do not establish human approval of recovery text.
+
 The [AI experiment framework](Mana-Table-AI-Experiments-Design.md) separates
 behavioral comparisons from release qualification and implements immutable
 identity, balanced A/B scheduling, outcome denominators and descriptive analysis.
