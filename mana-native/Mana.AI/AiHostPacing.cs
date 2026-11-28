@@ -21,6 +21,9 @@ public interface IAiHostPacing
 {
     void Observe(ImmutableArray<AiTableProgress> progress);
     bool Ready(string gameId, int seatId);
+    // An explicit human attention owner may suspend automatic work. Merely
+    // returning false from Ready is bounded presentation work, not an exemption.
+    bool WaitingForHuman(string gameId, int seatId) => false;
 }
 
 /// <summary>Allows one public action to be announced before the next bot command.

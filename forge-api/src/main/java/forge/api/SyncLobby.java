@@ -144,7 +144,7 @@ final class SyncLobby {
             conversation = new TableConversation(); conversation.join(0, slots.get(0).name);
             revision = 1;
             long epoch = ++transportEpoch;
-            server = new SyncTransport.Server(this::dispatch, this::joinSeat, seat -> disconnected(epoch, seat), Set.of("match-history", "history-announcements", "match-setup", "durable-encounter-admission", "owned-decision-observation", "private-action-faces", "table-presence", "table-choices-v1", "priority-continuation-v1")); connection = server.local(0);
+            server = new SyncTransport.Server(this::dispatch, this::joinSeat, seat -> disconnected(epoch, seat), Set.of("match-history", "history-announcements", "match-setup", "durable-encounter-admission", "owned-decision-observation", "private-action-faces", "table-presence", "table-choices-v1", "priority-continuation-v1", "match-progress-recovery-v1")); connection = server.local(0);
             try { port = transport.equals("local") ? 0 : server.listen(); } catch (java.io.IOException e) { close(); throw new IllegalStateException("Could not host the table", e); }
             if (port != 0) {
                 // Endpoint metadata is discovered once, off the command pipe.
@@ -308,6 +308,7 @@ final class SyncLobby {
             case "lobby": return lobby(seat);
             case "observe": return table == null ? null : table.seat(seat).state(MatchEndpoint.privateActionFaces(p));
             case "decisionObservation": return table == null ? null : table.seat(seat).decisionObservation(MatchEndpoint.privateActionFaces(p));
+            case "reconcileProgress": requireMatch(); return table.seat(seat).reconcileProgress(p);
             case "reply": requireMatch(); return table.seat(seat).action(p);
             case "sourceActions": requireMatch(); return table.seat(seat).sourceActions(p);
             case "history": requireMatch(); return table.seat(seat).history(p);

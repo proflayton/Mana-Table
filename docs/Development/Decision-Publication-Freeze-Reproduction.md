@@ -115,5 +115,65 @@ The captured release failures and the fixed candidate's complete-game results
 are recorded in `F:\ForgeButBetter\.tools\freeze-0510-results.json`, with raw
 evidence in the referenced profile directories. The normal-paced journey's
 record is `solo-freeze-reviewed-normal` in that workspace.
-Human UX review is not applicable: this changes rules observation and input
-recovery without adding or changing a player control.
+Human UX review of the initial publication fix is not applicable: it changes
+rules observation and input recovery without changing a player control.
+
+## Bounded-progress follow-up
+
+The production player session and AI host now share a monotonic automatic-work
+budget and negotiated input-reconciliation control. See the
+[bounded progress contract](Mana-Table-Architecture.md#bounded-match-progress-and-input-recovery)
+and [regression inventory](Mana-Table-Testing.md#match-liveness-and-bounded-recovery).
+An expired budget permits one bounded repair, followed by a fresh owned read;
+failed repair becomes an explicit interruption instead of a silent wait. No
+repair can pass priority, choose an option, concede or replay an uncertain action.
+
+A later actual four-player run reproduced another stall on turn 30, `MAIN1`,
+with Blood Rites AI holding a published priority input. Its rich frame reported
+an available response but continuation metadata still said `awaiting-observation`.
+The human had acknowledged activity 617; the AI's acknowledgement remained at
+615 with board 1785 while its current frame was board 1790. The rules thread was
+waiting for the actual input. The local evidence is retained in
+`F:\ForgeButBetter\.tools\liveness-natural-game-final`.
+
+That candidate incorrectly exempted the hold merely because a human was present.
+The replacement uses engine-reported `matchReadingWaits` for actual exhausted
+human delivery credit. An observation-held bot acknowledges a newer board even
+below its ordinary activity batch threshold. Returning credit also refreshes
+every seat's continuation metadata, so the real response becomes visible without
+requiring another rules action. An unchanged board receives no repeated ACK, and
+an actual human reading wait still cannot be bypassed with a manual AI pass.
+
+The two isolated regressions fail before these changes: one retains the unowned
+hold indefinitely; the other skips the required current-board acknowledgement.
+They pass after the fix. Java controls also exercise actual exhausted human
+credit and its retirement across audiences. The monitor ignores revision churn
+and reissued publication scopes for the same engine input.
+
+Human review of the follow-up's recovery text is **pending**. It reuses the
+existing recovery dock and controls; automation does not establish UX approval.
+
+### Follow-up local validation, 2026-11-28
+
+| Check | Result |
+| --- | --- |
+| Java 17 recovery, publication, source authority, priority and Icetill suite | 84 tests passed, zero failures |
+| Full graphics-free client inventory | 6,258 checks passed, including 29 focused liveness checks |
+| Headless native presentation inventory | 9,768 checks passed |
+| Packaged JVM recovery with controlled player/AI observation loss | All seven journey checks passed; actual Java publication loss is tested separately |
+| Final packaged engine, accelerated four-player games | Two natural outcomes, turns 27 and 36; 322 and 561 human commands; no AI fault or player recovery |
+| Native harness build and maintained documentation links | Passed; one existing AudioSettingsSmoke nullability warning |
+
+Final engine SHA-256:
+`2CB9FD7B2139B6D19357319C8B5E6A5D10062E826931D5591736F054D051F808`.
+The immutable JAR is `F:\ForgeButBetter\.tools\liveness-engine-reading-20261128.jar`.
+Raw final profiles are `liveness-real-recovery-complete`,
+`liveness-natural-game-reading-01`, `liveness-natural-game-reading-02`, and
+`liveness-presentation-reading` under that workspace's `.tools` directory.
+The two failing pre-fix controls are retained as
+`liveness-observation-control-baseline.log` and
+`liveness-observation-ack-baseline.log`. The earlier failed natural game remains
+part of the evidence; it is not counted as a passing run.
+
+These are local candidate checks. Java 21 and source-bound remote CI have not
+been run for this follow-up; no package has been released.

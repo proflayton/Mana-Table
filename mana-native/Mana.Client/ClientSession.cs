@@ -76,13 +76,15 @@ public sealed partial class ClientSession
         get {
             if (Closed) return null;
             if (recovery.State != ClientRecoveryState.Ready) return TimeSpan.Zero;
-            if (State == null || !Polling || LastSynchronizedAt is not { } synchronized) return null;
+            var progress = TimeUntilMatchProgressCheck;
+            if (State == null || !Polling || LastSynchronizedAt is not { } synchronized) return progress;
             // NeedsRecovery uses a strict greater-than comparison. Wake on the
             // first eligible timer millisecond rather than rounding a tick
             // down to exact equality and spinning before recovery is due.
             var remaining = SynchronizationHealthLimit - (time.GetUtcNow() - synchronized) + TimeSpan.FromTicks(1);
-            return remaining > TimeSpan.Zero
+            var poll = remaining > TimeSpan.Zero
                 ? TimeSpan.FromMilliseconds(Math.Ceiling(remaining.TotalMilliseconds)) : TimeSpan.Zero;
+            return progress is { } due && due < poll ? due : poll;
         }
     }
     public bool UncertainCommand => RecoveryState == ClientRecoveryState.CommandUncertain;
@@ -122,6 +124,7 @@ public sealed partial class ClientSession
         DrainPendingForeground();
         while (!Busy && !NeedsRecovery && pendingSettings.TryDequeue(out var setting)) Submit(setting);
         DrainPriorityObservation();
+        CheckMatchProgress();
     }
     public ObservationIngress OpenObservationIngress(string gameId, int viewerId)
     {
@@ -213,7 +216,7 @@ public sealed partial class ClientSession
     }
     public bool AcceptLobby(Lobby state) => !Closed && Lobby != null && state.TableId == Lobby.TableId
         && lobbyReplica.Accept(state, lobbyReplica.Epoch);
-    public void Reset() { RevokeObservationIngress(); StopFiniteIntent(); CancelAdvance(); SourceActions.Clear(); pendingSettings.Clear(); RetirePendingForeground(ClientDiagnosticFailure.Superseded); recovery = recovery with { LastFailure = null }; LastCleanupFailure = null; BeginCommand(); Accept(null); }
+    public void Reset() { CancelMatchProgressRepair(); RevokeObservationIngress(); StopFiniteIntent(); CancelAdvance(); SourceActions.Clear(); pendingSettings.Clear(); RetirePendingForeground(ClientDiagnosticFailure.Superseded); recovery = recovery with { LastFailure = null }; LastCleanupFailure = null; BeginCommand(); Accept(null); }
     private bool Accept(GameSnapshot? state, long epoch, ObservationIngress? ingress = null, bool commandObservation = false,
         ClientFailurePhase? observationFailurePhase = null, ClientFailureContext? failureContext = null)
     {
@@ -282,7 +285,8 @@ public sealed partial class ClientSession
             ExecutionChanges = executions.Observe(state, baseline: recovered || RestorationChanged);
             ObserveOptionalPayments(previous, state, recovered || RestorationChanged);
             LastSynchronizedAt = time.GetUtcNow();
-            recovery = recovery.Reconciled(); LastCleanupFailure = null;
+            ObserveMatchProgress(state);
+            if (!ProgressRecoveryRequired) { recovery = recovery.Reconciled(); LastCleanupFailure = null; }
         } } catch (FiniteYieldOwnershipException error) {
             ReportFailure(error, ClientFailurePhase.ReadbackUnknown,
                 failureContext ?? ClientFailureContext.Capture(epoch, diagnosticPrevious)); return false;
@@ -312,7 +316,7 @@ public sealed partial class ClientSession
                 && item.Command.GrantId == restoringGrant.GrantId)) throw new FiniteYieldOwnershipException();
         executions.Validate(state);
         if (state != null) { FiniteResolutionFacts.Validate(state); FiniteStackYieldFacts.Validate(state);
-            PriorityContinuationFacts.Validate(state); HumanParticipationFacts.Validate(state); }
+            PriorityContinuationFacts.Validate(state); HumanParticipationFacts.Validate(state); MatchProgressWitness.Validate(state); }
         ValidateFiniteAcknowledgement(state);
         ValidatePriorityAcknowledgement(state);
         return restored;
@@ -582,6 +586,7 @@ public sealed partial class ClientSession
     private void StopFiniteIntent() { QueueFiniteRevocation(); finiteIntent?.Stop(); finiteIntent = null; advance.RetireFiniteReadCadence(); }
     public void Close()
     {
+        CancelMatchProgressRepair();
         ClearAllOptionalPaymentPolicies();
         StopFiniteIntent(); CancelAdvance(); SourceActions.Close(); History.Close(); pendingSettings.Clear();
         RetirePendingForeground(ClientDiagnosticFailure.Closed);

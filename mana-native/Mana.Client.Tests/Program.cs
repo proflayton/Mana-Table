@@ -10,6 +10,11 @@ if (args.Contains("--verify-failure-reporting"))
     throw new InvalidOperationException("Controlled test-runner failure reporting check.");
 int checks = 0;
 void Check(bool value, string description) { if (!value) throw new Exception(description); checks++; Console.WriteLine(description); }
+if (args.Contains("--match-liveness-checks")) {
+    await MatchLivenessRegression.RunAsync(Check);
+    Console.WriteLine($"Passed {checks} match liveness checks.");
+    return 0;
+}
 if (args.Contains("--ai-library-acquisition-checks")) {
     await AiLibraryAcquisitionRegression.RunAsync(Check);
     Console.WriteLine($"Passed {checks} AI library acquisition checks.");
@@ -295,6 +300,7 @@ await EncounterAdmissionRegression.RunAsync(Check);
 await InteractionContractMatrix.RunAsync(Check);
 AllocationRegression.Run(Check);
 await RecoveryRegression.RunAsync(Check);
+await MatchLivenessRegression.RunAsync(Check);
 await RecoveryScheduleRegression.RunAsync(Check);
 await ClientDiagnosticRegression.RunAsync(Check);
 await CommandExchangeRegression.RunAsync(Check);

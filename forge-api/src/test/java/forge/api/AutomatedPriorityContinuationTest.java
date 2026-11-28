@@ -412,11 +412,16 @@ public class AutomatedPriorityContinuationTest {
                 fixture.bot().action(grant(current, 2, List.of()));
                 var held = fixture.state(2).getAsJsonObject("priorityContinuation");
                 assertEquals(text(held, "status"), "Held"); assertEquals(text(held, "reasonCode"), "awaiting-observation");
+                assertEquals(fixture.state(2).getAsJsonArray("matchReadingWaits"), JSON.toJsonTree(humanReading ? List.of(0) : List.of()),
+                        "Only actual exhausted human reading credit grants an unbounded presentation wait");
                 fixture.acknowledge(2);
                 if (humanReading) {
                     assertEquals(text(fixture.state(2).getAsJsonObject("priorityContinuation"), "reasonCode"), "awaiting-observation",
                             "A bot cannot return reading credit for the registered human");
                     assertTrue(input.isPriorityActive()); fixture.acknowledge(0);
+                    assertTrue(fixture.state(2).getAsJsonArray("matchReadingWaits").isEmpty(), "A real human ACK retires its reading wait for every audience");
+                    assertNotEquals(text(fixture.state(2).getAsJsonObject("priorityContinuation"), "reasonCode"), "awaiting-observation",
+                            "Releasing reading credit publishes the bot's actual continuation state without waiting for a rules action");
                 }
                 assertFalse(fixture.state(1).getAsJsonObject("priorityObservation").get("registered").getAsBoolean(),
                         "The other human deliberately retains legacy ordinary publication behavior");

@@ -19,10 +19,13 @@ namespace Mana.Table;
 internal static class SoloFreezeJourney
 {
     private sealed record Receipt(GameCommand Command, AiExecutionReceipt Outcome, string? Error);
-    private sealed class PlayerPort(ForgeEngine engine) : IMatchConnection
+    private sealed class PlayerPort(ForgeEngine engine) : IMatchConnection, IMatchProgressRecovery
     {
         internal readonly ConcurrentQueue<Receipt> Receipts = new();
         public bool SupportsPriorityContinuation => engine.SupportsPriorityContinuation;
+        public bool SupportsMatchProgressRecovery => engine.SupportsMatchProgressRecovery;
+        public Task ReconcileMatchProgressAsync(string gameId, CancellationToken cancellation = default)
+            => engine.ReconcileMatchProgressAsync(gameId, cancellation);
         public Task<GameSnapshot?> ObserveAsync() => engine.ObserveAsync();
         public Task ConcedeAsync(string game) => engine.ConcedeAsync(game);
         public async Task ExecuteAsync(GameCommand command)

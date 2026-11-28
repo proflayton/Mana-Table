@@ -9,9 +9,9 @@ internal sealed partial class TableApplication
     private bool DrawRecoveryDock(GameSnapshot state)
     {
         if (!session.NeedsRecovery) return false;
-        canvas.Text(polling ? "RECONNECTING" : "CONNECTION INTERRUPTED", 1266, DecisionY(724), Red, .69f, 298, 1, true);
+        canvas.Text(session.ProgressRecoveryRequired ? "GAME INTERRUPTED" : polling ? "RECONNECTING" : "CONNECTION INTERRUPTED", 1266, DecisionY(724), Red, .69f, 298, 1, true);
         var age = session.LastSynchronizedAt is { } at ? Math.Max(0, (int)(clock.GetUtcNow() - at).TotalSeconds) : 0;
-        canvas.Text($"Last update {age}s ago. " + (session.UncertainCommand
+        canvas.Text(session.ProgressRecoveryRequired ? busy ? "The game stopped making progress. Checking the current decision." : "The game could not restore its current decision." : $"Last update {age}s ago. " + (session.UncertainCommand
             ? "Checking your last action; please wait."
             : "Reconnecting before play resumes."), 1266, DecisionY(750), Ink, .75f, 295, 3);
         Button("recovery-retry", polling ? "Checking connection…" : "Reconnect", 1266, DecisionY(828), 177,
